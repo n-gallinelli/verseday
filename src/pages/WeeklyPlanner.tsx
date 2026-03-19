@@ -1,0 +1,859 @@
+import { useEffect, useState, useCallback, useRef } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  useDroppable,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import { useAppStore } from "../stores/appStore";
+import {
+  getWeeklyPlan,
+  upsertWeeklyPlan,
+  getTasksForWeek,
+  getProjects,
+  createTask,
+  updateTask,
+  updateTaskStatus,
+  updateTaskDateScheduled,
+  getIncompleteTasksForProjectIds,
+  getWorkedMinutesForTask,
+  setManualWorkedMinutes,
+  getWeeklyShutdown,
+} from "../db/queries";
+import ErrorBanner from "../components/ErrorBanner";
+import CheckIcon from "../components/CheckIcon";
+import TaskDetailOverlay from "../components/TaskDetailOverlay";
+import type { Task, Project } from "../types";
+
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+const MAX_TITLE_LENGTH = 200;
+
+function getWeekdayDates(mondayIso: string): string[] {
+  const dates: string[] = [];
+  const d = new Date(mondayIso + "T00:00:00");
+  for (let i = 0; i < 5; i++) {
+    const dd = new Date(d);
+    dd.setDate(d.getDate() + i);
+    dates.push(dd.toISOString().split("T")[0]);
+  }
+  return dates;
+}
+
+function getFridayIso(mondayIso: string): string {
+  const d = new Date(mondayIso + "T00:00:00");
+  d.setDate(d.getDate() + 4);
+  return d.toISOString().split("T")[0];
+}
+
+function formatWeekHeader(mondayIso: string): string {
+  const d = new Date(mondayIso + "T00:00:00");
+  return `Week of ${d.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  })}`;
+}
+
+function getMondayOfWeek(date: Date = new Date()): string {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().split("T")[0];
+}
+
+function dateToDayAbbrev(
+  dateScheduled: string | null,
+  weekDates: string[]
+): string | null {
+  if (!dateScheduled) return null;
+  const idx = weekDates.indexOf(dateScheduled);
+  if (idx === -1) return null;
+  return DAY_NAMES[idx];
+}
+
+// ─── Left panel: Draggable task row ─────────────────────────────────────────
+
+function DraggableTaskRow({
+  task,
+  weekDates,
+  onToggleTask,
+  isLast,
+}: {
+  task: Task;
+  weekDates: string[];
+  onToggleTask: (task: Task) => void;
+  isLast: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `task-${task.id}`,
+    data: { task },
+  });
+
+  const dayAbbrev = dateToDayAbbrev(task.date_scheduled, weekDates);
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex items-center gap-2 px-3 py-1.5 ${
+        !isLast ? "border-b border-black/[0.04]" : ""
+      } ${isDragging ? "opacity-30" : ""}`}
+    >
+      {/* Drag handle */}
+      <span
+        {...attributes}
+        {...listeners}
+        className="text-[10px] text-black/15 cursor-grab active:cursor-grabbing select-none"
+      >
+        ⠿
+      </span>
+
+      {/* Checkbox */}
+      <button
+        onClick={() => onToggleTask(task)}
+        className={`w-[13px] h-[13px] rounded-[3px] border flex-shrink-0 cursor-pointer flex items-center justify-center ${
+          task.status === "done"
+            ? "bg-[#e0873e] border-[#e0873e]"
+            : "border-black/[0.18]"
+        }`}
+      >
+        {task.status === "done" && <CheckIcon />}
+      </button>
+
+      {/* Title */}
+      <span
+        className={`text-[12px] flex-1 truncate ${
+          task.status === "done"
+            ? "text-black/30 line-through"
+            : "text-[#2c2a35]"
+        }`}
+      >
+        {task.title}
+      </span>
+
+      {/* Duration */}
+      {task.estimated_minutes != null && task.estimated_minutes > 0 && (
+        <span className="text-[11px] text-black/30">
+          {task.estimated_minutes}m
+        </span>
+      )}
+
+      {/* Day pill */}
+      {dayAbbrev ? (
+        <span className="text-[10px] bg-black/[0.05] text-black/40 px-1.5 py-0.5 rounded">
+          {dayAbbrev}
+        </span>
+      ) : (
+        <span className="text-[10px] bg-[#e0873e]/[0.08] text-[#e0873e] px-1.5 py-0.5 rounded">
+          —
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ─── Left panel: Project card (collapsible) ─────────────────────────────────
+
+function ProjectCard({
+  project,
+  tasks,
+  weekDates,
+  onToggleTask,
+  onNavigateProject,
+}: {
+  project: { id: number | null; name: string; color: string };
+  tasks: Task[];
+  weekDates: string[];
+  onToggleTask: (task: Task) => void;
+  onNavigateProject: (id: number) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  return (
+    <div className="bg-white border border-black/[0.08] rounded-[9px] mb-2.5 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="text-[10px] text-black/25 cursor-pointer hover:text-black/40 w-3 flex-shrink-0 transition-transform duration-150"
+          style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
+        >
+          ▸
+        </button>
+        <div
+          className="w-2 h-2 rounded-full flex-shrink-0"
+          style={{ backgroundColor: project.color }}
+        />
+        <span
+          className={`text-[13px] font-medium text-[#2c2a35] flex-1 ${
+            project.id !== null
+              ? "cursor-pointer hover:text-[#e0873e]"
+              : ""
+          }`}
+          onClick={() => {
+            if (project.id !== null) onNavigateProject(project.id);
+          }}
+        >
+          {project.name}
+        </span>
+      </div>
+
+      {/* Tasks — collapsible */}
+      {expanded && tasks.length > 0 && (
+            <div className="border-t border-black/[0.05]">
+              {tasks.map((task, i) => (
+                <DraggableTaskRow
+                  key={task.id}
+                  task={task}
+                  weekDates={weekDates}
+                  onToggleTask={onToggleTask}
+                  isLast={i === tasks.length - 1}
+                />
+              ))}
+            </div>
+          )}
+    </div>
+  );
+}
+
+// ─── Right panel: Calendar task chip ────────────────────────────────────────
+
+function CalendarTaskChip({
+  task,
+  project,
+  onToggle,
+  onNavigateProject,
+  onOpenDetail,
+}: {
+  task: Task;
+  project: Project | undefined;
+  onToggle: (task: Task) => void;
+  onNavigateProject: (id: number) => void;
+  onOpenDetail: (task: Task) => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `cal-task-${task.id}`,
+    data: { task },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={`bg-white border-[0.5px] border-black/[0.08] rounded-md px-2 py-1.5 cursor-grab active:cursor-grabbing hover:bg-[#faf9f7] ${isDragging ? "opacity-30" : ""}`}
+      style={{ borderLeftWidth: 3, borderLeftColor: project?.color ?? "#999" }}
+    >
+      {/* Title row with checkbox */}
+      <div className="flex items-start gap-1.5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle(task);
+          }}
+          className={`w-[13px] h-[13px] rounded-[3px] border flex-shrink-0 cursor-pointer flex items-center justify-center mt-[1px] ${
+            task.status === "done"
+              ? "bg-[#e0873e] border-[#e0873e]"
+              : "border-black/[0.18]"
+          }`}
+        >
+          {task.status === "done" && <CheckIcon />}
+        </button>
+        <span
+          className={`text-[12px] leading-snug flex-1 cursor-pointer hover:text-[#e0873e] transition-colors ${
+            task.status === "done"
+              ? "text-black/30 line-through"
+              : "text-[#2c2a35]"
+          }`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenDetail(task);
+          }}
+        >
+          {task.title}
+        </span>
+      </div>
+
+      {/* Project name + duration */}
+      <div className="flex items-center gap-1.5 mt-0.5 ml-[19px]">
+        {project && (
+          <span
+            className="text-[10px] text-black/35 truncate max-w-[100px] cursor-pointer hover:text-[#e0873e]"
+            onClick={(e) => {
+              e.stopPropagation();
+              onNavigateProject(project.id);
+            }}
+          >
+            {project.name}
+          </span>
+        )}
+        {task.estimated_minutes != null && task.estimated_minutes > 0 && (
+          <span className="text-[10px] text-black/30">
+            {task.estimated_minutes}m
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Right panel: Day column ────────────────────────────────────────────────
+
+function DayColumn({
+  date,
+  tasks,
+  projectMap,
+  isToday,
+  onToggle,
+  onQuickAdd,
+  onNavigateProject,
+  onOpenDetail,
+  projects,
+}: {
+  date: string;
+  tasks: Task[];
+  projectMap: Map<number, Project>;
+  isToday: boolean;
+  onToggle: (task: Task) => void;
+  onQuickAdd: (date: string, title: string, projectId: number | null) => void;
+  onNavigateProject: (id: number) => void;
+  onOpenDetail: (task: Task) => void;
+  projects: Project[];
+}) {
+  const [quickAddTitle, setQuickAddTitle] = useState("");
+  const [quickAddProjectId, setQuickAddProjectId] = useState<number | null>(null);
+  const { isOver, setNodeRef: setDropRef } = useDroppable({
+    id: `day-${date}`,
+    data: { date },
+  });
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const title = quickAddTitle.trim();
+    if (!title) return;
+    onQuickAdd(date, title, quickAddProjectId);
+    setQuickAddTitle("");
+  }
+
+  return (
+    <div ref={setDropRef} className="flex flex-col min-w-0">
+      {/* Column body */}
+      <div
+        className={`border-r border-black/[0.05] last:border-r-0 p-1.5 flex flex-col gap-1.5 flex-1 transition-colors duration-150 ${
+          isOver ? "bg-[#e0873e]/[0.08]" : isToday ? "bg-[#e0873e]/[0.02]" : ""
+        }`}
+      >
+        {tasks.map((task) => (
+          <CalendarTaskChip
+            key={task.id}
+            task={task}
+            project={projectMap.get(task.project_id ?? -1)}
+            onToggle={onToggle}
+            onNavigateProject={onNavigateProject}
+            onOpenDetail={onOpenDetail}
+          />
+        ))}
+
+        {/* Quick add */}
+        <form onSubmit={handleSubmit} className="mt-auto">
+          <input
+            type="text"
+            value={quickAddTitle}
+            onChange={(e) => setQuickAddTitle(e.target.value)}
+            maxLength={MAX_TITLE_LENGTH}
+            placeholder="+ Add"
+            className="text-[11px] text-black/25 cursor-pointer px-1 py-1 rounded hover:bg-black/[0.04] hover:text-black/45 block w-full bg-transparent border-none outline-none placeholder-black/25"
+          />
+          {quickAddTitle.trim() && (
+            <select
+              value={quickAddProjectId ?? ""}
+              onChange={(e) =>
+                setQuickAddProjectId(
+                  e.target.value === "" ? null : Number(e.target.value)
+                )
+              }
+              className="text-[10px] text-black/40 bg-transparent border border-black/[0.08] rounded px-1 py-0.5 mt-0.5 w-full outline-none cursor-pointer"
+            >
+              <option value="">No project</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main component ─────────────────────────────────────────────────────────
+
+export default function WeeklyPlanner() {
+  const { selectedWeek, setSelectedWeek, openProject } =
+    useAppStore();
+
+  const [weekTasks, setWeekTasks] = useState<Task[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [allProjectTasks, setAllProjectTasks] = useState<Task[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [activeDragTask, setActiveDragTask] = useState<Task | null>(null);
+
+  // Task detail overlay
+  const [detailTask, setDetailTask] = useState<Task | null>(null);
+
+  // Carry forward from last week
+  const [carryForwardNotes, setCarryForwardNotes] = useState<string | null>(null);
+  const [carryForwardDismissed, setCarryForwardDismissed] = useState(false);
+
+  // Weekly notes (auto-saved with debounce)
+  const [weeklyNotes, setWeeklyNotes] = useState("");
+  const [showNotes, setShowNotes] = useState(false);
+
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectedWeekRef = useRef(selectedWeek);
+  selectedWeekRef.current = selectedWeek;
+
+  const weekDates = getWeekdayDates(selectedWeek);
+  const fridayIso = getFridayIso(selectedWeek);
+  const todayStr = new Date().toISOString().split("T")[0];
+  const isThisWeek = selectedWeek === getMondayOfWeek();
+
+  const projectMap = new Map(projects.map((p) => [p.id, p]));
+
+  // ── Data loading ──────────────────────────────────────────────────────
+
+  const loadData = useCallback(async () => {
+    try {
+      const [wp, wt, p] = await Promise.all([
+        getWeeklyPlan(selectedWeek),
+        getTasksForWeek(selectedWeek, fridayIso),
+        getProjects(),
+      ]);
+
+      // Auto-show all active, non-completed projects
+      const activeProjects = p.filter((proj) => !proj.archived && !proj.completed);
+      const activeIds = activeProjects.map((proj) => proj.id);
+
+      // Also include any project IDs from this week's tasks (even if archived/completed)
+      for (const t of wt) {
+        if (t.project_id != null && !activeIds.includes(t.project_id)) {
+          activeIds.push(t.project_id);
+        }
+      }
+
+      const projectTasks = await getIncompleteTasksForProjectIds(activeIds);
+
+      setWeekTasks(wt);
+      setAllProjectTasks(projectTasks);
+      setProjects(p);
+      setWeeklyNotes(wp?.notes ?? "");
+
+      // Load carry forward from previous week's shutdown
+      const prevMonday = new Date(selectedWeek + "T00:00:00");
+      prevMonday.setDate(prevMonday.getDate() - 7);
+      const prevMondayIso = prevMonday.toISOString().split("T")[0];
+      const prevShutdown = await getWeeklyShutdown(prevMondayIso);
+      setCarryForwardNotes(prevShutdown?.incomplete_items ?? null);
+      setCarryForwardDismissed(false);
+
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load weekly data");
+    }
+  }, [selectedWeek, fridayIso]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // ── Auto-save with debounce ───────────────────────────────────────────
+
+  function debouncedSave(newNotes: string) {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        await upsertWeeklyPlan(
+          selectedWeekRef.current,
+          null,
+          newNotes.trim() || null
+        );
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to save");
+      }
+    }, 600);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  function handleWeeklyNotesChange(value: string) {
+    setWeeklyNotes(value);
+    debouncedSave(value);
+  }
+
+  // ── Actions ───────────────────────────────────────────────────────────
+
+  async function toggleTask(task: Task) {
+    try {
+      await updateTaskStatus(task.id, task.status === "done" ? "todo" : "done");
+      loadData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update task");
+    }
+  }
+
+  async function handleQuickAdd(date: string, title: string, projectId: number | null) {
+    if (title.length > MAX_TITLE_LENGTH) {
+      setError(`Task title must be ${MAX_TITLE_LENGTH} characters or less`);
+      return;
+    }
+    try {
+      await createTask({
+        title,
+        projectId,
+        dateScheduled: date,
+        estimatedMinutes: null,
+      });
+      loadData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to add task");
+    }
+  }
+
+
+  function changeWeek(offset: number) {
+    const d = new Date(selectedWeek + "T00:00:00");
+    d.setDate(d.getDate() + offset * 7);
+    setSelectedWeek(d.toISOString().split("T")[0]);
+  }
+
+  function navigateToProject(id: number) {
+    openProject(id);
+  }
+
+  // ── Drag and drop ──────────────────────────────────────────────────────
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
+
+  function handleDragStart(event: DragStartEvent) {
+    const task = event.active.data.current?.task as Task | undefined;
+    setActiveDragTask(task ?? null);
+  }
+
+  async function handleDragEnd(event: DragEndEvent) {
+    setActiveDragTask(null);
+    const { active, over } = event;
+    if (!over) return;
+
+    const droppedDate = over.data.current?.date as string | undefined;
+    if (!droppedDate) return;
+
+    const task = active.data.current?.task as Task | undefined;
+    if (!task) return;
+
+    // Skip if already scheduled for that day
+    if (task.date_scheduled === droppedDate) return;
+
+    try {
+      await updateTaskDateScheduled(task.id, droppedDate);
+      loadData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to schedule task");
+    }
+  }
+
+  // ── Derived data ──────────────────────────────────────────────────────
+
+  // All active non-completed projects, sorted by name
+  const activeProjects = projects
+    .filter((p) => !p.archived && !p.completed)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const projectGroups: {
+    project: { id: number | null; name: string; color: string };
+    tasks: Task[];
+  }[] = [];
+
+  for (const p of activeProjects) {
+    const tasks = allProjectTasks.filter((t) => t.project_id === p.id);
+    projectGroups.push({
+      project: { id: p.id, name: p.name, color: p.color },
+      tasks,
+    });
+  }
+
+  // Unassigned tasks (no project) — rendered separately
+  const unassignedTasks = weekTasks.filter((t) => t.project_id === null);
+
+  // Group week tasks by date for calendar
+  const tasksByDate = new Map<string, Task[]>();
+  for (const date of weekDates) {
+    tasksByDate.set(date, []);
+  }
+  for (const task of weekTasks) {
+    if (task.date_scheduled && tasksByDate.has(task.date_scheduled)) {
+      tasksByDate.get(task.date_scheduled)!.push(task);
+    }
+  }
+
+  // Total planned hours
+  const totalPlannedMinutes = weekTasks.reduce(
+    (sum, t) => sum + (t.estimated_minutes ?? 0),
+    0
+  );
+  const totalPlannedHours = (Math.round(totalPlannedMinutes / 6) / 10)
+    .toFixed(1)
+    .replace(/\.0$/, "");
+
+  // ── Render ────────────────────────────────────────────────────────────
+
+  return (
+    <div className="flex flex-col h-full bg-[#f5f4f0] overflow-hidden">
+      <ErrorBanner error={error} onDismiss={() => setError(null)} />
+
+      {/* ── Top bar ─────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-black/[0.07] flex-shrink-0">
+        <button
+          onClick={() => changeWeek(-1)}
+          className="w-[26px] h-[26px] rounded-md bg-black/[0.04] border border-black/[0.08] flex items-center justify-center text-[12px] text-black/35 cursor-pointer hover:bg-black/[0.07]"
+        >
+          ‹
+        </button>
+        <h2 className="flex-1 text-[17px] font-medium text-[#2c2a35]">
+          {formatWeekHeader(selectedWeek)}
+        </h2>
+        {isThisWeek && (
+          <span className="text-[11px] bg-[#e0873e]/10 text-[#e0873e] px-2 py-0.5 rounded-full">
+            This week
+          </span>
+        )}
+        {!isThisWeek && (
+          <button
+            onClick={() => setSelectedWeek(getMondayOfWeek())}
+            className="text-[11px] text-[#e0873e] hover:text-[#cc7633] cursor-pointer"
+          >
+            This week
+          </button>
+        )}
+        <span className="text-[12px] text-black/35">
+          Planned{" "}
+          <span className="text-black/50 tabular-nums">
+            {totalPlannedHours}h
+          </span>
+        </span>
+        <button
+          onClick={() => changeWeek(1)}
+          className="w-[26px] h-[26px] rounded-md bg-black/[0.04] border border-black/[0.08] flex items-center justify-center text-[12px] text-black/35 cursor-pointer hover:bg-black/[0.07]"
+        >
+          ›
+        </button>
+      </div>
+
+      {/* ── Body: left panel + right panel ──────────────────────────────── */}
+      <DndContext
+        sensors={dndSensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+      <div className="flex flex-1 min-h-0">
+        {/* ── Left panel ─────────────────────────────────────────────────── */}
+        <div className="w-[280px] flex-shrink-0 border-r border-black/[0.07] flex flex-col overflow-y-auto">
+          <div className="px-4 py-3.5 flex-1">
+            {/* Carry forward from last week */}
+            {carryForwardNotes && !carryForwardDismissed && (
+              <div
+                className="bg-[#F0F9F5] rounded-lg px-3 py-2.5 mb-3 relative"
+                style={{ border: "0.5px solid #9FE1CB" }}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] uppercase tracking-[0.08em] text-[#0F6E56]">
+                    From last week
+                  </span>
+                  <button
+                    onClick={() => setCarryForwardDismissed(true)}
+                    className="text-[11px] text-[#0F6E56]/40 hover:text-[#0F6E56] cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p className="text-[12px] text-black/50 leading-[1.6] whitespace-pre-wrap">
+                  {carryForwardNotes}
+                </p>
+              </div>
+            )}
+
+            <span className="text-[10px] uppercase tracking-widest text-black/30 mb-2.5 block">
+              Projects
+            </span>
+
+            {projectGroups.length === 0 && unassignedTasks.length === 0 ? (
+              <p className="text-[12px] text-black/25 py-4 text-center">
+                No active projects
+              </p>
+            ) : (
+              <>
+                {projectGroups.map((group) => (
+                  <ProjectCard
+                    key={group.project.id ?? "none"}
+                    project={group.project}
+                    tasks={group.tasks}
+                    weekDates={weekDates}
+                    onToggleTask={toggleTask}
+                    onNavigateProject={navigateToProject}
+                  />
+                ))}
+
+                {/* Unassigned tasks — no project */}
+                {unassignedTasks.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-black/[0.06]">
+                    <span className="text-[10px] uppercase tracking-widest text-black/25 mb-1.5 block">
+                      Unassigned
+                    </span>
+                    <div className="bg-black/[0.02] border border-black/[0.05] rounded-[8px] overflow-hidden">
+                      {unassignedTasks.map((task, i) => (
+                        <DraggableTaskRow
+                          key={task.id}
+                          task={task}
+                          weekDates={weekDates}
+                          onToggleTask={toggleTask}
+                          isLast={i === unassignedTasks.length - 1}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* ── Right panel ────────────────────────────────────────────────── */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Calendar header */}
+          <div className="grid grid-cols-5 border-b border-black/[0.07] flex-shrink-0">
+            {weekDates.map((date, i) => {
+              const dayNum = new Date(date + "T00:00:00").getDate();
+              const isToday = date === todayStr;
+              return (
+                <div
+                  key={date}
+                  className="px-2.5 py-3 text-center border-r border-black/[0.05] last:border-r-0"
+                >
+                  <div className="text-[11px] text-black/35 mb-0.5">
+                    {DAY_NAMES[i]}
+                  </div>
+                  {isToday ? (
+                    <div className="w-[30px] h-[30px] rounded-full bg-[#e0873e] text-white flex items-center justify-center text-[16px] font-medium mx-auto leading-none">
+                      {dayNum}
+                    </div>
+                  ) : (
+                    <div className="text-[18px] font-medium text-[#2c2a35] leading-none">
+                      {dayNum}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Calendar body */}
+          <div className="grid grid-cols-5 flex-1 overflow-y-auto items-stretch">
+            {weekDates.map((date) => (
+              <DayColumn
+                key={date}
+                date={date}
+                tasks={tasksByDate.get(date) ?? []}
+                projectMap={projectMap}
+                isToday={date === todayStr}
+                onToggle={toggleTask}
+                onQuickAdd={handleQuickAdd}
+                onNavigateProject={navigateToProject}
+                onOpenDetail={setDetailTask}
+                projects={projects}
+              />
+            ))}
+          </div>
+
+          {/* ── Weekly notes bar ──────────────────────────────────────────── */}
+          <div className="border-t border-black/[0.07] flex-shrink-0">
+            <button
+              onClick={() => setShowNotes(!showNotes)}
+              className="flex items-center gap-2 px-4 py-2.5 cursor-pointer hover:bg-black/[0.02] w-full"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                stroke="rgba(0,0,0,0.3)"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="2" y="1.5" width="10" height="11" rx="1.5" />
+                <line x1="4.5" y1="4.5" x2="9.5" y2="4.5" />
+                <line x1="4.5" y1="7" x2="8" y2="7" />
+                <line x1="4.5" y1="9.5" x2="7" y2="9.5" />
+              </svg>
+              <span className="text-[13px] text-black/35 flex-1 text-left">
+                Weekly notes
+              </span>
+              <span
+                className="text-[11px] text-black/20 transition-transform duration-150"
+                style={{
+                  transform: showNotes ? "rotate(180deg)" : "rotate(0deg)",
+                }}
+              >
+                ▾
+              </span>
+            </button>
+            {showNotes && (
+              <div className="px-4 py-3 border-t border-black/[0.06]">
+                <textarea
+                  value={weeklyNotes}
+                  onChange={(e) => handleWeeklyNotesChange(e.target.value)}
+                  placeholder="Notes for this week..."
+                  className="w-full bg-transparent border-none outline-none text-[13px] text-black/55 placeholder-black/20 resize-none min-h-[72px] leading-relaxed font-sans"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Drag overlay — floating task chip while dragging */}
+      <DragOverlay dropAnimation={null}>
+        {activeDragTask && (
+          <div className="bg-white border border-[#e0873e]/30 rounded-md px-3 py-1.5 shadow-lg text-[12px] text-[#2c2a35] max-w-[200px] truncate opacity-90">
+            {activeDragTask.title}
+          </div>
+        )}
+      </DragOverlay>
+      </DndContext>
+
+      {/* Task detail overlay */}
+      {detailTask && (
+        <TaskDetailOverlay
+          task={detailTask}
+          projects={projects}
+          onClose={() => { setDetailTask(null); loadData(); }}
+          onSave={(updates) => updateTask(updates).then(() => loadData()).catch(() => {})}
+          onToggle={(t) => toggleTask(t).then(() => setDetailTask(null)).catch(() => {})}
+          onSetWorkedMinutes={(id, mins) => setManualWorkedMinutes(id, mins).then(() => loadData()).catch(() => {})}
+        />
+      )}
+    </div>
+  );
+}

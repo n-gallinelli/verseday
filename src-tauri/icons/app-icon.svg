@@ -17,11 +17,11 @@
       <stop offset="100%" stop-color="#CFE5F0"/>
     </linearGradient>
 
-    <!-- Soft glow around the sun -->
+    <!-- Soft glow around the sun — same color as the sun disc, fading outward -->
     <radialGradient id="sunGlow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%"  stop-color="#FFE0B0" stop-opacity="0.85"/>
-      <stop offset="60%" stop-color="#FFD194" stop-opacity="0.35"/>
-      <stop offset="100%" stop-color="#FFD194" stop-opacity="0"/>
+      <stop offset="0%"  stop-color="#FFD9A0" stop-opacity="0.9"/>
+      <stop offset="60%" stop-color="#FFD9A0" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#FFD9A0" stop-opacity="0"/>
     </radialGradient>
 
     <!-- Clip everything to the inside of the segmented ring -->
@@ -47,32 +47,32 @@
   <!-- Segmented circle logo, centered at 512,512, radius 300 -->
   <!-- Four 94° segments overlapping by 4° at each junction; later segments are drawn -->
   <!-- on top so each one's round start cap extends back into the previous segment, -->
-  <!-- creating the "fits together" interlock. Opaque pastels prevent overlap blending. -->
-  <!-- Segment 1 — accent blue (top, -137° → -43°) -->
+  <!-- creating the "fits together" interlock. Colors echo the sunset scene inside. -->
+  <!-- Segment 1 — sunset pink (top, -137° → -43°) -->
   <path
     d="M 292.59,307.41 A 300,300 0 0 1 731.41,307.41"
-    stroke="#7F9BC2"
+    stroke="#F4B8C8"
     stroke-width="60"
     stroke-linecap="round"
   />
-  <!-- Segment 2 — soft peach (right, -47° → 47°) -->
+  <!-- Segment 2 — sunset peach (right, -47° → 47°) -->
   <path
     d="M 716.59,292.59 A 300,300 0 0 1 716.59,731.41"
-    stroke="#E9B18E"
+    stroke="#F4B58E"
     stroke-width="60"
     stroke-linecap="round"
   />
-  <!-- Segment 3 — soft teal (bottom, 43° → 137°) -->
+  <!-- Segment 3 — ocean blue (bottom, 43° → 137°) -->
   <path
     d="M 731.41,716.59 A 300,300 0 0 1 292.59,716.59"
-    stroke="#97CCC8"
+    stroke="#A8CFE5"
     stroke-width="60"
     stroke-linecap="round"
   />
-  <!-- Segment 4 — pale blue (left, 133° → 227°) -->
+  <!-- Segment 4 — sky lavender (left, 133° → 227°) -->
   <path
     d="M 307.41,731.41 A 300,300 0 0 1 307.41,292.59"
-    stroke="#BDCADA"
+    stroke="#C9B5E0"
     stroke-width="60"
     stroke-linecap="round"
   />

@@ -167,6 +167,7 @@ export default function ProjectDetail() {
   const [editTargetDate, setEditTargetDate] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const projectSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleRef = useRef<HTMLTextAreaElement>(null);
 
   // Task creation
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -292,6 +293,15 @@ export default function ProjectDetail() {
       if (projectSaveRef.current) clearTimeout(projectSaveRef.current);
     };
   }, []);
+
+  // Auto-grow project title textarea whenever the name (or its derived
+  // font size) changes — covers async loads and project switches.
+  useEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = el.scrollHeight + "px";
+  }, [editName]);
 
   // Flush pending saves immediately (for modal close)
   function flushProjectSave() {
@@ -602,18 +612,26 @@ export default function ProjectDetail() {
               </div>
             </div>
 
-            {/* Editable name — wraps up to 2 lines */}
+            {/* Editable name — wraps freely; font shrinks as the name gets longer */}
             <textarea
+              ref={titleRef}
               value={editName}
               onChange={(e) => updateField("name", e.target.value.replace(/\n/g, ""))}
               maxLength={MAX_TITLE_LENGTH}
               rows={1}
-              className="flex-1 text-[16px] font-medium text-[#2c2a35] bg-transparent border-none outline-none resize-none leading-snug overflow-hidden focus:bg-white focus:border focus:border-[#7B9ED9]/30 focus:rounded-md focus:px-2 focus:-mx-2"
-              style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" } as React.CSSProperties}
+              className="flex-1 font-medium text-[#2c2a35] bg-transparent border-none outline-none resize-none leading-snug overflow-hidden focus:bg-white focus:border focus:border-[#7B9ED9]/30 focus:rounded-md focus:px-2 focus:-mx-2"
+              style={{
+                fontSize:
+                  editName.length <= 40
+                    ? 16
+                    : editName.length <= 80
+                      ? 14
+                      : 13,
+              }}
               onInput={(e) => {
                 const el = e.currentTarget;
                 el.style.height = "auto";
-                el.style.height = Math.min(el.scrollHeight, 48) + "px";
+                el.style.height = el.scrollHeight + "px";
               }}
             />
 

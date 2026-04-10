@@ -173,11 +173,11 @@ function VerseDayLogo() {
           <stop offset="0%" stopColor="#A8CFE5" />
           <stop offset="100%" stopColor="#CFE5F0" />
         </linearGradient>
-        {/* Soft glow around the sun */}
+        {/* Soft glow around the sun — same color as the sun disc, fading outward */}
         <radialGradient id="verseday-sunglow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#FFE0B0" stopOpacity={0.85} />
-          <stop offset="60%" stopColor="#FFD194" stopOpacity={0.35} />
-          <stop offset="100%" stopColor="#FFD194" stopOpacity={0} />
+          <stop offset="0%" stopColor="#FFD9A0" stopOpacity={0.9} />
+          <stop offset="60%" stopColor="#FFD9A0" stopOpacity={0.35} />
+          <stop offset="100%" stopColor="#FFD9A0" stopOpacity={0} />
         </radialGradient>
         {/* Clip everything to the inside of the segmented ring */}
         <clipPath id="verseday-clip">
@@ -201,32 +201,32 @@ function VerseDayLogo() {
 
       {/* Four 94° segments overlapping by 4° at each junction; later segments are drawn */}
       {/* on top so each one's round start cap extends back into the previous segment, */}
-      {/* creating the "fits together" interlock. Opaque pastels prevent overlap blending. */}
-      {/* Segment 1 — accent blue (top, -137° → -43°) */}
+      {/* creating the "fits together" interlock. Colors echo the sunset scene inside. */}
+      {/* Segment 1 — sunset pink (top, -137° → -43°) */}
       <path
         d="M 4.15,4.54 A 8,8 0 0 1 15.85,4.54"
-        stroke="#7F9BC2"
+        stroke="#F4B8C8"
         strokeWidth="1.6"
         strokeLinecap="round"
       />
-      {/* Segment 2 — soft peach (right, -47° → 47°) */}
+      {/* Segment 2 — sunset peach (right, -47° → 47°) */}
       <path
         d="M 15.46,4.15 A 8,8 0 0 1 15.46,15.85"
-        stroke="#E9B18E"
+        stroke="#F4B58E"
         strokeWidth="1.6"
         strokeLinecap="round"
       />
-      {/* Segment 3 — soft teal (bottom, 43° → 137°) */}
+      {/* Segment 3 — ocean blue (bottom, 43° → 137°) */}
       <path
         d="M 15.85,15.46 A 8,8 0 0 1 4.15,15.46"
-        stroke="#97CCC8"
+        stroke="#A8CFE5"
         strokeWidth="1.6"
         strokeLinecap="round"
       />
-      {/* Segment 4 — pale blue (left, 133° → 227°) */}
+      {/* Segment 4 — sky lavender (left, 133° → 227°) */}
       <path
         d="M 4.54,15.85 A 8,8 0 0 1 4.54,4.15"
-        stroke="#BDCADA"
+        stroke="#C9B5E0"
         strokeWidth="1.6"
         strokeLinecap="round"
       />

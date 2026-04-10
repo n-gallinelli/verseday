@@ -1,0 +1,79 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background: warm off-white with rounded corners -->
+  <rect width="1024" height="1024" rx="220" fill="#f5f4f0"/>
+
+  <defs>
+    <!-- Pastel sunrise sky gradient (top → horizon) -->
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#E8D4F0"/>
+      <stop offset="35%" stop-color="#F8D0DC"/>
+      <stop offset="70%" stop-color="#FBC9A4"/>
+      <stop offset="100%" stop-color="#FCE5A8"/>
+    </linearGradient>
+
+    <!-- Pastel ocean gradient (horizon → bottom) -->
+    <linearGradient id="ocean" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#A8CFE5"/>
+      <stop offset="100%" stop-color="#CFE5F0"/>
+    </linearGradient>
+
+    <!-- Soft glow around the sun -->
+    <radialGradient id="sunGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#FFE0B0" stop-opacity="0.85"/>
+      <stop offset="60%" stop-color="#FFD194" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#FFD194" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Clip everything to the inside of the segmented ring -->
+    <clipPath id="innerCircle">
+      <circle cx="512" cy="512" r="215"/>
+    </clipPath>
+  </defs>
+
+  <!-- Sunrise scene clipped inside the segmented ring -->
+  <g clip-path="url(#innerCircle)">
+    <!-- Sky (top portion, above horizon at y=600) -->
+    <rect x="297" y="297" width="430" height="303" fill="url(#sky)"/>
+    <!-- Sun glow halo -->
+    <circle cx="512" cy="565" r="200" fill="url(#sunGlow)"/>
+    <!-- Sun disc -->
+    <circle cx="512" cy="565" r="56" fill="#FFD9A0"/>
+    <!-- Ocean (covers bottom portion + lower part of sun for rising effect) -->
+    <rect x="297" y="600" width="430" height="200" fill="url(#ocean)"/>
+    <!-- Subtle horizon highlight -->
+    <rect x="297" y="599" width="430" height="2" fill="#FFFFFF" fill-opacity="0.35"/>
+  </g>
+
+  <!-- Segmented circle logo, centered at 512,512, radius 300 -->
+  <!-- Four 94° segments overlapping by 4° at each junction; later segments are drawn -->
+  <!-- on top so each one's round start cap extends back into the previous segment, -->
+  <!-- creating the "fits together" interlock. Opaque pastels prevent overlap blending. -->
+  <!-- Segment 1 — accent blue (top, -137° → -43°) -->
+  <path
+    d="M 292.59,307.41 A 300,300 0 0 1 731.41,307.41"
+    stroke="#7F9BC2"
+    stroke-width="60"
+    stroke-linecap="round"
+  />
+  <!-- Segment 2 — soft peach (right, -47° → 47°) -->
+  <path
+    d="M 716.59,292.59 A 300,300 0 0 1 716.59,731.41"
+    stroke="#E9B18E"
+    stroke-width="60"
+    stroke-linecap="round"
+  />
+  <!-- Segment 3 — soft teal (bottom, 43° → 137°) -->
+  <path
+    d="M 731.41,716.59 A 300,300 0 0 1 292.59,716.59"
+    stroke="#97CCC8"
+    stroke-width="60"
+    stroke-linecap="round"
+  />
+  <!-- Segment 4 — pale blue (left, 133° → 227°) -->
+  <path
+    d="M 307.41,731.41 A 300,300 0 0 1 307.41,292.59"
+    stroke="#BDCADA"
+    stroke-width="60"
+    stroke-linecap="round"
+  />
+</svg>

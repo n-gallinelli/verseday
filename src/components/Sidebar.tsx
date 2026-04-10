@@ -65,22 +65,45 @@ function DailyShutdownIcon() {
   return (
     <svg width={iconSize} height={iconSize} viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="7.5" cy="7.5" r="5.5" />
-      <path d="M7.5 4v4" />
-      <circle cx="7.5" cy="3" r="0.5" fill="currentColor" stroke="none" />
+      {/* Hour hand pointing to 4 (~120°) */}
+      <line x1="7.5" y1="7.5" x2="9.2" y2="10" />
+      {/* Minute hand pointing to 6 (180°) */}
+      <line x1="7.5" y1="7.5" x2="7.5" y2="11" />
+    </svg>
+  );
+}
+
+function FocusIcon() {
+  return (
+    <svg width={iconSize} height={iconSize} viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="7.5" cy="7.5" r="5.5" />
+      <circle cx="7.5" cy="7.5" r="2.5" />
+      <circle cx="7.5" cy="7.5" r="0.5" fill="currentColor" stroke="none" />
     </svg>
   );
 }
 
 const planningItems: NavItem[] = [
+  { page: "focus_landing", label: "Focus", icon: <FocusIcon /> },
   { page: "daily", label: "Daily Plan", icon: <DailyPlanIcon /> },
   { page: "daily_shutdown", label: "Daily Shutdown", icon: <DailyShutdownIcon /> },
   { page: "weekly", label: "Weekly Plan", icon: <WeeklyPlanIcon /> },
   { page: "shutdown", label: "Weekly Shutdown", icon: <ShutdownIcon /> },
 ];
 
+function SettingsIcon() {
+  return (
+    <svg width={iconSize} height={iconSize} viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="7.5" cy="7.5" r="2.5" />
+      <path d="M7.5 1.5v1.5M7.5 12v1.5M1.5 7.5H3M12 7.5h1.5M3.25 3.25l1.06 1.06M10.69 10.69l1.06 1.06M3.25 11.75l1.06-1.06M10.69 4.31l1.06-1.06" />
+    </svg>
+  );
+}
+
 const manageItems: NavItem[] = [
   { page: "projects", label: "Projects", icon: <ProjectsIcon /> },
   { page: "dashboard", label: "Dashboard", icon: <DashboardIcon /> },
+  { page: "settings", label: "Settings", icon: <SettingsIcon /> },
 ];
 
 function NavSection({
@@ -96,7 +119,7 @@ function NavSection({
 }) {
   return (
     <div>
-      <div className="px-4 pt-4 pb-1.5 text-[10px] text-black/30 uppercase tracking-widest">
+      <div className="px-4 pt-4 pb-1.5 uppercase text-black/30 [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
         {label}
       </div>
       {items.map(({ page, label: itemLabel, icon }) => {
@@ -105,11 +128,11 @@ function NavSection({
           <button
             key={page}
             onClick={() => onSelect(page)}
-            className={`w-full flex items-center gap-2.5 px-4 py-2 text-[13px] cursor-pointer transition-colors ${
+            className={`w-full flex items-center gap-2.5 px-4 py-2 cursor-pointer transition-colors ${
               isActive
                 ? "bg-[#7B9ED9]/10 text-[#7B9ED9] border-r-2 border-[#7B9ED9]"
                 : "text-black/40 hover:bg-black/[0.04] hover:text-black/60"
-            }`}
+            } [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)]`}
           >
             {icon}
             {itemLabel}
@@ -122,6 +145,7 @@ function NavSection({
 
 const SHORTCUTS = [
   { keys: "F", desc: "Start focus on next task" },
+  { keys: "⌘ 0", desc: "Focus" },
   { keys: "⌘ 1", desc: "Daily Plan" },
   { keys: "⌘ 2", desc: "Daily Shutdown" },
   { keys: "⌘ 3", desc: "Weekly Plan" },
@@ -133,18 +157,96 @@ const SHORTCUTS = [
   { keys: "Esc", desc: "Close / blur" },
 ];
 
+function VerseDayLogo() {
+  return (
+    <svg width="32" height="32" viewBox="0 0 20 20" fill="none">
+      <defs>
+        {/* Pastel sunrise sky gradient */}
+        <linearGradient id="verseday-sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#E8D4F0" />
+          <stop offset="35%" stopColor="#F8D0DC" />
+          <stop offset="70%" stopColor="#FBC9A4" />
+          <stop offset="100%" stopColor="#FCE5A8" />
+        </linearGradient>
+        {/* Pastel ocean gradient */}
+        <linearGradient id="verseday-ocean" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#A8CFE5" />
+          <stop offset="100%" stopColor="#CFE5F0" />
+        </linearGradient>
+        {/* Soft glow around the sun */}
+        <radialGradient id="verseday-sunglow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#FFE0B0" stopOpacity={0.85} />
+          <stop offset="60%" stopColor="#FFD194" stopOpacity={0.35} />
+          <stop offset="100%" stopColor="#FFD194" stopOpacity={0} />
+        </radialGradient>
+        {/* Clip everything to the inside of the segmented ring */}
+        <clipPath id="verseday-clip">
+          <circle cx="10" cy="10" r="5.8" />
+        </clipPath>
+      </defs>
+
+      {/* Sunrise scene clipped inside the segmented ring */}
+      <g clipPath="url(#verseday-clip)">
+        {/* Sky (above horizon at y=11.7) */}
+        <rect x="4" y="4" width="12" height="7.7" fill="url(#verseday-sky)" />
+        {/* Sun glow halo */}
+        <circle cx="10" cy="11.05" r="3.9" fill="url(#verseday-sunglow)" />
+        {/* Sun disc */}
+        <circle cx="10" cy="11.05" r="1.1" fill="#FFD9A0" />
+        {/* Ocean (covers bottom portion + lower part of sun) */}
+        <rect x="4" y="11.7" width="12" height="4.3" fill="url(#verseday-ocean)" />
+        {/* Subtle horizon highlight */}
+        <rect x="4" y="11.66" width="12" height="0.06" fill="#FFFFFF" fillOpacity={0.45} />
+      </g>
+
+      {/* Four 94° segments overlapping by 4° at each junction; later segments are drawn */}
+      {/* on top so each one's round start cap extends back into the previous segment, */}
+      {/* creating the "fits together" interlock. Opaque pastels prevent overlap blending. */}
+      {/* Segment 1 — accent blue (top, -137° → -43°) */}
+      <path
+        d="M 4.15,4.54 A 8,8 0 0 1 15.85,4.54"
+        stroke="#7F9BC2"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      {/* Segment 2 — soft peach (right, -47° → 47°) */}
+      <path
+        d="M 15.46,4.15 A 8,8 0 0 1 15.46,15.85"
+        stroke="#E9B18E"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      {/* Segment 3 — soft teal (bottom, 43° → 137°) */}
+      <path
+        d="M 15.85,15.46 A 8,8 0 0 1 4.15,15.46"
+        stroke="#97CCC8"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      {/* Segment 4 — pale blue (left, 133° → 227°) */}
+      <path
+        d="M 4.54,15.85 A 8,8 0 0 1 4.54,4.15"
+        stroke="#BDCADA"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export default function Sidebar() {
   const { currentPage, setPage } = useAppStore();
   const [showShortcuts, setShowShortcuts] = useState(false);
 
   // project_detail highlights the Projects nav item
   const activePage =
-    currentPage === "project_detail" ? "projects" : currentPage === "focus" ? "daily" : currentPage;
+    currentPage === "project_detail" ? "projects" : currentPage === "focus" ? "focus_landing" : currentPage as Page;
 
   return (
     <aside className="w-[200px] shrink-0 h-screen bg-[#efede8] border-r border-black/[0.06] flex flex-col pt-4">
-      <div className="px-4 pb-5 text-[15px] font-medium text-[#7B9ED9] tracking-tight">
-        VerseDay
+      <div className="px-4 pb-5 flex items-center gap-3 text-black/30">
+        <VerseDayLogo />
+        <span className="text-[20px] font-semibold text-[#7B9ED9] tracking-tight">VerseDay</span>
       </div>
       <nav className="flex-1">
         <NavSection label="Planning" items={planningItems} activePage={activePage} onSelect={setPage} />
@@ -166,10 +268,10 @@ export default function Sidebar() {
           </svg>
           Shortcuts
           <span
-            className="ml-auto text-[9px] transition-transform duration-150"
-            style={{ transform: showShortcuts ? "rotate(180deg)" : "rotate(0deg)" }}
+            className="ml-auto text-[18px] leading-none transition-transform duration-150"
+            style={{ transform: showShortcuts ? "rotate(90deg)" : "rotate(0deg)" }}
           >
-            ▾
+            ▸
           </span>
         </button>
         {showShortcuts && (

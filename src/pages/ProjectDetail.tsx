@@ -33,14 +33,14 @@ import {
 import ErrorBanner from "../components/ErrorBanner";
 import CheckIcon from "../components/CheckIcon";
 import TaskDetailOverlay from "../components/TaskDetailOverlay";
+import CalendarPicker from "../components/CalendarPicker";
 import { parseTimeFromTitle } from "../utils/format";
+import RichTextEditor from "../components/RichTextEditor";
 import type { Project, Task } from "../types";
 
 const MAX_TITLE_LENGTH = 200;
 const MAX_ESTIMATE_MINUTES = 480;
 const MAX_NOTES_LENGTH = 5000;
-const MAX_DESCRIPTION_LENGTH = 1000;
-
 
 // ─── Sortable task row ──────────────────────────────────────────────────────
 
@@ -66,7 +66,6 @@ function SortableTaskRow({
     opacity: isDragging ? 0.4 : 1,
   };
 
-  const isHighPriority = task.priority === "high" || task.priority === "urgent";
   const dateLabel = task.date_scheduled
     ? new Date(task.date_scheduled + "T00:00:00").toLocaleDateString("en-US", {
         month: "short",
@@ -94,7 +93,7 @@ function SortableTaskRow({
         onClick={() => onToggle(task)}
         className={`w-[14px] h-[14px] rounded-[4px] border flex-shrink-0 cursor-pointer flex items-center justify-center ${
           task.status === "done"
-            ? "bg-[#e0873e] border-[#e0873e]"
+            ? "bg-[#6A9E7F] border-[#6A9E7F]"
             : "border-black/[0.18]"
         }`}
       >
@@ -125,13 +124,6 @@ function SortableTaskRow({
               <span>{task.estimated_minutes}m</span>
             </>
           )}
-          {isHighPriority && (
-            <>
-              <span>·</span>
-              <span className="w-1.5 h-1.5 rounded-full inline-block bg-[#d95f5f]" />
-              <span>High</span>
-            </>
-          )}
         </div>
       </div>
 
@@ -140,7 +132,7 @@ function SortableTaskRow({
         {task.status !== "done" && (
           <button
             onClick={() => onStart(task)}
-            className="text-[11px] text-[#e0873e] border border-[#e0873e]/20 bg-[#e0873e]/[0.06] px-1.5 py-0.5 rounded-[5px] cursor-pointer hover:bg-[#e0873e]/[0.12]"
+            className="text-[11px] text-[#6B84A3] border border-[#6B84A3]/20 bg-[#6B84A3]/[0.06] px-1.5 py-0.5 rounded-[5px] cursor-pointer hover:bg-[#6B84A3]/[0.12]"
           >
             Start
           </button>
@@ -157,120 +149,15 @@ function SortableTaskRow({
 }
 
 // ─── Project switcher panel ─────────────────────────────────────────────────
-
-function ProjectSwitcher({
-  activeProjectId,
-  onSelectProject,
-  onError,
-}: {
-  activeProjectId: number | null;
-  onSelectProject: (id: number) => void;
-  onError: (msg: string) => void;
-}) {
-  const [allProjects, setAllProjects] = useState<Project[]>([]);
-  const activeRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const p = await getProjects(true);
-        setAllProjects(p);
-      } catch (e) {
-        onError(e instanceof Error ? e.message : "Failed to load projects");
-      }
-    })();
-  }, [activeProjectId]);
-
-  useEffect(() => {
-    if (activeRef.current) {
-      activeRef.current.scrollIntoView({ block: "nearest" });
-    }
-  }, [activeProjectId, allProjects]);
-
-  const active = allProjects.filter((p) => !p.archived);
-  const archived = allProjects.filter((p) => p.archived);
-
-  return (
-    <div className="w-[168px] flex-shrink-0 flex flex-col overflow-hidden bg-[#f5f4f0]">
-      {/* Header */}
-      <div className="flex items-center justify-between px-[14px] pt-4 pb-2.5 flex-shrink-0">
-        <span className="text-[10px] uppercase tracking-widest text-black/30">
-          Projects
-        </span>
-      </div>
-
-      {/* List */}
-      <div className="flex-1 overflow-y-auto px-2 pb-3">
-        {active.map((p) => {
-          const isActive = p.id === activeProjectId;
-          return (
-            <button
-              key={p.id}
-              ref={isActive ? activeRef : null}
-              onClick={() => onSelectProject(p.id)}
-              className={`w-full flex items-center gap-2 px-2 py-[7px] rounded-[7px] cursor-pointer mb-[1px] text-left ${
-                isActive
-                  ? "bg-white border border-black/[0.08]"
-                  : "hover:bg-black/[0.04] border border-transparent"
-              }`}
-            >
-              <div
-                className="w-2 h-2 rounded-full flex-shrink-0"
-                style={{ background: p.color }}
-              />
-              <span
-                className={`text-[13px] truncate ${
-                  isActive
-                    ? "text-[#2c2a35] font-medium"
-                    : "text-black/50"
-                }`}
-              >
-                {p.name}
-              </span>
-            </button>
-          );
-        })}
-
-        {/* Archived section */}
-        {archived.length > 0 && (
-          <>
-            <div className="h-px bg-black/[0.07] mx-2 my-2" />
-            {archived.map((p) => {
-              const isActive = p.id === activeProjectId;
-              return (
-                <button
-                  key={p.id}
-                  ref={isActive ? activeRef : null}
-                  onClick={() => onSelectProject(p.id)}
-                  className={`w-full flex items-center gap-2 px-2 py-[7px] rounded-[7px] cursor-pointer mb-[1px] text-left ${
-                    isActive
-                      ? "bg-white border border-black/[0.08]"
-                      : "hover:bg-black/[0.04] border border-transparent"
-                  }`}
-                >
-                  <div className="w-2 h-2 rounded-full bg-black/20 flex-shrink-0" />
-                  <span className="text-[13px] text-black/30 italic truncate">
-                    {p.name}
-                  </span>
-                </button>
-              );
-            })}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export default function ProjectDetail() {
-  const { selectedProjectId, openProject, startFocus } = useAppStore();
+  const { selectedProjectId, openProject, startFocus, goBack } = useAppStore();
   const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [showDone, setShowDone] = useState(false);
+  const [showDone, setShowDone] = useState(true);
 
   // Inline project fields (auto-saved)
   const [editName, setEditName] = useState("");
@@ -305,14 +192,28 @@ export default function ProjectDetail() {
     timeoutId: ReturnType<typeof setTimeout>;
   } | null>(null);
 
-  // Notes editing
-  const [notesEditing, setNotesEditing] = useState(false);
-  const notesTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
+  // Refresh task list only — safe to call during edits
+  const refreshTasks = useCallback(async () => {
+    if (!selectedProjectId) return;
+    try {
+      const [t, allP] = await Promise.all([
+        getTasksForProject(selectedProjectId, showDone),
+        getProjects(),
+      ]);
+      setTasks(t);
+      setProjects(allP.filter((pr) => !pr.archived));
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load tasks");
+    }
+  }, [selectedProjectId, showDone]);
+
+  // Full load — resets edit fields (only on mount / project switch)
   const loadData = useCallback(async () => {
     if (!selectedProjectId) return;
     try {
@@ -324,14 +225,18 @@ export default function ProjectDetail() {
       setProject(p);
       setTasks(t);
       setProjects(allP.filter((pr) => !pr.archived));
-      // Populate inline fields
       if (p) {
         setEditName(p.name);
         setEditColor(p.color);
         setEditDescription(p.description ?? "");
         setEditStartDate(p.start_date ?? "");
         setEditTargetDate(p.target_date ?? "");
-        setEditNotes(p.notes ?? "");
+        const mergedNotes = p.notes
+          ? p.notes
+          : p.description
+            ? p.description
+            : "";
+        setEditNotes(mergedNotes);
       }
       setError(null);
     } catch (e) {
@@ -387,6 +292,31 @@ export default function ProjectDetail() {
       if (projectSaveRef.current) clearTimeout(projectSaveRef.current);
     };
   }, []);
+
+  // Flush pending saves immediately (for modal close)
+  function flushProjectSave() {
+    if (projectSaveRef.current && project) {
+      clearTimeout(projectSaveRef.current);
+      projectSaveRef.current = null;
+      const trimmedName = editName.trim();
+      if (trimmedName) {
+        updateProject({
+          id: project.id,
+          name: trimmedName,
+          color: editColor,
+          description: editDescription.trim() || null,
+          startDate: editStartDate || null,
+          targetDate: editTargetDate || null,
+          notes: editNotes.trim() || null,
+        }).catch(() => {});
+      }
+    }
+  }
+
+  function handleClose() {
+    flushProjectSave();
+    goBack();
+  }
 
   function updateField(
     field: "name" | "color" | "description" | "startDate" | "targetDate" | "notes",
@@ -469,7 +399,7 @@ export default function ProjectDetail() {
       setNewTaskHighPriority(false);
       setNewTaskDate("");
       setError(null);
-      loadData();
+      refreshTasks();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to add task");
     }
@@ -478,7 +408,7 @@ export default function ProjectDetail() {
   async function toggleTask(task: Task) {
     try {
       await updateTaskStatus(task.id, task.status === "done" ? "todo" : "done");
-      loadData();
+      refreshTasks();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update task");
     }
@@ -543,7 +473,7 @@ export default function ProjectDetail() {
       });
       setEditingTaskId(null);
       setError(null);
-      loadData();
+      refreshTasks();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update task");
     }
@@ -581,7 +511,7 @@ export default function ProjectDetail() {
     clearTimeout(pendingDelete.timeoutId);
     setPendingDelete(null);
     // Re-insert the task by reloading
-    loadData();
+    refreshTasks();
   }
 
   async function handleDragEnd(event: DragEndEvent) {
@@ -598,7 +528,7 @@ export default function ProjectDetail() {
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to reorder");
-      loadData();
+      refreshTasks();
     }
   }
 
@@ -624,19 +554,12 @@ export default function ProjectDetail() {
         <div className="flex-1 flex items-center justify-center text-black/30 text-[14px]">
           Loading...
         </div>
-        <ProjectSwitcher
-          activeProjectId={selectedProjectId}
-          onSelectProject={openProject}
-          onError={setError}
-        />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-1 overflow-hidden">
-      {/* ── Project content panel ──────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col overflow-hidden border-r border-black/[0.07]">
+    <div className="flex flex-1 overflow-hidden flex-col h-full">
         <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
         {/* Undo delete banner */}
@@ -655,13 +578,13 @@ export default function ProjectDetail() {
         )}
 
         {/* Project header — always inline editable */}
-        <div className="px-[22px] py-4 border-b border-black/[0.07] flex-shrink-0 space-y-3">
+        <div className="px-[22px] pt-5 flex-shrink-0">
           {/* Title row + color + archive */}
           <div className="flex items-center gap-2.5">
             {/* Color picker */}
             <div className="relative group">
               <div
-                className="w-[9px] h-[9px] rounded-full flex-shrink-0 cursor-pointer"
+                className="w-[12px] h-[12px] rounded-full flex-shrink-0 cursor-pointer ring-2 ring-transparent hover:ring-black/10 transition-all"
                 style={{ backgroundColor: editColor }}
               />
               <div className="absolute top-full left-0 mt-1 z-20 bg-white border border-black/[0.1] rounded-lg shadow-lg p-2 hidden group-hover:flex gap-1.5 flex-wrap w-[120px]">
@@ -679,13 +602,19 @@ export default function ProjectDetail() {
               </div>
             </div>
 
-            {/* Editable name */}
-            <input
-              type="text"
+            {/* Editable name — wraps up to 2 lines */}
+            <textarea
               value={editName}
-              onChange={(e) => updateField("name", e.target.value)}
+              onChange={(e) => updateField("name", e.target.value.replace(/\n/g, ""))}
               maxLength={MAX_TITLE_LENGTH}
-              className="flex-1 text-[19px] font-medium text-[#2c2a35] bg-transparent border-none outline-none focus:bg-white focus:border focus:border-[#e0873e]/20 focus:rounded-md focus:px-2 focus:-mx-2"
+              rows={1}
+              className="flex-1 text-[16px] font-medium text-[#2c2a35] bg-transparent border-none outline-none resize-none leading-snug overflow-hidden focus:bg-white focus:border focus:border-[#7B9ED9]/30 focus:rounded-md focus:px-2 focus:-mx-2"
+              style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" } as React.CSSProperties}
+              onInput={(e) => {
+                const el = e.currentTarget;
+                el.style.height = "auto";
+                el.style.height = Math.min(el.scrollHeight, 48) + "px";
+              }}
             />
 
             {/* Complete button */}
@@ -693,124 +622,63 @@ export default function ProjectDetail() {
               onClick={handleCompleteToggle}
               className={`text-[12px] cursor-pointer px-2.5 py-1 rounded-md border ${
                 project.completed
-                  ? "bg-[#3a9e6e]/10 border-[#3a9e6e]/25 text-[#3a9e6e]"
-                  : "border-black/[0.1] bg-white text-black/30 hover:bg-black/[0.03]"
+                  ? "bg-[#6A9E7F] border-[#6A9E7F] text-white"
+                  : "bg-[#6B84A3] border-[#6B84A3] text-white hover:bg-[#5A7390]"
               }`}
             >
               {project.completed ? "✓ Completed" : "Mark Complete"}
             </button>
+            <button
+              onClick={handleClose}
+              className="text-black/25 hover:text-black/50 cursor-pointer text-[16px] flex-shrink-0 ml-1"
+              title="Close"
+            >
+              ✕
+            </button>
           </div>
 
-
-          {/* Description — compact */}
-          <div className="bg-white border border-black/[0.08] rounded-lg px-3 py-2">
-            <label className="text-[9px] uppercase tracking-widest text-black/25 mb-0.5 block">Description</label>
-            <textarea
-              value={editDescription}
-              onChange={(e) => updateField("description", e.target.value)}
-              maxLength={MAX_DESCRIPTION_LENGTH}
-              placeholder="Brief description..."
-              rows={1}
-              className="w-full bg-transparent border-none rounded-md px-0 py-0 text-[11px] text-black/45 placeholder-black/20 resize-none focus:outline-none"
-            />
-          </div>
 
           {/* Date range — Start → Due */}
-          <div className="bg-white border border-black/[0.08] rounded-lg p-3">
-            <label className="text-[10px] uppercase tracking-widest text-black/30 mb-1.5 block">Dates</label>
+          <div className="border-b border-black/[0.06] pt-5 pb-5">
+            <label className="uppercase text-black/30 mb-2 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">Dates</label>
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-black/30">Start</span>
-                <input
-                  type="date"
+                <span className="text-[12px] text-black/35">Start</span>
+                <CalendarPicker
                   value={editStartDate}
-                  onChange={(e) => updateField("startDate", e.target.value)}
-                  className="bg-black/[0.03] border border-black/[0.06] rounded-md px-2 py-1 text-[11px] text-black/45 focus:outline-none focus:border-[#e0873e]/30 cursor-pointer"
+                  onChange={(date) => updateField("startDate", date)}
+                  onClear={() => updateField("startDate", "")}
+                  placeholder="No start"
                 />
               </div>
               <span className="text-[11px] text-black/20">&rarr;</span>
               <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-black/30">Due</span>
-                <input
-                  type="date"
+                <span className="text-[12px] text-black/35">Due</span>
+                <CalendarPicker
                   value={editTargetDate}
-                  onChange={(e) => updateField("targetDate", e.target.value)}
-                  className="bg-black/[0.03] border border-black/[0.06] rounded-md px-2 py-1 text-[11px] text-black/45 focus:outline-none focus:border-[#e0873e]/30 cursor-pointer"
+                  onChange={(date) => updateField("targetDate", date)}
+                  onClear={() => updateField("targetDate", "")}
+                  placeholder="No due"
                 />
               </div>
-              {(editStartDate || editTargetDate) && (
-                <span className="text-[11px] text-black/35 ml-1">
-                  {editStartDate
-                    ? new Date(editStartDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
-                    : "?"}
-                  {" \u2192 "}
-                  {editTargetDate
-                    ? new Date(editTargetDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
-                    : "?"}
-                </span>
-              )}
             </div>
           </div>
 
-          {/* Notes — prominent section */}
-          <div className="bg-white border border-black/[0.08] rounded-lg p-4">
-            <label className="text-[10px] uppercase tracking-widest text-black/30 mb-1.5 block">Notes</label>
-            {notesEditing ? (
-              <textarea
-                ref={notesTextareaRef}
-                value={editNotes}
-                onChange={(e) => updateField("notes", e.target.value)}
-                onBlur={() => setNotesEditing(false)}
-                maxLength={MAX_NOTES_LENGTH}
-                placeholder="Add notes, links, references..."
-                rows={5}
-                className="w-full bg-transparent border-none rounded-md px-0 py-0.5 text-[13px] text-black/55 placeholder-black/20 resize-none focus:outline-none leading-relaxed"
-              />
-            ) : (
-              <div
-                onClick={() => {
-                  setNotesEditing(true);
-                  requestAnimationFrame(() => notesTextareaRef.current?.focus());
-                }}
-                className="w-full min-h-[72px] bg-transparent rounded-md px-0 py-0.5 text-[13px] text-black/55 cursor-text whitespace-pre-wrap break-words leading-relaxed"
-              >
-                {editNotes ? (
-                  editNotes.split(/(https?:\/\/[^\s]+)/g).map((segment, i) =>
-                    /^https?:\/\//.test(segment) ? (
-                      <a
-                        key={i}
-                        href={segment}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-[#e0873e] hover:underline"
-                        title={segment}
-                      >
-                        {(() => {
-                          try {
-                            const host = new URL(segment).hostname.replace(/^www\./, "");
-                            return host.length > 20 ? host.slice(0, 18) + "..." : host;
-                          } catch {
-                            return "link";
-                          }
-                        })()}
-                      </a>
-                    ) : (
-                      <span key={i}>{segment}</span>
-                    )
-                  )
-                ) : (
-                  <span className="text-black/20">Add notes...</span>
-                )}
-              </div>
-            )}
+          {/* Notes — rich text editor (placeholder doubles as label) */}
+          <div className="pt-5 pb-6 border-b border-black/[0.06]">
+            <RichTextEditor
+              value={editNotes}
+              onChange={(html) => updateField("notes", html)}
+              placeholder="Notes"
+              className="text-[13px] text-black/55 leading-relaxed"
+            />
           </div>
         </div>
 
         {/* Task input row */}
         <form
           onSubmit={handleAddTask}
-          className="flex items-center gap-2 px-[22px] py-[9px] border-b border-black/[0.06] flex-shrink-0 bg-white"
+          className="flex items-center gap-2 mx-[22px] my-3 px-3 py-[10px] border border-black/[0.06] rounded-lg bg-transparent flex-shrink-0"
         >
           <svg
             width="14"
@@ -830,66 +698,32 @@ export default function ProjectDetail() {
             onChange={(e) => setNewTaskTitle(e.target.value)}
             maxLength={MAX_TITLE_LENGTH}
             placeholder="Add a task to this project..."
-            className="flex-1 bg-transparent border-none outline-none text-[13px] text-[#2c2a35] placeholder-black/25 font-sans"
+            className="flex-1 bg-transparent border-none outline-none text-[13px] text-[#2c2a35] placeholder-black/25"
           />
-          {/* Date pill */}
-          <label className="flex items-center gap-1.5 bg-black/[0.04] border border-black/[0.08] rounded-md px-2 py-1 text-[11px] text-black/40 cursor-pointer">
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 10 10"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.2"
-              strokeLinecap="round"
-            >
-              <rect x="1" y="2" width="8" height="7" rx="1" />
-              <line x1="3" y1="1" x2="3" y2="3" />
-              <line x1="7" y1="1" x2="7" y2="3" />
-            </svg>
-            <span>{newTaskDate ? new Date(newTaskDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "No date"}</span>
-            <input
-              type="date"
-              value={newTaskDate}
-              onChange={(e) => setNewTaskDate(e.target.value)}
-              className="sr-only"
-            />
-          </label>
-          {/* Priority toggle */}
-          <button
-            type="button"
-            onClick={() => setNewTaskHighPriority(!newTaskHighPriority)}
-            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] cursor-pointer transition-colors ${
-              newTaskHighPriority
-                ? "bg-[#d95f5f]/10 border border-[#d95f5f]/25 text-[#d95f5f]"
-                : "bg-black/[0.04] border border-black/[0.08] text-black/40 hover:bg-black/[0.07]"
-            }`}
-          >
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                newTaskHighPriority ? "bg-[#d95f5f]" : "bg-black/20"
-              }`}
-            />
-            High
-          </button>
+          {/* Date picker */}
+          <CalendarPicker
+            value={newTaskDate}
+            onChange={(date) => setNewTaskDate(date)}
+            onClear={() => setNewTaskDate("")}
+          />
           <button
             type="submit"
-            className="bg-[#e0873e] text-white border-none rounded-lg px-3.5 py-1.5 text-[12px] font-medium cursor-pointer hover:bg-[#cc7633]"
+            className="bg-[#6B84A3] text-white border-none rounded-lg px-3.5 py-1.5 text-[12px] font-medium cursor-pointer hover:bg-[#5A7390]"
           >
             Add
           </button>
         </form>
 
         {/* Task list header */}
-        <div className="flex items-center justify-between px-[22px] py-[9px] flex-shrink-0">
-          <span className="text-[10px] uppercase tracking-widest text-black/30">
+        <div className="flex items-center justify-between px-[22px] py-3 flex-shrink-0">
+          <span className="uppercase text-black/30 [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
             Tasks
           </span>
           <button
             onClick={() => setShowDone(!showDone)}
             className={`flex items-center gap-1.5 text-[11px] cursor-pointer px-2 py-1 rounded-full border bg-white hover:bg-black/[0.03] ${
               showDone
-                ? "text-[#e0873e] border-[#e0873e]/20"
+                ? "text-[#6B84A3] border-[#6B84A3]/20"
                 : "text-black/35 border-black/[0.08]"
             }`}
           >
@@ -897,8 +731,8 @@ export default function ProjectDetail() {
           </button>
         </div>
 
-        {/* Task list */}
-        <div className="flex-1 overflow-y-auto px-[22px] pb-4">
+        {/* Task list — scrollable region */}
+        <div className="overflow-y-auto px-[22px] pb-4" style={{ maxHeight: "30vh" }}>
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
@@ -928,7 +762,7 @@ export default function ProjectDetail() {
                             onChange={(e) => setTaskEditTitle(e.target.value)}
                             maxLength={MAX_TITLE_LENGTH}
                             autoFocus
-                            className="flex-1 px-2.5 py-1.5 rounded-md bg-black/[0.03] border border-black/[0.08] text-[13px] text-[#2c2a35] focus:outline-none focus:border-[#e0873e]/40"
+                            className="flex-1 px-2.5 py-1.5 rounded-md bg-black/[0.03] border border-black/[0.08] text-[13px] text-[#2c2a35] focus:outline-none focus:border-[#7B9ED9]/30"
                           />
                           <input
                             type="number"
@@ -939,7 +773,7 @@ export default function ProjectDetail() {
                             min={1}
                             max={MAX_ESTIMATE_MINUTES}
                             placeholder="min"
-                            className="w-20 px-2.5 py-1.5 rounded-md bg-black/[0.03] border border-black/[0.08] text-[13px] text-[#2c2a35] placeholder-black/25 focus:outline-none focus:border-[#e0873e]/40"
+                            className="w-20 px-2.5 py-1.5 rounded-md bg-black/[0.03] border border-black/[0.08] text-[13px] text-[#2c2a35] placeholder-black/25 focus:outline-none focus:border-[#7B9ED9]/30"
                           />
                         </div>
                         <div className="flex gap-2">
@@ -947,30 +781,8 @@ export default function ProjectDetail() {
                             type="date"
                             value={taskEditDate}
                             onChange={(e) => setTaskEditDate(e.target.value)}
-                            className="px-2.5 py-1.5 rounded-md bg-black/[0.03] border border-black/[0.08] text-[12px] text-black/50 focus:outline-none focus:border-[#e0873e]/40"
+                            className="px-2.5 py-1.5 rounded-md bg-black/[0.03] border border-black/[0.08] text-[12px] text-black/50 focus:outline-none focus:border-[#7B9ED9]/30"
                           />
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setTaskEditPriority(
-                                taskEditPriority === "high" ? "medium" : "high"
-                              )
-                            }
-                            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] cursor-pointer border ${
-                              taskEditPriority === "high"
-                                ? "bg-[#d95f5f]/10 border-[#d95f5f]/25 text-[#d95f5f]"
-                                : "bg-transparent border-black/[0.08] text-black/45"
-                            }`}
-                          >
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                taskEditPriority === "high"
-                                  ? "bg-[#d95f5f]"
-                                  : "bg-black/20"
-                              }`}
-                            />
-                            High
-                          </button>
                         </div>
                         <textarea
                           value={taskEditNotes}
@@ -978,12 +790,12 @@ export default function ProjectDetail() {
                           maxLength={MAX_NOTES_LENGTH}
                           placeholder="Notes..."
                           rows={3}
-                          className="w-full px-2.5 py-2 rounded-md bg-black/[0.03] border border-black/[0.08] text-[12px] text-black/55 placeholder-black/25 focus:outline-none focus:border-[#e0873e]/40 resize-none"
+                          className="w-full px-2.5 py-2 rounded-md bg-black/[0.03] border border-black/[0.08] text-[12px] text-black/55 placeholder-black/25 focus:outline-none focus:border-[#7B9ED9]/30 resize-none"
                         />
                         <div className="flex gap-2">
                           <button
                             onClick={saveTaskEdit}
-                            className="bg-[#e0873e] text-white rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-[#cc7633]"
+                            className="bg-[#6B84A3] text-white rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-[#5A7390]"
                           >
                             Save
                           </button>
@@ -1013,7 +825,7 @@ export default function ProjectDetail() {
                         </span>
                         <button
                           onClick={() => handleDeleteTask(task.id)}
-                          className="bg-[#d95f5f] text-white rounded-md px-3 py-1 text-[11px] cursor-pointer"
+                          className="bg-[#C0614A] text-white rounded-md px-3 py-1 text-[11px] cursor-pointer"
                         >
                           Delete
                         </button>
@@ -1042,22 +854,15 @@ export default function ProjectDetail() {
             </SortableContext>
           </DndContext>
         </div>
-      </div>
-
-      {/* ── Project switcher panel ────────────────────────────────────── */}
-      <ProjectSwitcher
-        activeProjectId={selectedProjectId}
-        onSelectProject={openProject}
-        onError={setError}
-      />
 
       {/* Task detail overlay */}
       {detailTask && (
         <TaskDetailOverlay
+          key={detailTask.id}
           task={detailTask}
           projects={projects}
-          onClose={() => { setDetailTask(null); loadData(); }}
-          onSave={(updates) => updateTask(updates).then(() => loadData()).catch(() => {})}
+          onClose={() => { setDetailTask(null); refreshTasks(); }}
+          onSave={(updates) => updateTask(updates).then(() => refreshTasks()).catch(() => {})}
           onToggle={(t) => { toggleTask(t); setDetailTask(null); }}
           onDelete={(id) => { handleDeleteTask(id); setDetailTask(null); }}
           onStartFocus={(t) => { handleStartFocus(t); setDetailTask(null); }}

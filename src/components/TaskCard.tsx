@@ -8,6 +8,8 @@ import {
   deleteLink,
   isSafeUrl,
 } from "../db/queries";
+import { notesToSegments } from "../utils/linkify";
+import RichTextEditor from "./RichTextEditor";
 import type { Task, Project, Link } from "../types";
 
 interface TaskCardProps {
@@ -111,8 +113,8 @@ export default function TaskCard({
     }
   }, [expandedNotes, task.id]);
 
-  async function saveNotes() {
-    const trimmed = notes.trim() || null;
+  async function saveNotes(valueToSave: string = notes) {
+    const trimmed = valueToSave.trim() || null;
     if (trimmed === task.notes) return;
     try {
       await updateTaskNotes(task.id, trimmed);
@@ -167,24 +169,22 @@ export default function TaskCard({
         {/* Checkbox */}
         <button
           onClick={() => onToggle(task)}
-          className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 cursor-pointer ${
+          className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
             task.status === "done"
-              ? "bg-[#4a9e6e] border-[#4a9e6e]"
-              : "border-black/20"
+              ? "bg-[#6A9E7F] border-[#6A9E7F]"
+              : "border-black/15 hover:border-black/30"
           }`}
         >
-          {task.status === "done" && (
-            <span className="text-white text-xs">✓</span>
+          {task.status === "done" ? (
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 8.5l3.5 3.5 6.5-7" />
+            </svg>
+          ) : (
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="rgba(0,0,0,0.15)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 8.5l3.5 3.5 6.5-7" />
+            </svg>
           )}
         </button>
-
-        {/* High priority dot — only shown for high/urgent */}
-        {isHigh && (
-          <div
-            className="w-2 h-2 rounded-full bg-[#d95f5f] shrink-0"
-            title="High priority"
-          />
-        )}
 
         {/* Project color dot */}
         {showProject && project && (
@@ -197,7 +197,7 @@ export default function TaskCard({
 
         {/* Title — clickable to open detail overlay */}
         <span
-          className={`flex-1 text-[#2c2a35] ${task.status === "done" ? "line-through !text-black/30" : ""} ${onOpenDetail ? "cursor-pointer hover:text-[#7B9ED9] transition-colors" : ""}`}
+          className={`flex-1 text-[#2c2a35] [font-size:var(--font-size-primary)] [font-weight:var(--font-weight-primary)] ${task.status === "done" ? "line-through !text-black/30" : ""} ${onOpenDetail ? "cursor-pointer hover:text-[#7B9ED9] transition-colors" : ""}`}
           onClick={() => onOpenDetail?.(task)}
         >
           {task.title}
@@ -205,7 +205,7 @@ export default function TaskCard({
 
         {/* Meta */}
         {showProject && project && (
-          <span className="text-xs text-black/35">{project.name}</span>
+          <span className="text-black/35 [font-size:var(--font-size-meta)] [font-weight:var(--font-weight-meta)] [opacity:var(--opacity-meta)]">{project.name}</span>
         )}
         {/* Time: worked / estimated — always show both */}
         {(() => {
@@ -250,12 +250,14 @@ export default function TaskCard({
       {expandedNotes && (
         <div className="mt-2 space-y-2">
           {/* Editable notes */}
-          <textarea
+          <RichTextEditor
             value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            onBlur={saveNotes}
+            onChange={(html) => {
+              setNotes(html);
+              saveNotes(html);
+            }}
             placeholder="Add notes..."
-            className="w-full p-2.5 rounded-md bg-[#f5f4f0] border border-black/[0.06] text-[12px] text-black/55 placeholder-black/20 resize-none min-h-[60px] leading-relaxed outline-none focus:border-[#7B9ED9]/30"
+            className="w-full p-2.5 rounded-md bg-[#f5f4f0] border border-black/[0.06] text-[12px] text-black/55 min-h-[60px] leading-relaxed focus-within:border-[#7B9ED9]/30"
           />
 
           {/* Links */}
@@ -317,7 +319,22 @@ export default function TaskCard({
           onClick={() => onToggleNotes(task.id)}
           className="mt-1.5 px-2.5 py-1.5 rounded bg-[#f5f4f0] text-[11px] text-black/40 cursor-pointer hover:bg-black/[0.05] whitespace-pre-wrap break-words"
         >
-          {task.notes}
+          {notesToSegments(task.notes).map((seg, i) =>
+            seg.type === "link" ? (
+              <a
+                key={i}
+                href={seg.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-[#7B9ED9] hover:underline"
+              >
+                {seg.label}
+              </a>
+            ) : (
+              <span key={i}>{seg.content}</span>
+            )
+          )}
         </div>
       )}
     </div>

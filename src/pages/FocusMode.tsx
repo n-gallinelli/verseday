@@ -5,16 +5,20 @@ import {
   stopTimeEntry,
   checkpointTimeEntry,
   updateTaskStatus,
+  updateTaskNotes,
   getProjectById,
+  getSetting,
 } from "../db/queries";
+import RichTextEditor from "../components/RichTextEditor";
 import type { Project } from "../types";
 
 const CHECKPOINT_INTERVAL_MS = 30_000;
-const WORK_DURATION_MS = 25 * 60 * 1000;
-const SHORT_BREAK_MS = 5 * 60 * 1000;
-const LONG_BREAK_MS = 15 * 60 * 1000;
-const SNOOZE_MS = 5 * 60 * 1000;
-const CYCLES_BEFORE_LONG_BREAK = 4;
+
+// Defaults — overridden by settings loaded on mount
+const DEFAULT_WORK_MIN = 25;
+const DEFAULT_SHORT_BREAK_MIN = 5;
+const DEFAULT_LONG_BREAK_MIN = 15;
+const DEFAULT_CYCLES = 4;
 
 type FocusPhase = "work" | "break" | "prompt";
 
@@ -82,6 +86,44 @@ export default function FocusMode() {
       getProjectById(focus.task.project_id).then(setProject).catch(() => {});
     }
   }, [focus?.task.project_id]);
+
+  // Notes state + debounced auto-save (the editor flushes pending saves on
+  // its own unmount, so navigating away from focus mode is also covered).
+  const [notes, setNotes] = useState(focus?.task.notes ?? "");
+  const notesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function saveNotes(value: string) {
+    if (!focus) return;
+    if (notesTimerRef.current) clearTimeout(notesTimerRef.current);
+    notesTimerRef.current = setTimeout(() => {
+      updateTaskNotes(focus.task.id, value || null).catch(() => {});
+    }, 600);
+  }
+
+  // Timer settings from DB — gated behind settingsLoaded
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [WORK_DURATION_MS, setWorkDuration] = useState(DEFAULT_WORK_MIN * 60 * 1000);
+  const [SHORT_BREAK_MS, setShortBreak] = useState(DEFAULT_SHORT_BREAK_MIN * 60 * 1000);
+  const [LONG_BREAK_MS, setLongBreak] = useState(DEFAULT_LONG_BREAK_MIN * 60 * 1000);
+  const [SNOOZE_MS] = useState(5 * 60 * 1000);
+  const [CYCLES_BEFORE_LONG_BREAK, setCycles] = useState(DEFAULT_CYCLES);
+
+  useEffect(() => {
+    async function loadTimerSettings() {
+      const [w, sb, lb, c] = await Promise.all([
+        getSetting("focus_work_min"),
+        getSetting("focus_short_break_min"),
+        getSetting("focus_long_break_min"),
+        getSetting("focus_cycles_before_long"),
+      ]);
+      if (w) setWorkDuration(parseInt(w) * 60 * 1000);
+      if (sb) setShortBreak(parseInt(sb) * 60 * 1000);
+      if (lb) setLongBreak(parseInt(lb) * 60 * 1000);
+      if (c) setCycles(parseInt(c));
+      setSettingsLoaded(true);
+    }
+    loadTimerSettings();
+  }, []);
 
   // PiP mini window
   const pipRef = useRef<WebviewWindow | null>(null);
@@ -246,49 +288,58 @@ export default function FocusMode() {
     };
   }, []);
 
+  // Stable refs for handlers used in effects
+  const handlePauseRef = useRef<() => void>(() => {});
+  const handleDoneRef = useRef<() => void>(() => {});
+  const handleStopRef = useRef<() => void>(() => {});
+  const handleTakeBreakRef = useRef<(ms: number) => void>(() => {});
+  const handleSnoozeRef = useRef<() => void>(() => {});
+  const handleNoBreakRef = useRef<() => void>(() => {});
+  const handleSkipBreakRef = useRef<() => void>(() => {});
+
   // Listen for PiP commands
   useEffect(() => {
     const interval = setInterval(() => {
       const cmd = localStorage.getItem(PIP_CMD_KEY);
       if (!cmd) return;
       localStorage.removeItem(PIP_CMD_KEY);
-      if (cmd === "pause") handlePause();
-      else if (cmd === "done") handleDone();
-      else if (cmd === "stop") handleStop();
+      if (cmd === "pause") handlePauseRef.current();
+      else if (cmd === "done") handleDoneRef.current();
+      else if (cmd === "stop") handleStopRef.current();
       else if (cmd === "requestBreak") {
-        // Manually trigger break prompt
-        const cycleNum = completedPomodoros + 1;
-        const isLong = cycleNum % CYCLES_BEFORE_LONG_BREAK === 0;
-        setCompletedPomodoros(cycleNum);
-        setPrompt({ isLongBreak: isLong });
-        setPhase("prompt");
-        playChime();
+        setCompletedPomodoros((c) => {
+          const cycleNum = c + 1;
+          const isLong = cycleNum % CYCLES_BEFORE_LONG_BREAK === 0;
+          setPrompt({ isLongBreak: isLong });
+          setPhase("prompt");
+          playChime();
+          return cycleNum;
+        });
       }
-      else if (cmd === "takeBreak") handleTakeBreak(SHORT_BREAK_MS);
-      else if (cmd === "snooze5") handleSnooze();
+      else if (cmd === "takeBreak") handleTakeBreakRef.current(SHORT_BREAK_MS);
+      else if (cmd === "snooze5") handleSnoozeRef.current();
       else if (cmd === "snooze10") {
-        // Custom 10-min snooze
         setPrompt(null);
         const we = elapsed - totalBreakTimeRef.current;
         snoozeThresholdRef.current = we + 10 * 60 * 1000;
         setCompletedPomodoros((c) => Math.max(0, c - 1));
         setPhase("work");
       }
-      else if (cmd === "noBreak") handleNoBreak();
-      else if (cmd === "skipBreak") handleSkipBreak();
+      else if (cmd === "noBreak") handleNoBreakRef.current();
+      else if (cmd === "skipBreak") handleSkipBreakRef.current();
     }, 200);
     return () => clearInterval(interval);
-  });
+  }, [elapsed, SHORT_BREAK_MS, CYCLES_BEFORE_LONG_BREAK]);
 
   // Listen for Space shortcut from App.tsx
   useEffect(() => {
     function onTogglePause() {
-      handlePause();
+      handlePauseRef.current();
     }
     window.addEventListener("verseday:toggle-pause", onTogglePause);
     return () =>
       window.removeEventListener("verseday:toggle-pause", onTogglePause);
-  });
+  }, []);
 
   function handlePause() {
     if (paused) {
@@ -370,14 +421,34 @@ export default function FocusMode() {
     stopFocus();
   }
 
+  // Keep refs in sync with latest handlers
+  handlePauseRef.current = handlePause;
+  handleDoneRef.current = handleDone;
+  handleStopRef.current = handleStop;
+  handleTakeBreakRef.current = handleTakeBreak;
+  handleSnoozeRef.current = handleSnooze;
+  handleNoBreakRef.current = handleNoBreak;
+  handleSkipBreakRef.current = handleSkipBreak;
+
   if (!focus) return null;
+  if (!settingsLoaded) return null;
 
   const isOnBreak = phase === "break";
   const isPrompting = phase === "prompt";
-  const sessionNum = (completedPomodoros % CYCLES_BEFORE_LONG_BREAK) + 1;
+
+  // Total work time on this task (prior sessions + current, minus breaks)
+  const workElapsed = elapsed - totalBreakTimeRef.current;
+  const totalWorkedMs = workElapsed + priorMs;
+  const estimatedMs = (focus.task.estimated_minutes ?? 0) * 60 * 1000;
+
+  // Arc progress: based on worked time vs estimate (0→1), or 0 if no estimate
+  const progress = estimatedMs > 0 ? Math.min(1, totalWorkedMs / estimatedMs) : 0;
+  const ARC_RADIUS = 90;
+  const ARC_CIRCUMFERENCE = 2 * Math.PI * ARC_RADIUS;
+  const arcOffset = ARC_CIRCUMFERENCE * (1 - progress);
 
   return (
-    <div className="fixed inset-0 bg-[#f5f4f0] flex flex-col items-center justify-center z-50">
+    <div className="fixed inset-0 flex flex-col items-center justify-center z-50 focus-ambient-bg">
       {/* Top context bar — project name */}
       {project && (
         <div className="absolute top-6 left-0 right-0 flex items-center justify-center gap-1.5">
@@ -390,15 +461,26 @@ export default function FocusMode() {
       )}
 
       {/* Center content */}
-      <div className="text-center max-w-[560px] px-8">
+      <div className="text-center max-w-[560px] px-8 flex flex-col items-center mt-4">
         {/* Task name — hero */}
         <h1 className="text-[28px] font-semibold text-[#2c2a35] mb-3 leading-snug">
           {focus.task.title}
         </h1>
 
+        {/* Notes editor — always visible */}
+        <RichTextEditor
+          value={notes}
+          onChange={(html) => {
+            setNotes(html);
+            saveNotes(html);
+          }}
+          placeholder="Add notes…"
+          className="w-full min-h-[120px] mb-4 px-4 py-3.5 bg-transparent text-[14px] text-[#2c2a35] leading-relaxed"
+        />
+
         {/* Break prompt */}
         {isPrompting && prompt && (
-          <div className="mb-10 p-6 rounded-2xl bg-white border border-black/[0.08] shadow-sm">
+          <div className="mb-8 p-6 rounded-2xl bg-white border border-black/[0.08] shadow-sm w-full">
             <p className="text-[15px] font-medium text-[#2c2a35] mb-1">
               Pomodoro complete!
             </p>
@@ -455,84 +537,156 @@ export default function FocusMode() {
           </div>
         )}
 
-        {/* Timer display — secondary to task name */}
-        {isOnBreak ? (
-          <>
-            <div className="text-[36px] font-medium tabular-nums leading-none mb-1 text-[#4a9e6e]" style={{ letterSpacing: "-1px" }}>
-              {formatCountdown(breakRemaining)}
-            </div>
-            <p className="text-[11px] uppercase tracking-[0.06em] text-black/30 mb-6">
-              Break
-            </p>
-            <button
-              onClick={handleSkipBreak}
-              className="px-5 py-2 rounded-xl bg-black/[0.05] text-black/40 text-[13px] cursor-pointer hover:bg-black/[0.08] transition-colors mb-8"
-            >
-              Skip break
-            </button>
-          </>
-        ) : !isPrompting ? (
-          <>
-            <div
-              className="text-[36px] font-medium tabular-nums leading-none mb-1"
-              style={{ letterSpacing: "-1px", color: paused ? "rgba(0,0,0,0.25)" : "#7B9ED9" }}
-            >
-              {formatTime(elapsed + priorMs)}
-            </div>
-            <p className="text-[11px] uppercase tracking-[0.06em] text-black/30 mb-8">
-              {paused ? "Paused" : "Running"}
-            </p>
-          </>
-        ) : null}
-
-        {/* Controls */}
-        {isOnBreak ? null : (
-          <div className="flex gap-2.5 justify-center mb-10">
-            <button
-              onClick={handleStop}
-              className="px-6 py-2.5 rounded-xl bg-black/[0.04] border border-black/[0.08] text-black/40 text-[14px] cursor-pointer hover:bg-black/[0.07] transition-colors"
-            >
-              Stop &amp; save
-            </button>
-            {!isPrompting && (
-              <button
-                onClick={handlePause}
-                className={`px-6 py-2.5 rounded-xl text-[14px] font-medium cursor-pointer transition-colors ${
-                  paused
-                    ? "bg-[#7B9ED9] text-white hover:bg-[#6889c4]"
-                    : "bg-black/[0.04] border border-black/[0.08] text-black/50 hover:bg-black/[0.07]"
-                }`}
-              >
-                {paused ? "Resume" : "Pause"}
-              </button>
+        {/* Timer arc */}
+        {!isPrompting && (
+          <div className="relative mb-6 overflow-visible" style={{ width: 220, height: 220 }}>
+            {/* Glow layer — wrapper div handles the CSS animation (WebKit won't animate transforms on <svg>) */}
+            {!paused && (
+              <div className="absolute inset-0 focus-glow-layer">
+                <svg
+                  viewBox="0 0 220 220"
+                  fill="none"
+                  style={{ width: 220, height: 220 }}
+                >
+                  <circle
+                    cx="110"
+                    cy="110"
+                    r={ARC_RADIUS}
+                    stroke={isOnBreak ? "#4a9e6e" : "#7B9ED9"}
+                    strokeWidth="14"
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeDasharray={ARC_CIRCUMFERENCE}
+                    strokeDashoffset={isOnBreak ? ARC_CIRCUMFERENCE * (breakRemaining / breakDuration) : arcOffset}
+                    transform="rotate(-90 110 110)"
+                  />
+                </svg>
+              </div>
             )}
-            <button
-              onClick={handleDone}
-              className="px-6 py-2.5 rounded-xl border border-[#C0DD97] text-[#3B6D11] text-[14px] cursor-pointer hover:bg-[#C0DD97]/10 transition-colors"
-            >
-              Mark done
-            </button>
+
+            {/* Main arc — wrapper div for pulse animation (WebKit can't animate transform on SVG elements) */}
+            <div className={`absolute inset-0 timer-circle-ring${paused ? " paused" : ""}`}>
+              <svg
+                viewBox="0 0 220 220"
+                fill="none"
+                style={{ width: 220, height: 220 }}
+              >
+                {/* Track */}
+                <circle
+                  cx="110"
+                  cy="110"
+                  r={ARC_RADIUS}
+                  stroke="rgba(0,0,0,0.05)"
+                  strokeWidth="7"
+                  fill="none"
+                />
+                {/* Progress stroke */}
+                <circle
+                  cx="110"
+                  cy="110"
+                  r={ARC_RADIUS}
+                  stroke={isOnBreak ? "#4a9e6e" : (paused ? "rgba(0,0,0,0.12)" : "#7B9ED9")}
+                  strokeWidth="7"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeDasharray={ARC_CIRCUMFERENCE}
+                  strokeDashoffset={isOnBreak ? ARC_CIRCUMFERENCE * (breakRemaining / breakDuration) : arcOffset}
+                  transform="rotate(-90 110 110)"
+                  style={{ transition: "stroke-dashoffset 0.3s ease" }}
+                />
+              </svg>
+            </div>
+
+            {/* Timer text centered */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <div
+                className="text-[32px] font-medium tabular-nums leading-none"
+                style={{
+                  letterSpacing: "-1px",
+                  color: isOnBreak
+                    ? "#4a9e6e"
+                    : paused
+                      ? "rgba(0,0,0,0.25)"
+                      : "#7B9ED9",
+                }}
+              >
+                {isOnBreak
+                  ? formatCountdown(breakRemaining)
+                  : formatTime(totalWorkedMs)}
+              </div>
+              {isOnBreak ? (
+                <p className="text-[11px] tracking-[0.06em] text-black/30 mt-1">
+                  break
+                </p>
+              ) : paused ? (
+                <p className="text-[11px] tracking-[0.06em] text-black/30 mt-1">
+                  paused
+                </p>
+              ) : (
+                <p className="text-[11px] tracking-[0.06em] text-black/30 mt-1">
+                  {estimatedMs > 0 ? `of ${formatTime(estimatedMs)}` : "worked"}
+                </p>
+              )}
+            </div>
           </div>
         )}
 
-        {/* Time meta */}
-        <div className="flex items-start justify-center gap-8">
-          <div className="text-center">
-            <div className="text-[10px] uppercase tracking-[0.08em] text-black/25 mb-1">Total time on task</div>
-            <div className="text-[16px] font-medium text-black/50 tabular-nums">{formatTime(elapsed + priorMs)}</div>
-          </div>
-          <div className="text-center">
-            <div className="text-[10px] uppercase tracking-[0.08em] text-black/25 mb-1">This session</div>
-            <div className="text-[16px] font-medium text-black/50 tabular-nums">{formatTime(elapsed)}</div>
-          </div>
-        </div>
-      </div>
+        {/* Break: skip button */}
+        {isOnBreak && (
+          <button
+            onClick={handleSkipBreak}
+            className="text-[13px] text-black/30 cursor-pointer hover:text-black/50 transition-colors mb-6"
+          >
+            Skip break
+          </button>
+        )}
 
-      {/* Session count — bottom */}
-      <div className="absolute bottom-6 left-0 right-0 text-center">
-        <span className="text-[11px] text-black/20 tabular-nums">
-          Session {sessionNum} of {CYCLES_BEFORE_LONG_BREAK}
-        </span>
+        {/* Controls — icon buttons */}
+        {!isOnBreak && (
+          <div className="flex items-center gap-3 mb-6">
+            {/* Pause / Resume — secondary */}
+            {!isPrompting && (
+              <button
+                onClick={handlePause}
+                className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer text-black/25 hover:text-black/50 hover:bg-black/[0.05] transition-colors"
+                title={paused ? "Resume" : "Pause"}
+              >
+                {paused ? (
+                  <svg width="18" height="18" viewBox="0 0 14 14" fill="#7B9ED9">
+                    <path d="M3 1v12l10-6z" />
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 14 14" fill="currentColor">
+                    <rect x="2" y="1" width="3.5" height="12" rx="1" />
+                    <rect x="8.5" y="1" width="3.5" height="12" rx="1" />
+                  </svg>
+                )}
+              </button>
+            )}
+
+            {/* Mark Done — primary */}
+            <button
+              onClick={handleDone}
+              className="w-12 h-12 rounded-full border-2 border-[#C0DD97] flex items-center justify-center cursor-pointer hover:bg-[#C0DD97]/10 transition-colors"
+              title="Mark done"
+            >
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="#3B6D11" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 8.5l3.5 3.5 6.5-7" />
+              </svg>
+            </button>
+
+            {/* Stop & Save — secondary */}
+            <button
+              onClick={handleStop}
+              className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer text-black/25 hover:text-black/50 hover:bg-black/[0.05] transition-colors"
+              title="Stop & save"
+            >
+              <svg width="16" height="16" viewBox="0 0 14 14" fill="currentColor">
+                <rect x="2" y="2" width="10" height="10" rx="1.5" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

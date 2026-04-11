@@ -40,7 +40,6 @@ import type { Project, Task } from "../types";
 
 const MAX_TITLE_LENGTH = 200;
 const MAX_ESTIMATE_MINUTES = 480;
-const MAX_NOTES_LENGTH = 5000;
 
 // ─── Sortable task row ──────────────────────────────────────────────────────
 
@@ -802,13 +801,11 @@ export default function ProjectDetail() {
                             className="px-2.5 py-1.5 rounded-md bg-black/[0.03] border border-black/[0.08] text-[12px] text-black/50 focus:outline-none focus:border-[#7B9ED9]/30"
                           />
                         </div>
-                        <textarea
+                        <RichTextEditor
                           value={taskEditNotes}
-                          onChange={(e) => setTaskEditNotes(e.target.value)}
-                          maxLength={MAX_NOTES_LENGTH}
+                          onChange={(html) => setTaskEditNotes(html)}
                           placeholder="Notes..."
-                          rows={3}
-                          className="w-full px-2.5 py-2 rounded-md bg-black/[0.03] border border-black/[0.08] text-[12px] text-black/55 placeholder-black/25 focus:outline-none focus:border-[#7B9ED9]/30 resize-none"
+                          className="w-full px-2.5 py-2 rounded-md bg-black/[0.03] border border-black/[0.08] text-[12px] text-black/55 min-h-[60px] focus-within:border-[#7B9ED9]/30"
                         />
                         <div className="flex gap-2">
                           <button

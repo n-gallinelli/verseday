@@ -33,20 +33,23 @@ import {
   setManualWorkedMinutes,
   getProjectStats,
   generateRecurringInstances,
+  rolloverUnfinishedTasks,
+  getUnfinishedRolloverTasks,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import TaskCard from "../components/TaskCard";
 import DatePicker from "../components/DatePicker";
 import DurationPicker from "../components/DurationPicker";
 import TaskDetailOverlay from "../components/TaskDetailOverlay";
+import RichTextEditor from "../components/RichTextEditor";
+import SummaryOverlay from "../components/SummaryOverlay";
 import { formatHoursMinutes, parseTimeFromTitle } from "../utils/format";
 import type { Task, DailyPlan, Project } from "../types";
+import type { PlanSummaryData } from "../utils/summaryPrompts";
 
-const SHUTDOWN_KEY_PREFIX = "daily-shutdown-";
 
 const MAX_TITLE_LENGTH = 200;
 const MAX_ESTIMATE_MINUTES = 480;
-const MAX_NOTES_LENGTH = 5000;
 
 // Smart time parsing: extract duration from end of task title.
 // Known limitation: compound durations like "2h30m" only match the trailing
@@ -87,21 +90,24 @@ export default function DailyPlanner() {
   const [showTaskPicker, setShowTaskPicker] = useState(false);
   const [taskInputExpanded, setTaskInputExpanded] = useState(false);
   const taskInputRef = useRef<HTMLFormElement>(null);
+  const datePickerAnchorRef = useRef<HTMLButtonElement>(null);
 
-  // Right panel — expandable projects + unscheduled
+  // Right panel — expandable projects + unfinished + unscheduled
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<number>>(new Set());
+  const [unfinishedExpanded, setUnfinishedExpanded] = useState(true);
   const [unscheduledExpanded, setUnscheduledExpanded] = useState(false);
 
   // Task detail overlay
   const [detailTask, setDetailTask] = useState<Task | null>(null);
+  const [showSummary, setShowSummary] = useState(false);
 
   // Shutdown state (for localStorage check only)
-  const [isDayShutdown, setIsDayShutdown] = useState(false);
   const initialLoadDone = useRef(false);
 
   // Sidebar state
   const [sidebarUnscheduled, setSidebarUnscheduled] = useState<Task[]>([]);
   const [sidebarOverdue, setSidebarOverdue] = useState<Task[]>([]);
+  const [unfinishedTasks, setUnfinishedTasks] = useState<Task[]>([]);
 
   const hourBudget = dailyPlan?.hour_budget ?? 8;
   const plannedHours = plannedMinutes / 60;
@@ -130,13 +136,18 @@ export default function DailyPlanner() {
       // Generate recurring task instances for this date before loading
       await generateRecurringInstances(selectedDate);
       const todayIso = new Date().toISOString().split("T")[0];
-      const [t, pm, wm, dp, p, sb] = await Promise.all([
+      // Roll over unfinished tasks from previous days (only for today)
+      if (selectedDate === todayIso) {
+        await rolloverUnfinishedTasks(todayIso);
+      }
+      const [t, pm, wm, dp, p, sb, uf] = await Promise.all([
         getTasksForDate(selectedDate),
         getTotalPlannedMinutes(selectedDate),
         getTotalWorkedMinutes(selectedDate),
         getDailyPlan(selectedDate),
         getProjects(),
         getSidebarTasks(todayIso),
+        getUnfinishedRolloverTasks(),
       ]);
       setTasks(t);
       setPlannedMinutes(pm);
@@ -155,6 +166,7 @@ export default function DailyPlanner() {
       }
       setSidebarUnscheduled(sb.unscheduled);
       setSidebarOverdue(sb.overdue);
+      setUnfinishedTasks(uf);
       setDailyNotes(dp?.notes ?? "");
       setError(null);
       // Mark initial load done (for stagger animation)
@@ -170,9 +182,6 @@ export default function DailyPlanner() {
     initialLoadDone.current = false;
     setEditingId(null);
     setConfirmDeleteId(null);
-    setIsDayShutdown(
-      localStorage.getItem(SHUTDOWN_KEY_PREFIX + selectedDate) === "true"
-    );
     loadData();
   }, [selectedDate]);
 
@@ -364,6 +373,13 @@ export default function DailyPlanner() {
         "No project"
       : "No project";
 
+  // Sort tasks: incomplete first, completed at bottom (stable within each group)
+  const sortedTasks = [...tasks].sort((a, b) =>
+    a.status === "done" && b.status !== "done" ? 1
+      : a.status !== "done" && b.status === "done" ? -1
+      : 0
+  );
+
   return (
     <div className="flex h-full overflow-hidden">
       {/* ── Main content ────────────────────────────────────────────── */}
@@ -393,8 +409,9 @@ export default function DailyPlanner() {
           >
             ›
           </button>
-          <div className="relative flex items-center">
+          <div className="flex items-center">
             <button
+              ref={datePickerAnchorRef}
               onClick={() => setShowDatePicker(!showDatePicker)}
               className={`text-[11px] leading-none px-2 py-1 rounded-full cursor-pointer ${
                 isToday
@@ -409,16 +426,21 @@ export default function DailyPlanner() {
                 selectedDate={selectedDate}
                 onSelect={(date) => setSelectedDate(date)}
                 onClose={() => setShowDatePicker(false)}
+                anchorRef={datePickerAnchorRef}
               />
             )}
           </div>
-          <div className="w-px h-3.5 bg-black/[0.08]" />
-          <span className="text-[12px] leading-none text-black/30">
-            Worked <span className="text-black/50 tabular-nums">{formatHoursMinutes(workedMinutes)}</span>
-          </span>
-          <span className="text-[12px] leading-none text-black/30">
-            Planned <span className="text-black/50 tabular-nums">{formatHoursMinutes(plannedMinutes)}</span>
-          </span>
+          {(workedMinutes > 0 || plannedMinutes > 0) && (
+            <>
+              <div className="w-px h-3.5 bg-black/[0.08]" />
+              <span className="text-[12px] leading-none text-black/30">
+                Worked <span className="text-black/50 tabular-nums">{formatHoursMinutes(workedMinutes)}</span>
+              </span>
+              <span className="text-[12px] leading-none text-black/30">
+                Planned <span className="text-black/50 tabular-nums">{formatHoursMinutes(plannedMinutes)}</span>
+              </span>
+            </>
+          )}
           <div className="flex-1" />
           {/* Focus button — inline */}
           {(() => {
@@ -471,7 +493,7 @@ export default function DailyPlanner() {
                 onFocus={() => setTaskInputExpanded(true)}
                 maxLength={MAX_TITLE_LENGTH}
                 placeholder="Add a task..."
-                className="flex-1 bg-transparent border-none outline-none text-[14px] text-[#2c2a35] placeholder-black/25 font-sans"
+                className="flex-1 bg-transparent border-none outline-none text-[14px] text-[#2c2a35] placeholder-black/25"
               />
               <button
                 type="submit"
@@ -498,7 +520,7 @@ export default function DailyPlanner() {
                       <>
                         {sidebarOverdue.length > 0 && (
                           <div className="px-3 pt-2.5 pb-1">
-                            <span className="text-[10px] uppercase tracking-widest text-[#d95f5f]/60">Overdue</span>
+                            <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-[#d95f5f]/60">Overdue</span>
                           </div>
                         )}
                         {sidebarOverdue.map((task) => (
@@ -521,7 +543,7 @@ export default function DailyPlanner() {
                         ))}
                         {sidebarUnscheduled.length > 0 && (
                           <div className="px-3 pt-2.5 pb-1">
-                            <span className="text-[10px] uppercase tracking-widest text-black/30">Unscheduled</span>
+                            <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30">Unscheduled</span>
                           </div>
                         )}
                         {(() => {
@@ -590,27 +612,6 @@ export default function DailyPlanner() {
                 onChange={setNewTaskEstimate}
               />
 
-              {/* Spacer to push priority right */}
-              <div className="flex-1" />
-
-              {/* Priority toggle — small, far right */}
-              <button
-                type="button"
-                onClick={() => setNewTaskHighPriority(!newTaskHighPriority)}
-                className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] cursor-pointer transition-colors ${
-                  newTaskHighPriority
-                    ? "bg-[#d95f5f]/10 border border-[#d95f5f]/25 text-[#d95f5f]"
-                    : "bg-black/[0.04] border border-black/[0.08] text-black/30 hover:bg-black/[0.07]"
-                }`}
-                title="Toggle high priority"
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    newTaskHighPriority ? "bg-[#d95f5f]" : "bg-black/15"
-                  }`}
-                />
-                High
-              </button>
             </div>
             )}
           </div>
@@ -623,7 +624,7 @@ export default function DailyPlanner() {
           onDragEnd={handleDragEnd}
         >
           <SortableContext
-            items={tasks.map((t) => t.id)}
+            items={sortedTasks.map((t) => t.id)}
             strategy={verticalListSortingStrategy}
           >
             <div className={`space-y-1.5 flex-1 ${!initialLoadDone.current ? "[&>*]:animate-stagger [&>*]:animate-slide-up" : ""}`}>
@@ -642,10 +643,10 @@ export default function DailyPlanner() {
                 </div>
               ) : (
                 (() => {
-                  // Group tasks by project, preserving order within groups
+                  // Group sorted tasks by project
                   const grouped = new Map<number | null, Task[]>();
                   const groupOrder: (number | null)[] = [];
-                  for (const task of tasks) {
+                  for (const task of sortedTasks) {
                     const pid = task.project_id;
                     if (!grouped.has(pid)) {
                       grouped.set(pid, []);
@@ -658,15 +659,16 @@ export default function DailyPlanner() {
                     const proj = pid != null ? projectMap.get(pid) : null;
                     return (
                       <div key={pid ?? "none"} className="mb-2">
-                        {/* Project section header — quiet label */}
-                        <div className="flex items-center gap-1.5 mb-1 px-1">
+                        {/* Project section header — compact chip */}
+                        <div className="flex items-center gap-1.5 mb-1 px-1 max-w-[300px]">
                           <div
                             className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                             style={{ backgroundColor: proj?.color ?? "#999" }}
                           />
                           <span
-                            className={`text-[11px] uppercase tracking-[0.07em] text-black/25 ${pid != null ? "cursor-pointer hover:text-[#7B9ED9] transition-colors" : ""}`}
+                            className={`uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/20 truncate ${pid != null ? "cursor-pointer hover:text-[#7B9ED9] transition-colors" : ""}`}
                             onClick={() => { if (pid != null) openProject(pid); }}
+                            title={proj?.name ?? "No project"}
                           >
                             {proj?.name ?? "No project"}
                           </span>
@@ -734,13 +736,11 @@ export default function DailyPlanner() {
                             High
                           </button>
                         </div>
-                        <textarea
+                        <RichTextEditor
                           value={editNotes}
-                          onChange={(e) => setEditNotes(e.target.value)}
-                          maxLength={MAX_NOTES_LENGTH}
+                          onChange={(html) => setEditNotes(html)}
                           placeholder="Notes..."
-                          rows={3}
-                          className="w-full bg-transparent border border-black/[0.08] rounded-md px-2.5 py-2 text-[12px] text-black/55 placeholder-black/20 focus:outline-none focus:border-[#7B9ED9]/40 resize-none"
+                          className="w-full bg-transparent border border-black/[0.08] rounded-md px-2.5 py-2 text-[12px] text-black/55 min-h-[60px] focus-within:border-[#7B9ED9]/40"
                         />
                         <div className="flex gap-2">
                           <button
@@ -820,19 +820,27 @@ export default function DailyPlanner() {
         {/* Daily Notes + Shutdown link — bottom of scroll area */}
         <div className="mt-auto pt-3">
           <div className="flex items-center justify-between mb-1.5">
-            <label className="text-[10px] uppercase tracking-widest text-black/30">
+            <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30">
               Daily notes
             </label>
-            <button
-              onClick={() => setPage("daily_shutdown")}
-              className="flex items-center gap-1 text-[12px] text-black/30 cursor-pointer hover:text-black/50 transition-colors"
-            >
-              <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
-                <circle cx="7" cy="7" r="5.5" />
-                <path d="M7 4v3h2.5" />
-              </svg>
-              Shutdown day
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowSummary(true)}
+                className="text-[11px] text-[#7B9ED9] cursor-pointer hover:text-[#6889c4] transition-colors"
+              >
+                Summarize plan
+              </button>
+              <button
+                onClick={() => setPage("daily_shutdown")}
+                className="flex items-center gap-1 text-[12px] text-black/30 cursor-pointer hover:text-black/50 transition-colors"
+              >
+                <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+                  <circle cx="7" cy="7" r="5.5" />
+                  <path d="M7 4v3h2.5" />
+                </svg>
+                Shutdown day
+              </button>
+            </div>
           </div>
           <textarea
             value={dailyNotes}
@@ -848,7 +856,7 @@ export default function DailyPlanner() {
 
       {/* ── Right panel: Projects ──────────────────────────────────── */}
       <div className="w-[220px] flex-shrink-0 border-l border-black/[0.06] bg-[#efede8] flex flex-col overflow-y-auto">
-        <div className="px-3 pt-4 pb-1.5 text-[10px] text-black/30 uppercase tracking-[0.08em]">
+        <div className="px-3 pt-4 pb-1.5 text-[10px] text-black/[0.2] uppercase tracking-[0.08em]">
           Projects
         </div>
         {(() => {
@@ -880,14 +888,14 @@ export default function DailyPlanner() {
                         return next;
                       });
                     }}
-                    className="text-[10px] text-black/25 cursor-pointer w-3 flex-shrink-0"
+                    className="text-[18px] leading-none text-black/25 cursor-pointer w-5 flex-shrink-0"
                   >
                     {isExpanded ? "▾" : "▸"}
                   </button>
                   <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
                   <button
                     onClick={() => openProject(p.id)}
-                    className="text-[12px] text-[#2c2a35] truncate flex-1 text-left cursor-pointer hover:underline"
+                    className="text-[11px] text-[#2c2a35] truncate flex-1 text-left cursor-pointer hover:underline"
                   >
                     {p.name}
                   </button>
@@ -933,21 +941,65 @@ export default function DailyPlanner() {
           });
         })()}
 
+        {/* Spacer — push unfinished + unscheduled to bottom third */}
+        <div className="flex-1 min-h-[40px]" />
+
+        {/* Unfinished tasks section — tasks rolling over up to 4 days */}
+        {(() => {
+          const unfinished = unfinishedTasks;
+          return (
+          <div className="border-t border-black/[0.06]">
+            <button
+              onClick={() => setUnfinishedExpanded((v) => !v)}
+              className="w-full flex items-center gap-1.5 px-3 py-2 hover:bg-black/[0.04] transition-colors"
+            >
+              <span className="text-[18px] leading-none text-black/25 w-5 flex-shrink-0">
+                {unfinishedExpanded ? "▾" : "▸"}
+              </span>
+              <span className="text-[10px] text-black/[0.2] uppercase tracking-[0.08em] flex-1 text-left">
+                Unfinished
+              </span>
+              {unfinished.length > 0 && (
+                <span className="text-[9px] text-black/20 tabular-nums">{unfinished.length}</span>
+              )}
+            </button>
+            {unfinishedExpanded && (
+              <div className="px-2 pb-2">
+                {unfinished.length === 0 ? (
+                  <p className="text-[10px] text-black/20 px-2 py-1">All caught up</p>
+                ) : (
+                  unfinished.map((task) => (
+                    <button
+                      key={task.id}
+                      onClick={() => setDetailTask(task)}
+                      className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-black/[0.05] transition-colors group"
+                    >
+                      <span className="text-[11px] text-black/40 group-hover:text-[#2c2a35] flex-1 truncate transition-colors">{task.title}</span>
+                      <span className="text-[9px] text-[#c9923a]/70 tabular-nums">{task.rollover_count}d</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+          );
+        })()}
+
         {/* Unscheduled tasks section (includes orphan overdue tasks) */}
         {(() => {
           const orphanOverdue = sidebarOverdue.filter((t) => t.project_id === null);
           const unscheduledAll = [...sidebarUnscheduled, ...orphanOverdue];
           if (unscheduledAll.length === 0) return null;
           return (
-          <div className="border-t border-black/[0.06] mt-auto">
+          <div className="border-t border-black/[0.06]">
             <button
               onClick={() => setUnscheduledExpanded((v) => !v)}
               className="w-full flex items-center gap-1.5 px-3 py-2 hover:bg-black/[0.04] transition-colors"
             >
-              <span className="text-[10px] text-black/25 w-3 flex-shrink-0">
+              <span className="text-[18px] leading-none text-black/25 w-5 flex-shrink-0">
                 {unscheduledExpanded ? "▾" : "▸"}
               </span>
-              <span className="text-[10px] text-black/30 uppercase tracking-[0.08em] flex-1 text-left">
+              <span className="text-[10px] text-black/[0.2] uppercase tracking-[0.08em] flex-1 text-left">
                 Unscheduled
               </span>
             </button>
@@ -976,6 +1028,7 @@ export default function DailyPlanner() {
       {/* Task detail overlay */}
       {detailTask && (
         <TaskDetailOverlay
+          key={detailTask.id}
           task={detailTask}
           projects={projects}
           onClose={() => setDetailTask(null)}
@@ -985,6 +1038,24 @@ export default function DailyPlanner() {
           onStartFocus={(t) => { handleStartFocus(t); setDetailTask(null); }}
           workedMinutes={workedMap.get(detailTask.id) ?? 0}
           onSetWorkedMinutes={(id, mins) => setManualWorkedMinutes(id, mins).then(() => loadData()).catch(() => {})}
+        />
+      )}
+
+      {/* Plan summary overlay */}
+      {showSummary && (
+        <SummaryOverlay
+          type="plan"
+          data={{
+            date: selectedDate,
+            tasks: tasks.map((t) => ({
+              ...t,
+              projectName: t.project_id ? projects.find((p) => p.id === t.project_id)?.name ?? null : null,
+            })),
+            totalPlannedMinutes: plannedMinutes,
+            hourBudget: dailyPlan?.hour_budget ?? 8,
+            notes: dailyPlan?.notes ?? null,
+          } satisfies PlanSummaryData}
+          onClose={() => setShowSummary(false)}
         />
       )}
     </div>

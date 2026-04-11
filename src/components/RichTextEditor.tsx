@@ -11,14 +11,37 @@ interface RichTextEditorProps {
   className?: string;
 }
 
-/** Normalize plain-text notes to HTML for Tiptap */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Convert markdown link syntax `[text](url)` (already HTML-escaped) to real
+ * <a> tags. Only http(s) URLs are accepted, so this can't introduce
+ * javascript: hrefs even if input is messy.
+ */
+function convertMarkdownLinks(escapedLine: string): string {
+  return escapedLine.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    (_, text, url) => `<a href="${url}">${text}</a>`
+  );
+}
+
+/** Normalize plain-text or markdown-flavoured notes to HTML for Tiptap */
 function normalizeContent(raw: string): string {
   if (!raw) return "";
   if (raw.trimStart().startsWith("<")) return raw;
-  // Plain text — wrap paragraphs
+  // Plain text — escape, convert any markdown links, wrap paragraphs
   return raw
     .split("\n")
-    .map((line) => `<p>${line || "<br>"}</p>`)
+    .map((line) => {
+      const linked = convertMarkdownLinks(escapeHtml(line));
+      return `<p>${linked || "<br>"}</p>`;
+    })
     .join("");
 }
 
@@ -39,6 +62,10 @@ export default function RichTextEditor({
         openOnClick: true,
         autolink: true,
         linkOnPaste: true,
+        HTMLAttributes: {
+          rel: "noopener noreferrer nofollow",
+          target: "_blank",
+        },
       }),
     ],
     content: normalizeContent(value),
@@ -75,13 +102,15 @@ export default function RichTextEditor({
   if (!editor) return null;
 
   return (
-    <div className={`relative ${className}`}>
-      {isEmpty && placeholder && (
-        <div className="absolute top-0 left-0 pointer-events-none text-black/25 select-none">
-          {placeholder}
-        </div>
-      )}
-      <EditorContent editor={editor} />
+    <div className={className}>
+      <div className="relative">
+        {isEmpty && placeholder && (
+          <div className="absolute top-0 left-0 pointer-events-none text-black/25 select-none">
+            {placeholder}
+          </div>
+        )}
+        <EditorContent editor={editor} />
+      </div>
     </div>
   );
 }

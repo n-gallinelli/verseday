@@ -1,6 +1,6 @@
 mod commands;
 
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -250,8 +250,41 @@ pub fn run() {
             .focused(false)
             .build()?;
 
+            // Path A lifecycle fix (per docs/global-quick-add.md rev 4):
+            // intercept the main window's red-X close, prevent it, and
+            // hide the window instead of letting it propagate. The app
+            // keeps running in the background so JS-side state — including
+            // the global quick-add hotkey registration — survives. Cmd+Q
+            // and "Quit VerseDay" from the menu still quit normally
+            // because they go through the app-level quit path, not the
+            // window close event.
+            if let Some(main) = app.get_webview_window("main") {
+                let main_clone = main.clone();
+                main.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = main_clone.hide();
+                    }
+                });
+            }
+
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // Reopen handler (per Verse review #3, mandatory companion to
+            // the hide-on-close behavior above): when the user clicks the
+            // dock icon while no windows are visible, re-show the main
+            // window. Without this, hide-on-close traps users — they'd
+            // have no way to get back to the app short of Cmd+Q+relaunch.
+            if let RunEvent::Reopen { has_visible_windows, .. } = event {
+                if !has_visible_windows {
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+            }
+        });
 }

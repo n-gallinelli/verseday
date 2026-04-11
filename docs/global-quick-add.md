@@ -2,7 +2,7 @@
 
 **Author:** Terse
 **For review by:** Verse
-**Status:** Revision 4 — main window lifecycle locked to hide-on-close (Path A); rev 3 + Verse's review #3 corrections
+**Status:** Revision 4 — main window lifecycle locked to hide-on-close (Path A) **with mandatory Reopen handler** per Verse review #4; rev 3 + Verse's review #3 corrections
 
 ## The user's request
 
@@ -541,41 +541,111 @@ Verse's other guidance folded in:
 
    **User picked Path A.** This is locked.
 
-   #### Path A implementation in this step
+   #### Path A implementation in this step (TWO handlers, both mandatory)
 
-   In `lib.rs`'s `.setup()` closure, after creating the `quick-add` window,
-   install a window-event handler on the main window that intercepts
-   `CloseRequested`, calls `api.prevent_close()`, and calls `main.hide()`:
+   Per Verse review #4: Tauri 2 on macOS does **NOT** automatically re-show
+   hidden windows on dock-icon click. The hide-on-close handler alone
+   creates a trap — user clicks red X, window hides, dock click does
+   nothing, only recovery is Cmd+Q + relaunch. The Reopen handler is
+   mandatory, not optional.
+
+   ##### Handler 1 — Hide on close (in `.setup()` closure)
 
    ```rust
-   let main = app.get_webview_window("main")
-       .expect("main window must exist");
-   let main_clone = main.clone();
-   main.on_window_event(move |event| {
-       if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-           api.prevent_close();
-           let _ = main_clone.hide();
-       }
-   });
+   if let Some(main) = app.get_webview_window("main") {
+       let main_clone = main.clone();
+       main.on_window_event(move |event| {
+           if let WindowEvent::CloseRequested { api, .. } = event {
+               api.prevent_close();
+               let _ = main_clone.hide();
+           }
+       });
+   }
    ```
 
    This affects red-X close only. Cmd+Q and "Quit VerseDay" from the menu
    continue to quit the app via the app-level quit path, which is
    independent of window close events.
 
-   #### Verification checklist for step 1 (must all pass before moving on)
+   ##### Handler 2 — Reopen on dock click (replaces the bare `.run()` call)
 
-   1. App launches without crashing; `quick-add` window exists in
-      `WebviewWindow.getByLabel("quick-add")` checks but is invisible.
-   2. Click the red X on the main window → window disappears, dock icon
-      remains, app process is still running.
-   3. Click the dock icon → main window reappears (Tauri 2's default
-      activation policy should handle this; if it doesn't, add an
-      activation handler in `.setup()`).
-   4. Cmd+Q from the menu bar → app fully quits, dock icon disappears.
-   5. Wrap the (later, in Step 5) JS shortcut registration in a `useEffect`
-      whose cleanup calls `unregister()`, so the flow is idempotent across
-      hot reloads in dev and any future remount path.
+   The current `lib.rs` ends with:
+   ```rust
+   .run(tauri::generate_context!())
+   .expect("error while running tauri application");
+   ```
+
+   Refactor to the long form so we can intercept `RunEvent::Reopen`:
+   ```rust
+   .build(tauri::generate_context!())
+   .expect("error while building tauri application")
+   .run(|app_handle, event| {
+       if let RunEvent::Reopen { has_visible_windows, .. } = event {
+           if !has_visible_windows {
+               if let Some(window) = app_handle.get_webview_window("main") {
+                   let _ = window.show();
+                   let _ = window.set_focus();
+               }
+           }
+       }
+   });
+   ```
+
+   `has_visible_windows` lets us avoid double-showing a window that's
+   already in front (macOS convention — clicking the dock when the app is
+   already focused should be a no-op).
+
+   #### Verification checklist for step 1 (6 points — all must pass)
+
+   I (Terse) cannot drive a UI directly; **the user runs this checklist
+   in the dev build and reports back**. Each check must pass before step 1
+   can be marked complete. Per Verse review #5, check #2 was strengthened
+   from a negative absence test to a positive existence test (the negative
+   form would silently pass if the Rust create call failed).
+
+   1. **Build succeeds.** `npm install` (to pull the new JS plugin) +
+      `npm run tauri dev` compiles cleanly. The Cargo recompile may take
+      several minutes the first time.
+   2. **Quick-add window positively exists at launch.** Open dev tools on
+      the main window (Cmd+Option+I), paste in the console:
+      ```js
+      const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+      const qa = await WebviewWindow.getByLabel("quick-add");
+      console.log("quick-add window:", qa);
+      ```
+      **Pass criterion:** `qa` logs as a `WebviewWindow` object, not
+      `null`/`undefined`. If null, the Rust `.setup()` create call failed
+      silently — check the terminal running `tauri dev` for a Rust-side
+      warning and report back. **No second window should be visible** on
+      screen or in the dock; that's a separate visual check.
+   3. **Red-X hides the main window.** Click the red traffic-light close
+      button on the main window. The window should disappear. The dock
+      icon should remain. The app process should still be running (verify
+      via `ps aux | grep verseday` or by Cmd+Tab — VerseDay should still
+      be in the app switcher).
+   4. **Dock click reopens the hidden main window.** With the main window
+      hidden from check 3, click the VerseDay dock icon. The main window
+      should re-appear at its previous position, focused. (This is the
+      check Verse made mandatory in review #4 — without the Reopen handler,
+      this step would fail and the user would be trapped.)
+   5. **Cmd+Q quits the app fully.** From the menu bar or via Cmd+Q, choose
+      Quit VerseDay. The app should exit, the dock icon should disappear,
+      `ps aux | grep verseday` should return nothing.
+   6. **JS shortcut registration cleanup is idempotent** *(verified during
+      Step 5 implementation, not Step 1)*. The `useEffect` that registers
+      the global shortcut must call `unregister()` in its cleanup so hot
+      reloads in dev and any future remount path don't trigger
+      double-registration errors. This box gets checked when Step 5 lands.
+
+   #### Caution per Verse review #5 — no Accessibility prompt should appear
+
+   Nothing in Step 1 registers a global shortcut (that's Step 2 with the
+   temporary hardcoded test binding). If macOS pops an Accessibility or
+   Input Monitoring permission dialog during this verification run,
+   something is wrong — either the plugin is eagerly probing permissions
+   at init (unexpected) or some code path is registering a shortcut that
+   shouldn't be. **Don't click allow/deny — escalate to Verse for
+   diagnosis before proceeding.**
 2. **Verify summon path with a temporary hardcoded test shortcut** — bypass
    the settings/consent gate for this step only. Register `Cmd+Shift+A`
    directly, confirm the empty quick-add window appears centered on the

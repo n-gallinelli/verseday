@@ -1,3 +1,6 @@
+mod commands;
+
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -184,6 +187,28 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 11,
+            description: "add rollover tracking to tasks",
+            sql: "
+                ALTER TABLE tasks ADD COLUMN original_date TEXT;
+                ALTER TABLE tasks ADD COLUMN rollover_count INTEGER NOT NULL DEFAULT 0;
+            ",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 12,
+            description: "add task highlights and settings table for AI summaries",
+            sql: "
+                ALTER TABLE tasks ADD COLUMN is_highlight INTEGER NOT NULL DEFAULT 0;
+
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -192,6 +217,8 @@ pub fn run() {
                 .add_migrations("sqlite:verseday.db", migrations)
                 .build(),
         )
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![commands::generate_summary])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -200,6 +227,29 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            // Pre-create the global quick-add window at startup so the
+            // hotkey can summon it instantly. Hidden until the JS shortcut
+            // handler calls .show()/.set_focus() on it. See
+            // docs/global-quick-add.md for the (a)/(b)/(c) lifecycle
+            // decision rationale.
+            WebviewWindowBuilder::new(
+                app,
+                "quick-add",
+                WebviewUrl::App("index.html#quick-add".into()),
+            )
+            .title("VerseDay — Quick Add")
+            .inner_size(600.0, 80.0)
+            .resizable(false)
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .center()
+            .visible(false)
+            .focused(false)
+            .build()?;
+
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { register } from "@tauri-apps/plugin-global-shortcut";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import ErrorBoundary from "./components/ErrorBoundary";
 import FocusPip from "./components/FocusPip";
+import QuickAdd from "./pages/QuickAdd";
 import Sidebar from "./components/Sidebar";
 import DailyPlanner from "./pages/DailyPlanner";
 import Projects from "./pages/Projects";
@@ -54,26 +57,11 @@ export default function App() {
     );
   }
 
-  // Quick-add overlay window — placeholder for step 2 verification.
-  // Step 3 (per docs/global-quick-add.md) replaces this with the real
-  // QuickAddBar component. Keeping it minimal for now so the summon-path
-  // smoke test produces a clean visual signal.
+  // Quick-add overlay window — small frameless bar for global task capture.
   if (window.location.hash === "#quick-add") {
     return (
       <ErrorBoundary>
-        <div
-          style={{
-            padding: 20,
-            fontFamily: "sans-serif",
-            background: "rgba(245, 244, 240, 0.95)",
-            borderRadius: 12,
-            boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
-            color: "#2c2a35",
-            fontSize: 14,
-          }}
-        >
-          Quick Add (placeholder — step 3 will replace this)
-        </div>
+        <QuickAdd />
       </ErrorBoundary>
     );
   }
@@ -105,6 +93,18 @@ function MainApp() {
       if (!restored) {
         await closeOrphanedTimeEntries();
       }
+
+      // ── TEMPORARY: step 3/4 verification shortcut ──
+      // Will be replaced by the consent-gated registration in step 5.
+      try {
+        await register("CmdOrCtrl+Shift+A", async () => {
+          const win = await WebviewWindow.getByLabel("quick-add");
+          if (!win) return;
+          await win.center();
+          await win.show();
+          await win.setFocus();
+        });
+      } catch { /* silent */ }
     }
     startup();
   }, [restoreFocus]);

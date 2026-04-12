@@ -8,7 +8,6 @@ import {
   deleteLink,
   isSafeUrl,
 } from "../db/queries";
-import { notesToSegments } from "../utils/linkify";
 import RichTextEditor from "./RichTextEditor";
 import type { Task, Project, Link } from "../types";
 
@@ -313,30 +312,6 @@ export default function TaskCard({
         </div>
       )}
 
-      {/* Notes always visible when they exist */}
-      {!expandedNotes && task.notes && (
-        <div
-          onClick={() => onToggleNotes(task.id)}
-          className="mt-1.5 px-2.5 py-1.5 rounded bg-[#f5f4f0] text-[11px] text-black/40 cursor-pointer hover:bg-black/[0.05] whitespace-pre-wrap break-words"
-        >
-          {notesToSegments(task.notes).map((seg, i) =>
-            seg.type === "link" ? (
-              <a
-                key={i}
-                href={seg.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="text-[#7B9ED9] hover:underline"
-              >
-                {seg.label}
-              </a>
-            ) : (
-              <span key={i}>{seg.content}</span>
-            )
-          )}
-        </div>
-      )}
     </div>
   );
 }

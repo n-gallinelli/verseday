@@ -10,6 +10,8 @@ import DailyShutdown from "./pages/DailyShutdown";
 import WeeklyPlanner from "./pages/WeeklyPlanner";
 import WeeklyShutdown from "./pages/WeeklyShutdown";
 import Dashboard from "./pages/Dashboard";
+import Settings from "./pages/Settings";
+import FocusLanding from "./pages/FocusLanding";
 import WrapUpReminder from "./components/WrapUpReminder";
 import { useAppStore } from "./stores/appStore";
 import {
@@ -21,6 +23,7 @@ import {
 import type { Page } from "./types";
 
 const PAGE_SHORTCUTS: Record<string, Page> = {
+  "0": "focus_landing",
   "1": "daily",
   "2": "daily_shutdown",
   "3": "weekly",
@@ -47,6 +50,30 @@ export default function App() {
     return (
       <ErrorBoundary>
         <FocusPip />
+      </ErrorBoundary>
+    );
+  }
+
+  // Quick-add overlay window — placeholder for step 2 verification.
+  // Step 3 (per docs/global-quick-add.md) replaces this with the real
+  // QuickAddBar component. Keeping it minimal for now so the summon-path
+  // smoke test produces a clean visual signal.
+  if (window.location.hash === "#quick-add") {
+    return (
+      <ErrorBoundary>
+        <div
+          style={{
+            padding: 20,
+            fontFamily: "sans-serif",
+            background: "rgba(245, 244, 240, 0.95)",
+            borderRadius: 12,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+            color: "#2c2a35",
+            fontSize: 14,
+          }}
+        >
+          Quick Add (placeholder — step 3 will replace this)
+        </div>
       </ErrorBoundary>
     );
   }
@@ -166,8 +193,14 @@ function MainApp() {
     );
   }
 
-  function renderPage() {
-    switch (currentPage) {
+  // Resolve which page to show in the background
+  // When project_detail is open, show the previous page behind the modal
+  const backgroundPage = currentPage === "project_detail"
+    ? (pageHistory[pageHistory.length - 1] ?? "projects")
+    : currentPage;
+
+  function renderPage(page: Page = backgroundPage) {
+    switch (page) {
       case "daily":
         return <DailyPlanner />;
       case "daily_shutdown":
@@ -179,9 +212,13 @@ function MainApp() {
       case "projects":
         return <Projects />;
       case "project_detail":
-        return <ProjectDetail />;
+        return <Projects />;
       case "dashboard":
         return <Dashboard />;
+      case "settings":
+        return <Settings />;
+      case "focus_landing":
+        return <FocusLanding />;
       default:
         return <DailyPlanner />;
     }
@@ -196,7 +233,7 @@ function MainApp() {
           key={pageKey}
           className="flex-1 overflow-hidden flex flex-col animate-fade-in"
         >
-          {pageHistory.length > 0 && (
+          {pageHistory.length > 0 && currentPage !== "project_detail" && (
             <div className="flex-shrink-0 px-4 py-1.5 border-b border-black/[0.05]">
               <button
                 onClick={goBack}
@@ -212,6 +249,25 @@ function MainApp() {
           )}
           {renderPage()}
         </main>
+
+        {/* Project Detail Modal Overlay */}
+        {currentPage === "project_detail" && (
+          <div
+            className="fixed inset-0 z-40 flex items-center justify-center"
+            onClick={goBack}
+          >
+            <div className="absolute inset-0 bg-black/30" />
+            <div
+              className="relative w-[720px] max-h-[80vh] bg-[#f5f4f0] rounded-xl shadow-xl animate-scale-in flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") goBack();
+              }}
+            >
+              <ProjectDetail />
+            </div>
+          </div>
+        )}
       </div>
     </ErrorBoundary>
   );

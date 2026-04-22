@@ -118,12 +118,12 @@ select {
 
 @keyframes timer-pulse {
   0%   { transform: scale(1);    opacity: 1; }
-  50%  { transform: scale(1.04); opacity: 0.7; }
+  50%  { transform: scale(1.02); opacity: 0.8; }
   100% { transform: scale(1);    opacity: 1; }
 }
 
 .timer-circle-ring {
-  animation: timer-pulse 4s ease-in-out infinite;
+  animation: timer-pulse 6s ease-in-out infinite;
   transform-origin: center;
 }
 
@@ -200,8 +200,13 @@ select {
   50% { opacity: 0.6; transform: scale(1.06); }
 }
 
+@keyframes focusGlowFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0.05; }
+}
+
 .focus-glow-layer {
-  animation: focusGlowPulse 4s ease-in-out infinite;
+  animation: focusGlowPulse 4s ease-in-out infinite, focusGlowFadeOut 60s ease-out 300s forwards;
   transform-origin: center center;
 }
 
@@ -219,5 +224,8 @@ select {
   .focus-ambient-bg {
     animation: none;
     background-color: #f5f3ee;
+  }
+  .focus-glow-layer {
+    animation: none;
   }
 }

@@ -115,7 +115,7 @@ function BarChart({
               >
                 {/* Planned bar */}
                 <div
-                  className="w-[14px] rounded-t-[3px] bg-[#e0873e]/25 transition-all duration-300"
+                  className="w-[14px] rounded-t-[3px] bg-[#c49a6c]/25 transition-all duration-300"
                   style={{
                     height: `${(plannedPct / 100) * chartHeight}px`,
                   }}
@@ -123,7 +123,7 @@ function BarChart({
                 />
                 {/* Worked bar */}
                 <div
-                  className="w-[14px] rounded-t-[3px] bg-[#e0873e] transition-all duration-300"
+                  className="w-[14px] rounded-t-[3px] bg-[#c49a6c] transition-all duration-300"
                   style={{
                     height: `${(workedPct / 100) * chartHeight}px`,
                   }}
@@ -357,11 +357,11 @@ export default function Dashboard() {
                 {/* Legend */}
                 <div className="flex items-center gap-4 mt-3 justify-center">
                   <div className="flex items-center gap-1.5">
-                    <div className="w-[10px] h-[10px] rounded-[2px] bg-[#e0873e]/25" />
+                    <div className="w-[10px] h-[10px] rounded-[2px] bg-[#c49a6c]/25" />
                     <span className="text-[10px] text-black/35">Planned</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <div className="w-[10px] h-[10px] rounded-[2px] bg-[#e0873e]" />
+                    <div className="w-[10px] h-[10px] rounded-[2px] bg-[#c49a6c]" />
                     <span className="text-[10px] text-black/35">Worked</span>
                   </div>
                 </div>

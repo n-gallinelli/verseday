@@ -98,6 +98,11 @@ export default function TaskCard({
   const [links, setLinks] = useState<Link[]>([]);
   const [newUrl, setNewUrl] = useState("");
 
+  // Track status transition for one-shot done animation
+  const prevStatusRef = useRef(task.status);
+  const justCompleted = task.status === "done" && prevStatusRef.current !== "done";
+  useEffect(() => { prevStatusRef.current = task.status; }, [task.status]);
+
   // Sync notes when task changes
   useEffect(() => {
     setNotes(task.notes ?? "");
@@ -174,7 +179,7 @@ export default function TaskCard({
           onClick={() => onToggle(task)}
           className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
             task.status === "done"
-              ? "bg-[#6A9E7F] border-[#6A9E7F] animate-task-done"
+              ? `bg-[#6A9E7F] border-[#6A9E7F]${justCompleted ? " animate-task-done" : ""}`
               : "border-black/15 hover:border-black/30"
           }`}
         >

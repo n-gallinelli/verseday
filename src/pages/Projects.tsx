@@ -234,7 +234,7 @@ export default function Projects() {
 
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-6 py-[18px] border-b border-black/[0.07] flex-shrink-0">
-        <h2 className="text-[18px] font-medium text-[#2c2a35]">Projects</h2>
+        <h2 className="text-[18px] font-medium text-[#2c2a35] font-display">Projects</h2>
         <div className="flex items-center gap-3">
           {/* Search */}
           <div className="relative">
@@ -313,16 +313,11 @@ export default function Projects() {
                   return (
                     <SortableProjectRow key={project.id} id={project.id}>
                       <div
-                        className={`bg-white rounded-[10px] overflow-hidden flex ${
+                        className={`bg-white rounded-[10px] overflow-hidden ${
                           isCompleted ? "opacity-55" : ""
                         }`}
                         style={{ border: "0.5px solid rgba(0,0,0,0.06)" }}
                       >
-                        {/* Left color bar */}
-                        <div
-                          className="w-[4px] flex-shrink-0 rounded-l-[10px]"
-                          style={{ backgroundColor: project.color }}
-                        />
                         <div className="flex-1 min-w-0">
                           <div
                             onClick={() => openProject(project.id)}
@@ -331,6 +326,13 @@ export default function Projects() {
                             <div className="flex items-center gap-2.5">
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
+                                  {/* Project color dot */}
+                                  {!isCompleted && (
+                                    <div
+                                      className="w-[8px] h-[8px] rounded-full shrink-0"
+                                      style={{ backgroundColor: project.color }}
+                                    />
+                                  )}
                                   {/* Completed checkmark */}
                                   {isCompleted && (
                                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#6A9E7F" strokeWidth="2" strokeLinecap="round" className="shrink-0">

@@ -10,6 +10,7 @@ import {
   getSetting,
 } from "../db/queries";
 import RichTextEditor from "../components/RichTextEditor";
+import Button from "../components/Button";
 import type { Project } from "../types";
 
 const CHECKPOINT_INTERVAL_MS = 30_000;
@@ -463,7 +464,7 @@ export default function FocusMode() {
       {/* Center content */}
       <div className="text-center max-w-[560px] px-8 flex flex-col items-center mt-4">
         {/* Task name — hero */}
-        <h1 className="text-[28px] font-semibold text-[#2c2a35] mb-3 leading-snug">
+        <h1 className="text-[28px] font-semibold text-[#2c2a35] mb-3 leading-snug font-display">
           {focus.task.title}
         </h1>
 
@@ -492,27 +493,15 @@ export default function FocusMode() {
             <div className="flex gap-2.5 justify-center">
               {prompt.isLongBreak ? (
                 <>
-                  <button onClick={() => handleTakeBreak(LONG_BREAK_MS)} className="px-5 py-2.5 rounded-xl bg-[#7B9ED9] text-white text-[14px] font-medium cursor-pointer hover:bg-[#6889c4] transition-colors">
-                    15 min break
-                  </button>
-                  <button onClick={() => handleTakeBreak(SHORT_BREAK_MS)} className="px-5 py-2.5 rounded-xl bg-black/[0.05] text-[#2c2a35] text-[14px] cursor-pointer hover:bg-black/[0.08] transition-colors">
-                    5 min
-                  </button>
-                  <button onClick={handleNoBreak} className="px-5 py-2.5 rounded-xl bg-black/[0.05] text-black/40 text-[14px] cursor-pointer hover:bg-black/[0.08] transition-colors">
-                    No break
-                  </button>
+                  <Button onClick={() => handleTakeBreak(LONG_BREAK_MS)}>15 min break</Button>
+                  <Button variant="secondary" onClick={() => handleTakeBreak(SHORT_BREAK_MS)}>5 min</Button>
+                  <Button variant="ghost" onClick={handleNoBreak}>No break</Button>
                 </>
               ) : (
                 <>
-                  <button onClick={() => handleTakeBreak(SHORT_BREAK_MS)} className="px-5 py-2.5 rounded-xl bg-[#7B9ED9] text-white text-[14px] font-medium cursor-pointer hover:bg-[#6889c4] transition-colors">
-                    5 min break
-                  </button>
-                  <button onClick={handleSnooze} className="px-5 py-2.5 rounded-xl bg-black/[0.05] text-[#2c2a35] text-[14px] cursor-pointer hover:bg-black/[0.08] transition-colors">
-                    In 5 min
-                  </button>
-                  <button onClick={handleNoBreak} className="px-5 py-2.5 rounded-xl bg-black/[0.05] text-black/40 text-[14px] cursor-pointer hover:bg-black/[0.08] transition-colors">
-                    No
-                  </button>
+                  <Button onClick={() => handleTakeBreak(SHORT_BREAK_MS)}>5 min break</Button>
+                  <Button variant="secondary" onClick={handleSnooze}>In 5 min</Button>
+                  <Button variant="ghost" onClick={handleNoBreak}>No</Button>
                 </>
               )}
             </div>

@@ -308,7 +308,7 @@ export default function Dashboard() {
 
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 px-6 py-4 border-b border-black/[0.07] flex-shrink-0">
-        <h2 className="flex-1 text-[18px] font-medium text-[#2c2a35]">
+        <h2 className="flex-1 text-[18px] font-medium text-[#2c2a35] font-display">
           Dashboard
         </h2>
         <button

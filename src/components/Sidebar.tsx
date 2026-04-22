@@ -130,7 +130,7 @@ function NavSection({
             onClick={() => onSelect(page)}
             className={`w-full flex items-center gap-2.5 px-4 py-2 cursor-pointer transition-colors ${
               isActive
-                ? "bg-[#7B9ED9]/10 text-[#7B9ED9] border-r-2 border-[#7B9ED9]"
+                ? "bg-[#7B9ED9]/10 text-[#7B9ED9]"
                 : "text-black/40 hover:bg-black/[0.04] hover:text-black/60"
             } [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)]`}
           >
@@ -246,7 +246,7 @@ export default function Sidebar() {
     <aside className="w-[200px] shrink-0 h-screen bg-[#efede8] border-r border-black/[0.06] flex flex-col pt-4">
       <div className="px-4 pb-5 flex items-center gap-3 text-black/30">
         <VerseDayLogo />
-        <span className="text-[20px] font-semibold text-[#7B9ED9] tracking-tight">VerseDay</span>
+        <span className="text-[20px] font-semibold text-[#7B9ED9] tracking-tight font-display">VerseDay</span>
       </div>
       <nav className="flex-1">
         <NavSection label="Planning" items={planningItems} activePage={activePage} onSelect={setPage} />

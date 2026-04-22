@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import Button from "../components/Button";
 import { getSetting, setSetting, deleteSetting } from "../db/queries";
 
 const FOCUS_DEFAULTS = {
@@ -117,7 +118,7 @@ export default function Settings() {
   return (
     <div className="flex flex-col h-full bg-[#f5f4f0] overflow-hidden">
       <div className="px-6 py-4 flex-shrink-0" style={{ borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}>
-        <h2 className="text-[18px] font-medium text-[#2c2a35]">Settings</h2>
+        <h2 className="text-[18px] font-medium text-[#2c2a35] font-display">Settings</h2>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -223,17 +224,14 @@ export default function Settings() {
                   placeholder="sk-ant-..."
                   className="flex-1 px-3 py-2 text-[13px] border border-black/[0.08] rounded-lg focus:outline-none focus:border-[#7B9ED9]/40"
                 />
-                <button
+                <Button
+                  size="sm"
                   onClick={handleSaveApiKey}
                   disabled={!hasKeyInput}
-                  className={`px-4 py-2 text-[13px] rounded-lg transition-colors ${
-                    hasKeyInput
-                      ? "bg-[#7B9ED9] text-white cursor-pointer hover:bg-[#6889c4] opacity-100"
-                      : "bg-[#7B9ED9] text-white opacity-40 cursor-not-allowed"
-                  }`}
+                  className={hasKeyInput ? "" : "opacity-40 cursor-not-allowed"}
                 >
                   {keySaved ? "Saved!" : "Save"}
-                </button>
+                </Button>
               </div>
               {apiKeyStatus === "configured" && (
                 <button

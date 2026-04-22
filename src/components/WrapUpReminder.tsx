@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
+import Button from "./Button";
 
 const WRAPUP_HOUR = 16;
 const WRAPUP_MINUTE = 30;
@@ -98,11 +99,8 @@ export default function WrapUpReminder() {
           Take a few minutes to reflect and plan for tomorrow.
         </p>
         <div className="flex items-center gap-2">
-          <button onClick={() => {
-              setVisible(false);
-              setPage("daily_shutdown");
-            }} className="flex-1 py-2 rounded-lg bg-[#7B9ED9] text-white text-[13px] font-medium cursor-pointer hover:bg-[#6889c4] transition-colors">Start shutdown</button>
-          <button onClick={() => setVisible(false)} className="px-3 py-2 rounded-lg text-[13px] text-black/35 cursor-pointer hover:bg-black/[0.04] transition-colors">Later</button>
+          <Button size="sm" className="flex-1" onClick={() => { setVisible(false); setPage("daily_shutdown"); }}>Start shutdown</Button>
+          <Button variant="ghost" size="sm" onClick={() => setVisible(false)}>Later</Button>
         </div>
       </div>
     </div>

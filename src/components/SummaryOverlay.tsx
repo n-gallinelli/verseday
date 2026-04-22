@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import Button from "./Button";
 import { getSetting, setSetting } from "../db/queries";
 import { callClaude } from "../utils/summaryApi";
 import {
@@ -180,9 +181,9 @@ export default function SummaryOverlay({
                 className="w-full px-3 py-2 text-sm border border-black/15 rounded-lg focus:outline-none focus:border-[#7B9ED9]"
               />
               <div className="flex gap-2">
-                <button onClick={handleSaveKey} disabled={!keyInput.trim()} className="px-4 py-1.5 text-sm bg-[#7B9ED9] text-white rounded-lg disabled:opacity-40 cursor-pointer">Save key</button>
+                <Button size="sm" onClick={handleSaveKey} disabled={!keyInput.trim()} className={keyInput.trim() ? "" : "opacity-40"}>Save key</Button>
                 {editingKey && (
-                  <button onClick={() => setEditingKey(false)} className="px-4 py-1.5 text-sm text-black/50 hover:text-black/70 cursor-pointer">Cancel</button>
+                  <Button variant="ghost" size="sm" onClick={() => setEditingKey(false)}>Cancel</Button>
                 )}
               </div>
             </div>
@@ -196,7 +197,7 @@ export default function SummaryOverlay({
                 {type === "shutdown" ? "productivity recap" : type === "plan" ? "plan overview" : "weekly summary"}{" "}
                 written for {AUDIENCES[audience].label}.
               </p>
-              <button onClick={handleGenerate} className="px-5 py-2 text-sm bg-[#7B9ED9] text-white rounded-lg hover:bg-[#6b8ec9] cursor-pointer">Generate summary</button>
+              <Button size="sm" onClick={handleGenerate}>Generate summary</Button>
             </div>
           )}
 
@@ -223,7 +224,7 @@ export default function SummaryOverlay({
               <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-lg">
                 {error}
               </div>
-              <button onClick={handleGenerate} className="px-4 py-1.5 text-sm bg-[#7B9ED9] text-white rounded-lg cursor-pointer">Try again</button>
+              <Button size="sm" onClick={handleGenerate}>Try again</Button>
             </div>
           )}
         </div>
@@ -246,8 +247,8 @@ export default function SummaryOverlay({
           <div className="flex gap-2">
             {status === "success" && (
               <>
-                <button onClick={handleGenerate} className="px-4 py-1.5 text-sm text-black/50 hover:text-black/70 border border-black/15 rounded-lg cursor-pointer">Regenerate</button>
-                <button onClick={handleCopy} className="px-4 py-1.5 text-sm bg-[#7B9ED9] text-white rounded-lg hover:bg-[#6b8ec9] cursor-pointer">{copied ? "Copied!" : "Copy to clipboard"}</button>
+                <Button variant="secondary" size="sm" onClick={handleGenerate}>Regenerate</Button>
+                <Button size="sm" onClick={handleCopy}>{copied ? "Copied!" : "Copy to clipboard"}</Button>
               </>
             )}
           </div>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { PRESET_COLORS } from "../db/queries";
+import Button from "./Button";
 
 const PALETTE = PRESET_COLORS.slice(0, 8);
 const MAX_NAME_LENGTH = 100;
@@ -107,7 +108,7 @@ export default function NewProjectPanel({
 
       {/* Footer */}
       <div className="px-[18px] py-[14px] border-t border-black/[0.07] flex-shrink-0">
-        <button onClick={handleCreate} className="w-full bg-[#6b5fd4] text-white border-none rounded-lg py-[9px] text-[13px] font-medium cursor-pointer hover:bg-[#cc7633]">Create project</button>
+        <Button size="sm" className="w-full" onClick={handleCreate}>Create project</Button>
       </div>
     </div>
   );

@@ -166,6 +166,25 @@ select {
   animation: slideUp 150ms ease-out both;
 }
 
+@keyframes taskDone {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+.animate-task-done {
+  animation: taskDone 250ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-scale-in,
+  .animate-slide-up,
+  .animate-task-done {
+    animation: none;
+  }
+}
+
 /* Task list stagger: apply to first 5 items only */
 .animate-stagger:nth-child(1) { animation-delay: 0ms; }
 .animate-stagger:nth-child(2) { animation-delay: 30ms; }

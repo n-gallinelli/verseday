@@ -292,12 +292,12 @@ export default function Projects() {
                     {searchQuery
                       ? `No projects matching "${searchQuery}"`
                       : filter === "all"
-                        ? "No projects yet"
+                        ? "Start your first project"
                         : `No ${filter} projects`}
                   </p>
                   {filter === "all" && !searchQuery && (
                     <p className="text-[12px] text-black/25">
-                      Type a name below to create your first project
+                      Give your work a home. Type a name below to begin.
                     </p>
                   )}
                 </div>

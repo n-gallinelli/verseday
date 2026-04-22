@@ -481,7 +481,7 @@ export default function FocusMode() {
 
         {/* Break prompt */}
         {isPrompting && prompt && (
-          <div className="mb-8 p-6 rounded-2xl bg-white border border-black/[0.08] shadow-sm w-full">
+          <div className="mb-8 p-6 rounded-2xl bg-white border border-black/[0.08] shadow-sm w-full animate-scale-in">
             <p className="text-[15px] font-medium text-[#2c2a35] mb-1">
               Pomodoro complete!
             </p>

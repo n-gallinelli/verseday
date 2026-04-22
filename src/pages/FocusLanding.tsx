@@ -94,8 +94,8 @@ export default function FocusLanding() {
         {/* No tasks state */}
         {tasks.length === 0 && (
           <div className="text-center">
-            <p className="text-[14px] text-black/35 mb-1">No tasks scheduled for today</p>
-            <p className="text-[12px] text-black/25">Add tasks to your daily plan to get started</p>
+            <p className="text-[14px] text-black/35 mb-1">Your day is wide open</p>
+            <p className="text-[12px] text-black/25">Head to Daily Plan to queue up what you'll focus on.</p>
           </div>
         )}
 

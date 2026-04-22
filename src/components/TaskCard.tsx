@@ -174,7 +174,7 @@ export default function TaskCard({
           onClick={() => onToggle(task)}
           className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
             task.status === "done"
-              ? "bg-[#6A9E7F] border-[#6A9E7F]"
+              ? "bg-[#6A9E7F] border-[#6A9E7F] animate-task-done"
               : "border-black/15 hover:border-black/30"
           }`}
         >

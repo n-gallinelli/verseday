@@ -319,16 +319,16 @@ export default function Dashboard() {
         {!hasAnyData ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <p className="text-[14px] text-black/35 mb-1">
-              No data for this week
+              Nothing tracked yet this week
             </p>
             <p className="text-[12px] text-black/25">
-              Schedule tasks and track time to see your dashboard
+              Plan your day, start a focus session, and your week will take shape here.
             </p>
           </div>
         ) : (
           <div className="max-w-[680px] mx-auto px-6 py-6">
             {/* ── Week summary ────────────────────────────────────────── */}
-            <div className="mb-8">
+            <div className="mb-8 animate-slide-up animate-stagger">
               <div className="text-[36px] font-semibold leading-none font-display text-[#2c2a35]">
                 {formatMinutesToHours(totalWorkedMinutes)}h
                 <span className="text-[14px] font-normal text-black/30 ml-2">worked</span>
@@ -344,7 +344,7 @@ export default function Dashboard() {
             </div>
 
             {/* ── Daily breakdown ────────────────────────────────────── */}
-            <section className="mb-6">
+            <section className="mb-6 animate-slide-up animate-stagger">
               <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-3">
                 Daily breakdown
               </h3>
@@ -370,7 +370,7 @@ export default function Dashboard() {
 
             {/* ── Project progress ───────────────────────────────────── */}
             {activeProjects.length > 0 && (
-              <section className="mb-6">
+              <section className="mb-6 animate-slide-up animate-stagger">
                 <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-2">
                   Project progress
                 </h3>
@@ -396,7 +396,7 @@ export default function Dashboard() {
 
             {/* ── Recent activity ────────────────────────────────────── */}
             {recentCompleted.length > 0 && (
-              <section>
+              <section className="animate-slide-up animate-stagger">
                 <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-2">
                   Recent activity
                 </h3>

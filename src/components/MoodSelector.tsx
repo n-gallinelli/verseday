@@ -1,0 +1,114 @@
+interface MoodSelectorProps {
+  value: string | null;
+  onChange: (value: string | null) => void;
+  tintColor?: string;
+}
+
+const MOODS: { key: string; label: string }[] = [
+  { key: "Bad", label: "Bad" },
+  { key: "Rough", label: "Rough" },
+  { key: "Okay", label: "Okay" },
+  { key: "Good", label: "Good" },
+  { key: "Great", label: "Great" },
+];
+
+function MoodIcon({ mood, selected, tint }: { mood: string; selected: boolean; tint: string }) {
+  const size = 28;
+  const stroke = selected ? tint : "rgba(0,0,0,0.25)";
+  const fill = selected ? `${tint}15` : "none";
+  const sw = 1.6;
+
+  const common = { width: size, height: size, viewBox: "0 0 28 28", fill: "none" };
+
+  switch (mood) {
+    case "Bad":
+      return (
+        <svg {...common}>
+          <circle cx="14" cy="14" r="11" stroke={stroke} strokeWidth={sw} fill={fill} />
+          {/* Sad eyes */}
+          <circle cx="10" cy="11.5" r="1.2" fill={stroke} />
+          <circle cx="18" cy="11.5" r="1.2" fill={stroke} />
+          {/* Frown */}
+          <path d="M9.5 19.5c1.5-2.5 7.5-2.5 9 0" stroke={stroke} strokeWidth={sw} strokeLinecap="round" fill="none" />
+        </svg>
+      );
+    case "Rough":
+      return (
+        <svg {...common}>
+          <circle cx="14" cy="14" r="11" stroke={stroke} strokeWidth={sw} fill={fill} />
+          <circle cx="10" cy="12" r="1.2" fill={stroke} />
+          <circle cx="18" cy="12" r="1.2" fill={stroke} />
+          {/* Slight frown */}
+          <path d="M10 18.5c1.2-1.5 6.8-1.5 8 0" stroke={stroke} strokeWidth={sw} strokeLinecap="round" fill="none" />
+        </svg>
+      );
+    case "Okay":
+      return (
+        <svg {...common}>
+          <circle cx="14" cy="14" r="11" stroke={stroke} strokeWidth={sw} fill={fill} />
+          <circle cx="10" cy="12" r="1.2" fill={stroke} />
+          <circle cx="18" cy="12" r="1.2" fill={stroke} />
+          {/* Flat mouth */}
+          <line x1="10" y1="18" x2="18" y2="18" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
+        </svg>
+      );
+    case "Good":
+      return (
+        <svg {...common}>
+          <circle cx="14" cy="14" r="11" stroke={stroke} strokeWidth={sw} fill={fill} />
+          <circle cx="10" cy="12" r="1.2" fill={stroke} />
+          <circle cx="18" cy="12" r="1.2" fill={stroke} />
+          {/* Slight smile */}
+          <path d="M10 17c1.2 1.5 6.8 1.5 8 0" stroke={stroke} strokeWidth={sw} strokeLinecap="round" fill="none" />
+        </svg>
+      );
+    case "Great":
+      return (
+        <svg {...common}>
+          <circle cx="14" cy="14" r="11" stroke={stroke} strokeWidth={sw} fill={fill} />
+          <circle cx="10" cy="11.5" r="1.2" fill={stroke} />
+          <circle cx="18" cy="11.5" r="1.2" fill={stroke} />
+          {/* Big smile */}
+          <path d="M9 16.5c1.5 3 8.5 3 10 0" stroke={stroke} strokeWidth={sw} strokeLinecap="round" fill="none" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
+const MOOD_COLORS: Record<string, string> = {
+  Bad: "#C0614A",
+  Rough: "#C0614A",
+  Okay: "#D4A843",
+};
+
+export default function MoodSelector({ value, onChange, tintColor = "#7B9ED9" }: MoodSelectorProps) {
+  return (
+    <div className="flex gap-1">
+      {MOODS.map((m) => {
+        const selected = value === m.key;
+        const color = selected && MOOD_COLORS[m.key] ? MOOD_COLORS[m.key] : tintColor;
+        return (
+          <button
+            key={m.key}
+            onClick={() => onChange(selected ? null : m.key)}
+            className="flex-1 flex flex-col items-center gap-1 py-2 rounded-[7px] cursor-pointer transition-colors"
+            style={{
+              border: `1.5px solid ${selected ? color : "rgba(0,0,0,0.06)"}`,
+              backgroundColor: selected ? `${color}08` : "white",
+            }}
+          >
+            <MoodIcon mood={m.key} selected={selected} tint={selected ? color : tintColor} />
+            <span
+              className="text-[9px]"
+              style={{ color: selected ? color : "rgba(0,0,0,0.25)" }}
+            >
+              {m.label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}

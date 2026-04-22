@@ -98,21 +98,11 @@ export default function WrapUpReminder() {
           Take a few minutes to reflect and plan for tomorrow.
         </p>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
+          <button onClick={() => {
               setVisible(false);
               setPage("daily_shutdown");
-            }}
-            className="flex-1 py-2 rounded-lg bg-[#7B9ED9] text-white text-[13px] font-medium cursor-pointer hover:bg-[#6889c4] transition-colors"
-          >
-            Start shutdown
-          </button>
-          <button
-            onClick={() => setVisible(false)}
-            className="px-3 py-2 rounded-lg text-[13px] text-black/35 cursor-pointer hover:bg-black/[0.04] transition-colors"
-          >
-            Later
-          </button>
+            }} className="flex-1 py-2 rounded-lg bg-[#7B9ED9] text-white text-[13px] font-medium cursor-pointer hover:bg-[#6889c4] transition-colors">Start shutdown</button>
+          <button onClick={() => setVisible(false)} className="px-3 py-2 rounded-lg text-[13px] text-black/35 cursor-pointer hover:bg-black/[0.04] transition-colors">Later</button>
         </div>
       </div>
     </div>

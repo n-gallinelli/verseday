@@ -18,7 +18,7 @@ export interface Task {
   objective_id: number | null;
   title: string;
   description: string | null;
-  priority: "low" | "medium" | "high" | "urgent";
+  priority: string;
   status: "todo" | "in_progress" | "done";
   estimated_minutes: number | null;
   date_scheduled: string | null;
@@ -26,6 +26,9 @@ export interface Task {
   notes: string | null;
   recurrence: string | null;
   recurrence_source_id: number | null;
+  original_date: string | null;
+  rollover_count: number;
+  is_highlight: number;
   created_at: string;
 }
 
@@ -80,4 +83,6 @@ export type Page =
   | "projects"
   | "project_detail"
   | "dashboard"
-  | "focus";
+  | "focus"
+  | "focus_landing"
+  | "settings";

@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { getWorkedMinutesByDate, setTaskRecurrence, parseRecurrence, serializeRecurrence } from "../db/queries";
+import CalendarPicker from "./CalendarPicker";
+import RichTextEditor from "./RichTextEditor";
 import type { Task, Project } from "../types";
 
 const MAX_TITLE_LENGTH = 200;
 const MAX_ESTIMATE_MINUTES = 480;
-const MAX_NOTES_LENGTH = 5000;
 
 const ESTIMATE_PRESETS = [
   { label: "0m", value: "0" },
@@ -289,10 +290,12 @@ export default function TaskDetailOverlay({
       <div className="absolute inset-0 bg-black/30" />
       <div
         ref={modalRef}
-        className="relative bg-white rounded-xl shadow-xl w-[540px] max-h-[85vh] overflow-y-auto animate-scale-in"
+        className="relative bg-white rounded-[12px] min-w-[480px] max-w-[720px] w-[620px] max-h-[85vh] overflow-y-auto animate-scale-in"
+        style={{ boxShadow: "0 8px 40px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06)" }}
         onClick={(e) => { e.stopPropagation(); handleModalClick(e); }}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
+            e.stopPropagation();
             if (openPopover) { setOpenPopover(null); } else { handleClose(); }
           }
         }}
@@ -307,7 +310,7 @@ export default function TaskDetailOverlay({
               }}
               className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 cursor-pointer ${
                 task.status === "done"
-                  ? "bg-[#4a9e6e] border-[#4a9e6e]"
+                  ? "bg-[#6A9E7F] border-[#6A9E7F]"
                   : "border-black/20"
               }`}
             >
@@ -324,7 +327,7 @@ export default function TaskDetailOverlay({
               debouncedSave({ title: e.target.value });
             }}
             maxLength={MAX_TITLE_LENGTH}
-            className="flex-1 text-[16px] font-medium text-[#2c2a35] bg-transparent border-none outline-none"
+            className="flex-1 min-w-0 text-[15px] font-medium text-[#2c2a35] bg-transparent border-none outline-none overflow-hidden text-ellipsis whitespace-nowrap"
           />
           {onStartFocus && task.status !== "done" && (
             <button
@@ -350,14 +353,15 @@ export default function TaskDetailOverlay({
         </div>
 
         {/* Meta row */}
-        <div className="flex items-center flex-wrap gap-2 px-6 pb-4">
+        <div className="flex items-center flex-wrap gap-2 px-6 pb-6">
           <select
             value={projectId}
             onChange={(e) => {
               setProjectId(e.target.value);
               debouncedSave({ projectId: e.target.value });
             }}
-            className="bg-black/[0.04] border border-black/[0.08] rounded-md px-2 py-1 text-[12px] text-black/50 outline-none cursor-pointer"
+            className="bg-transparent border border-black/[0.08] rounded-[6px] px-[10px] py-1 text-[12px] text-black/40 font-normal outline-none cursor-pointer max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap"
+            title={projects.find((p) => String(p.id) === projectId)?.name ?? "No project"}
           >
             <option value="">No project</option>
             {projects.map((p) => (
@@ -366,69 +370,21 @@ export default function TaskDetailOverlay({
               </option>
             ))}
           </select>
-          <div className="relative flex items-center gap-1">
-            <button
-              type="button"
-              onClick={(e) => {
-                const input = (e.currentTarget.nextElementSibling as HTMLInputElement);
-                input?.showPicker?.();
-                input?.focus();
-              }}
-              className="bg-black/[0.04] border border-black/[0.08] rounded-md px-2 py-1 text-[12px] text-black/50 cursor-pointer hover:border-black/[0.14]"
-            >
-              {dateScheduled
-                ? new Date(dateScheduled + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
-                : "—"}
-            </button>
-            <input
-              type="date"
-              value={dateScheduled}
-              onChange={(e) => {
-                setDateScheduled(e.target.value);
-                debouncedSave({ dateScheduled: e.target.value });
-              }}
-              className="absolute opacity-0 w-0 h-0 pointer-events-none"
-              tabIndex={-1}
-            />
-            {dateScheduled && (
-              <button
-                type="button"
-                onClick={() => {
-                  setDateScheduled("");
-                  debouncedSave({ dateScheduled: "" });
-                }}
-                className="text-[11px] text-black/25 hover:text-black/50 cursor-pointer"
-                title="Clear date"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              const next = priority === "high" ? "medium" : "high";
-              setPriority(next);
-              debouncedSave({ priority: next });
+          <CalendarPicker
+            value={dateScheduled}
+            onChange={(date) => {
+              setDateScheduled(date);
+              debouncedSave({ dateScheduled: date });
             }}
-            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] cursor-pointer border ${
-              priority === "high"
-                ? "bg-[#d95f5f]/10 border-[#d95f5f]/25 text-[#d95f5f]"
-                : "bg-black/[0.04] border-black/[0.08] text-black/45"
-            }`}
-          >
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                priority === "high" ? "bg-[#d95f5f]" : "bg-black/20"
-              }`}
-            />
-            High
-          </button>
-
+            onClear={() => {
+              setDateScheduled("");
+              debouncedSave({ dateScheduled: "" });
+            }}
+          />
           {/* Divider */}
           <div className="w-px h-5 bg-black/[0.08]" />
 
-          {/* Time pills */}
+          {/* Time pills — Estimated then Worked */}
           <div data-time-pill>
             <TimeFieldPill
               label="Estimated"
@@ -442,31 +398,29 @@ export default function TaskDetailOverlay({
               }}
             />
           </div>
-          {onSetWorkedMinutes && (
-            <div data-time-pill>
-              <TimeFieldPill
-                label="Worked"
-                value={worked}
-                presets={WORKED_PRESETS}
-                isOpen={openPopover === "worked"}
-                onToggle={() => setOpenPopover(openPopover === "worked" ? null : "worked")}
-                onChange={(val) => {
-                  setWorked(val);
-                  if (val) {
-                    const n = parseInt(val);
-                    if (!isNaN(n) && n > 0) onSetWorkedMinutes(task.id, n);
-                  }
-                }}
-                autoTrackedNote={autoTrackedNote}
-              />
-            </div>
-          )}
+          <div data-time-pill>
+            <TimeFieldPill
+              label="Worked"
+              value={worked}
+              presets={WORKED_PRESETS}
+              isOpen={openPopover === "worked"}
+              onToggle={() => setOpenPopover(openPopover === "worked" ? null : "worked")}
+              onChange={(val) => {
+                setWorked(val);
+                if (onSetWorkedMinutes && val) {
+                  const n = parseInt(val);
+                  if (!isNaN(n) && n > 0) onSetWorkedMinutes(task.id, n);
+                }
+              }}
+              autoTrackedNote={autoTrackedNote}
+            />
+          </div>
         </div>
 
         {/* Recurrence control */}
         {!isInstance && (
           <div className="px-6 pb-3">
-            <label className="text-[10px] uppercase tracking-[0.08em] text-black/25 mb-1.5 block">
+            <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/25 mb-1.5 block">
               Repeat
             </label>
             <div className="flex items-center gap-2">
@@ -483,7 +437,7 @@ export default function TaskDetailOverlay({
                     setTaskRecurrence(task.id, serializeRecurrence({ freq: freq as "daily" | "weekdays" })).catch(() => {});
                   }
                 }}
-                className="bg-black/[0.04] border border-black/[0.08] rounded-md px-2 py-1 text-[12px] text-black/50 outline-none cursor-pointer"
+                className="bg-transparent border border-black/[0.08] rounded-[6px] px-[10px] py-1 text-[12px] text-black/40 font-normal outline-none cursor-pointer"
               >
                 <option value="none">None</option>
                 <option value="daily">Daily</option>
@@ -498,7 +452,7 @@ export default function TaskDetailOverlay({
                     setRecurrenceDay(day);
                     setTaskRecurrence(task.id, serializeRecurrence({ freq: "weekly", day })).catch(() => {});
                   }}
-                  className="bg-black/[0.04] border border-black/[0.08] rounded-md px-2 py-1 text-[12px] text-black/50 outline-none cursor-pointer"
+                  className="bg-transparent border border-black/[0.08] rounded-[6px] px-[10px] py-1 text-[12px] text-black/40 font-normal outline-none cursor-pointer"
                 >
                   <option value={0}>Sunday</option>
                   <option value={1}>Monday</option>
@@ -521,39 +475,46 @@ export default function TaskDetailOverlay({
           </div>
         )}
 
-        {/* Per-day breakdown */}
+        {/* Per-day breakdown — only show when worked across 2+ days */}
         {dayBreakdown.length > 1 && (
           <div className="px-6 pb-3">
-            <label className="text-[10px] uppercase tracking-[0.08em] text-black/25 mb-1 block">
+            <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/25 mb-2 block">
               Worked on
             </label>
-            <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-              {dayBreakdown.map((d) => (
-                <span key={d.date} className="text-[11px] text-black/35">
-                  {new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
-                  {" "}
-                  <span className="text-black/50">{d.minutes}m</span>
-                </span>
-              ))}
+            <div className="flex flex-wrap gap-1.5">
+              {dayBreakdown.map((d) => {
+                const maxMin = Math.max(...dayBreakdown.map((x) => x.minutes));
+                const barWidth = maxMin > 0 ? Math.max(12, Math.round((d.minutes / maxMin) * 100)) : 12;
+                return (
+                  <div key={d.date} className="flex items-center gap-1.5 bg-[#F4F4F1] rounded-md px-2 py-1">
+                    <div
+                      className="h-[3px] rounded-full bg-[#7B9ED9]"
+                      style={{ width: `${barWidth}%`, minWidth: 8, maxWidth: 48 }}
+                    />
+                    <span className="text-[10px] text-black/35 whitespace-nowrap">
+                      {new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                    </span>
+                    <span className="text-[10px] text-black/50 font-medium">{d.minutes}m</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
 
         {/* Notes */}
-        <div className="px-6 pb-5">
-          <label className="text-[10px] uppercase tracking-widest text-black/30 mb-1.5 block">
+        <div className="px-6 pb-6">
+          <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1.5 block">
             Notes
           </label>
-          <textarea
+          <RichTextEditor
             value={notes}
-            onChange={(e) => {
-              setNotes(e.target.value);
-              debouncedSave({ notes: e.target.value });
+            onChange={(html) => {
+              setNotes(html);
+              debouncedSave({ notes: html });
             }}
-            maxLength={MAX_NOTES_LENGTH}
             placeholder="Add notes..."
-            rows={5}
-            className="w-full bg-[#f5f4f0] border border-black/[0.06] rounded-md px-3 py-2.5 text-[13px] text-black/55 placeholder-black/20 resize-none leading-relaxed outline-none focus:border-[#7B9ED9]/30"
+            className="w-full bg-white border border-black/[0.06] rounded-md px-3 py-2.5 text-[13px] text-black/55 leading-relaxed min-h-[100px] focus-within:border-[#7B9ED9]/30"
           />
         </div>
 
@@ -568,9 +529,12 @@ export default function TaskDetailOverlay({
                 onDelete(task.id);
                 onClose();
               }}
-              className="text-[11px] text-[#d95f5f]/50 hover:text-[#d95f5f] cursor-pointer"
+              className="text-[#C0614A]/40 hover:text-[#C0614A] cursor-pointer p-2 rounded-md hover:bg-[#C0614A]/[0.06] transition-colors"
+              title="Delete task"
             >
-              Delete task
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />
+              </svg>
             </button>
           )}
         </div>

@@ -1,0 +1,172 @@
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { useAppStore } from "../stores/appStore";
+import {
+  getTasksForDate,
+  getProjects,
+  startTimeEntry,
+  getWorkedMinutesForTask,
+} from "../db/queries";
+import type { Task, Project } from "../types";
+import { formatHoursMinutes } from "../utils/format";
+
+export default function FocusLanding() {
+  const { startFocus } = useAppStore();
+  const today = useMemo(() => new Date().toISOString().split("T")[0], []);
+
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  const projectMap = new Map(projects.map((p) => [p.id, p]));
+
+  const loadData = useCallback(async () => {
+    const [t, p] = await Promise.all([
+      getTasksForDate(today),
+      getProjects(false),
+    ]);
+    setTasks(t);
+    setProjects(p);
+    setLoading(false);
+  }, [today]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const remainingTasks = tasks.filter((t) => t.status !== "done");
+  const completedTasks = tasks.filter((t) => t.status === "done");
+  const currentTask = remainingTasks[selectedIndex] ?? null;
+
+  // Clamp selected index when tasks change
+  useEffect(() => {
+    if (selectedIndex >= remainingTasks.length && remainingTasks.length > 0) {
+      setSelectedIndex(remainingTasks.length - 1);
+    }
+  }, [remainingTasks.length, selectedIndex]);
+
+  async function handleStartFocus(task: Task) {
+    const priorMs = (await getWorkedMinutesForTask(task.id)) * 60 * 1000;
+    const entryId = await startTimeEntry(task.id, "tracked");
+    startFocus(task, entryId, "focus_landing", priorMs);
+  }
+
+  // Keyboard: arrow keys for navigation, Space/Enter to start
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const el = document.activeElement;
+      const isInput = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT");
+      if (isInput) return;
+
+      if (e.key === "ArrowLeft" && selectedIndex > 0) {
+        e.preventDefault();
+        setSelectedIndex((i) => i - 1);
+      } else if (e.key === "ArrowRight" && selectedIndex < remainingTasks.length - 1) {
+        e.preventDefault();
+        setSelectedIndex((i) => i + 1);
+      } else if ((e.key === " " || e.key === "Enter") && currentTask) {
+        e.preventDefault();
+        handleStartFocus(currentTask);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedIndex, remainingTasks.length, currentTask]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col h-full bg-[#f5f4f0] items-center justify-center">
+        <span className="text-[14px] text-black/30">Loading...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full bg-[#f5f4f0] overflow-hidden">
+      {/* Header */}
+      <div className="px-6 py-4 flex-shrink-0" style={{ borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}>
+        <h2 className="text-[18px] font-medium text-[#2c2a35]">Focus</h2>
+      </div>
+
+      {/* Content — vertically centered */}
+      <div className="flex-1 flex flex-col items-center justify-center px-6">
+        {/* No tasks state */}
+        {tasks.length === 0 && (
+          <div className="text-center">
+            <p className="text-[14px] text-black/35 mb-1">No tasks scheduled for today</p>
+            <p className="text-[12px] text-black/25">Add tasks to your daily plan to get started</p>
+          </div>
+        )}
+
+        {/* All done state */}
+        {tasks.length > 0 && remainingTasks.length === 0 && (
+          <div className="text-center">
+            <span className="text-[32px] mb-3 block">🎉</span>
+            <p className="text-[16px] font-medium text-[#2c2a35] mb-1">All tasks complete</p>
+            <p className="text-[12px] text-black/30">{completedTasks.length} tasks done today</p>
+          </div>
+        )}
+
+        {/* Current task — centered hero */}
+        {currentTask && (
+          <div className="flex flex-col items-center text-center max-w-[440px]">
+            {/* Project label — always reserve space */}
+            <div className="flex items-center gap-1.5 mb-2 h-[18px]">
+              {currentTask.project_id && projectMap.get(currentTask.project_id) && (
+                <>
+                  <div
+                    className="w-2 h-2 rounded-full"
+                    style={{ backgroundColor: projectMap.get(currentTask.project_id)!.color }}
+                  />
+                  <span className="text-[11px] text-black/30 truncate max-w-[200px]">
+                    {projectMap.get(currentTask.project_id)!.name}
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* Task title — fixed 2-line height to prevent layout shift */}
+            <h1
+              className="text-[20px] font-medium text-[#2c2a35] leading-snug mb-6 overflow-hidden"
+              style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", minHeight: "2.6em" } as React.CSSProperties}
+            >
+              {currentTask.title}
+            </h1>
+
+            {/* Start button */}
+            <button onClick={() => handleStartFocus(currentTask)} className="px-6 py-2.5 rounded-lg bg-[#7B9ED9] text-white text-[13px] font-medium cursor-pointer hover:bg-[#6889c4] transition-colors flex items-center justify-center gap-2">
+              <svg width="10" height="12" viewBox="0 0 8 10" fill="white">
+                <path d="M0 0v10l8-5z" />
+              </svg>
+              Start focusing
+            </button>
+
+            {/* Nav arrows */}
+            {remainingTasks.length > 1 && (
+              <div className="flex items-center gap-3 mt-4">
+                <button
+                  onClick={() => setSelectedIndex((i) => i - 1)}
+                  disabled={selectedIndex === 0}
+                  className="w-8 h-8 flex items-center justify-center rounded-full text-black/25 hover:text-black/50 hover:bg-black/[0.04] cursor-pointer disabled:opacity-20 disabled:cursor-default transition-colors"
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                    <path d="M8.5 2.5L4 7l4.5 4.5" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setSelectedIndex((i) => i + 1)}
+                  disabled={selectedIndex >= remainingTasks.length - 1}
+                  className="w-8 h-8 flex items-center justify-center rounded-full text-black/25 hover:text-black/50 hover:bg-black/[0.04] cursor-pointer disabled:opacity-20 disabled:cursor-default transition-colors"
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                    <path d="M5.5 2.5L10 7l-4.5 4.5" />
+                  </svg>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -210,7 +210,7 @@ export default function FocusPip() {
       <div className="bg-[#f5f4f0] px-3.5 py-2.5 select-none overflow-hidden" style={{ borderRadius: 12 }}>
         <div className="flex items-center gap-2.5">
           <div className="flex-1 min-w-0">
-            <div className="text-[10px] uppercase tracking-[0.06em] text-black/25 mb-0.5">Break</div>
+            <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/25 mb-0.5">Break</div>
             <div className="text-[20px] font-medium tabular-nums text-[#5DCAA5] leading-none" style={{ letterSpacing: "-0.5px" }}>
               {formatCountdown(state.breakRemaining)}
             </div>

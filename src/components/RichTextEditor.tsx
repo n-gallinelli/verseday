@@ -102,7 +102,20 @@ export default function RichTextEditor({
   if (!editor) return null;
 
   return (
-    <div className={className}>
+    <div
+      className={`cursor-text ${className}`}
+      onClick={(e) => {
+        // Make the entire visible box act as a click target for the editor.
+        // If the click landed on padding / empty space below the text — i.e.
+        // anywhere that *isn't* the contenteditable itself — redirect focus
+        // to the end of the document. Clicks inside the editor are left
+        // alone so Tiptap can place the cursor at the click position.
+        const editorEl = editor.view.dom;
+        if (!editorEl.contains(e.target as Node)) {
+          editor.commands.focus("end");
+        }
+      }}
+    >
       <div className="relative">
         {isEmpty && placeholder && (
           <div className="absolute top-0 left-0 pointer-events-none text-black/25 select-none">

@@ -202,11 +202,11 @@ function VerseDayLogo() {
       {/* Four 94° segments overlapping by 4° at each junction; later segments are drawn */}
       {/* on top so each one's round start cap extends back into the previous segment, */}
       {/* creating the "fits together" interlock. Colors echo the sunset scene inside. */}
-      {/* Segment 1 — sunset pink (top, -137° → -43°) */}
+      {/* Segment 1 — sunset pink, ACCENT (top, -137° → -43°): thicker + deeper */}
       <path
         d="M 4.15,4.54 A 8,8 0 0 1 15.85,4.54"
-        stroke="#F4B8C8"
-        strokeWidth="1.6"
+        stroke="#E89BB1"
+        strokeWidth="1.92"
         strokeLinecap="round"
       />
       {/* Segment 2 — sunset peach (right, -47° → 47°) */}

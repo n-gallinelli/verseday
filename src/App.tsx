@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { register } from "@tauri-apps/plugin-global-shortcut";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { invoke } from "@tauri-apps/api/core";
 import ErrorBoundary from "./components/ErrorBoundary";
 import FocusPip from "./components/FocusPip";
 import QuickAdd from "./pages/QuickAdd";
@@ -94,15 +95,22 @@ function MainApp() {
         await closeOrphanedTimeEntries();
       }
 
-      // ── TEMPORARY: step 3/4 verification shortcut ──
-      // Will be replaced by the consent-gated registration in step 5.
+      // Global quick-add shortcut — toggles the quick-add window.
+      // When showing: captures the frontmost app first so dismiss can
+      // refocus it. When already visible: dismisses + refocuses.
       try {
         await register("CmdOrCtrl+Shift+A", async () => {
           const win = await WebviewWindow.getByLabel("quick-add");
           if (!win) return;
-          await win.center();
-          await win.show();
-          await win.setFocus();
+          const visible = await win.isVisible();
+          if (visible) {
+            await invoke("dismiss_quick_add");
+          } else {
+            await invoke("capture_previous_app");
+            await win.center();
+            await win.show();
+            await win.setFocus();
+          }
         });
       } catch { /* silent */ }
     }

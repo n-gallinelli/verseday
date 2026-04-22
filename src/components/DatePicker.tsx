@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 
 interface DatePickerProps {
   selectedDate: string; // YYYY-MM-DD
   onSelect: (date: string) => void;
   onClose: () => void;
+  anchorRef?: React.RefObject<HTMLElement | null>;
 }
 
 const DAY_HEADERS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
@@ -16,13 +18,31 @@ export default function DatePicker({
   selectedDate,
   onSelect,
   onClose,
+  anchorRef,
 }: DatePickerProps) {
-  const initial = new Date(selectedDate + "T00:00:00");
+  const parsed = new Date(selectedDate + "T00:00:00");
+  const initial = isNaN(parsed.getTime()) ? new Date() : parsed;
   const [viewYear, setViewYear] = useState(initial.getFullYear());
   const [viewMonth, setViewMonth] = useState(initial.getMonth());
   const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   const todayStr = toIso(new Date());
+
+  const updatePosition = useCallback(() => {
+    const anchor = anchorRef?.current;
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    const calHeight = 340;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const top = spaceBelow < calHeight ? rect.top - calHeight - 4 : rect.bottom + 4;
+    const left = Math.min(rect.left, window.innerWidth - 270);
+    setPos({ top, left });
+  }, [anchorRef]);
+
+  useEffect(() => {
+    updatePosition();
+  }, [updatePosition]);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -71,10 +91,13 @@ export default function DatePicker({
     year: "numeric",
   });
 
-  return (
+  if (!pos) return null;
+
+  return createPortal(
     <div
       ref={ref}
-      className="absolute top-full mt-1 right-0 z-30 bg-white border border-black/[0.1] rounded-[10px] shadow-lg p-3 w-[252px] animate-scale-in"
+      className="fixed z-[100] bg-white border border-black/[0.1] rounded-[10px] shadow-lg p-3 w-[252px] animate-scale-in"
+      style={{ top: pos.top, left: pos.left }}
     >
       {/* Month nav */}
       <div className="flex items-center justify-between mb-2">
@@ -148,6 +171,7 @@ export default function DatePicker({
       >
         Go to today
       </button>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -5,7 +5,7 @@
   --color-primary-hover: #6889c4;
   --color-primary-light: #9bb5e3;
   --color-danger: #d95f5f;
-  --color-success: #4a9e6e;
+  --color-success: #6A9E7F;
   --color-warning: #c9923a;
   --color-bg: #f5f4f0;
   --color-surface: #ffffff;
@@ -13,13 +13,26 @@
   --color-border: rgba(0, 0, 0, 0.08);
   --color-text: #2c2a35;
   --color-text-muted: rgba(0, 0, 0, 0.4);
+
+  --font-weight-primary: 500;
+  --font-weight-label: 500;
+  --font-weight-body: 400;
+  --font-weight-meta: 400;
+
+  --font-size-primary: 14px;
+  --font-size-label: 11px;
+  --font-size-body: 13px;
+  --font-size-meta: 12px;
+
+  --letter-spacing-label: 0.06em;
+  --opacity-meta: 0.5;
 }
 
 body {
   margin: 0;
   background-color: var(--color-bg);
   color: var(--color-text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: 'Figtree Variable', system-ui, sans-serif;
 }
 
 * {
@@ -51,6 +64,73 @@ select {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.15);
+}
+
+/* ── Shutdown Page Gradient ─────────────────────────────── */
+
+.shutdown-page {
+  background: linear-gradient(
+    to bottom,
+    #dde8f0 0%,
+    #e8e4dc 40%,
+    #ede8e0 100%
+  );
+}
+
+/* ── Tiptap Rich Text ──────────────────────────────────── */
+
+.tiptap {
+  outline: none;
+  min-height: 1.5em;
+}
+
+.tiptap p {
+  margin: 0 0 0.25em;
+}
+
+.tiptap a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
+.tiptap code {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+  font-size: 0.9em;
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
+/* ── Focus Timer Pulse ─────────────────────────────────── */
+
+@keyframes timer-pulse {
+  0%   { transform: scale(1);    opacity: 1; }
+  50%  { transform: scale(1.04); opacity: 0.7; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+
+.timer-circle-ring {
+  animation: timer-pulse 4s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.timer-circle-ring.paused {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timer-circle-ring {
+    animation: none;
+  }
 }
 
 /* ── Animations ─────────────────────────────────────────── */
@@ -89,3 +169,32 @@ select {
 .animate-stagger:nth-child(4) { animation-delay: 90ms; }
 .animate-stagger:nth-child(5) { animation-delay: 120ms; }
 .animate-stagger:nth-child(n+6) { animation-delay: 120ms; }
+
+/* ── Focus Mode Animations ─────────────────────────────── */
+
+@keyframes focusGlowPulse {
+  0%, 100% { opacity: 0.2; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.06); }
+}
+
+.focus-glow-layer {
+  animation: focusGlowPulse 4s ease-in-out infinite;
+  transform-origin: center center;
+}
+
+@keyframes focusAmbientBg {
+  0% { background-color: #f0f2f5; }    /* cool blue-neutral */
+  50% { background-color: #f5f3ee; }   /* neutral midpoint */
+  100% { background-color: #f5f0e6; }  /* warm amber-neutral */
+}
+
+.focus-ambient-bg {
+  animation: focusAmbientBg 1500s ease-in-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focus-ambient-bg {
+    animation: none;
+    background-color: #f5f3ee;
+  }
+}

@@ -218,7 +218,14 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![commands::generate_summary])
+        .manage(commands::QuickAddState {
+            previous_app: std::sync::Mutex::new(String::new()),
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::generate_summary,
+            commands::capture_previous_app,
+            commands::dismiss_quick_add,
+        ])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

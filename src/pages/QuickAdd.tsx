@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { invoke } from "@tauri-apps/api/core";
 import { getProjects, createTask } from "../db/queries";
 import type { Project } from "../types";
 
@@ -58,7 +59,7 @@ export default function QuickAdd() {
           loadProjects();
           focusTitle();
         } else {
-          appWindow.hide();
+          invoke("dismiss_quick_add");
         }
       });
     })();
@@ -96,7 +97,7 @@ export default function QuickAdd() {
   }, [showProjectPicker]);
 
   const hideWindow = useCallback(() => {
-    getCurrentWebviewWindow().hide();
+    invoke("dismiss_quick_add");
     resetFields();
   }, [resetFields]);
 

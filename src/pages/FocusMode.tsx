@@ -492,43 +492,25 @@ export default function FocusMode() {
             <div className="flex gap-2.5 justify-center">
               {prompt.isLongBreak ? (
                 <>
-                  <button
-                    onClick={() => handleTakeBreak(LONG_BREAK_MS)}
-                    className="px-5 py-2.5 rounded-xl bg-[#7B9ED9] text-white text-[14px] font-medium cursor-pointer hover:bg-[#6889c4] transition-colors"
-                  >
+                  <button onClick={() => handleTakeBreak(LONG_BREAK_MS)} className="px-5 py-2.5 rounded-xl bg-[#7B9ED9] text-white text-[14px] font-medium cursor-pointer hover:bg-[#6889c4] transition-colors">
                     15 min break
                   </button>
-                  <button
-                    onClick={() => handleTakeBreak(SHORT_BREAK_MS)}
-                    className="px-5 py-2.5 rounded-xl bg-black/[0.05] text-[#2c2a35] text-[14px] cursor-pointer hover:bg-black/[0.08] transition-colors"
-                  >
+                  <button onClick={() => handleTakeBreak(SHORT_BREAK_MS)} className="px-5 py-2.5 rounded-xl bg-black/[0.05] text-[#2c2a35] text-[14px] cursor-pointer hover:bg-black/[0.08] transition-colors">
                     5 min
                   </button>
-                  <button
-                    onClick={handleNoBreak}
-                    className="px-5 py-2.5 rounded-xl bg-black/[0.05] text-black/40 text-[14px] cursor-pointer hover:bg-black/[0.08] transition-colors"
-                  >
+                  <button onClick={handleNoBreak} className="px-5 py-2.5 rounded-xl bg-black/[0.05] text-black/40 text-[14px] cursor-pointer hover:bg-black/[0.08] transition-colors">
                     No break
                   </button>
                 </>
               ) : (
                 <>
-                  <button
-                    onClick={() => handleTakeBreak(SHORT_BREAK_MS)}
-                    className="px-5 py-2.5 rounded-xl bg-[#7B9ED9] text-white text-[14px] font-medium cursor-pointer hover:bg-[#6889c4] transition-colors"
-                  >
+                  <button onClick={() => handleTakeBreak(SHORT_BREAK_MS)} className="px-5 py-2.5 rounded-xl bg-[#7B9ED9] text-white text-[14px] font-medium cursor-pointer hover:bg-[#6889c4] transition-colors">
                     5 min break
                   </button>
-                  <button
-                    onClick={handleSnooze}
-                    className="px-5 py-2.5 rounded-xl bg-black/[0.05] text-[#2c2a35] text-[14px] cursor-pointer hover:bg-black/[0.08] transition-colors"
-                  >
+                  <button onClick={handleSnooze} className="px-5 py-2.5 rounded-xl bg-black/[0.05] text-[#2c2a35] text-[14px] cursor-pointer hover:bg-black/[0.08] transition-colors">
                     In 5 min
                   </button>
-                  <button
-                    onClick={handleNoBreak}
-                    className="px-5 py-2.5 rounded-xl bg-black/[0.05] text-black/40 text-[14px] cursor-pointer hover:bg-black/[0.08] transition-colors"
-                  >
+                  <button onClick={handleNoBreak} className="px-5 py-2.5 rounded-xl bg-black/[0.05] text-black/40 text-[14px] cursor-pointer hover:bg-black/[0.08] transition-colors">
                     No
                   </button>
                 </>

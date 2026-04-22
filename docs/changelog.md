@@ -1,5 +1,169 @@
 # Changelog
 
+## Session — 2026-04-06
+
+### AI-powered summaries + task highlights
+- **Highlight stars**: completed tasks in Daily Shutdown can be starred as highlights (max 3). Gold star SVG, persisted via `is_highlight` column on tasks
+- **Summary generation**: Claude API integration via Rust backend (`reqwest`). Tauri command `generate_summary` handles the HTTP call — API key never touches frontend JS
+- **Audience profiles**: 3 hardcoded profiles (Cam, Dan, Nick) based on enneagram scores. Each profile has a tailored system prompt controlling tone and structure
+  - Cam (default): Type 3 Achiever — results-first bullets, planned-vs-delivered
+  - Dan: Type 8 Challenger — bold/direct, momentum-focused
+  - Nick: Type 7 Enthusiast — narrative arc, insights, purpose-connected
+- **SummaryOverlay component**: modal with audience pill selector, loading/error/success states, copy-to-clipboard, inline API key setup (type=password)
+- **Daily Shutdown**: "Generate summary" button in footer, sends highlights + completed/incomplete tasks + worked time + mood + reflection
+- **Daily Planner**: "Summarize plan" link in header stats bar, sends planned tasks + estimates + projects + notes
+- **Schema**: migration v12 adds `is_highlight INTEGER` on tasks + `settings` table for API key storage
+- **Weekly shutdown summary**: "Generate summary" button on weekly shutdown. Aggregates per-project progress (completed/incomplete counts, time worked) rather than listing every task. Same audience selector and overlay
+- Files: `commands.rs` (new), `summaryPrompts.ts` (new), `summaryApi.ts` (new), `SummaryOverlay.tsx` (new), `lib.rs`, `Cargo.toml`, `types/index.ts`, `queries.ts`, `DailyShutdown.tsx`, `DailyPlanner.tsx`, `WeeklyShutdown.tsx`
+
+### Settings page
+- **New page**: Settings accessible from sidebar (gear icon)
+- **Focus timer config**: Work duration, short break, long break, cycles before long break — all configurable, stored in `settings` table, loaded on focus start
+- **API key management**: Enter/change/remove OpenAI API key. Shows configured/not-configured status badge
+- Files: `Settings.tsx` (new), `FocusMode.tsx`, `Sidebar.tsx`, `App.tsx`, `types/index.ts`
+
+### Weekly shutdown cleanup
+- Removed "Next week" preview card (Mon–Fri dot grid) from right column
+- Removed related state, queries, and derived data (`nextWeekTasks`, `nextWeekPlanned`, etc.)
+- Files: `WeeklyShutdown.tsx`
+
+### Projects page — UI overhaul
+- **Left color bar**: 4px project color bar on left edge of each card (kanban-style visual identity)
+- **Task count chip**: "X open ▸" pill replaces hidden chevron — communicates task count and acts as expand trigger
+- **Inline project creation**: "New project..." input row at bottom of list — type name, press Enter, auto-picks unused color. Removed NewProjectPanel dependency
+- **Completed project styling**: Checkmark icon + strikethrough name instead of just opacity dimming
+- **Filter counts**: "All 12 · Active 8 · Completed 4" — counts shown in each filter pill
+- **Search**: Search input in header bar, filters projects by name in real-time. Contextual empty state for no matches
+- **Due date subtitle**: Target date shown under project name with color coding (red=overdue, orange=soon, gray=future)
+- **Hover quick-action menu**: Three-dot menu on hover with Edit / Mark complete / Archive
+- Files: `Projects.tsx`
+
+### Project Detail — accent color + polish pass
+- **Orange → slate blue (#6B84A3)**: Add button, focus ring, link color, inline edit borders all switched
+- **Priority colors**: High = `#C97B5A` (terracotta), no more saturated red
+- **Mark Complete button**: Restyled from ghost to filled (`#6B84A3` white text)
+- **Task add row**: Now framed with border + border-radius for clear input area
+- **Section padding**: DESCRIPTION, DATES, NOTES standardized to 16px vertical padding
+- **Completed checkbox**: Green `#6A9E7F` instead of orange
+- **Delete button**: Softened to `#C0614A`
+- Files: `ProjectDetail.tsx`
+
+### Task Detail Modal — polish pass
+- **Checkbox**: Standardized to green `#6A9E7F`
+- **Unified pill styling**: All meta row elements (project, date, priority, time) use consistent `border-black/[0.12] rounded-[6px] px-[10px]`
+- **Priority colors**: High = `#C97B5A` (terracotta dot + text), Medium = `#BBBBBB` dot
+- **Date field**: Shows "No date" instead of "—" when empty
+- **Notes background**: `#F4F4F1` with border for deliberate inset
+- **Delete task color**: Softened to `#C0614A`
+- Files: `TaskDetailOverlay.tsx`
+
+### Priority removal
+- Removed priority toggle from task creation (DailyPlanner, ProjectDetail)
+- Removed priority display from TaskCard (red dot) and ProjectDetail task rows
+- Removed priority button from TaskDetailOverlay meta row
+- Type changed from union to `string` for backward compat with existing DB data
+- Files: `types/index.ts`, `TaskDetailOverlay.tsx`, `ProjectDetail.tsx`, `DailyPlanner.tsx`, `TaskCard.tsx`
+
+### Settings page — stepper buttons + polish
+- Added +/- stepper buttons flanking each focus timer number input
+- Added "Reset to defaults" link (only visible when values differ from defaults)
+- Added section icons (timer, key) for visual anchoring
+- Files: `Settings.tsx`
+
+### Task Detail — worked-on redesign + trash icon
+- **Worked on section**: Redesigned from flat text to **day pills** with proportional blue bars showing relative time per day
+- **Delete task**: Replaced text link with a trash can SVG icon (same soft red `#C0614A`)
+- Now shows worked-on section even for single-day tasks (was hidden unless 2+ days)
+- Files: `TaskDetailOverlay.tsx`
+
+### Project Detail — font uniformity
+- Standardized all section labels to `10px` uppercase tracking
+- Standardized all body/input text to `13px`
+- Start/Due labels bumped to `12px` for readability
+- Color picker dot enlarged from 9px to 12px with hover ring
+- Files: `ProjectDetail.tsx`
+
+### Sidebar — Daily Shutdown icon
+- Replaced abstract icon with a clock face showing hands at 4:30 position
+- Files: `Sidebar.tsx`
+
+### Mood order reversed (both shutdowns)
+- Bad (left) → Rough → Okay → Good → Great (right)
+- More natural left-to-right progression from negative to positive
+- Files: `DailyShutdown.tsx`, `WeeklyShutdown.tsx`
+
+### Project Detail as modal
+- Converted from full-page to a **720px modal overlay** rendered on top of the current page
+- Click backdrop or press Escape to close, returns to previous page
+- Removed ProjectSwitcher right sidebar (close modal to switch projects)
+- Added close button (✕) in the project header
+- Added **flush-on-close**: debounced edits save immediately before unmount
+- **Escape key isolation**: TaskDetailOverlay now stops propagation on Escape so inner modal closes first
+- Files: `ProjectDetail.tsx`, `App.tsx`, `TaskDetailOverlay.tsx`
+
+### Custom CalendarPicker component
+- Replaced all native `<input type="date">` with a **custom calendar popover**
+- 280px min-width, white card with shadow, 36x36px day cells, rounded
+- Month/year header with ← → navigation arrows
+- Today and selected date shown as slate blue filled circles with white text
+- Day-of-week row in uppercase gray
+- Used in ProjectDetail task-add row and TaskDetailOverlay date field
+- Files: `CalendarPicker.tsx` (new), `ProjectDetail.tsx`, `TaskDetailOverlay.tsx`
+
+### Task ordering fix
+- New tasks now append at the bottom (not top) via `MAX(sort_order) + 1`
+- Null-safe: scopes to project_id if set, else date_scheduled, else global
+- Files: `queries.ts`
+
+### Focus Landing page
+- **New sidebar page** at top of Planning section (crosshair icon)
+- Shows "Next up" card with task title, project, estimate, and large "Start focusing" button
+- Lists remaining tasks below with hover-to-start
+- Empty state for no tasks / all tasks done
+- Clicking Start launches the existing FocusMode timer
+- Focus Mode now highlights "Focus" in sidebar (not Daily Plan)
+- Files: `FocusLanding.tsx` (new), `Sidebar.tsx`, `App.tsx`, `types/index.ts`
+
+### App icon template
+- Created SVG template (`src-tauri/icons/app-icon.svg`) using app colors: off-white `#f5f4f0` bg, blue `#7B9ED9` V letterform, slate `#6B84A3` accent dot
+- Export to PNG at required sizes to replace default Tauri icons
+
+## Session — 2026-03-25
+
+### Focus screen redesign
+- **Timer**: counts up showing total time worked on the task across all sessions. Sub-label shows "of X:XX" (estimated time), "worked" (no estimate), "paused", or "break"
+- **Progress arc**: 7px stroke SVG circle, fills based on worked time vs estimated time. Muted blue `#7B9ED9`, green `#4a9e6e` during breaks
+- **Breathing glow**: duplicate 14px arc on a `<div>` wrapper (WebKit SVG transform workaround), pulsing opacity 0.2→0.6 and scale 1.0→1.06 on 4s loop. Stops when paused
+- **Ambient background**: 25-minute CSS animation from cool blue-neutral to warm amber-neutral
+- **Notes panel**: always-visible textarea between title and arc, auto-saves on blur (debounced 600ms), minimal borderless styling
+- **Icon buttons**: checkmark (done), pause bars/play triangle, stop square — horizontal row with done as the large center button
+- **Removed**: "RUNNING" label, time stats, session indicators, "Session X of Y"
+- Files: `FocusMode.tsx`, `queries.ts` (`updateTaskNotes`), `index.css` (keyframes)
+
+### Unfinished task rollover
+- **Auto-rollover**: unfinished tasks from previous days automatically move to today on daily planner load (guarded to today only, not navigated dates)
+- **4-day limit**: `rollover_count` increments each day; after 4 rollovers the task is unscheduled (`date_scheduled = null`) and drops to the Unscheduled bucket
+- **original_date**: preserved on first rollover to track where the task was originally scheduled
+- **Sidebar section**: "Unfinished" collapsible always visible at ~66% down the right panel, powered by `getUnfinishedRolloverTasks()` query. Shows amber "Xd" badge per task, count in header, clickable to open detail overlay. Shows "All caught up" when empty
+- **Schema**: migration v11 adds `original_date TEXT` and `rollover_count INTEGER DEFAULT 0` to tasks
+- Files: `lib.rs` (migration), `types/index.ts`, `queries.ts` (2 new functions), `DailyPlanner.tsx`
+
+### Expand/collapse arrows — app-wide
+- Bumped all `▸`/`▾` arrows from 9–11px to 18px with `leading-none` for vertical alignment
+- Widened hitboxes (`w-3`→`w-5`, ProjectCard `w-6`→`w-7`)
+- Sidebar shortcuts arrow changed from `▾`+rotate(180°) to `▸`+rotate(90°) for consistency
+- Files: `DailyPlanner.tsx`, `Projects.tsx`, `WeeklyPlanner.tsx`, `Sidebar.tsx`, `ProjectCard.tsx`
+
+### Task checkbox redesign
+- **Not done**: gray checkmark SVG (`rgba(0,0,0,0.15)`) inside subtle bordered box
+- **Done**: green background (`#4a9e6e`) with white checkmark SVG
+- File: `TaskCard.tsx`
+
+### Projects — completed tasks visible
+- **Projects page**: expanded project cards now load all tasks including completed (removed 5-task limit). Done tasks show green checkmark + strikethrough below incomplete tasks
+- **Project detail**: `showDone` defaults to `true` so completed tasks appear on first load
+- Files: `Projects.tsx`, `ProjectDetail.tsx`
+
 ## Session — 2026-03-19
 
 ### Wave 1: Quick fixes (M38–M39, M44–M45)

@@ -155,6 +155,62 @@ export async function getProjectById(id: number): Promise<Project | null> {
 }
 
 // Tasks
+
+/**
+ * Roll over unfinished tasks from previous days to today.
+ * - Only moves tasks with rollover_count < 4
+ * - On the 5th missed day, unschedules the task (date_scheduled = null)
+ * - Sets original_date on first rollover to remember where the task started
+ * - Only call this for today's date, never for navigated dates
+ */
+export async function rolloverUnfinishedTasks(today: string): Promise<void> {
+  const db = await getDb();
+
+  // Roll forward: tasks from past dates, not done, rolled fewer than 4 times
+  await db.execute(
+    `UPDATE tasks
+     SET original_date = COALESCE(original_date, date_scheduled),
+         rollover_count = rollover_count + 1,
+         date_scheduled = $1
+     WHERE date_scheduled < $1
+       AND status != 'done'
+       AND rollover_count < 4
+       AND recurrence_source_id IS NULL`,
+    [today]
+  );
+
+  // Expire: tasks that have now hit rollover_count = 4 from a prior pass
+  // (they were already moved to today above, but if they've been rolling for 4 days, unschedule)
+  // Actually we need to catch tasks that just hit count=4 after the above update — but the above
+  // only runs on count<4 so max after update is 4. Unschedule those on the NEXT day.
+  // Simpler: unschedule any task scheduled before today with rollover_count >= 4
+  await db.execute(
+    `UPDATE tasks
+     SET date_scheduled = NULL
+     WHERE date_scheduled < $1
+       AND status != 'done'
+       AND rollover_count >= 4
+       AND recurrence_source_id IS NULL`,
+    [today]
+  );
+}
+
+/**
+ * Get all unfinished tasks that have been rolling over (rollover_count 1–4).
+ * Includes tasks currently scheduled for today and tasks that expired to unscheduled.
+ */
+export async function getUnfinishedRolloverTasks(): Promise<Task[]> {
+  const db = await getDb();
+  return db.select(
+    `SELECT * FROM tasks
+     WHERE status != 'done'
+       AND rollover_count > 0
+       AND rollover_count <= 4
+     ORDER BY rollover_count DESC, sort_order
+     LIMIT 50`
+  );
+}
+
 export async function getTasksForDate(date: string): Promise<Task[]> {
   const db = await getDb();
   return db.select(
@@ -206,8 +262,15 @@ export async function createTask(input: CreateTaskInput): Promise<number> {
   const priority = input.priority ?? "medium";
   validatePriority(priority);
   const db = await getDb();
+  // Get next sort_order — scoped to project or date, null-safe
+  const scopeRows: { max_sort: number | null }[] = input.projectId != null
+    ? await db.select("SELECT MAX(sort_order) as max_sort FROM tasks WHERE project_id = $1", [input.projectId])
+    : input.dateScheduled != null
+      ? await db.select("SELECT MAX(sort_order) as max_sort FROM tasks WHERE date_scheduled = $1", [input.dateScheduled])
+      : await db.select("SELECT MAX(sort_order) as max_sort FROM tasks");
+  const nextSort = (scopeRows[0]?.max_sort ?? -1) + 1;
   const result = await db.execute(
-    "INSERT INTO tasks (title, project_id, date_scheduled, estimated_minutes, priority, notes) VALUES ($1, $2, $3, $4, $5, $6)",
+    "INSERT INTO tasks (title, project_id, date_scheduled, estimated_minutes, priority, notes, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7)",
     [
       input.title,
       input.projectId,
@@ -215,6 +278,7 @@ export async function createTask(input: CreateTaskInput): Promise<number> {
       input.estimatedMinutes,
       priority,
       input.notes ?? null,
+      nextSort,
     ]
   );
   return result.lastInsertId ?? 0;
@@ -829,6 +893,44 @@ export async function getPlannedWeeksForProject(
     [projectId]
   );
   return rows.map((r) => r.week_start_date);
+}
+
+// ── Task Highlights ──────────────────────────────────────────────────────────
+
+export async function toggleTaskHighlight(
+  taskId: number,
+  isHighlight: boolean
+): Promise<void> {
+  const db = await getDb();
+  await db.execute("UPDATE tasks SET is_highlight = $1 WHERE id = $2", [
+    isHighlight ? 1 : 0,
+    taskId,
+  ]);
+}
+
+// ── Settings ────────────────────────────────────────────────────────────────
+
+export async function getSetting(key: string): Promise<string | null> {
+  const db = await getDb();
+  const rows: { value: string }[] = await db.select(
+    "SELECT value FROM settings WHERE key = $1",
+    [key]
+  );
+  return rows[0]?.value ?? null;
+}
+
+export async function setSetting(key: string, value: string): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    `INSERT INTO settings (key, value) VALUES ($1, $2)
+     ON CONFLICT(key) DO UPDATE SET value = $2`,
+    [key, value]
+  );
+}
+
+export async function deleteSetting(key: string): Promise<void> {
+  const db = await getDb();
+  await db.execute("DELETE FROM settings WHERE key = $1", [key]);
 }
 
 // ── Recurring Tasks ──────────────────────────────────────────────────────────

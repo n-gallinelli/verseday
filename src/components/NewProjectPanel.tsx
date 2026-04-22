@@ -78,7 +78,7 @@ export default function NewProjectPanel({
             maxLength={MAX_NAME_LENGTH}
             placeholder="e.g. Q2 launch, Website redesign..."
             autoFocus={isOpen}
-            className="w-full bg-[#f5f4f0] border border-black/[0.1] rounded-lg px-[10px] py-2 text-[13px] text-[#2c2a35] font-sans outline-none focus:border-[#6b5fd4]/40 focus:bg-white placeholder-black/25"
+            className="w-full bg-[#f5f4f0] border border-black/[0.1] rounded-lg px-[10px] py-2 text-[13px] text-[#2c2a35] outline-none focus:border-[#6b5fd4]/40 focus:bg-white placeholder-black/25"
           />
         </div>
 
@@ -107,12 +107,7 @@ export default function NewProjectPanel({
 
       {/* Footer */}
       <div className="px-[18px] py-[14px] border-t border-black/[0.07] flex-shrink-0">
-        <button
-          onClick={handleCreate}
-          className="w-full bg-[#6b5fd4] text-white border-none rounded-lg py-[9px] text-[13px] font-medium cursor-pointer font-sans hover:bg-[#cc7633]"
-        >
-          Create project
-        </button>
+        <button onClick={handleCreate} className="w-full bg-[#6b5fd4] text-white border-none rounded-lg py-[9px] text-[13px] font-medium cursor-pointer hover:bg-[#cc7633]">Create project</button>
       </div>
     </div>
   );

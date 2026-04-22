@@ -51,8 +51,6 @@ function formatMinutesToHours(minutes: number): string {
   return (Math.round(minutes / 6) / 10).toFixed(1).replace(/\.0$/, "");
 }
 
-// ─── Summary card ───────────────────────────────────────────────────────────
-
 function SummaryCard({
   label,
   value,
@@ -66,7 +64,7 @@ function SummaryCard({
 }) {
   return (
     <div className="bg-white border border-black/[0.08] rounded-[10px] px-5 py-4 flex-1">
-      <div className="text-[10px] uppercase tracking-widest text-black/30 mb-1">
+      <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1">
         {label}
       </div>
       <div
@@ -373,7 +371,7 @@ export default function Dashboard() {
 
             {/* ── Daily breakdown ────────────────────────────────────── */}
             <section>
-              <h3 className="text-[10px] uppercase tracking-widest text-black/30 mb-3">
+              <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-3">
                 Daily breakdown
               </h3>
               <div className="bg-white border border-black/[0.08] rounded-[10px] px-5 py-4">
@@ -399,7 +397,7 @@ export default function Dashboard() {
             {/* ── Project progress ───────────────────────────────────── */}
             {activeProjects.length > 0 && (
               <section>
-                <h3 className="text-[10px] uppercase tracking-widest text-black/30 mb-2">
+                <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-2">
                   Project progress
                 </h3>
                 <div className="bg-white border border-black/[0.08] rounded-[10px] px-5 py-3">
@@ -425,7 +423,7 @@ export default function Dashboard() {
             {/* ── Recent activity ────────────────────────────────────── */}
             {recentCompleted.length > 0 && (
               <section>
-                <h3 className="text-[10px] uppercase tracking-widest text-black/30 mb-2">
+                <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-2">
                   Recent activity
                 </h3>
                 <div className="bg-white border border-black/[0.08] rounded-[10px] px-5 py-3">

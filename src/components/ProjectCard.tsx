@@ -71,7 +71,7 @@ export default function ProjectCard({
               </svg>
             </span>
           )}
-          <span className={`text-[14px] font-medium flex-1 min-w-0 leading-snug truncate ${!!project.completed ? "text-[#3a9e6e]" : "text-[#2c2a35]"}`}>
+          <span className={`flex-1 min-w-0 leading-snug truncate [font-size:var(--font-size-primary)] [font-weight:var(--font-weight-primary)] ${!!project.completed ? "text-[#3a9e6e]" : "text-[#2c2a35]"}`}>
             {project.name}
           </span>
           <button
@@ -79,7 +79,7 @@ export default function ProjectCard({
               e.stopPropagation();
               setIsExpanded(!isExpanded);
             }}
-            className="w-5 h-5 rounded-[5px] flex items-center justify-center text-[11px] text-black/25 flex-shrink-0 ml-1.5 border border-transparent hover:bg-black/[0.04] hover:border-black/[0.08] hover:text-black/40 transition-all cursor-pointer"
+            className="w-7 h-7 rounded-[5px] flex items-center justify-center text-[18px] leading-none text-black/25 flex-shrink-0 ml-1.5 border border-transparent hover:bg-black/[0.04] hover:border-black/[0.08] hover:text-black/40 transition-all cursor-pointer"
           >
             <span
               className="transition-transform duration-200 inline-block"
@@ -105,13 +105,13 @@ export default function ProjectCard({
 
         {/* Meta row */}
         <div className="flex items-center justify-between">
-          <span className="text-[11px] text-black/35">
+          <span className="text-black/35 [font-size:var(--font-size-meta)] [font-weight:var(--font-weight-meta)] [opacity:var(--opacity-meta)]">
             <span className="font-medium text-black/55">
               {completedCount}
             </span>{" "}
             of {taskCount} done
           </span>
-          <span className="text-[11px] text-black/[0.28]">
+          <span className="text-black/[0.28] [font-size:var(--font-size-meta)] [opacity:var(--opacity-meta)]">
             {formattedDate ?? "—"}
           </span>
         </div>
@@ -175,7 +175,7 @@ export default function ProjectCard({
         {/* Completed tasks */}
         {completedPreviewTasks.length > 0 && (
           <div className="px-[14px] pt-1 pb-0.5">
-            <div className="text-[9px] uppercase tracking-widest text-black/20 mb-0.5">Completed</div>
+            <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/20 mb-0.5">Completed</div>
             {completedPreviewTasks.slice(0, 3).map((task) => (
               <div key={task.id} className="flex items-center gap-1.5 py-0.5">
                 <span className="w-[11px] h-[11px] rounded-[3px] bg-[#3a9e6e] border border-[#3a9e6e] flex-shrink-0 flex items-center justify-center">

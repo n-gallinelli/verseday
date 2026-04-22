@@ -100,7 +100,7 @@ function DraggableTaskRow({
   return (
     <div
       ref={setNodeRef}
-      className={`flex items-center gap-2 px-3 py-1.5 ${
+      className={`flex items-center gap-2 px-2.5 py-2 mb-0.5 ${
         !isLast ? "border-b border-black/[0.04]" : ""
       } ${isDragging ? "opacity-30" : ""}`}
     >
@@ -180,7 +180,7 @@ function ProjectCard({
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button
           onClick={() => setExpanded(!expanded)}
-          className="text-[10px] text-black/25 cursor-pointer hover:text-black/40 w-3 flex-shrink-0 transition-transform duration-150"
+          className="text-[18px] leading-none text-black/25 cursor-pointer hover:text-black/40 w-5 flex-shrink-0 transition-transform duration-150"
           style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
         >
           ▸
@@ -190,7 +190,7 @@ function ProjectCard({
           style={{ backgroundColor: project.color }}
         />
         <span
-          className={`text-[13px] font-medium text-[#2c2a35] flex-1 ${
+          className={`text-[13px] font-medium text-[#2c2a35] flex-1 truncate ${
             project.id !== null
               ? "cursor-pointer hover:text-[#e0873e]"
               : ""
@@ -246,7 +246,7 @@ function CalendarTaskChip({
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      className={`bg-white border-[0.5px] border-black/[0.08] rounded-md px-2 py-1.5 cursor-grab active:cursor-grabbing hover:bg-[#faf9f7] ${isDragging ? "opacity-30" : ""}`}
+      className={`bg-white border-[0.5px] border-black/[0.08] rounded-md px-3 py-2.5 cursor-grab active:cursor-grabbing hover:bg-[#faf9f7] ${isDragging ? "opacity-30" : ""}`}
       style={{ borderLeftWidth: 3, borderLeftColor: project?.color ?? "#999" }}
     >
       {/* Title row with checkbox */}
@@ -344,7 +344,7 @@ function DayColumn({
     <div ref={setDropRef} className="flex flex-col min-w-0">
       {/* Column body */}
       <div
-        className={`border-r border-black/[0.05] last:border-r-0 p-1.5 flex flex-col gap-1.5 flex-1 transition-colors duration-150 ${
+        className={`border-r border-black/[0.05] last:border-r-0 p-1.5 flex flex-col gap-[6px] flex-1 transition-colors duration-150 ${
           isOver ? "bg-[#e0873e]/[0.08]" : isToday ? "bg-[#e0873e]/[0.02]" : ""
         }`}
       >
@@ -669,7 +669,7 @@ export default function WeeklyPlanner() {
       >
       <div className="flex flex-1 min-h-0">
         {/* ── Left panel ─────────────────────────────────────────────────── */}
-        <div className="w-[280px] flex-shrink-0 border-r border-black/[0.07] flex flex-col overflow-y-auto">
+        <div className="min-w-[260px] w-[280px] flex-shrink-0 flex flex-col overflow-y-auto" style={{ borderRight: "1px solid rgba(0,0,0,0.10)" }}>
           <div className="px-4 py-3.5 flex-1">
             {/* Carry forward from last week */}
             {carryForwardNotes && !carryForwardDismissed && (
@@ -678,7 +678,7 @@ export default function WeeklyPlanner() {
                 style={{ border: "0.5px solid #9FE1CB" }}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] uppercase tracking-[0.08em] text-[#0F6E56]">
+                  <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-[#0F6E56]">
                     From last week
                   </span>
                   <button
@@ -694,7 +694,7 @@ export default function WeeklyPlanner() {
               </div>
             )}
 
-            <span className="text-[10px] uppercase tracking-widest text-black/30 mb-2.5 block">
+            <span className="uppercase text-black/30 mb-2.5 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
               Projects
             </span>
 
@@ -718,7 +718,7 @@ export default function WeeklyPlanner() {
                 {/* Unassigned tasks — no project */}
                 {unassignedTasks.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-black/[0.06]">
-                    <span className="text-[10px] uppercase tracking-widest text-black/25 mb-1.5 block">
+                    <span className="uppercase text-black/25 mb-1.5 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
                       Unassigned
                     </span>
                     <div className="bg-black/[0.02] border border-black/[0.05] rounded-[8px] overflow-hidden">
@@ -749,9 +749,9 @@ export default function WeeklyPlanner() {
               return (
                 <div
                   key={date}
-                  className="px-2.5 py-3 text-center border-r border-black/[0.05] last:border-r-0"
+                  className="px-2.5 pt-3 pb-3 text-center border-r border-black/[0.05] last:border-r-0"
                 >
-                  <div className="text-[11px] text-black/35 mb-0.5">
+                  <div className="text-[11px] font-medium tracking-[0.06em] text-black/50 mb-1">
                     {DAY_NAMES[i]}
                   </div>
                   {isToday ? (
@@ -759,7 +759,7 @@ export default function WeeklyPlanner() {
                       {dayNum}
                     </div>
                   ) : (
-                    <div className="text-[18px] font-medium text-[#2c2a35] leading-none">
+                    <div className="text-[17px] font-medium text-[#2c2a35] leading-none">
                       {dayNum}
                     </div>
                   )}
@@ -811,7 +811,7 @@ export default function WeeklyPlanner() {
                 Weekly notes
               </span>
               <span
-                className="text-[11px] text-black/20 transition-transform duration-150"
+                className="text-[18px] leading-none text-black/20 transition-transform duration-150"
                 style={{
                   transform: showNotes ? "rotate(180deg)" : "rotate(0deg)",
                 }}
@@ -825,7 +825,7 @@ export default function WeeklyPlanner() {
                   value={weeklyNotes}
                   onChange={(e) => handleWeeklyNotesChange(e.target.value)}
                   placeholder="Notes for this week..."
-                  className="w-full bg-transparent border-none outline-none text-[13px] text-black/55 placeholder-black/20 resize-none min-h-[72px] leading-relaxed font-sans"
+                  className="w-full bg-transparent border-none outline-none text-[13px] text-black/55 placeholder-black/20 resize-none min-h-[72px] leading-relaxed"
                 />
               </div>
             )}
@@ -846,6 +846,7 @@ export default function WeeklyPlanner() {
       {/* Task detail overlay */}
       {detailTask && (
         <TaskDetailOverlay
+          key={detailTask.id}
           task={detailTask}
           projects={projects}
           onClose={() => { setDetailTask(null); loadData(); }}

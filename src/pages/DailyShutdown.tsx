@@ -285,9 +285,9 @@ export default function DailyShutdown() {
         <div className="max-w-[860px] mx-auto px-6 py-5">
           <div className="flex gap-3">
             {/* ── Left column: mood + reflection ────────────────── */}
-            <div className="flex-1 space-y-4">
+            <div className="flex-1">
               {/* Mood selector */}
-              <section>
+              <section className="mb-6">
                 <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-2">
                   How was your day?
                 </h3>

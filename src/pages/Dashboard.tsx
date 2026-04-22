@@ -51,33 +51,6 @@ function formatMinutesToHours(minutes: number): string {
   return (Math.round(minutes / 6) / 10).toFixed(1).replace(/\.0$/, "");
 }
 
-function SummaryCard({
-  label,
-  value,
-  subtext,
-  color,
-}: {
-  label: string;
-  value: string;
-  subtext: string;
-  color?: string;
-}) {
-  return (
-    <div className="bg-white border border-black/[0.08] rounded-[10px] px-5 py-4 flex-1">
-      <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1">
-        {label}
-      </div>
-      <div
-        className="text-[28px] font-semibold leading-none mb-1"
-        style={{ color: color ?? "#2c2a35" }}
-      >
-        {value}
-      </div>
-      <div className="text-[11px] text-black/35">{subtext}</div>
-    </div>
-  );
-}
-
 // ─── Bar chart ──────────────────────────────────────────────────────────────
 
 function BarChart({
@@ -353,24 +326,25 @@ export default function Dashboard() {
             </p>
           </div>
         ) : (
-          <div className="max-w-[680px] mx-auto px-6 py-6 space-y-6">
-            {/* ── Summary cards ──────────────────────────────────────── */}
-            <div className="flex gap-3">
-              <SummaryCard
-                label="Planned"
-                value={`${formatMinutesToHours(totalPlannedMinutes)}h`}
-                subtext="this week"
-              />
-              <SummaryCard
-                label="Worked"
-                value={`${formatMinutesToHours(totalWorkedMinutes)}h`}
-                subtext="this week"
-                color="#e0873e"
-              />
+          <div className="max-w-[680px] mx-auto px-6 py-6">
+            {/* ── Week summary ────────────────────────────────────────── */}
+            <div className="mb-8">
+              <div className="text-[36px] font-semibold leading-none font-display text-[#2c2a35]">
+                {formatMinutesToHours(totalWorkedMinutes)}h
+                <span className="text-[14px] font-normal text-black/30 ml-2">worked</span>
+              </div>
+              <div className="flex items-center gap-4 mt-2">
+                <span className="text-[13px] text-black/40">
+                  {formatMinutesToHours(totalPlannedMinutes)}h planned
+                </span>
+                <span className="text-[13px] text-black/40">
+                  {completedTasks}/{totalTasks} tasks done
+                </span>
+              </div>
             </div>
 
             {/* ── Daily breakdown ────────────────────────────────────── */}
-            <section>
+            <section className="mb-6">
               <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-3">
                 Daily breakdown
               </h3>
@@ -396,7 +370,7 @@ export default function Dashboard() {
 
             {/* ── Project progress ───────────────────────────────────── */}
             {activeProjects.length > 0 && (
-              <section>
+              <section className="mb-6">
                 <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-2">
                   Project progress
                 </h3>

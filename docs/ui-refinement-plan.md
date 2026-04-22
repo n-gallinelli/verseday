@@ -131,6 +131,7 @@ Each phase must pass a **manual smoke test in a Tauri build** (`cargo tauri dev`
 - Settings page grouping (L6) — functional as-is
 - Container queries for shutdown columns (L2) — nice-to-have
 - QuickAdd entrance animation (D6) — Tauri window show/hide may not support CSS transitions cleanly
+- FocusPip text-label button migration — deferred pending Button `size="xs"` variant for compact controls (text-[11px] + px-2.5 py-1 is below sm)
 
 ---
 

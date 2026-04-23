@@ -117,13 +117,12 @@ select {
 /* ── Focus Timer Pulse ─────────────────────────────────── */
 
 @keyframes timer-pulse {
-  0%   { transform: scale(1);    opacity: 1; }
-  50%  { transform: scale(1.02); opacity: 0.8; }
-  100% { transform: scale(1);    opacity: 1; }
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.92; }
 }
 
 .timer-circle-ring {
-  animation: timer-pulse 6s ease-in-out infinite;
+  animation: timer-pulse 8s ease-in-out infinite;
   transform-origin: center;
 }
 
@@ -196,8 +195,8 @@ select {
 /* ── Focus Mode Animations ─────────────────────────────── */
 
 @keyframes focusGlowPulse {
-  0%, 100% { opacity: 0.2; transform: scale(1); }
-  50% { opacity: 0.6; transform: scale(1.06); }
+  0%, 100% { opacity: 0.25; transform: scale(1); }
+  50%      { opacity: 0.4;  transform: scale(1.02); }
 }
 
 @keyframes focusGlowFadeOut {
@@ -206,7 +205,7 @@ select {
 }
 
 .focus-glow-layer {
-  animation: focusGlowPulse 4s ease-in-out infinite, focusGlowFadeOut 60s ease-out 300s forwards;
+  animation: focusGlowPulse 8s ease-in-out infinite, focusGlowFadeOut 60s ease-out 300s forwards;
   transform-origin: center center;
 }
 

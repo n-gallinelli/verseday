@@ -286,9 +286,11 @@ export default function Dashboard() {
         </h2>
         <button
           onClick={() => changeWeek(-1)}
-          className="w-[26px] h-[26px] rounded-md bg-black/[0.04] border border-black/[0.08] flex items-center justify-center text-[12px] text-black/35 cursor-pointer hover:bg-black/[0.07]"
+          className="w-7 h-7 rounded-full flex items-center justify-center text-[#999] cursor-pointer hover:bg-[#f0f0f0] transition-colors duration-150 ease-out"
         >
-          ‹
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10 4l-4 4 4 4" />
+          </svg>
         </button>
         <span className="text-[13px] text-black/50">
           {formatWeekHeader(selectedWeek)}
@@ -308,9 +310,11 @@ export default function Dashboard() {
         )}
         <button
           onClick={() => changeWeek(1)}
-          className="w-[26px] h-[26px] rounded-md bg-black/[0.04] border border-black/[0.08] flex items-center justify-center text-[12px] text-black/35 cursor-pointer hover:bg-black/[0.07]"
+          className="w-7 h-7 rounded-full flex items-center justify-center text-[#999] cursor-pointer hover:bg-[#f0f0f0] transition-colors duration-150 ease-out"
         >
-          ›
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 4l4 4-4 4" />
+          </svg>
         </button>
       </div>
 

@@ -118,7 +118,7 @@ export default function RichTextEditor({
     >
       <div className="relative">
         {isEmpty && placeholder && (
-          <div className="absolute top-0 left-0 pointer-events-none text-black/25 select-none">
+          <div className="absolute inset-0 pointer-events-none text-black/25 select-none">
             {placeholder}
           </div>
         )}

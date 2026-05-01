@@ -241,20 +241,6 @@ function MainApp() {
           key={pageKey}
           className="flex-1 overflow-hidden flex flex-col animate-fade-in"
         >
-          {pageHistory.length > 0 && currentPage !== "project_detail" && (
-            <div className="flex-shrink-0 px-4 py-1.5 border-b border-black/[0.05]">
-              <button
-                onClick={goBack}
-                className="flex items-center gap-1 text-[11px] text-black/30 cursor-pointer hover:text-black/50 transition-colors"
-                title="Go back"
-              >
-                <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M8 1L3 6l5 5" />
-                </svg>
-                Back
-              </button>
-            </div>
-          )}
           {renderPage()}
         </main>
 
@@ -266,7 +252,7 @@ function MainApp() {
           >
             <div className="absolute inset-0 bg-black/30" />
             <div
-              className="relative w-[720px] max-h-[80vh] bg-[#f5f4f0] rounded-xl shadow-xl animate-scale-in flex flex-col"
+              className="relative w-[1080px] max-w-[95vw] max-h-[85vh] bg-[#f5f4f0] rounded-xl shadow-xl animate-scale-in flex flex-col"
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => {
                 if (e.key === "Escape") goBack();

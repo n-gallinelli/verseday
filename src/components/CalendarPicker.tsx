@@ -110,6 +110,22 @@ export default function CalendarPicker({
     setOpen(false);
   }
 
+  function pushBackDays(days: number) {
+    const baseIso = value || todayIso;
+    const d = new Date(baseIso + "T00:00:00");
+    d.setDate(d.getDate() + days);
+    onChange(d.toISOString().split("T")[0]);
+    setOpen(false);
+  }
+
+  function pushBackMonth() {
+    const baseIso = value || todayIso;
+    const d = new Date(baseIso + "T00:00:00");
+    d.setMonth(d.getMonth() + 1);
+    onChange(d.toISOString().split("T")[0]);
+    setOpen(false);
+  }
+
   // Build calendar grid
   const daysInMonth = getDaysInMonth(viewYear, viewMonth);
   const firstDay = getFirstDayOfWeek(viewYear, viewMonth);
@@ -128,7 +144,7 @@ export default function CalendarPicker({
   return (
     <div ref={containerRef} className="relative">
       {/* Trigger button */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-2.5">
         <button
           ref={triggerRef}
           type="button"
@@ -136,7 +152,10 @@ export default function CalendarPicker({
             if (!open) updatePosition();
             setOpen(!open);
           }}
-          className="bg-transparent border border-black/[0.08] rounded-[6px] px-[10px] py-1 text-[12px] text-black/40 font-normal cursor-pointer hover:border-black/[0.14]"
+          className={`bg-black/[0.03] rounded-md text-[13px] font-medium leading-tight cursor-pointer transition-colors hover:border-black/[0.12] ${
+            value ? "text-[#2c2a35]" : "text-black/30"
+          }`}
+          style={{ padding: "5px 12px", border: "0.5px solid rgba(0,0,0,0.06)" }}
         >
           {displayLabel}
         </button>
@@ -232,6 +251,31 @@ export default function CalendarPicker({
                 </button>
               );
             })}
+          </div>
+
+          {/* Push-back quick actions */}
+          <div className="mt-3 pt-3 border-t border-black/[0.06] flex flex-col gap-1">
+            <button
+              type="button"
+              onClick={() => pushBackDays(7)}
+              className="text-[12px] text-black/55 hover:text-[#2c2a35] hover:bg-[#F0F0ED] rounded-md px-2 py-1.5 text-left cursor-pointer transition-colors"
+            >
+              Push back one week
+            </button>
+            <button
+              type="button"
+              onClick={() => pushBackDays(14)}
+              className="text-[12px] text-black/55 hover:text-[#2c2a35] hover:bg-[#F0F0ED] rounded-md px-2 py-1.5 text-left cursor-pointer transition-colors"
+            >
+              Push back two weeks
+            </button>
+            <button
+              type="button"
+              onClick={pushBackMonth}
+              className="text-[12px] text-black/55 hover:text-[#2c2a35] hover:bg-[#F0F0ED] rounded-md px-2 py-1.5 text-left cursor-pointer transition-colors"
+            >
+              Push back a month
+            </button>
           </div>
         </div>,
         document.body

@@ -23,15 +23,18 @@ import {
   createTask,
   updateTask,
   updateTaskStatus,
+  updateTaskDateScheduled,
   updateTaskSortOrders,
   deleteTask,
   startTimeEntry,
   completeProject,
+  deleteProject,
   getWorkedMinutesForTask,
+  getWorkedMinutesForTaskIds,
+  setManualWorkedMinutes,
   PRESET_COLORS,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
-import CheckIcon from "../components/CheckIcon";
 import TaskDetailOverlay from "../components/TaskDetailOverlay";
 import CalendarPicker from "../components/CalendarPicker";
 import { parseTimeFromTitle } from "../utils/format";
@@ -40,24 +43,113 @@ import type { Project, Task } from "../types";
 
 const MAX_TITLE_LENGTH = 200;
 const MAX_ESTIMATE_MINUTES = 480;
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+
+function getCurrentWeekdayDates(): string[] {
+  const today = new Date();
+  const day = today.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + diff);
+  const dates: string[] = [];
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    dates.push(d.toISOString().split("T")[0]);
+  }
+  return dates;
+}
+
+// ─── Property row (right rail) ──────────────────────────────────────────────
+
+function PropertyRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1.5">
+        {label}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {children}
+      </div>
+    </div>
+  );
+}
 
 // ─── Sortable task row ──────────────────────────────────────────────────────
 
+function formatMinutes(n: number): string {
+  if (n < 60) return `${n}m`;
+  const h = Math.floor(n / 60);
+  const m = n % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+function parseTimeInput(raw: string): number {
+  const trimmed = raw.trim();
+  if (!trimmed) return 0;
+  const hMatch = trimmed.match(/(\d+)\s*h/i);
+  const mMatch = trimmed.match(/(\d+)\s*m/i);
+  let total = 0;
+  if (hMatch) total += parseInt(hMatch[1]) * 60;
+  if (mMatch) total += parseInt(mMatch[1]);
+  if (total === 0) {
+    const num = parseInt(trimmed);
+    if (!isNaN(num) && num > 0) total = num;
+  }
+  return total;
+}
+
 function SortableTaskRow({
   task,
+  workedMinutes,
   onToggle,
   onOpenDetail,
   onDelete,
   onStart,
+  onSetDate,
+  onSetEstimate,
+  onSetWorked,
 }: {
   task: Task;
+  workedMinutes: number;
   onToggle: (task: Task) => void;
   onOpenDetail: (task: Task) => void;
   onDelete: (id: number) => void;
   onStart: (task: Task) => void;
+  onSetDate: (id: number, date: string) => void;
+  onSetEstimate: (id: number, minutes: number | null) => void;
+  onSetWorked: (id: number, minutes: number) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: task.id });
+
+  const [workedInput, setWorkedInput] = useState(
+    workedMinutes > 0 ? formatMinutes(workedMinutes) : ""
+  );
+
+  useEffect(() => {
+    setWorkedInput(workedMinutes > 0 ? formatMinutes(workedMinutes) : "");
+  }, [workedMinutes]);
+
+  const prevStatusRef = useRef(task.status);
+  const justCompleted = task.status === "done" && prevStatusRef.current !== "done";
+  useEffect(() => { prevStatusRef.current = task.status; }, [task.status]);
+
+  function commitWorked() {
+    const total = parseTimeInput(workedInput);
+    if (total === workedMinutes) {
+      // Normalize the display in case user typed garbage
+      setWorkedInput(workedMinutes > 0 ? formatMinutes(workedMinutes) : "");
+      return;
+    }
+    onSetWorked(task.id, total);
+  }
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -65,24 +157,17 @@ function SortableTaskRow({
     opacity: isDragging ? 0.4 : 1,
   };
 
-  const dateLabel = task.date_scheduled
-    ? new Date(task.date_scheduled + "T00:00:00").toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-      })
-    : null;
-
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2.5 px-[11px] py-2 bg-white border border-black/[0.07] rounded-lg mb-[5px] cursor-pointer hover:border-black/[0.11] group"
+      className="flex flex-row items-start gap-3 p-4 bg-white border border-black/[0.07] rounded-lg mb-4 hover:border-black/[0.11] group"
     >
       {/* Drag handle */}
       <span
         {...attributes}
         {...listeners}
-        className="text-[12px] text-black/15 cursor-grab active:cursor-grabbing select-none"
+        className="text-[12px] text-black/15 cursor-grab active:cursor-grabbing select-none flex-shrink-0 mt-[3px]"
       >
         ⠿
       </span>
@@ -90,20 +175,35 @@ function SortableTaskRow({
       {/* Checkbox */}
       <button
         onClick={() => onToggle(task)}
-        className={`w-[14px] h-[14px] rounded-[4px] border flex-shrink-0 cursor-pointer flex items-center justify-center ${
+        title={task.status === "done" ? "Mark as not done" : "Mark complete"}
+        className={`w-[18px] h-[18px] rounded-full border-2 flex-shrink-0 cursor-pointer flex items-center justify-center mt-[1px] transition-colors ${
           task.status === "done"
-            ? "bg-[#6A9E7F] border-[#6A9E7F]"
-            : "border-black/[0.18]"
+            ? "bg-[#6A9E7F] border-[#6A9E7F] hover:bg-[#5a8a6e] hover:border-[#5a8a6e]"
+            : "border-black/20 hover:border-[#6A9E7F]"
         }`}
       >
-        {task.status === "done" && <CheckIcon />}
+        <svg
+          width="9"
+          height="9"
+          viewBox="0 0 12 12"
+          fill="none"
+          stroke={task.status === "done" ? "white" : "rgba(0,0,0,0.25)"}
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path
+            d="M2.5 6.2l2.5 2.3L9.5 3.7"
+            className={justCompleted ? "animate-check-draw" : ""}
+          />
+        </svg>
       </button>
 
-      {/* Text */}
+      {/* Content wrapper — flex:1, min-width:0 prevents text overflow */}
       <div className="flex-1 min-w-0">
         <button
           onClick={() => onOpenDetail(task)}
-          className={`text-[13px] truncate text-left cursor-pointer hover:underline block w-full ${
+          className={`text-[13px] font-normal text-left cursor-pointer hover:underline block w-full leading-[1.5] line-clamp-2 ${
             task.status === "done"
               ? "text-black/30 line-through"
               : "text-[#2c2a35]"
@@ -111,18 +211,59 @@ function SortableTaskRow({
         >
           {task.title}
         </button>
-        <div className="text-[11px] text-black/30 mt-0.5 flex items-center gap-1.5">
-          {dateLabel ? (
-            <span>{dateLabel}</span>
-          ) : (
-            <span className="italic">Unscheduled</span>
-          )}
-          {task.estimated_minutes != null && task.estimated_minutes > 0 && (
-            <>
-              <span>·</span>
-              <span>{task.estimated_minutes}m</span>
-            </>
-          )}
+
+        {/* Metadata row — date picker + estimate, below title */}
+        <div className="flex items-center gap-3 mt-1.5 text-[12px] text-[#999]">
+          <CalendarPicker
+            value={task.date_scheduled ?? ""}
+            onChange={(date) => onSetDate(task.id, date)}
+            onClear={() => onSetDate(task.id, "")}
+            placeholder="Set date"
+          />
+          <span
+            className="flex items-center gap-1 tabular-nums"
+            title={`Worked ${formatMinutes(workedMinutes)} of ${task.estimated_minutes ? formatMinutes(task.estimated_minutes) : "no"} estimate`}
+          >
+            <input
+              type="text"
+              value={workedInput}
+              onChange={(e) => setWorkedInput(e.target.value)}
+              onBlur={commitWorked}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                } else if (e.key === "Escape") {
+                  setWorkedInput(workedMinutes > 0 ? formatMinutes(workedMinutes) : "");
+                  e.currentTarget.blur();
+                }
+              }}
+              onFocus={(e) => e.currentTarget.select()}
+              placeholder="0m"
+              title="Click to edit time worked"
+              className="bg-[#f0f0f0] border border-transparent hover:bg-[#e8e8e8] focus:bg-white focus:border-[#7B9ED9]/30 rounded-md px-3 text-[12px] text-[#555] placeholder-[#999] tabular-nums w-[76px] h-[28px] leading-none outline-none cursor-text transition-colors"
+            />
+            <span className="text-[#999]">/</span>
+            <select
+              value={task.estimated_minutes ?? ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                onSetEstimate(task.id, v ? parseInt(v) : null);
+              }}
+              className="bg-[#f0f0f0] hover:bg-[#e8e8e8] rounded-md px-3 text-[12px] text-[#555] cursor-pointer outline-none h-[28px] leading-none transition-colors"
+              title="Estimated time"
+            >
+              <option value="">— est</option>
+              <option value="15">15m</option>
+              <option value="30">30m</option>
+              <option value="45">45m</option>
+              <option value="60">1h</option>
+              <option value="90">1h 30m</option>
+              <option value="120">2h</option>
+              <option value="180">3h</option>
+              <option value="240">4h</option>
+            </select>
+          </span>
         </div>
       </div>
 
@@ -138,9 +279,12 @@ function SortableTaskRow({
         )}
         <button
           onClick={() => onDelete(task.id)}
-          className="text-[11px] text-black/35 px-1.5 py-0.5 rounded-[5px] cursor-pointer border border-transparent hover:text-[#c0392b] hover:bg-[#c0392b]/[0.06] hover:border-[#c0392b]/[0.15]"
+          title="Delete task"
+          className="text-black/35 p-1 rounded-[5px] cursor-pointer hover:text-[#C0614A] hover:bg-[#C0614A]/[0.08] transition-colors"
         >
-          Del
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />
+          </svg>
         </button>
       </div>
     </div>
@@ -154,6 +298,7 @@ export default function ProjectDetail() {
   const { selectedProjectId, openProject, startFocus, goBack } = useAppStore();
   const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [workedMap, setWorkedMap] = useState<Map<number, number>>(new Map());
   const [projects, setProjects] = useState<Project[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(true);
@@ -192,6 +337,8 @@ export default function ProjectDetail() {
     timeoutId: ReturnType<typeof setTimeout>;
   } | null>(null);
 
+  const [confirmDeleteProject, setConfirmDeleteProject] = useState(false);
+
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -208,6 +355,12 @@ export default function ProjectDetail() {
       setTasks(t);
       setProjects(allP.filter((pr) => !pr.archived));
       setError(null);
+      try {
+        const wmap = await getWorkedMinutesForTaskIds(t.map((task) => task.id));
+        setWorkedMap(wmap);
+      } catch {
+        setWorkedMap(new Map());
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load tasks");
     }
@@ -225,6 +378,12 @@ export default function ProjectDetail() {
       setProject(p);
       setTasks(t);
       setProjects(allP.filter((pr) => !pr.archived));
+      try {
+        const wmap = await getWorkedMinutesForTaskIds(t.map((task) => task.id));
+        setWorkedMap(wmap);
+      } catch {
+        setWorkedMap(new Map());
+      }
       if (p) {
         setEditName(p.name);
         setEditColor(p.color);
@@ -325,6 +484,17 @@ export default function ProjectDetail() {
   function handleClose() {
     flushProjectSave();
     goBack();
+  }
+
+  async function handleDeleteProject() {
+    if (!selectedProjectId) return;
+    try {
+      await deleteProject(selectedProjectId);
+      goBack();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete project");
+      setConfirmDeleteProject(false);
+    }
   }
 
   function updateField(
@@ -567,13 +737,15 @@ export default function ProjectDetail() {
     );
   }
 
+  const weekDates = getCurrentWeekdayDates();
+
   return (
-    <div className="flex flex-1 overflow-hidden flex-col h-full">
+    <div className="flex flex-1 overflow-hidden flex-col h-full max-w-[1400px] mx-auto w-full min-h-[700px]">
         <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
         {/* Undo delete banner */}
         {pendingDelete && (
-          <div className="flex items-center gap-3 px-[22px] py-2 bg-[#2c2a35] text-white text-[12px] flex-shrink-0">
+          <div className="flex items-center gap-3 px-8 py-2 bg-[#2c2a35] text-white text-[12px] flex-shrink-0">
             <span className="flex-1">
               Deleted &ldquo;{pendingDelete.task.title}&rdquo;
             </span>
@@ -586,14 +758,13 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        {/* Project header — always inline editable */}
-        <div className="px-[22px] pt-5 flex-shrink-0">
-          {/* Title row + color + archive */}
-          <div className="flex items-center gap-2.5">
+        {/* Header strip — hero title row */}
+        <div className="px-8 pt-7 pb-5 border-b border-black/[0.04] flex-shrink-0">
+          <div className="flex items-center gap-3">
             {/* Color picker */}
-            <div className="relative group">
+            <div className="relative group flex-shrink-0">
               <div
-                className="w-[12px] h-[12px] rounded-full flex-shrink-0 cursor-pointer ring-2 ring-transparent hover:ring-black/10 transition-all"
+                className="w-[14px] h-[14px] rounded-full cursor-pointer ring-2 ring-transparent hover:ring-black/10 transition-all"
                 style={{ backgroundColor: editColor }}
               />
               <div className="absolute top-full left-0 mt-1 z-20 bg-white border border-black/[0.1] rounded-lg shadow-lg p-2 hidden group-hover:flex gap-1.5 flex-wrap w-[120px]">
@@ -611,21 +782,21 @@ export default function ProjectDetail() {
               </div>
             </div>
 
-            {/* Editable name — wraps freely; font shrinks as the name gets longer */}
+            {/* Editable name — 22px hero; shrinks for longer titles */}
             <textarea
               ref={titleRef}
               value={editName}
               onChange={(e) => updateField("name", e.target.value.replace(/\n/g, ""))}
               maxLength={MAX_TITLE_LENGTH}
               rows={1}
-              className="flex-1 font-medium text-[#2c2a35] bg-transparent border-none outline-none resize-none leading-snug overflow-hidden focus:bg-white focus:border focus:border-[#7B9ED9]/30 focus:rounded-md focus:px-2 focus:-mx-2"
+              className="flex-1 min-w-0 font-medium text-[#2c2a35] bg-transparent border-none outline-none resize-none leading-tight overflow-hidden focus:bg-white focus:border focus:border-[#7B9ED9]/30 focus:rounded-md focus:px-2 focus:-mx-2"
               style={{
                 fontSize:
                   editName.length <= 40
-                    ? 16
+                    ? 22
                     : editName.length <= 80
-                      ? 14
-                      : 13,
+                      ? 18
+                      : 16,
               }}
               onInput={(e) => {
                 const el = e.currentTarget;
@@ -634,10 +805,9 @@ export default function ProjectDetail() {
               }}
             />
 
-            {/* Complete button */}
             <button
               onClick={handleCompleteToggle}
-              className={`text-[12px] cursor-pointer px-2.5 py-1 rounded-md border ${
+              className={`text-[12px] cursor-pointer px-2.5 py-1 rounded-md border flex-shrink-0 ${
                 project.completed
                   ? "bg-[#6A9E7F] border-[#6A9E7F] text-white"
                   : "bg-[#6B84A3] border-[#6B84A3] text-white hover:bg-[#5A7390]"
@@ -647,109 +817,70 @@ export default function ProjectDetail() {
             </button>
             <button
               onClick={handleClose}
-              className="text-black/25 hover:text-black/50 cursor-pointer text-[16px] flex-shrink-0 ml-1"
+              className="text-black/25 hover:text-black/50 cursor-pointer text-[16px] flex-shrink-0 w-7 h-7 flex items-center justify-center"
               title="Close"
             >
               ✕
             </button>
           </div>
+        </div>
 
+        {/* Body — split panel */}
+        <div className="flex flex-1 min-h-0">
+          {/* Main: Tasks (work surface) */}
+          <div className="flex-[1.2] min-w-0 flex flex-col overflow-hidden">
+            {/* Task input row — prominent, right under the header */}
+            <form
+              onSubmit={handleAddTask}
+              className="flex items-center gap-2 mx-8 mt-7 mb-5 px-3.5 py-3 border border-black/[0.08] rounded-lg bg-white flex-shrink-0"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                fill="none"
+                stroke="rgba(0,0,0,0.2)"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              >
+                <line x1="7" y1="3" x2="7" y2="11" />
+                <line x1="3" y1="7" x2="11" y2="7" />
+              </svg>
+              <input
+                type="text"
+                value={newTaskTitle}
+                onChange={(e) => setNewTaskTitle(e.target.value)}
+                maxLength={MAX_TITLE_LENGTH}
+                placeholder="Add a task to this project..."
+                className="flex-1 bg-transparent border-none outline-none text-[13px] text-[#2c2a35] placeholder-black/25"
+              />
+              <button
+                type="submit"
+                className="bg-[#6B84A3] text-white border-none rounded-lg px-3.5 py-1.5 text-[12px] font-medium cursor-pointer hover:bg-[#5A7390]"
+              >
+                Add
+              </button>
+            </form>
 
-          {/* Date range — Start → Due */}
-          <div className="border-b border-black/[0.06] pt-5 pb-5">
-            <label className="uppercase text-black/30 mb-2 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">Dates</label>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[12px] text-black/35">Start</span>
-                <CalendarPicker
-                  value={editStartDate}
-                  onChange={(date) => updateField("startDate", date)}
-                  onClear={() => updateField("startDate", "")}
-                  placeholder="No start"
-                />
-              </div>
-              <span className="text-[11px] text-black/20">&rarr;</span>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[12px] text-black/35">Due</span>
-                <CalendarPicker
-                  value={editTargetDate}
-                  onChange={(date) => updateField("targetDate", date)}
-                  onClear={() => updateField("targetDate", "")}
-                  placeholder="No due"
-                />
-              </div>
+            {/* Task list header */}
+            <div className="flex items-center justify-between px-8 pb-2 flex-shrink-0">
+              <span className="uppercase text-black/30 [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
+                Tasks
+              </span>
+              <button
+                onClick={() => setShowDone(!showDone)}
+                className={`flex items-center gap-1.5 text-[11px] cursor-pointer px-2 py-1 rounded-full border bg-white hover:bg-black/[0.03] ${
+                  showDone
+                    ? "text-[#6B84A3] border-[#6B84A3]/20"
+                    : "text-black/35 border-black/[0.08]"
+                }`}
+              >
+                {showDone ? "Hide completed" : "Show completed"}
+              </button>
             </div>
-          </div>
 
-          {/* Notes — rich text editor (placeholder doubles as label) */}
-          <div className="pt-5 pb-6 border-b border-black/[0.06]">
-            <RichTextEditor
-              value={editNotes}
-              onChange={(html) => updateField("notes", html)}
-              placeholder="Notes"
-              className="text-[13px] text-black/55 leading-relaxed"
-            />
-          </div>
-        </div>
-
-        {/* Task input row */}
-        <form
-          onSubmit={handleAddTask}
-          className="flex items-center gap-2 mx-[22px] my-3 px-3 py-[10px] border border-black/[0.06] rounded-lg bg-transparent flex-shrink-0"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            fill="none"
-            stroke="rgba(0,0,0,0.2)"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          >
-            <line x1="7" y1="3" x2="7" y2="11" />
-            <line x1="3" y1="7" x2="11" y2="7" />
-          </svg>
-          <input
-            type="text"
-            value={newTaskTitle}
-            onChange={(e) => setNewTaskTitle(e.target.value)}
-            maxLength={MAX_TITLE_LENGTH}
-            placeholder="Add a task to this project..."
-            className="flex-1 bg-transparent border-none outline-none text-[13px] text-[#2c2a35] placeholder-black/25"
-          />
-          {/* Date picker */}
-          <CalendarPicker
-            value={newTaskDate}
-            onChange={(date) => setNewTaskDate(date)}
-            onClear={() => setNewTaskDate("")}
-          />
-          <button
-            type="submit"
-            className="bg-[#6B84A3] text-white border-none rounded-lg px-3.5 py-1.5 text-[12px] font-medium cursor-pointer hover:bg-[#5A7390]"
-          >
-            Add
-          </button>
-        </form>
-
-        {/* Task list header */}
-        <div className="flex items-center justify-between px-[22px] py-3 flex-shrink-0">
-          <span className="uppercase text-black/30 [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
-            Tasks
-          </span>
-          <button
-            onClick={() => setShowDone(!showDone)}
-            className={`flex items-center gap-1.5 text-[11px] cursor-pointer px-2 py-1 rounded-full border bg-white hover:bg-black/[0.03] ${
-              showDone
-                ? "text-[#6B84A3] border-[#6B84A3]/20"
-                : "text-black/35 border-black/[0.08]"
-            }`}
-          >
-            {showDone ? "Hide completed" : "Show completed"}
-          </button>
-        </div>
-
-        {/* Task list — scrollable region */}
-        <div className="overflow-y-auto px-[22px] pb-4" style={{ maxHeight: "30vh" }}>
+            {/* Task list — scrollable region */}
+            <div className="overflow-y-auto px-8 pb-5 flex-1 min-h-[500px]">
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
@@ -858,16 +989,165 @@ export default function ProjectDetail() {
                     <SortableTaskRow
                       key={task.id}
                       task={task}
+                      workedMinutes={workedMap.get(task.id) ?? 0}
                       onToggle={toggleTask}
                       onOpenDetail={setDetailTask}
                       onDelete={(id) => setConfirmDeleteId(id)}
                       onStart={handleStartFocus}
+                      onSetDate={(id, date) => {
+                        updateTaskDateScheduled(id, date || null)
+                          .then(() => refreshTasks())
+                          .catch((e) => setError(e instanceof Error ? e.message : "Failed to set date"));
+                      }}
+                      onSetEstimate={(id, minutes) => {
+                        const t = tasks.find((x) => x.id === id);
+                        if (!t) return;
+                        updateTask({
+                          id,
+                          title: t.title,
+                          projectId: t.project_id,
+                          estimatedMinutes: minutes,
+                          priority: t.priority,
+                          notes: t.notes,
+                          dateScheduled: t.date_scheduled,
+                        })
+                          .then(() => refreshTasks())
+                          .catch((e) => setError(e instanceof Error ? e.message : "Failed to set estimate"));
+                      }}
+                      onSetWorked={(id, minutes) => {
+                        setManualWorkedMinutes(id, minutes)
+                          .then(() => refreshTasks())
+                          .catch((e) => setError(e instanceof Error ? e.message : "Failed to set worked time"));
+                      }}
                     />
                   );
                 })
               )}
             </SortableContext>
           </DndContext>
+        </div>
+          </div>
+
+          {/* Right rail: dates + notes */}
+          <div className="flex-1 min-w-[200px] border-l border-black/[0.06] bg-[#FAFAF7] p-8 overflow-y-auto space-y-8">
+            <div className="flex gap-3">
+              <div>
+                <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1.5">
+                  Start
+                </div>
+                <CalendarPicker
+                  value={editStartDate}
+                  onChange={(date) => updateField("startDate", date)}
+                  onClear={() => updateField("startDate", "")}
+                  placeholder="No start"
+                />
+              </div>
+              <div>
+                <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1.5">
+                  End
+                </div>
+                <CalendarPicker
+                  value={editTargetDate}
+                  onChange={(date) => updateField("targetDate", date)}
+                  onClear={() => updateField("targetDate", "")}
+                  placeholder="No end"
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-2">
+                Notes
+              </div>
+              <RichTextEditor
+                value={editNotes}
+                onChange={(html) => updateField("notes", html)}
+                placeholder="Add notes..."
+                className="w-full bg-white border border-black/[0.06] rounded-md px-3.5 py-3 text-[13px] text-black/65 leading-relaxed min-h-[280px] focus-within:border-[#7B9ED9]/30"
+              />
+            </div>
+
+            <div>
+              <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-3">
+                This week
+              </div>
+              <div className="grid grid-cols-5 gap-2">
+                {weekDates.map((date, i) => {
+                  const dayTasks = tasks.filter((t) => t.date_scheduled === date);
+                  const hasTasks = dayTasks.length > 0;
+                  return (
+                    <div key={date} className="min-w-0">
+                      <div
+                        className="text-[10px] font-medium uppercase tracking-[0.05em] text-center pb-1.5 mb-2 border-b transition-colors"
+                        style={{
+                          color: hasTasks ? editColor : "#999",
+                          borderColor: hasTasks ? `${editColor}40` : "#e5e5e5",
+                        }}
+                      >
+                        {DAY_NAMES[i]}
+                      </div>
+                      {dayTasks.length === 0 ? (
+                        <div className="text-[10px] text-black/15 text-center">—</div>
+                      ) : (
+                        <div className="space-y-1">
+                          {dayTasks.map((task) => (
+                            <button
+                              key={task.id}
+                              onClick={() => setDetailTask(task)}
+                              title={task.title}
+                              className={`block w-full text-left text-[11px] hover:text-[#2c2a35] cursor-pointer truncate leading-snug ${
+                                task.status === "done"
+                                  ? "text-black/30 line-through"
+                                  : "text-black/55"
+                              }`}
+                            >
+                              {task.title}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center gap-2 px-8 py-3.5 border-t border-black/[0.06] flex-shrink-0">
+          <span className="text-[10px] text-black/20 flex-1">
+            Auto-saved
+          </span>
+          {confirmDeleteProject ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] text-[#C0614A]">
+                Delete project &amp; all tasks?
+              </span>
+              <button
+                onClick={handleDeleteProject}
+                className="bg-[#C0614A] text-white text-[11px] font-medium rounded-md px-2.5 py-1 cursor-pointer hover:bg-[#A8543F]"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setConfirmDeleteProject(false)}
+                className="text-[11px] text-black/40 hover:text-black/60 cursor-pointer px-1.5"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmDeleteProject(true)}
+              title="Delete project"
+              className="text-[#C0614A]/60 hover:text-[#C0614A] cursor-pointer p-2 rounded-md hover:bg-[#C0614A]/[0.08] transition-colors"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />
+              </svg>
+            </button>
+          )}
         </div>
 
       {/* Task detail overlay */}
@@ -878,7 +1158,7 @@ export default function ProjectDetail() {
           projects={projects}
           onClose={() => { setDetailTask(null); refreshTasks(); }}
           onSave={(updates) => updateTask(updates).then(() => refreshTasks()).catch(() => {})}
-          onToggle={(t) => { toggleTask(t); setDetailTask(null); }}
+          onToggle={(t) => { toggleTask(t); }}
           onDelete={(id) => { handleDeleteTask(id); setDetailTask(null); }}
           onStartFocus={(t) => { handleStartFocus(t); setDetailTask(null); }}
         />

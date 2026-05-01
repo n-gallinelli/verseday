@@ -157,7 +157,7 @@ export default function TaskCard({
     <div
       ref={setNodeRef}
       style={style}
-      className={`px-3 py-[7px] rounded-lg border transition-colors group/row ${
+      className={`px-3 py-[7px] rounded-lg border transition-colors duration-150 ease-out group/row ${
         isHigh
           ? "bg-[#FFF8F0] border-[#e0873e]/15 hover:bg-[#FFF4E8]"
           : "bg-white border-black/[0.07] hover:bg-black/[0.02]"
@@ -177,21 +177,28 @@ export default function TaskCard({
         {/* Checkbox */}
         <button
           onClick={() => onToggle(task)}
-          className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
+          title={task.status === "done" ? "Mark as not done" : "Mark complete"}
+          className={`w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
             task.status === "done"
-              ? `bg-[#6A9E7F] border-[#6A9E7F]${justCompleted ? " animate-task-done" : ""}`
-              : "border-black/15 hover:border-black/30"
+              ? `bg-[#6A9E7F] border-[#6A9E7F] hover:bg-[#5a8a6e] hover:border-[#5a8a6e]${justCompleted ? " animate-task-done" : ""}`
+              : "border-black/20 hover:border-[#6A9E7F]"
           }`}
         >
-          {task.status === "done" ? (
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 8.5l3.5 3.5 6.5-7" />
-            </svg>
-          ) : (
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="rgba(0,0,0,0.15)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 8.5l3.5 3.5 6.5-7" />
-            </svg>
-          )}
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke={task.status === "done" ? "white" : "rgba(0,0,0,0.25)"}
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path
+              d="M2.5 6.2l2.5 2.3L9.5 3.7"
+              className={justCompleted ? "animate-check-draw" : ""}
+            />
+          </svg>
         </button>
 
         {/* Project color dot */}
@@ -205,7 +212,7 @@ export default function TaskCard({
 
         {/* Title — clickable to open detail overlay */}
         <span
-          className={`flex-1 text-[#2c2a35] [font-size:var(--font-size-primary)] [font-weight:var(--font-weight-primary)] ${task.status === "done" ? "line-through !text-black/30" : ""} ${onOpenDetail ? "cursor-pointer hover:text-[#7B9ED9] transition-colors" : ""}`}
+          className={`flex-1 text-[#2c2a35] [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)] ${task.status === "done" ? "line-through !text-black/30" : ""} ${onOpenDetail ? "cursor-pointer hover:text-[#7B9ED9] transition-colors" : ""}`}
           onClick={() => onOpenDetail?.(task)}
         >
           {task.title}
@@ -240,7 +247,7 @@ export default function TaskCard({
           {onStart && task.status !== "done" && (
             <button
               onClick={() => onStart(task)}
-              className="w-6 h-6 rounded-full bg-[#7B9ED9] text-white hover:bg-[#6889c4] cursor-pointer flex items-center justify-center"
+              className="w-6 h-6 rounded-full bg-[#7B9ED9] text-white hover:bg-[#6889c4] cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_rgba(123,158,217,0.18)]"
               title="Start focus"
             >
               <svg width="8" height="10" viewBox="0 0 8 10" fill="white" className="ml-[1px]">

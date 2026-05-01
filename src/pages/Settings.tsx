@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import Button from "../components/Button";
-import { getSetting, setSetting, deleteSetting } from "../db/queries";
+import { getSetting, setSetting } from "../db/queries";
 
 const FOCUS_DEFAULTS = {
   focus_work_min: 25,
@@ -34,11 +33,6 @@ const FOCUS_FIELDS: {
 
 export default function Settings() {
   const [focusValues, setFocusValues] = useState<Record<FocusKey, number>>({ ...FOCUS_DEFAULTS });
-  const [apiKeyStatus, setApiKeyStatus] = useState<"loading" | "configured" | "not-configured">("loading");
-  const [keyInput, setKeyInput] = useState("");
-  const [keySaved, setKeySaved] = useState(false);
-  const [removeArmed, setRemoveArmed] = useState(false);
-  const removeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -50,17 +44,8 @@ export default function Settings() {
         })
       );
       setFocusValues(Object.fromEntries(entries) as Record<FocusKey, number>);
-
-      const apiKey = await getSetting("anthropic_api_key");
-      setApiKeyStatus(apiKey ? "configured" : "not-configured");
     }
     load();
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (removeTimerRef.current) clearTimeout(removeTimerRef.current);
-    };
   }, []);
 
   function handleFocusChange(key: FocusKey, value: number, min: number, max: number) {
@@ -90,30 +75,6 @@ export default function Settings() {
   const isDefaultValues = (Object.keys(FOCUS_DEFAULTS) as FocusKey[]).every(
     (key) => focusValues[key] === FOCUS_DEFAULTS[key]
   );
-
-  async function handleSaveApiKey() {
-    const trimmed = keyInput.trim();
-    if (!trimmed) return;
-    await setSetting("anthropic_api_key", trimmed);
-    setApiKeyStatus("configured");
-    setKeyInput("");
-    setKeySaved(true);
-    setTimeout(() => setKeySaved(false), 2000);
-  }
-
-  function handleRemoveClick() {
-    if (removeArmed) {
-      if (removeTimerRef.current) clearTimeout(removeTimerRef.current);
-      deleteSetting("anthropic_api_key");
-      setApiKeyStatus("not-configured");
-      setRemoveArmed(false);
-    } else {
-      setRemoveArmed(true);
-      removeTimerRef.current = setTimeout(() => setRemoveArmed(false), 2000);
-    }
-  }
-
-  const hasKeyInput = keyInput.trim().length > 0;
 
   return (
     <div className="flex flex-col h-full bg-[#f5f4f0] overflow-hidden">
@@ -185,65 +146,6 @@ export default function Settings() {
             </div>
           </section>
 
-          {/* API Key */}
-          <section>
-            <div className="flex items-center gap-2 mb-4">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="rgba(0,0,0,0.3)" strokeWidth="1.2" strokeLinecap="round">
-                <path d="M8 1.5l4.5 4.5-7 7H1v-4.5z" />
-                <path d="M6.5 3L11 7.5" />
-              </svg>
-              <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30">
-                Anthropic API key
-              </h3>
-            </div>
-            <div className="bg-white rounded-lg p-6 space-y-3 group/apicard" style={{ border: "0.5px solid rgba(0,0,0,0.06)" }}>
-              <div className="text-[12px] text-black/40">
-                Used for generating daily and weekly summaries.
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={`text-[12px] px-2 py-0.5 rounded-full ${
-                    apiKeyStatus === "configured"
-                      ? "bg-[#E1F5EE] text-[#0F6E56]"
-                      : "bg-black/[0.04] text-black/30"
-                  }`}
-                >
-                  {apiKeyStatus === "loading"
-                    ? "Loading..."
-                    : apiKeyStatus === "configured"
-                      ? "Configured"
-                      : "Not configured"}
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={keyInput}
-                  onChange={(e) => setKeyInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") handleSaveApiKey(); }}
-                  placeholder="sk-ant-..."
-                  className="flex-1 px-3 py-2 text-[13px] border border-black/[0.08] rounded-lg focus:outline-none focus:border-[#7B9ED9]/40"
-                />
-                <Button
-                  size="sm"
-                  onClick={handleSaveApiKey}
-                  disabled={!hasKeyInput}
-                  className={hasKeyInput ? "" : "opacity-40 cursor-not-allowed"}
-                >
-                  {keySaved ? "Saved!" : "Save"}
-                </Button>
-              </div>
-              {apiKeyStatus === "configured" && (
-                <button
-                  onClick={handleRemoveClick}
-                  className="text-[11px] invisible group-hover/apicard:visible cursor-pointer transition-colors"
-                  style={{ color: removeArmed ? "rgba(220,50,50,0.9)" : "rgba(220,50,50,0.7)" }}
-                >
-                  {removeArmed ? "Confirm remove?" : "Remove key"}
-                </button>
-              )}
-            </div>
-          </section>
         </div>
       </div>
     </div>

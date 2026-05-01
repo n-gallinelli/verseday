@@ -17,7 +17,6 @@ import SummaryOverlay from "../components/SummaryOverlay";
 import MoodSelector from "../components/MoodSelector";
 import { formatHoursMinutes } from "../utils/format";
 import type { Task, Project } from "../types";
-import type { ShutdownSummaryData } from "../utils/summaryPrompts";
 
 const SHUTDOWN_KEY_PREFIX = "daily-shutdown-";
 
@@ -223,29 +222,26 @@ export default function DailyShutdown() {
     }
   }
 
-  function buildSummaryData(): ShutdownSummaryData {
-    return {
-      date: selectedDate,
-      tasks: tasks.map((t) => ({
-        ...t,
-        is_highlight: highlightIds.has(t.id) ? 1 : 0,
-        workedMinutes: workedPerTask.get(t.id) ?? 0,
-        projectName: t.project_id ? projectMap.get(t.project_id)?.name ?? null : null,
-      })),
-      plannedMinutes,
-      workedMinutes,
-      mood,
-      reflection: serializeReflection(reflectionFields) || null,
-    };
-  }
 
   const completedTasks = tasks.filter((t) => t.status === "done");
   const incompleteTasks = tasks.filter((t) => t.status !== "done");
 
-  const REFLECTION_FIELDS: { key: keyof ReflectionFields; label: string }[] = [
-    { key: "howDidItGo", label: "How did today go?" },
-    { key: "whatDifferently", label: "What would you do differently?" },
-    { key: "gratefulFor", label: "What are you grateful for?" },
+  const REFLECTION_FIELDS: { key: keyof ReflectionFields; label: string; placeholder: string }[] = [
+    {
+      key: "howDidItGo",
+      label: "How did today go?",
+      placeholder: "What you accomplished, what went smoothly, progress made...",
+    },
+    {
+      key: "whatDifferently",
+      label: "What would you do differently?",
+      placeholder: "Missteps, friction points, what you'd change next time...",
+    },
+    {
+      key: "gratefulFor",
+      label: "What are you grateful for?",
+      placeholder: "People, moments, things that went well, small wins...",
+    },
   ];
 
   return (
@@ -260,9 +256,11 @@ export default function DailyShutdown() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => changeDate(-1)}
-            className="w-6 h-6 rounded-md bg-white/60 border border-black/[0.06] flex items-center justify-center text-black/35 text-[12px] cursor-pointer hover:bg-white"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-[#999] cursor-pointer hover:bg-[#f0f0f0] transition-colors duration-150 ease-out"
           >
-            ‹
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 4l-4 4 4 4" />
+            </svg>
           </button>
           <h2 className="text-[14px] font-medium text-[#2c2a35]">
             {new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", {
@@ -273,9 +271,11 @@ export default function DailyShutdown() {
           </h2>
           <button
             onClick={() => changeDate(1)}
-            className="w-6 h-6 rounded-md bg-white/60 border border-black/[0.06] flex items-center justify-center text-black/35 text-[12px] cursor-pointer hover:bg-white"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-[#999] cursor-pointer hover:bg-[#f0f0f0] transition-colors duration-150 ease-out"
           >
-            ›
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 4l4 4-4 4" />
+            </svg>
           </button>
         </div>
       </div>
@@ -288,7 +288,7 @@ export default function DailyShutdown() {
             <div className="flex-1">
               {/* Mood selector */}
               <section className="mb-6">
-                <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-2">
+                <h3 className="text-[13px] font-medium text-black/55 mb-2">
                   How was your day?
                 </h3>
                 <MoodSelector
@@ -302,14 +302,15 @@ export default function DailyShutdown() {
               <section className="space-y-3">
                 {REFLECTION_FIELDS.map((field) => (
                   <div key={field.key}>
-                    <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1 block">
+                    <label className="text-[13px] font-medium text-black/55 mb-1.5 block">
                       {field.label}
                     </label>
                     <textarea
                       value={reflectionFields[field.key]}
                       onChange={(e) => handleReflectionFieldChange(field.key, e.target.value)}
+                      placeholder={field.placeholder}
                       rows={2}
-                      className="w-full bg-white rounded-lg px-3.5 py-2.5 text-[13px] text-black/55 placeholder-black/20 resize-y leading-relaxed focus:outline-none focus:border-[#7B9ED9]/40"
+                      className="w-full bg-white rounded-lg px-3.5 py-2.5 text-[13px] text-black/55 resize-y leading-relaxed focus:outline-none focus:border-[#7B9ED9]/40 placeholder:text-[13px] placeholder:font-normal placeholder:text-[#bbb]"
                       style={{ border: "0.5px solid rgba(0,0,0,0.06)" }}
                     />
                   </div>
@@ -440,8 +441,8 @@ export default function DailyShutdown() {
       {showSunset && <SunsetOverlay onDismiss={() => setShowSunset(false)} />}
       {showSummary && (
         <SummaryOverlay
-          type="shutdown"
-          data={buildSummaryData()}
+          type="daily"
+          anchorDate={selectedDate}
           onClose={() => setShowSummary(false)}
         />
       )}

@@ -81,7 +81,7 @@ export default function Projects() {
     Map<number, { total: number; done: number; lastDate: string | null }>
   >(new Map());
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<FilterMode>("all");
+  const [filter, setFilter] = useState<FilterMode>("active");
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<number>>(new Set());
   const [projectTasks, setProjectTasks] = useState<Map<number, Task[]>>(new Map());
   const [detailTask, setDetailTask] = useState<Task | null>(null);
@@ -203,9 +203,9 @@ export default function Projects() {
   const completedCount = projects.filter((p) => !!p.completed).length;
 
   const FILTERS: { key: FilterMode; label: string; count: number }[] = [
-    { key: "all", label: "All", count: allCount },
     { key: "active", label: "Active", count: activeCount },
     { key: "completed", label: "Completed", count: completedCount },
+    { key: "all", label: "All", count: allCount },
   ];
 
   return (

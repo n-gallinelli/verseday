@@ -66,6 +66,15 @@ async function focusMainWindow() {
   }
 }
 
+// Drag handler: hold + drag anywhere on the pip (except buttons/inputs) to
+// reposition the window. Tauri's startDragging only kicks in on mouse motion,
+// so a pure click still triggers child onClick handlers like focusMainWindow.
+function handlePipMouseDown(e: React.MouseEvent) {
+  const target = e.target as HTMLElement;
+  if (target.closest("button, a, input, select, textarea")) return;
+  getCurrentWebviewWindow().startDragging().catch(() => {});
+}
+
 const ICON_BTN = "w-8 h-8 rounded-full flex items-center justify-center cursor-pointer text-black/35 hover:text-[#2c2a35] hover:bg-black/[0.06] transition-colors flex-shrink-0";
 const BTN_PRIMARY = "px-2.5 py-1 rounded-[6px] text-[11px] bg-[#7B9ED9] text-white cursor-pointer hover:bg-[#6889c4] transition-colors";
 const BTN_SECONDARY = "px-2.5 py-1 rounded-[6px] text-[11px] bg-black/[0.05] text-black/40 cursor-pointer hover:bg-black/[0.09] transition-colors";
@@ -77,32 +86,33 @@ function ProgressBar({ elapsed, estimatedMinutes }: { elapsed: number; estimated
     const pct = Math.min((elapsedMin / estimatedMinutes) * 100, 100);
     const isOver = elapsedMin > estimatedMinutes;
     return (
-      <div className="h-[3px] w-full bg-black/[0.06]">
+      <div className="h-[3px] w-full bg-black/[0.04]">
         <div
           className="h-full transition-all duration-500"
           style={{
             width: `${isOver ? 100 : pct}%`,
             backgroundColor: isOver ? "#D85A30" : "#7B9ED9",
+            opacity: isOver ? 0.6 : 0.45,
           }}
         />
       </div>
     );
   }
 
-  // No estimate — pulsing bar
+  // No estimate — slow, faint pulsing bar
   return (
-    <div className="h-[3px] w-full bg-black/[0.06] overflow-hidden">
+    <div className="h-[3px] w-full bg-black/[0.04] overflow-hidden">
       <div
-        className="h-full bg-black/[0.08]"
+        className="h-full bg-[#7B9ED9] rounded-full"
         style={{
           width: "30%",
-          animation: "pipPulse 3s ease-in-out infinite",
+          animation: "pipPulse 5s ease-in-out infinite",
         }}
       />
       <style>{`
         @keyframes pipPulse {
-          0%, 100% { transform: translateX(-100%); opacity: 0.4; }
-          50% { transform: translateX(233%); opacity: 0.8; }
+          0%, 100% { transform: translateX(-100%); opacity: 0.18; }
+          50% { transform: translateX(233%); opacity: 0.32; }
         }
       `}</style>
     </div>
@@ -117,6 +127,16 @@ export default function FocusPip() {
   const [expanded, setExpanded] = useState(false);
   const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const orphanStartRef = useRef<number | null>(null);
+
+  // Make the pip window's html+body transparent and clip overflow so the
+  // rounded pill shows against the desktop instead of a rectangular bg.
+  useEffect(() => {
+    document.documentElement.style.background = "transparent";
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.background = "transparent";
+    document.body.style.overflow = "hidden";
+    document.body.style.margin = "0";
+  }, []);
 
   useEffect(() => {
     function load() {
@@ -182,7 +202,7 @@ export default function FocusPip() {
   // ── BREAK PROMPT ───────────────────────────────────────────────────
   if (state.phase === "prompt") {
     return (
-      <div className="bg-[#f5f4f0] px-3.5 py-2.5 select-none overflow-hidden" style={{ borderRadius: 12 }}>
+      <div className="bg-[#f5f4f0] px-3.5 py-2.5 select-none overflow-hidden cursor-grab active:cursor-grabbing" style={{ borderRadius: 18 }} onMouseDown={handlePipMouseDown}>
         <p className="text-[13px] font-medium text-[#2c2a35] text-center mb-2.5">
           Ready for a break?
         </p>
@@ -207,7 +227,7 @@ export default function FocusPip() {
   // ── BREAK COUNTDOWN ────────────────────────────────────────────────
   if (state.phase === "break") {
     return (
-      <div className="bg-[#f5f4f0] px-3.5 py-2.5 select-none overflow-hidden" style={{ borderRadius: 12 }}>
+      <div className="bg-[#f5f4f0] px-3.5 py-2.5 select-none overflow-hidden cursor-grab active:cursor-grabbing" style={{ borderRadius: 18 }} onMouseDown={handlePipMouseDown}>
         <div className="flex items-center gap-2.5">
           <div className="flex-1 min-w-0">
             <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/25 mb-0.5">Break</div>
@@ -226,15 +246,16 @@ export default function FocusPip() {
   // ── ACTIVE / PAUSED — horizontal expand ────────────────────────────
   return (
     <div
-      className="bg-[#f5f4f0] select-none overflow-hidden flex flex-col"
-      style={{ borderRadius: 12, border: "0.5px solid rgba(0,0,0,0.08)" }}
+      className="bg-[#f5f4f0] select-none overflow-hidden flex flex-col cursor-grab active:cursor-grabbing"
+      style={{ borderRadius: 18, border: "0.5px solid rgba(0,0,0,0.08)" }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      onMouseDown={handlePipMouseDown}
     >
       {/* Main row — content anchored right, controls expand leftward */}
       <div className="flex items-center flex-1 min-h-0">
         {/* Task name + timer — always visible */}
-        <div className="flex items-center gap-2 px-3 py-2 flex-1 min-w-0">
+        <div className="flex items-center gap-2 pl-4 pr-2.5 py-2.5 flex-1 min-w-0">
           <div className="flex-1 min-w-0">
             <div
               className="text-[14px] font-medium text-[#2c2a35] truncate cursor-pointer hover:text-[#7B9ED9] transition-colors leading-snug"
@@ -242,8 +263,16 @@ export default function FocusPip() {
             >
               {state.taskTitle}
             </div>
-            <div className={`text-[12px] tabular-nums leading-snug ${state.paused ? "text-black/20" : "text-black/30"}`}>
-              {formatTime(state.elapsed)}
+            <div className="text-[12px] tabular-nums leading-snug flex items-center gap-1.5">
+              <span className={state.paused ? "text-black/25" : "text-[#5DCAA5]"}>
+                {formatTime(state.elapsed)}
+              </span>
+              <span className="text-black/15">/</span>
+              <span className="text-black/35">
+                {state.estimatedMinutes != null && state.estimatedMinutes > 0
+                  ? formatTime(state.estimatedMinutes * 60000)
+                  : "—"}
+              </span>
             </div>
           </div>
 
@@ -271,20 +300,19 @@ export default function FocusPip() {
             </button>
 
             {/* Break */}
-            <button onClick={() => sendCommand("requestBreak")} className={`${ICON_BTN} flex-col !h-auto gap-0 py-0.5`} title="Take a break">
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+            <button onClick={() => sendCommand("requestBreak")} className={ICON_BTN} title="Take a break">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M2 12h10" />
                 <path d="M2 5h8v4a3 3 0 01-3 3H5a3 3 0 01-3-3V5z" />
                 <path d="M10 6h1.5a2 2 0 010 4H10" />
               </svg>
-              <span className="text-[7px] uppercase tracking-wider text-black/25 leading-none">Break</span>
             </button>
           </div>
 
           {/* Play/pause — always anchored to right edge */}
           <button
             onClick={() => sendCommand("pause")}
-            className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer text-black/30 hover:text-[#2c2a35] hover:bg-black/[0.06] transition-colors flex-shrink-0"
+            className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer text-black/30 hover:text-[#2c2a35] hover:bg-black/[0.06] transition-colors flex-shrink-0"
             title={state.paused ? "Resume" : "Pause"}
           >
             {state.paused ? (

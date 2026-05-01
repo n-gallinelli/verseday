@@ -8,7 +8,7 @@ import {
   getWorkedMinutesForTask,
 } from "../db/queries";
 import type { Task, Project } from "../types";
-import { formatHoursMinutes } from "../utils/format";
+import { formatHoursMinutes, getEmptyDayMessage } from "../utils/format";
 
 export default function FocusLanding() {
   const { startFocus } = useAppStore();
@@ -85,19 +85,22 @@ export default function FocusLanding() {
   return (
     <div className="flex flex-col h-full bg-[#f5f4f0] overflow-hidden">
       {/* Header */}
-      <div className="px-6 py-4 flex-shrink-0" style={{ borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}>
+      <div className="px-6 py-4 flex-shrink-0 text-center" style={{ borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}>
         <h2 className="text-[18px] font-medium text-[#2c2a35] font-display">Focus</h2>
       </div>
 
       {/* Content — vertically centered */}
       <div className="flex-1 flex flex-col items-center justify-center px-6">
         {/* No tasks state */}
-        {tasks.length === 0 && (
-          <div className="text-center">
-            <p className="text-[14px] text-black/35 mb-1">Your day is wide open</p>
-            <p className="text-[12px] text-black/25">Head to Daily Plan to queue up what you'll focus on.</p>
-          </div>
-        )}
+        {tasks.length === 0 && (() => {
+          const msg = getEmptyDayMessage();
+          return (
+            <div className="text-center max-w-[300px]">
+              <p className="text-[14px] text-black/45 mb-1">{msg.title}</p>
+              <p className="text-[12px] text-black/25 leading-relaxed">{msg.subtitle}</p>
+            </div>
+          );
+        })()}
 
         {/* All done state */}
         {tasks.length > 0 && remainingTasks.length === 0 && (
@@ -110,7 +113,7 @@ export default function FocusLanding() {
 
         {/* Current task — centered hero */}
         {currentTask && (
-          <div className="flex flex-col items-center text-center max-w-[440px]">
+          <div className="flex flex-col items-center text-center max-w-[680px]">
             {/* Project label — always reserve space */}
             <div className="flex items-center gap-1.5 mb-2 h-[18px]">
               {currentTask.project_id && projectMap.get(currentTask.project_id) && (
@@ -119,23 +122,20 @@ export default function FocusLanding() {
                     className="w-2 h-2 rounded-full"
                     style={{ backgroundColor: projectMap.get(currentTask.project_id)!.color }}
                   />
-                  <span className="text-[11px] text-black/30 truncate max-w-[200px]">
+                  <span className="text-[11px] text-black/30 truncate max-w-[280px]">
                     {projectMap.get(currentTask.project_id)!.name}
                   </span>
                 </>
               )}
             </div>
 
-            {/* Task title — fixed 2-line height to prevent layout shift */}
-            <h1
-              className="text-[20px] font-medium text-[#2c2a35] leading-snug mb-6 overflow-hidden font-display"
-              style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", minHeight: "2.6em" } as React.CSSProperties}
-            >
+            {/* Task title — full text, wraps to as many lines as needed */}
+            <h1 className="text-[20px] font-medium text-[#2c2a35] leading-snug mb-6 font-display break-words">
               {currentTask.title}
             </h1>
 
             {/* Start button */}
-            <Button size="sm" className="flex items-center justify-center gap-2" onClick={() => handleStartFocus(currentTask)}>
+            <Button size="sm" className="flex items-center justify-center gap-2 transition-all duration-200 ease-out hover:shadow-[0_0_0_6px_rgba(123,158,217,0.18)]" onClick={() => handleStartFocus(currentTask)}>
               <svg width="10" height="12" viewBox="0 0 8 10" fill="white">
                 <path d="M0 0v10l8-5z" />
               </svg>

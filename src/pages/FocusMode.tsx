@@ -144,11 +144,11 @@ export default function FocusMode() {
           url: "/#focus-pip",
           title: "Focus",
           width: 220,
-          height: 56,
+          height: 68,
           resizable: false,
           alwaysOnTop: true,
           decorations: false,
-          transparent: false,
+          transparent: true,
           skipTaskbar: true,
           x: 20,
           y: 20,
@@ -176,6 +176,17 @@ export default function FocusMode() {
   // Pomodoro state
   const [phase, setPhase] = useState<FocusPhase>("work");
   const [completedPomodoros, setCompletedPomodoros] = useState(0);
+  const [completionBurst, setCompletionBurst] = useState(false);
+  const prevPhaseRef = useRef<FocusPhase>("work");
+  useEffect(() => {
+    if (phase === "prompt" && prevPhaseRef.current === "work") {
+      setCompletionBurst(true);
+      const t = setTimeout(() => setCompletionBurst(false), 1100);
+      prevPhaseRef.current = phase;
+      return () => clearTimeout(t);
+    }
+    prevPhaseRef.current = phase;
+  }, [phase]);
   const [, setWorkElapsed] = useState(0); // triggers re-render on work elapsed change
   const [breakRemaining, setBreakRemaining] = useState(0);
   const [breakDuration, setBreakDuration] = useState(0);
@@ -462,7 +473,7 @@ export default function FocusMode() {
       )}
 
       {/* Center content */}
-      <div className="text-center max-w-[560px] px-8 flex flex-col items-center mt-4">
+      <div className="relative text-center max-w-[560px] px-8 flex flex-col items-center mt-4">
         {/* Task name — hero */}
         <h1 className="text-[28px] font-semibold text-[#2c2a35] mb-3 leading-snug font-display">
           {focus.task.title}
@@ -476,8 +487,30 @@ export default function FocusMode() {
             saveNotes(html);
           }}
           placeholder="Add notes…"
-          className="w-full min-h-[120px] mb-4 px-4 py-3.5 bg-transparent text-[14px] text-[#2c2a35] leading-relaxed"
+          className="w-full min-h-[120px] mb-4 px-4 py-3.5 bg-transparent text-center text-[14px] text-[#2c2a35] leading-relaxed"
         />
+
+        {/* Completion burst — concentric rings that scale out and fade */}
+        {completionBurst && (
+          <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-[30px] z-10" style={{ width: 240, height: 240 }}>
+            <svg
+              viewBox="0 0 240 240"
+              fill="none"
+              className="absolute inset-0 animate-focus-complete-burst"
+              style={{ transformOrigin: "center" }}
+            >
+              <circle cx="120" cy="120" r="92" stroke="#6A9E7F" strokeWidth="6" />
+            </svg>
+            <svg
+              viewBox="0 0 240 240"
+              fill="none"
+              className="absolute inset-0 animate-focus-complete-core"
+              style={{ transformOrigin: "center" }}
+            >
+              <circle cx="120" cy="120" r="62" stroke="#6A9E7F" strokeWidth="3" opacity="0.5" />
+            </svg>
+          </div>
+        )}
 
         {/* Break prompt */}
         {isPrompting && prompt && (
@@ -526,10 +559,6 @@ export default function FocusMode() {
                     stroke={isOnBreak ? "#4a9e6e" : "#7B9ED9"}
                     strokeWidth="14"
                     fill="none"
-                    strokeLinecap="round"
-                    strokeDasharray={ARC_CIRCUMFERENCE}
-                    strokeDashoffset={isOnBreak ? ARC_CIRCUMFERENCE * (breakRemaining / breakDuration) : arcOffset}
-                    transform="rotate(-90 110 110)"
                   />
                 </svg>
               </div>
@@ -551,20 +580,23 @@ export default function FocusMode() {
                   strokeWidth="7"
                   fill="none"
                 />
-                {/* Progress stroke */}
-                <circle
-                  cx="110"
-                  cy="110"
-                  r={ARC_RADIUS}
-                  stroke={isOnBreak ? "#4a9e6e" : (paused ? "rgba(0,0,0,0.12)" : "#7B9ED9")}
-                  strokeWidth="7"
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeDasharray={ARC_CIRCUMFERENCE}
-                  strokeDashoffset={isOnBreak ? ARC_CIRCUMFERENCE * (breakRemaining / breakDuration) : arcOffset}
-                  transform="rotate(-90 110 110)"
-                  style={{ transition: "stroke-dashoffset 0.3s ease" }}
-                />
+                {/* Progress stroke — only fills during a break countdown.
+                    During work the ring just pulses (timer-circle-ring class). */}
+                {isOnBreak && (
+                  <circle
+                    cx="110"
+                    cy="110"
+                    r={ARC_RADIUS}
+                    stroke="#4a9e6e"
+                    strokeWidth="7"
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeDasharray={ARC_CIRCUMFERENCE}
+                    strokeDashoffset={ARC_CIRCUMFERENCE * (breakRemaining / breakDuration)}
+                    transform="rotate(-90 110 110)"
+                    style={{ transition: "stroke-dashoffset 0.3s ease" }}
+                  />
+                )}
               </svg>
             </div>
 
@@ -593,11 +625,11 @@ export default function FocusMode() {
                 <p className="text-[11px] tracking-[0.06em] text-black/30 mt-1">
                   paused
                 </p>
-              ) : (
+              ) : estimatedMs > 0 ? (
                 <p className="text-[11px] tracking-[0.06em] text-black/30 mt-1">
-                  {estimatedMs > 0 ? `of ${formatTime(estimatedMs)}` : "worked"}
+                  of {formatTime(estimatedMs)}
                 </p>
-              )}
+              ) : null}
             </div>
           </div>
         )}

@@ -20,13 +20,12 @@ import {
   updateTask,
   updateTaskStatus,
   updateTaskDateScheduled,
-  getIncompleteTasksForProjectIds,
+  getAllTasksForProjectIds,
   getWorkedMinutesForTask,
   setManualWorkedMinutes,
   getWeeklyShutdown,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
-import CheckIcon from "../components/CheckIcon";
 import TaskDetailOverlay from "../components/TaskDetailOverlay";
 import type { Task, Project } from "../types";
 
@@ -95,6 +94,10 @@ function DraggableTaskRow({
     data: { task },
   });
 
+  const prevStatusRef = useRef(task.status);
+  const justCompleted = task.status === "done" && prevStatusRef.current !== "done";
+  useEffect(() => { prevStatusRef.current = task.status; }, [task.status]);
+
   const dayAbbrev = dateToDayAbbrev(task.date_scheduled, weekDates);
 
   return (
@@ -116,13 +119,28 @@ function DraggableTaskRow({
       {/* Checkbox */}
       <button
         onClick={() => onToggleTask(task)}
-        className={`w-[13px] h-[13px] rounded-[3px] border flex-shrink-0 cursor-pointer flex items-center justify-center ${
+        title={task.status === "done" ? "Mark as not done" : "Mark complete"}
+        className={`w-[18px] h-[18px] rounded-full border-2 flex-shrink-0 cursor-pointer flex items-center justify-center transition-colors ${
           task.status === "done"
-            ? "bg-[#e0873e] border-[#e0873e]"
-            : "border-black/[0.18]"
+            ? "bg-[#6A9E7F] border-[#6A9E7F] hover:bg-[#5a8a6e] hover:border-[#5a8a6e]"
+            : "border-black/20 hover:border-[#6A9E7F]"
         }`}
       >
-        {task.status === "done" && <CheckIcon />}
+        <svg
+          width="9"
+          height="9"
+          viewBox="0 0 12 12"
+          fill="none"
+          stroke={task.status === "done" ? "white" : "rgba(0,0,0,0.25)"}
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path
+            d="M2.5 6.2l2.5 2.3L9.5 3.7"
+            className={justCompleted ? "animate-check-draw" : ""}
+          />
+        </svg>
       </button>
 
       {/* Title */}
@@ -172,7 +190,7 @@ function ProjectCard({
   onToggleTask: (task: Task) => void;
   onNavigateProject: (id: number) => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div className="bg-white border border-black/[0.08] rounded-[9px] mb-2.5 overflow-hidden">
@@ -241,6 +259,10 @@ function CalendarTaskChip({
     data: { task },
   });
 
+  const prevStatusRef = useRef(task.status);
+  const justCompleted = task.status === "done" && prevStatusRef.current !== "done";
+  useEffect(() => { prevStatusRef.current = task.status; }, [task.status]);
+
   return (
     <div
       ref={setNodeRef}
@@ -256,16 +278,31 @@ function CalendarTaskChip({
             e.stopPropagation();
             onToggle(task);
           }}
-          className={`w-[13px] h-[13px] rounded-[3px] border flex-shrink-0 cursor-pointer flex items-center justify-center mt-[1px] ${
+          title={task.status === "done" ? "Mark as not done" : "Mark complete"}
+          className={`w-[18px] h-[18px] rounded-full border-2 flex-shrink-0 cursor-pointer flex items-center justify-center mt-[1px] transition-colors ${
             task.status === "done"
-              ? "bg-[#e0873e] border-[#e0873e]"
-              : "border-black/[0.18]"
+              ? "bg-[#6A9E7F] border-[#6A9E7F] hover:bg-[#5a8a6e] hover:border-[#5a8a6e]"
+              : "border-black/20 hover:border-[#6A9E7F]"
           }`}
         >
-          {task.status === "done" && <CheckIcon />}
+          <svg
+            width="9"
+            height="9"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke={task.status === "done" ? "white" : "rgba(0,0,0,0.25)"}
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path
+              d="M2.5 6.2l2.5 2.3L9.5 3.7"
+              className={justCompleted ? "animate-check-draw" : ""}
+            />
+          </svg>
         </button>
         <span
-          className={`text-[12px] leading-snug flex-1 cursor-pointer hover:text-[#e0873e] transition-colors ${
+          className={`text-[12px] leading-snug flex-1 line-clamp-3 cursor-pointer hover:text-[#e0873e] transition-colors ${
             task.status === "done"
               ? "text-black/30 line-through"
               : "text-[#2c2a35]"
@@ -405,6 +442,15 @@ export default function WeeklyPlanner() {
   const [error, setError] = useState<string | null>(null);
   const [activeDragTask, setActiveDragTask] = useState<Task | null>(null);
 
+  // Undo banner for date moves (drag-drop between days)
+  const [pendingMove, setPendingMove] = useState<{
+    taskId: number;
+    taskTitle: string;
+    fromDate: string | null;
+    toDate: string;
+    timeoutId: ReturnType<typeof setTimeout>;
+  } | null>(null);
+
   // Task detail overlay
   const [detailTask, setDetailTask] = useState<Task | null>(null);
 
@@ -414,7 +460,6 @@ export default function WeeklyPlanner() {
 
   // Weekly notes (auto-saved with debounce)
   const [weeklyNotes, setWeeklyNotes] = useState("");
-  const [showNotes, setShowNotes] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedWeekRef = useRef(selectedWeek);
@@ -448,7 +493,7 @@ export default function WeeklyPlanner() {
         }
       }
 
-      const projectTasks = await getIncompleteTasksForProjectIds(activeIds);
+      const projectTasks = await getAllTasksForProjectIds(activeIds);
 
       setWeekTasks(wt);
       setAllProjectTasks(projectTasks);
@@ -568,9 +613,33 @@ export default function WeeklyPlanner() {
 
     try {
       await updateTaskDateScheduled(task.id, droppedDate);
+      const fromDate = task.date_scheduled;
       loadData();
+      // Clear any prior pending undo and queue a new one
+      if (pendingMove) clearTimeout(pendingMove.timeoutId);
+      const timeoutId = setTimeout(() => setPendingMove(null), 6000);
+      setPendingMove({
+        taskId: task.id,
+        taskTitle: task.title,
+        fromDate,
+        toDate: droppedDate,
+        timeoutId,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to schedule task");
+    }
+  }
+
+  async function undoMove() {
+    if (!pendingMove) return;
+    const { taskId, fromDate, timeoutId } = pendingMove;
+    clearTimeout(timeoutId);
+    setPendingMove(null);
+    try {
+      await updateTaskDateScheduled(taskId, fromDate);
+      loadData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to undo move");
     }
   }
 
@@ -623,124 +692,76 @@ export default function WeeklyPlanner() {
     <div className="flex flex-col h-full bg-[#f5f4f0] overflow-hidden">
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
-      {/* ── Top bar ─────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-black/[0.07] flex-shrink-0">
-        <button
-          onClick={() => changeWeek(-1)}
-          className="w-[26px] h-[26px] rounded-md bg-black/[0.04] border border-black/[0.08] flex items-center justify-center text-[12px] text-black/35 cursor-pointer hover:bg-black/[0.07]"
-        >
-          ‹
-        </button>
-        <h2 className="flex-1 text-[17px] font-medium text-[#2c2a35]">
-          {formatWeekHeader(selectedWeek)}
-        </h2>
-        {isThisWeek && (
-          <span className="text-[11px] bg-[#e0873e]/10 text-[#e0873e] px-2 py-0.5 rounded-full">
-            This week
+      {pendingMove && (
+        <div className="flex items-center gap-3 px-7 py-2 bg-[#2c2a35] text-white text-[12px] flex-shrink-0">
+          <span className="flex-1 truncate">
+            Moved &ldquo;{pendingMove.taskTitle}&rdquo;
+            {pendingMove.fromDate ? "" : " to scheduled"}
           </span>
-        )}
-        {!isThisWeek && (
           <button
-            onClick={() => setSelectedWeek(getMondayOfWeek())}
-            className="text-[11px] text-[#e0873e] hover:text-[#cc7633] cursor-pointer"
+            onClick={undoMove}
+            className="text-[#f0b070] font-medium cursor-pointer hover:text-white"
           >
-            This week
+            Undo
           </button>
-        )}
-        <span className="text-[12px] text-black/35">
-          Planned{" "}
-          <span className="text-black/50 tabular-nums">
-            {totalPlannedHours}h
+        </div>
+      )}
+
+      {/* ── Header — hero title + utility row ─────────────────────────── */}
+      <div className="px-7 pt-6 pb-4 border-b border-black/[0.07] flex-shrink-0">
+        <div className="flex items-center gap-3 mb-3">
+          <h2 className="flex-1 text-[22px] font-medium text-[#2c2a35] leading-tight min-w-0 truncate">
+            {formatWeekHeader(selectedWeek)}
+          </h2>
+          {isThisWeek && (
+            <span className="text-[11px] bg-[#e0873e]/10 text-[#e0873e] px-2 py-0.5 rounded-full flex-shrink-0">
+              This week
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => changeWeek(-1)}
+            className="w-7 h-7 rounded-full flex items-center justify-center text-[#999] cursor-pointer hover:bg-[#f0f0f0] transition-colors duration-150 ease-out"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 4l-4 4 4 4" />
+            </svg>
+          </button>
+          <button
+            onClick={() => changeWeek(1)}
+            className="w-7 h-7 rounded-full flex items-center justify-center text-[#999] cursor-pointer hover:bg-[#f0f0f0] transition-colors duration-150 ease-out"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 4l4 4-4 4" />
+            </svg>
+          </button>
+          {!isThisWeek && (
+            <button
+              onClick={() => setSelectedWeek(getMondayOfWeek())}
+              className="text-[11px] text-[#e0873e] hover:text-[#cc7633] cursor-pointer ml-1"
+            >
+              Jump to this week
+            </button>
+          )}
+          <span className="text-[12px] text-black/35 ml-auto">
+            Planned{" "}
+            <span className="text-black/50 tabular-nums">
+              {totalPlannedHours}h
+            </span>
           </span>
-        </span>
-        <button
-          onClick={() => changeWeek(1)}
-          className="w-[26px] h-[26px] rounded-md bg-black/[0.04] border border-black/[0.08] flex items-center justify-center text-[12px] text-black/35 cursor-pointer hover:bg-black/[0.07]"
-        >
-          ›
-        </button>
+        </div>
       </div>
 
-      {/* ── Body: left panel + right panel ──────────────────────────────── */}
+      {/* ── Body: calendar (main) + right rail (projects + notes) ─────── */}
       <DndContext
         sensors={dndSensors}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
       <div className="flex flex-1 min-h-0">
-        {/* ── Left panel ─────────────────────────────────────────────────── */}
-        <div className="min-w-[260px] w-[280px] flex-shrink-0 flex flex-col overflow-y-auto" style={{ borderRight: "1px solid rgba(0,0,0,0.10)" }}>
-          <div className="px-4 py-3.5 flex-1">
-            {/* Carry forward from last week */}
-            {carryForwardNotes && !carryForwardDismissed && (
-              <div
-                className="bg-[#F0F9F5] rounded-lg px-3 py-2.5 mb-3 relative"
-                style={{ border: "0.5px solid #9FE1CB" }}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-[#0F6E56]">
-                    From last week
-                  </span>
-                  <button
-                    onClick={() => setCarryForwardDismissed(true)}
-                    className="text-[11px] text-[#0F6E56]/40 hover:text-[#0F6E56] cursor-pointer"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <p className="text-[12px] text-black/50 leading-[1.6] whitespace-pre-wrap">
-                  {carryForwardNotes}
-                </p>
-              </div>
-            )}
-
-            <span className="uppercase text-black/30 mb-2.5 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
-              Projects
-            </span>
-
-            {projectGroups.length === 0 && unassignedTasks.length === 0 ? (
-              <p className="text-[12px] text-black/25 py-4 text-center">
-                No active projects
-              </p>
-            ) : (
-              <>
-                {projectGroups.map((group) => (
-                  <ProjectCard
-                    key={group.project.id ?? "none"}
-                    project={group.project}
-                    tasks={group.tasks}
-                    weekDates={weekDates}
-                    onToggleTask={toggleTask}
-                    onNavigateProject={navigateToProject}
-                  />
-                ))}
-
-                {/* Unassigned tasks — no project */}
-                {unassignedTasks.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-black/[0.06]">
-                    <span className="uppercase text-black/25 mb-1.5 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
-                      Unassigned
-                    </span>
-                    <div className="bg-black/[0.02] border border-black/[0.05] rounded-[8px] overflow-hidden">
-                      {unassignedTasks.map((task, i) => (
-                        <DraggableTaskRow
-                          key={task.id}
-                          task={task}
-                          weekDates={weekDates}
-                          onToggleTask={toggleTask}
-                          isLast={i === unassignedTasks.length - 1}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* ── Right panel ────────────────────────────────────────────────── */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        {/* ── Main: Calendar ────────────────────────────────────────────── */}
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
           {/* Calendar header */}
           <div className="grid grid-cols-5 border-b border-black/[0.07] flex-shrink-0">
             {weekDates.map((date, i) => {
@@ -785,50 +806,91 @@ export default function WeeklyPlanner() {
               />
             ))}
           </div>
+        </div>
 
-          {/* ── Weekly notes bar ──────────────────────────────────────────── */}
-          <div className="border-t border-black/[0.07] flex-shrink-0">
-            <button
-              onClick={() => setShowNotes(!showNotes)}
-              className="flex items-center gap-2 px-4 py-2.5 cursor-pointer hover:bg-black/[0.02] w-full"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 14 14"
-                fill="none"
-                stroke="rgba(0,0,0,0.3)"
-                strokeWidth="1.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+        {/* ── Right rail: projects + weekly notes ────────────────────────── */}
+        <div
+          className="w-[300px] flex-shrink-0 flex flex-col overflow-hidden"
+          style={{ borderLeft: "1px solid rgba(0,0,0,0.10)" }}
+        >
+          {/* Top: scrollable — carry forward + projects */}
+          <div className="flex-1 overflow-y-auto px-5 py-5 min-h-0">
+            {carryForwardNotes && !carryForwardDismissed && (
+              <div
+                className="bg-[#F0F9F5] rounded-lg px-3 py-2.5 mb-4 relative"
+                style={{ border: "0.5px solid #9FE1CB" }}
               >
-                <rect x="2" y="1.5" width="10" height="11" rx="1.5" />
-                <line x1="4.5" y1="4.5" x2="9.5" y2="4.5" />
-                <line x1="4.5" y1="7" x2="8" y2="7" />
-                <line x1="4.5" y1="9.5" x2="7" y2="9.5" />
-              </svg>
-              <span className="text-[13px] text-black/35 flex-1 text-left">
-                Weekly notes
-              </span>
-              <span
-                className="text-[18px] leading-none text-black/20 transition-transform duration-150"
-                style={{
-                  transform: showNotes ? "rotate(180deg)" : "rotate(0deg)",
-                }}
-              >
-                ▾
-              </span>
-            </button>
-            {showNotes && (
-              <div className="px-4 py-3 border-t border-black/[0.06]">
-                <textarea
-                  value={weeklyNotes}
-                  onChange={(e) => handleWeeklyNotesChange(e.target.value)}
-                  placeholder="Notes for this week..."
-                  className="w-full bg-transparent border-none outline-none text-[13px] text-black/55 placeholder-black/20 resize-none min-h-[72px] leading-relaxed"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-[#0F6E56]">
+                    From last week
+                  </span>
+                  <button
+                    onClick={() => setCarryForwardDismissed(true)}
+                    className="text-[11px] text-[#0F6E56]/40 hover:text-[#0F6E56] cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p className="text-[12px] text-black/50 leading-[1.6] whitespace-pre-wrap">
+                  {carryForwardNotes}
+                </p>
               </div>
             )}
+
+            <span className="uppercase text-black/30 mb-2.5 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
+              Projects
+            </span>
+
+            {projectGroups.length === 0 && unassignedTasks.length === 0 ? (
+              <p className="text-[12px] text-black/25 py-4 text-center">
+                No active projects
+              </p>
+            ) : (
+              <>
+                {projectGroups.map((group) => (
+                  <ProjectCard
+                    key={group.project.id ?? "none"}
+                    project={group.project}
+                    tasks={group.tasks}
+                    weekDates={weekDates}
+                    onToggleTask={toggleTask}
+                    onNavigateProject={navigateToProject}
+                  />
+                ))}
+
+                {unassignedTasks.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-black/[0.06]">
+                    <span className="uppercase text-black/25 mb-1.5 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
+                      Unassigned
+                    </span>
+                    <div className="bg-black/[0.02] border border-black/[0.05] rounded-[8px] overflow-hidden">
+                      {unassignedTasks.map((task, i) => (
+                        <DraggableTaskRow
+                          key={task.id}
+                          task={task}
+                          weekDates={weekDates}
+                          onToggleTask={toggleTask}
+                          isLast={i === unassignedTasks.length - 1}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Bottom: weekly notes — always visible writing surface */}
+          <div className="flex-shrink-0 px-5 py-3 border-t border-black/[0.07] bg-white">
+            <span className="uppercase text-black/30 mb-1.5 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
+              Weekly notes
+            </span>
+            <textarea
+              value={weeklyNotes}
+              onChange={(e) => handleWeeklyNotesChange(e.target.value)}
+              placeholder="Notes for this week..."
+              className="w-full bg-white border border-black/[0.06] rounded-md px-3 py-2 text-[13px] text-black/65 placeholder-black/20 leading-relaxed resize-none h-[72px] outline-none focus:border-[#7B9ED9]/30"
+            />
           </div>
         </div>
       </div>
@@ -851,7 +913,7 @@ export default function WeeklyPlanner() {
           projects={projects}
           onClose={() => { setDetailTask(null); loadData(); }}
           onSave={(updates) => updateTask(updates).then(() => loadData()).catch(() => {})}
-          onToggle={(t) => toggleTask(t).then(() => setDetailTask(null)).catch(() => {})}
+          onToggle={(t) => { toggleTask(t).catch(() => {}); }}
           onSetWorkedMinutes={(id, mins) => setManualWorkedMinutes(id, mins).then(() => loadData()).catch(() => {})}
         />
       )}

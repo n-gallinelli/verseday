@@ -19,7 +19,6 @@ import SummaryOverlay from "../components/SummaryOverlay";
 import MoodSelector from "../components/MoodSelector";
 import { formatHoursMinutes } from "../utils/format";
 import type { Task, Project } from "../types";
-import type { WeeklySummaryData } from "../utils/summaryPrompts";
 
 const WEEKLY_SHUTDOWN_PREFIX = "weekly-shutdown-";
 
@@ -106,7 +105,7 @@ function cleanupOldChecklistKeys() {
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export default function WeeklyShutdown() {
-  const { selectedWeek, setSelectedWeek, openProject } = useAppStore();
+  const { selectedWeek, setSelectedWeek } = useAppStore();
 
   const [weekTasks, setWeekTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -379,54 +378,6 @@ export default function WeeklyShutdown() {
   }
 
 
-  // Week summary: projects with work this week
-  const weekSummaryProjects = (() => {
-    const byProject = new Map<number, { id: number; name: string; color: string }>();
-    for (const task of weekTasks) {
-      if (task.project_id == null) continue;
-      if (!byProject.has(task.project_id)) {
-        const p = projectMap.get(task.project_id);
-        if (p) byProject.set(task.project_id, { id: p.id, name: p.name, color: p.color });
-      }
-    }
-    return Array.from(byProject.values());
-  })();
-
-  function buildWeeklySummaryData(): WeeklySummaryData {
-    // Group tasks by project and compute per-project stats
-    const byProject = new Map<number | null, { completed: Task[]; incomplete: Task[]; workedMinutes: number }>();
-    for (const task of weekTasks) {
-      const key = task.project_id;
-      const entry = byProject.get(key) ?? { completed: [], incomplete: [], workedMinutes: 0 };
-      if (task.status === "done") entry.completed.push(task);
-      else entry.incomplete.push(task);
-      entry.workedMinutes += workedPerTask.get(task.id) ?? 0;
-      byProject.set(key, entry);
-    }
-
-    const projectSummaries = Array.from(byProject.entries())
-      .filter(([pid]) => pid !== null)
-      .map(([pid, data]) => ({
-        name: projectMap.get(pid!)?.name ?? "Unknown",
-        completedCount: data.completed.length,
-        incompleteCount: data.incomplete.length,
-        workedMinutes: data.workedMinutes,
-      }))
-      .sort((a, b) => b.workedMinutes - a.workedMinutes);
-
-    return {
-      weekOf: formatWeekHeader(selectedWeek),
-      totalWorkedMinutes: totalWorkedMinutes,
-      totalPlannedMinutes: totalPlannedMinutes,
-      projects: projectSummaries,
-      completedCount: completedTasks.length,
-      incompleteCount: incompleteTasks.length,
-      mood,
-      reflections: serializeWeeklyReflection(reflectionFields) || null,
-      carryForward: incompleteItemsText.trim() || null,
-    };
-  }
-
   // ── Render ────────────────────────────────────────────────────────────
 
   return (
@@ -451,18 +402,22 @@ export default function WeeklyShutdown() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => changeWeek(-1)}
-            className="w-6 h-6 rounded-md bg-white/60 border border-black/[0.06] flex items-center justify-center text-black/35 text-[12px] cursor-pointer hover:bg-white"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-[#999] cursor-pointer hover:bg-[#f0f0f0] transition-colors duration-150 ease-out"
           >
-            ‹
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 4l-4 4 4 4" />
+            </svg>
           </button>
           <h2 className="text-[14px] font-medium text-[#2c2a35]">
             {formatWeekHeader(selectedWeek)}
           </h2>
           <button
             onClick={() => changeWeek(1)}
-            className="w-6 h-6 rounded-md bg-white/60 border border-black/[0.06] flex items-center justify-center text-black/35 text-[12px] cursor-pointer hover:bg-white"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-[#999] cursor-pointer hover:bg-[#f0f0f0] transition-colors duration-150 ease-out"
           >
-            ›
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6 4l4 4-4 4" />
+            </svg>
           </button>
         </div>
       </div>
@@ -498,7 +453,7 @@ export default function WeeklyShutdown() {
             <div className="flex-1">
               {/* Mood selector */}
               <section className="mb-6">
-                <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-2">
+                <h3 className="text-[13px] font-medium text-black/55 mb-2">
                   How was your week?
                 </h3>
                 <MoodSelector
@@ -511,38 +466,41 @@ export default function WeeklyShutdown() {
               {/* Reflection — three fields */}
               <section className="space-y-3">
                 <div>
-                  <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1 block">
+                  <label className="text-[13px] font-medium text-black/55 mb-1.5 block">
                     What went well this week?
                   </label>
                   <textarea
                     value={reflectionFields.wentWell}
                     onChange={(e) => handleReflectionFieldChange("wentWell", e.target.value)}
+                    placeholder="Projects completed, wins achieved, moments that felt good..."
                     rows={2}
-                    className="w-full bg-white rounded-lg px-3.5 py-2.5 text-[13px] text-black/55 placeholder-black/20 resize-y leading-relaxed focus:outline-none focus:border-[#5DCAA5]/40"
+                    className="w-full bg-white rounded-lg px-3.5 py-2.5 text-[13px] text-black/55 resize-y leading-relaxed focus:outline-none focus:border-[#5DCAA5]/40 placeholder:text-[13px] placeholder:font-normal placeholder:text-[#bbb]"
                     style={{ border: "0.5px solid rgba(0,0,0,0.06)" }}
                   />
                 </div>
                 <div>
-                  <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1 block">
+                  <label className="text-[13px] font-medium text-black/55 mb-1.5 block">
                     What could have gone better?
                   </label>
                   <textarea
                     value={reflectionFields.couldBeBetter}
                     onChange={(e) => handleReflectionFieldChange("couldBeBetter", e.target.value)}
+                    placeholder="Bottlenecks, missteps, things you'd approach differently..."
                     rows={2}
-                    className="w-full bg-white rounded-lg px-3.5 py-2.5 text-[13px] text-black/55 placeholder-black/20 resize-y leading-relaxed focus:outline-none focus:border-[#5DCAA5]/40"
+                    className="w-full bg-white rounded-lg px-3.5 py-2.5 text-[13px] text-black/55 resize-y leading-relaxed focus:outline-none focus:border-[#5DCAA5]/40 placeholder:text-[13px] placeholder:font-normal placeholder:text-[#bbb]"
                     style={{ border: "0.5px solid rgba(0,0,0,0.06)" }}
                   />
                 </div>
                 <div>
-                  <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1 block">
+                  <label className="text-[13px] font-medium text-black/55 mb-1.5 block">
                     What's the priority going into next week?
                   </label>
                   <textarea
                     value={reflectionFields.nextWeekPriority}
                     onChange={(e) => handleReflectionFieldChange("nextWeekPriority", e.target.value)}
+                    placeholder="The one or two things that matter most, your main focus..."
                     rows={2}
-                    className="w-full bg-white rounded-lg px-3.5 py-2.5 text-[13px] text-black/55 placeholder-black/20 resize-y leading-relaxed focus:outline-none focus:border-[#5DCAA5]/40"
+                    className="w-full bg-white rounded-lg px-3.5 py-2.5 text-[13px] text-black/55 resize-y leading-relaxed focus:outline-none focus:border-[#5DCAA5]/40 placeholder:text-[13px] placeholder:font-normal placeholder:text-[#bbb]"
                     style={{ border: "0.5px solid rgba(0,0,0,0.06)" }}
                   />
                 </div>
@@ -550,25 +508,26 @@ export default function WeeklyShutdown() {
 
               {/* Carry forward */}
               <section className="mt-6">
-                <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-2">
+                <h3 className="text-[13px] font-medium text-black/55 mb-1.5">
                   Carry forward
                 </h3>
                 <textarea
                   value={incompleteItemsText}
                   onChange={(e) => handleIncompleteTextChange(e.target.value)}
                   placeholder="Loose ends, things to remember for next week..."
-                  className="w-full bg-white rounded-lg px-3.5 py-2.5 text-[13px] text-black/55 placeholder-black/20 resize-y min-h-[72px] leading-relaxed focus:outline-none focus:border-[#5DCAA5]/40"
+                  className="w-full bg-white rounded-lg px-3.5 py-2.5 text-[13px] text-black/55 resize-y min-h-[72px] leading-relaxed focus:outline-none focus:border-[#5DCAA5]/40 placeholder:text-[13px] placeholder:font-normal placeholder:text-[#bbb]"
                   style={{ border: "0.5px solid rgba(0,0,0,0.06)" }}
                 />
               </section>
 
             </div>
 
-            {/* ── Right column: info cards (180px) ──────────────── */}
-            <div className="w-[180px] flex-shrink-0 space-y-3">
-              {/* Time card */}
+            {/* ── Right column: time summary ────────────────────── */}
+            <div className="w-[180px] flex-shrink-0">
+              <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-2">
+                Time
+              </h3>
               <div className="bg-white/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid rgba(0,0,0,0.08)" }}>
-                <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/25 mb-1">Time</div>
                 {totalWorkedMinutes === 0 && totalPlannedMinutes === 0 ? (
                   <p className="text-[13px] text-black/[0.3]">No time tracked this week</p>
                 ) : (
@@ -582,40 +541,6 @@ export default function WeeklyShutdown() {
                   </>
                 )}
               </div>
-
-              {/* Projects this week card */}
-              <div className="bg-white/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid rgba(0,0,0,0.12)" }}>
-                <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/25 mb-2">Projects this week</div>
-                {weekSummaryProjects.length > 0 ? (
-                  <div className="space-y-3">
-                    {weekSummaryProjects.map((p) => (
-                      <div key={p.id}>
-                        <div className="flex items-center gap-1.5 mb-1.5">
-                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
-                          <span
-                            className="text-[13px] text-[#2c2a35] cursor-pointer hover:text-[#7B9ED9] transition-colors"
-                            onClick={() => openProject(p.id)}
-                          >
-                            {p.name}
-                          </span>
-                        </div>
-                        <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/25 mb-0.5 block">
-                          How did this project go?
-                        </label>
-                        <textarea
-                          placeholder="How did this project go?"
-                          rows={2}
-                          className="w-full text-[12px] text-black/50 placeholder-black/20 resize-y bg-white rounded-md px-2 py-1.5 leading-relaxed outline-none focus:border-[#5DCAA5]/40"
-                          style={{ border: "0.5px solid rgba(0,0,0,0.08)" }}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[13px] text-black/20">No projects worked on this week</p>
-                )}
-              </div>
-
             </div>
           </div>
         </div>
@@ -659,7 +584,7 @@ export default function WeeklyShutdown() {
       {showSummary && (
         <SummaryOverlay
           type="weekly"
-          data={buildWeeklySummaryData()}
+          anchorDate={selectedWeek}
           onClose={() => setShowSummary(false)}
         />
       )}

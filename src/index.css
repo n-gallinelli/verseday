@@ -175,11 +175,56 @@ select {
   animation: taskDone 250ms ease-out both;
 }
 
+@keyframes checkDraw {
+  from { stroke-dashoffset: 12; }
+  to { stroke-dashoffset: 0; }
+}
+
+.animate-check-draw {
+  stroke-dasharray: 12;
+  animation: checkDraw 200ms cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+
+@keyframes completionGlow {
+  0% { opacity: 0; }
+  25% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.animate-completion-glow {
+  animation: completionGlow 2400ms ease-out forwards;
+}
+
+@keyframes focusCompleteBurst {
+  0% { transform: scale(0.85); opacity: 0; }
+  20% { opacity: 0.85; }
+  100% { transform: scale(1.55); opacity: 0; }
+}
+
+.animate-focus-complete-burst {
+  animation: focusCompleteBurst 1100ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+@keyframes focusCompleteCore {
+  0% { transform: scale(0.7); opacity: 0; }
+  30% { transform: scale(1); opacity: 1; }
+  70% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1.05); opacity: 0; }
+}
+
+.animate-focus-complete-core {
+  animation: focusCompleteCore 1100ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in,
   .animate-scale-in,
   .animate-slide-up,
-  .animate-task-done {
+  .animate-task-done,
+  .animate-check-draw,
+  .animate-completion-glow,
+  .animate-focus-complete-burst,
+  .animate-focus-complete-core {
     animation: none;
   }
 }
@@ -228,3 +273,21 @@ select {
     animation: none;
   }
 }
+
+/* === PALETTE PREVIEW — DISPOSABLE MOCK === */
+/* Remove this block + the toggle in DailyPlanner.tsx after the A/B decision. */
+[data-palette="new"] {
+  --color-primary: #8B9BA8;
+  --color-primary-hover: #7A8B98;
+  --color-primary-light: #A8B5BF;
+  --color-success: #8A9E8F;
+  --color-text: #3A3835;
+}
+
+/* Hex-literal overrides for the most visible Daily Plan elements that
+   bypass the CSS-variable system. Scoped to the preview only. */
+[data-palette="new"] .bg-\[\#7B9ED9\] { background-color: #8B9BA8 !important; }
+[data-palette="new"] .hover\:bg-\[\#6889c4\]:hover { background-color: #7A8B98 !important; }
+[data-palette="new"] .text-\[\#7B9ED9\] { color: #8B9BA8 !important; }
+[data-palette="new"] .hover\:text-\[\#6889c4\]:hover { color: #7A8B98 !important; }
+[data-palette="new"] .border-\[\#7B9ED9\] { border-color: #8B9BA8 !important; }

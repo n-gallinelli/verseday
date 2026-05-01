@@ -249,6 +249,19 @@ export async function getIncompleteTasksForProjectIds(
   );
 }
 
+export async function getAllTasksForProjectIds(
+  projectIds: number[]
+): Promise<Task[]> {
+  if (projectIds.length === 0) return [];
+  const db = await getDb();
+  // SAFETY: IDs are TypeScript numbers from internal state, not user input.
+  const inList = projectIds.join(",");
+  return db.select(
+    `SELECT * FROM tasks WHERE project_id IN (${inList}) ORDER BY project_id, status = 'done', sort_order LIMIT 2000`,
+    []
+  );
+}
+
 export interface CreateTaskInput {
   title: string;
   projectId: number | null;
@@ -937,7 +950,8 @@ export async function deleteSetting(key: string): Promise<void> {
 
 interface RecurrenceRule {
   freq: "daily" | "weekly" | "weekdays";
-  day?: number; // 0=Sun..6=Sat, used with "weekly"
+  day?: number;      // 0=Sun..6=Sat, used with "weekly"
+  interval?: number; // 1=every, 2=every other, 3=every third, ... (weekly only)
 }
 
 const VALID_FREQS = ["daily", "weekly", "weekdays"];
@@ -949,6 +963,9 @@ export function parseRecurrence(json: string | null): RecurrenceRule | null {
     if (!parsed || typeof parsed !== "object") return null;
     if (!VALID_FREQS.includes(parsed.freq)) return null;
     if (parsed.freq === "weekly" && (typeof parsed.day !== "number" || parsed.day < 0 || parsed.day > 6)) return null;
+    if (parsed.interval !== undefined) {
+      if (typeof parsed.interval !== "number" || !Number.isInteger(parsed.interval) || parsed.interval < 1) return null;
+    }
     return parsed as RecurrenceRule;
   } catch {
     return null;
@@ -977,14 +994,24 @@ export async function setTaskRecurrence(
 export async function generateRecurringInstances(date: string): Promise<void> {
   const db = await getDb();
   // Get all recurring templates (tasks with recurrence set, no source_id = they are templates)
-  const templates: { id: number; project_id: number | null; title: string; priority: string; estimated_minutes: number | null; notes: string | null; recurrence: string }[] =
+  const templates: { id: number; project_id: number | null; title: string; priority: string; estimated_minutes: number | null; notes: string | null; recurrence: string; created_at: string }[] =
     await db.select(
-      "SELECT id, project_id, title, priority, estimated_minutes, notes, recurrence FROM tasks WHERE recurrence IS NOT NULL AND recurrence_source_id IS NULL AND status != 'done'",
+      "SELECT id, project_id, title, priority, estimated_minutes, notes, recurrence, created_at FROM tasks WHERE recurrence IS NOT NULL AND recurrence_source_id IS NULL AND status != 'done'",
       []
     );
 
   const targetDate = new Date(date + "T00:00:00");
   const dayOfWeek = targetDate.getDay(); // 0=Sun..6=Sat
+
+  // Monday-of-week helper for weekly interval anchoring.
+  function mondayOf(d: Date): Date {
+    const dow = d.getDay();
+    const diff = dow === 0 ? -6 : 1 - dow;
+    const m = new Date(d);
+    m.setDate(d.getDate() + diff);
+    m.setHours(0, 0, 0, 0);
+    return m;
+  }
 
   for (const tmpl of templates) {
     const rule = parseRecurrence(tmpl.recurrence);
@@ -997,7 +1024,20 @@ export async function generateRecurringInstances(date: string): Promise<void> {
     } else if (rule.freq === "weekdays") {
       shouldGenerate = dayOfWeek >= 1 && dayOfWeek <= 5;
     } else if (rule.freq === "weekly") {
-      shouldGenerate = dayOfWeek === (rule.day ?? 0);
+      const dayMatches = dayOfWeek === (rule.day ?? 0);
+      const interval = rule.interval ?? 1;
+      if (interval > 1 && dayMatches) {
+        // Anchor cycle to the Monday of the template's creation week.
+        // Generate only when (weeks since anchor) % interval === 0.
+        const anchorMonday = mondayOf(new Date(tmpl.created_at));
+        const targetMonday = mondayOf(targetDate);
+        const weeksDiff = Math.round(
+          (targetMonday.getTime() - anchorMonday.getTime()) / (7 * 86400000)
+        );
+        shouldGenerate = weeksDiff >= 0 && weeksDiff % interval === 0;
+      } else {
+        shouldGenerate = dayMatches;
+      }
     }
 
     if (!shouldGenerate) continue;

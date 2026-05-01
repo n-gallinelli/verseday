@@ -1,7 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { getWorkedMinutesByDate, setTaskRecurrence, parseRecurrence, serializeRecurrence } from "../db/queries";
 import CalendarPicker from "./CalendarPicker";
+import ProjectPicker from "./ProjectPicker";
 import RichTextEditor from "./RichTextEditor";
+import SimpleSelect from "./SimpleSelect";
 import type { Task, Project } from "../types";
 
 const MAX_TITLE_LENGTH = 200;
@@ -76,6 +79,7 @@ function TimeFieldPill({
   onToggle,
   onChange,
   autoTrackedNote,
+  hideLabel = false,
 }: {
   label: string;
   value: string;
@@ -84,35 +88,96 @@ function TimeFieldPill({
   onToggle: () => void;
   onChange: (value: string) => void;
   autoTrackedNote?: string;
+  hideLabel?: boolean;
 }) {
   const pillRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
+  const [rawInput, setRawInput] = useState("");
   const displayValue = formatDisplayMinutes(value);
   const hasValue = displayValue !== "—";
+
+  // Seed the custom-input field with the current value when the popover opens.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (presets.some((p) => p.value === value)) {
+      setRawInput("");
+      return;
+    }
+    const n = parseInt(value);
+    if (!value || isNaN(n) || n <= 0) {
+      setRawInput("");
+      return;
+    }
+    const h = Math.floor(n / 60);
+    const m = n % 60;
+    if (h > 0 && m > 0) setRawInput(`${h}h ${m}m`);
+    else if (h > 0) setRawInput(`${h}h`);
+    else setRawInput(`${n}m`);
+  }, [isOpen, value, presets]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setPopoverPos(null);
+      return;
+    }
+    function updatePosition() {
+      const r = triggerRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const POPOVER_WIDTH = 240;
+      const POPOVER_HEIGHT = 220;
+      const flipUp = window.innerHeight - r.bottom < POPOVER_HEIGHT;
+      const top = flipUp ? r.top - POPOVER_HEIGHT - 6 : r.bottom + 6;
+      // Clamp left so popover doesn't overflow viewport edges
+      const maxLeft = window.innerWidth - POPOVER_WIDTH - 8;
+      const left = Math.max(8, Math.min(r.left, maxLeft));
+      setPopoverPos({ top, left });
+    }
+    updatePosition();
+    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [isOpen]);
 
   return (
     <div className="relative" ref={pillRef}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={onToggle}
-        className={`flex flex-col items-start rounded-md cursor-pointer border transition-colors ${
+        className={`rounded-md cursor-pointer border transition-colors ${
+          hideLabel ? "flex items-center" : "flex flex-col items-start"
+        } ${
           isOpen
             ? "bg-[#EEF3FB] border-[#7B9ED9]"
             : "bg-black/[0.03] border-black/[0.06] hover:border-black/[0.12]"
         }`}
-        style={{ padding: "4px 10px", borderWidth: "0.5px" }}
+        style={{ padding: hideLabel ? "5px 12px" : "4px 10px", borderWidth: "0.5px" }}
       >
-        <span className="text-[9px] uppercase tracking-[0.07em] text-black/25 leading-none">
-          {label}
-        </span>
+        {!hideLabel && (
+          <span className="text-[9px] uppercase tracking-[0.07em] text-black/25 leading-none">
+            {label}
+          </span>
+        )}
         <span className={`text-[13px] font-medium leading-tight ${hasValue ? "text-[#2c2a35]" : "text-black/20"}`}>
           {displayValue}
         </span>
       </button>
 
-      {isOpen && (
+      {isOpen && popoverPos && createPortal(
         <div
-          className="absolute left-0 bg-white border border-black/[0.08] rounded-lg shadow-lg z-30"
-          style={{ top: "calc(100% + 6px)", width: 240, padding: 10, borderWidth: "0.5px" }}
+          data-time-pill
+          className="fixed bg-white border border-black/[0.08] rounded-lg shadow-lg z-[60]"
+          style={{
+            top: popoverPos.top,
+            left: popoverPos.left,
+            width: 240,
+            padding: 10,
+            borderWidth: "0.5px",
+          }}
         >
           <div className="text-[10px] uppercase text-black/25 tracking-[0.05em] mb-2">
             {label === "Estimated" ? "Estimated time" : "Time worked"}
@@ -135,16 +200,9 @@ function TimeFieldPill({
           </div>
           <input
             type="text"
-            value={presets.some((p) => p.value === value) ? "" : (() => {
-              const n = parseInt(value);
-              if (!value || isNaN(n) || n <= 0) return "";
-              const h = Math.floor(n / 60);
-              const m = n % 60;
-              if (h > 0 && m > 0) return `${h}h ${m}m`;
-              if (h > 0) return `${h}h`;
-              return `${n}m`;
-            })()}
+            value={rawInput}
             onChange={(e) => {
+              setRawInput(e.target.value);
               const total = parseTimeInput(e.target.value);
               if (total > 0 && total <= MAX_ESTIMATE_MINUTES) {
                 onChange(total.toString());
@@ -169,8 +227,33 @@ function TimeFieldPill({
               {autoTrackedNote}
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
+    </div>
+  );
+}
+
+// ── Property Row (right rail) ────────────────────────────────────────────────
+
+function PropertyRow({
+  label,
+  children,
+  hint,
+}: {
+  label: string;
+  children: React.ReactNode;
+  hint?: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1.5">
+        {label}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {children}
+      </div>
+      {hint && <div className="text-[10px] text-black/25 mt-1.5">{hint}</div>}
     </div>
   );
 }
@@ -190,6 +273,19 @@ export default function TaskDetailOverlay({
   autoTrackedMinutes,
 }: TaskDetailOverlayProps) {
   const [title, setTitle] = useState(task.title);
+  const [localStatus, setLocalStatus] = useState(task.status);
+  const prevStatusRef = useRef(task.status);
+  const justCompleted = localStatus === "done" && prevStatusRef.current !== "done";
+  const [completionGlow, setCompletionGlow] = useState(false);
+  useEffect(() => {
+    if (localStatus === "done" && prevStatusRef.current !== "done") {
+      setCompletionGlow(true);
+      const t = setTimeout(() => setCompletionGlow(false), 2400);
+      prevStatusRef.current = localStatus;
+      return () => clearTimeout(t);
+    }
+    prevStatusRef.current = localStatus;
+  }, [localStatus]);
   const [notes, setNotes] = useState(task.notes ?? "");
   const [estimate, setEstimate] = useState(task.estimated_minutes?.toString() ?? "");
   const [projectId, setProjectId] = useState(task.project_id?.toString() ?? "");
@@ -205,6 +301,7 @@ export default function TaskDetailOverlay({
   const isInstance = task.recurrence_source_id != null;
   const [recurrenceFreq, setRecurrenceFreq] = useState<string>(parsedRecurrence?.freq ?? "none");
   const [recurrenceDay, setRecurrenceDay] = useState<number>(parsedRecurrence?.day ?? 1);
+  const [recurrenceInterval, setRecurrenceInterval] = useState<number>(parsedRecurrence?.interval ?? 1);
 
   const saveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -215,6 +312,11 @@ export default function TaskDetailOverlay({
   }, [task.id]);
 
   // Close popover on click outside
+  // Sync local status if parent refreshes the task object.
+  useEffect(() => {
+    setLocalStatus(task.status);
+  }, [task.id, task.status]);
+
   const handleModalClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (openPopover && !target.closest("[data-time-pill]")) {
@@ -290,7 +392,7 @@ export default function TaskDetailOverlay({
       <div className="absolute inset-0 bg-black/30" />
       <div
         ref={modalRef}
-        className="relative bg-white rounded-[12px] min-w-[480px] max-w-[720px] w-[620px] max-h-[85vh] overflow-y-auto animate-scale-in"
+        className="relative bg-white rounded-[12px] w-[880px] max-w-[94vw] max-h-[88vh] flex flex-col overflow-hidden animate-scale-in"
         style={{ boxShadow: "0 8px 40px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06)" }}
         onClick={(e) => { e.stopPropagation(); handleModalClick(e); }}
         onKeyDown={(e) => {
@@ -300,36 +402,76 @@ export default function TaskDetailOverlay({
           }
         }}
       >
-        {/* Header */}
-        <div className="flex items-center gap-3 px-6 pt-6 pb-3">
+        {completionGlow && (
+          <div
+            className="absolute top-0 left-0 right-0 h-[220px] pointer-events-none animate-completion-glow z-10"
+            style={{
+              background:
+                "linear-gradient(to bottom, rgba(106,158,127,0.22) 0%, rgba(106,158,127,0.08) 55%, rgba(106,158,127,0) 100%)",
+            }}
+          />
+        )}
+        {/* Header strip — title hero */}
+        <div className="flex items-center gap-3 px-8 pt-7 pb-6 border-b border-black/[0.04]">
           {onToggle && (
             <button
               onClick={() => {
+                // Optimistic: flip locally so the UI updates without closing.
+                setLocalStatus((prev) => (prev === "done" ? "todo" : "done"));
                 onToggle(task);
-                onClose();
               }}
-              className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 cursor-pointer ${
-                task.status === "done"
-                  ? "bg-[#6A9E7F] border-[#6A9E7F]"
-                  : "border-black/20"
+              title={localStatus === "done" ? "Mark as not done" : "Mark complete"}
+              className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer transition-colors mt-[3px] ${
+                localStatus === "done"
+                  ? "bg-[#6A9E7F] border-[#6A9E7F] hover:bg-[#5a8a6e] hover:border-[#5a8a6e]"
+                  : "border-black/25 hover:border-[#6A9E7F]"
               }`}
             >
-              {task.status === "done" && (
-                <span className="text-white text-xs">✓</span>
-              )}
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                fill="none"
+                stroke={localStatus === "done" ? "white" : "rgba(0,0,0,0.25)"}
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path
+                  d="M2.5 6.2l2.5 2.3L9.5 3.7"
+                  className={justCompleted ? "animate-check-draw" : ""}
+                />
+              </svg>
             </button>
           )}
-          <input
-            type="text"
+          <textarea
             value={title}
             onChange={(e) => {
-              setTitle(e.target.value);
-              debouncedSave({ title: e.target.value });
+              const v = e.target.value.replace(/\n/g, "");
+              setTitle(v);
+              debouncedSave({ title: v });
             }}
+            onInput={(e) => {
+              const el = e.currentTarget;
+              el.style.height = "auto";
+              el.style.height = el.scrollHeight + "px";
+            }}
+            ref={(el) => {
+              if (el) {
+                el.style.height = "auto";
+                el.style.height = el.scrollHeight + "px";
+              }
+            }}
+            rows={1}
             maxLength={MAX_TITLE_LENGTH}
-            className="flex-1 min-w-0 text-[15px] font-medium text-[#2c2a35] bg-transparent border-none outline-none overflow-hidden text-ellipsis whitespace-nowrap"
+            placeholder="Untitled task"
+            className={`flex-1 min-w-0 text-[24px] font-medium bg-transparent border-none outline-none leading-tight placeholder-black/15 resize-none overflow-hidden transition-colors duration-150 ease-out ${
+              localStatus === "done"
+                ? "text-black/35 line-through"
+                : "text-[#2c2a35]"
+            }`}
           />
-          {onStartFocus && task.status !== "done" && (
+          {onStartFocus && localStatus !== "done" && (
             <button
               onClick={() => {
                 flushSave();
@@ -346,180 +488,191 @@ export default function TaskDetailOverlay({
           )}
           <button
             onClick={handleClose}
-            className="text-black/25 hover:text-black/50 cursor-pointer text-[16px] flex-shrink-0"
+            className="text-black/25 hover:text-black/50 cursor-pointer text-[16px] flex-shrink-0 w-7 h-7 flex items-center justify-center"
           >
             ✕
           </button>
         </div>
 
-        {/* Meta row */}
-        <div className="flex items-center flex-wrap gap-2 px-6 pb-6">
-          <select
-            value={projectId}
-            onChange={(e) => {
-              setProjectId(e.target.value);
-              debouncedSave({ projectId: e.target.value });
-            }}
-            className="bg-transparent border border-black/[0.08] rounded-[6px] px-[10px] py-1 text-[12px] text-black/40 font-normal outline-none cursor-pointer max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap"
-            title={projects.find((p) => String(p.id) === projectId)?.name ?? "No project"}
-          >
-            <option value="">No project</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <CalendarPicker
-            value={dateScheduled}
-            onChange={(date) => {
-              setDateScheduled(date);
-              debouncedSave({ dateScheduled: date });
-            }}
-            onClear={() => {
-              setDateScheduled("");
-              debouncedSave({ dateScheduled: "" });
-            }}
-          />
-          {/* Divider */}
-          <div className="w-px h-5 bg-black/[0.08]" />
-
-          {/* Time pills — Estimated then Worked */}
-          <div data-time-pill>
-            <TimeFieldPill
-              label="Estimated"
-              value={estimate}
-              presets={ESTIMATE_PRESETS}
-              isOpen={openPopover === "estimate"}
-              onToggle={() => setOpenPopover(openPopover === "estimate" ? null : "estimate")}
-              onChange={(val) => {
-                setEstimate(val);
-                debouncedSave({ estimate: val });
+        {/* Body — split panel */}
+        <div className="flex-1 flex min-h-0">
+          {/* Left: Notes — work surface */}
+          <div className="flex-1 min-w-0 px-8 py-7 overflow-y-auto">
+            <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-2">
+              Notes
+            </div>
+            <RichTextEditor
+              value={notes}
+              onChange={(html) => {
+                setNotes(html);
+                debouncedSave({ notes: html });
               }}
+              placeholder="Add notes..."
+              className="w-full bg-white border border-black/[0.06] rounded-md px-3.5 py-3 text-[13px] text-black/65 leading-relaxed min-h-[380px] focus-within:border-[#7B9ED9]/30"
             />
           </div>
-          <div data-time-pill>
-            <TimeFieldPill
-              label="Worked"
-              value={worked}
-              presets={WORKED_PRESETS}
-              isOpen={openPopover === "worked"}
-              onToggle={() => setOpenPopover(openPopover === "worked" ? null : "worked")}
-              onChange={(val) => {
-                setWorked(val);
-                if (onSetWorkedMinutes && val) {
-                  const n = parseInt(val);
-                  if (!isNaN(n) && n > 0) onSetWorkedMinutes(task.id, n);
-                }
-              }}
-              autoTrackedNote={autoTrackedNote}
-            />
-          </div>
-        </div>
 
-        {/* Recurrence control */}
-        {!isInstance && (
-          <div className="px-6 pb-3">
-            <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/25 mb-1.5 block">
-              Repeat
-            </label>
-            <div className="flex items-center gap-2">
-              <select
-                value={recurrenceFreq}
-                onChange={(e) => {
-                  const freq = e.target.value;
-                  setRecurrenceFreq(freq);
-                  if (freq === "none") {
-                    setTaskRecurrence(task.id, null).catch(() => {});
-                  } else if (freq === "weekly") {
-                    setTaskRecurrence(task.id, serializeRecurrence({ freq: "weekly", day: recurrenceDay })).catch(() => {});
-                  } else {
-                    setTaskRecurrence(task.id, serializeRecurrence({ freq: freq as "daily" | "weekdays" })).catch(() => {});
-                  }
+          {/* Right: Properties rail */}
+          <div className="w-[320px] flex-shrink-0 border-l border-black/[0.06] bg-[#FAFAF7] px-6 py-7 overflow-y-auto space-y-6">
+            <PropertyRow label="Project">
+              <ProjectPicker
+                value={projectId}
+                projects={projects}
+                onChange={(val) => {
+                  setProjectId(val);
+                  debouncedSave({ projectId: val });
                 }}
-                className="bg-transparent border border-black/[0.08] rounded-[6px] px-[10px] py-1 text-[12px] text-black/40 font-normal outline-none cursor-pointer"
+              />
+            </PropertyRow>
+
+            <PropertyRow label="Date">
+              <CalendarPicker
+                value={dateScheduled}
+                onChange={(date) => {
+                  setDateScheduled(date);
+                  debouncedSave({ dateScheduled: date });
+                }}
+                onClear={() => {
+                  setDateScheduled("");
+                  debouncedSave({ dateScheduled: "" });
+                }}
+              />
+            </PropertyRow>
+
+            <div>
+              <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1.5">
+                Time
+              </div>
+              <div className="flex items-stretch gap-1.5">
+                <div data-time-pill>
+                  <TimeFieldPill
+                    label="Worked"
+                    value={worked}
+                    presets={WORKED_PRESETS}
+                    isOpen={openPopover === "worked"}
+                    onToggle={() => setOpenPopover(openPopover === "worked" ? null : "worked")}
+                    onChange={(val) => {
+                      setWorked(val);
+                      if (onSetWorkedMinutes && val) {
+                        const n = parseInt(val);
+                        if (!isNaN(n) && n > 0) onSetWorkedMinutes(task.id, n);
+                      }
+                    }}
+                    autoTrackedNote={autoTrackedNote}
+                  />
+                </div>
+                <div data-time-pill>
+                  <TimeFieldPill
+                    label="Estimated"
+                    value={estimate}
+                    presets={ESTIMATE_PRESETS}
+                    isOpen={openPopover === "estimate"}
+                    onToggle={() => setOpenPopover(openPopover === "estimate" ? null : "estimate")}
+                    onChange={(val) => {
+                      setEstimate(val);
+                      debouncedSave({ estimate: val });
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {!isInstance && (
+              <PropertyRow
+                label="Repeat"
+                hint={isTemplate ? "Template — instances created on daily plan load" : undefined}
               >
-                <option value="none">None</option>
-                <option value="daily">Daily</option>
-                <option value="weekdays">Weekdays</option>
-                <option value="weekly">Weekly</option>
-              </select>
-              {recurrenceFreq === "weekly" && (
-                <select
-                  value={recurrenceDay}
-                  onChange={(e) => {
-                    const day = parseInt(e.target.value);
-                    setRecurrenceDay(day);
-                    setTaskRecurrence(task.id, serializeRecurrence({ freq: "weekly", day })).catch(() => {});
+                <SimpleSelect
+                  value={recurrenceFreq}
+                  width="w-[140px]"
+                  onChange={(freq) => {
+                    setRecurrenceFreq(freq);
+                    if (freq === "none") {
+                      setTaskRecurrence(task.id, null).catch(() => {});
+                    } else if (freq === "weekly") {
+                      setTaskRecurrence(task.id, serializeRecurrence({ freq: "weekly", day: recurrenceDay, interval: recurrenceInterval })).catch(() => {});
+                    } else {
+                      setTaskRecurrence(task.id, serializeRecurrence({ freq: freq as "daily" | "weekdays" })).catch(() => {});
+                    }
                   }}
-                  className="bg-transparent border border-black/[0.08] rounded-[6px] px-[10px] py-1 text-[12px] text-black/40 font-normal outline-none cursor-pointer"
-                >
-                  <option value={0}>Sunday</option>
-                  <option value={1}>Monday</option>
-                  <option value={2}>Tuesday</option>
-                  <option value={3}>Wednesday</option>
-                  <option value={4}>Thursday</option>
-                  <option value={5}>Friday</option>
-                  <option value={6}>Saturday</option>
-                </select>
-              )}
-              {isTemplate && (
-                <span className="text-[10px] text-black/25">Template — instances created on daily plan load</span>
-              )}
-            </div>
-          </div>
-        )}
-        {isInstance && (
-          <div className="px-6 pb-3">
-            <span className="text-[10px] text-black/25">Recurring task instance</span>
-          </div>
-        )}
-
-        {/* Per-day breakdown — only show when worked across 2+ days */}
-        {dayBreakdown.length > 1 && (
-          <div className="px-6 pb-3">
-            <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/25 mb-2 block">
-              Worked on
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {dayBreakdown.map((d) => {
-                const maxMin = Math.max(...dayBreakdown.map((x) => x.minutes));
-                const barWidth = maxMin > 0 ? Math.max(12, Math.round((d.minutes / maxMin) * 100)) : 12;
-                return (
-                  <div key={d.date} className="flex items-center gap-1.5 bg-[#F4F4F1] rounded-md px-2 py-1">
-                    <div
-                      className="h-[3px] rounded-full bg-[#7B9ED9]"
-                      style={{ width: `${barWidth}%`, minWidth: 8, maxWidth: 48 }}
+                  options={[
+                    { value: "none", label: "None" },
+                    { value: "daily", label: "Daily" },
+                    { value: "weekdays", label: "Weekdays" },
+                    { value: "weekly", label: "Weekly" },
+                  ]}
+                />
+                {recurrenceFreq === "weekly" && (
+                  <>
+                    <SimpleSelect
+                      value={String(recurrenceInterval)}
+                      width="w-[170px]"
+                      onChange={(v) => {
+                        const interval = parseInt(v);
+                        setRecurrenceInterval(interval);
+                        setTaskRecurrence(task.id, serializeRecurrence({ freq: "weekly", day: recurrenceDay, interval })).catch(() => {});
+                      }}
+                      options={[
+                        { value: "1", label: "Every week" },
+                        { value: "2", label: "Every other week" },
+                        { value: "3", label: "Every 3 weeks" },
+                        { value: "4", label: "Every 4 weeks" },
+                        { value: "6", label: "Every 6 weeks" },
+                      ]}
                     />
-                    <span className="text-[10px] text-black/35 whitespace-nowrap">
-                      {new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
-                    </span>
-                    <span className="text-[10px] text-black/50 font-medium">{d.minutes}m</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+                    <SimpleSelect
+                      value={String(recurrenceDay)}
+                      width="w-[140px]"
+                      onChange={(v) => {
+                        const day = parseInt(v);
+                        setRecurrenceDay(day);
+                        setTaskRecurrence(task.id, serializeRecurrence({ freq: "weekly", day, interval: recurrenceInterval })).catch(() => {});
+                      }}
+                      options={[
+                        { value: "0", label: "Sunday" },
+                        { value: "1", label: "Monday" },
+                        { value: "2", label: "Tuesday" },
+                        { value: "3", label: "Wednesday" },
+                        { value: "4", label: "Thursday" },
+                        { value: "5", label: "Friday" },
+                        { value: "6", label: "Saturday" },
+                      ]}
+                    />
+                  </>
+                )}
+              </PropertyRow>
+            )}
+            {isInstance && (
+              <div className="text-[10px] text-black/25">Recurring task instance</div>
+            )}
 
-        {/* Notes */}
-        <div className="px-6 pb-6">
-          <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1.5 block">
-            Notes
-          </label>
-          <RichTextEditor
-            value={notes}
-            onChange={(html) => {
-              setNotes(html);
-              debouncedSave({ notes: html });
-            }}
-            placeholder="Add notes..."
-            className="w-full bg-white border border-black/[0.06] rounded-md px-3 py-2.5 text-[13px] text-black/55 leading-relaxed min-h-[100px] focus-within:border-[#7B9ED9]/30"
-          />
+            {dayBreakdown.length > 1 && (
+              <PropertyRow label="Worked on">
+                <div className="flex flex-wrap gap-1.5 w-full">
+                  {dayBreakdown.map((d) => {
+                    const maxMin = Math.max(...dayBreakdown.map((x) => x.minutes));
+                    const barWidth = maxMin > 0 ? Math.max(12, Math.round((d.minutes / maxMin) * 100)) : 12;
+                    return (
+                      <div key={d.date} className="flex items-center gap-1.5 bg-white rounded-md px-2 py-1 border border-black/[0.04]">
+                        <div
+                          className="h-[3px] rounded-full bg-[#7B9ED9]"
+                          style={{ width: `${barWidth}%`, minWidth: 8, maxWidth: 48 }}
+                        />
+                        <span className="text-[10px] text-black/35 whitespace-nowrap">
+                          {new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                        </span>
+                        <span className="text-[10px] text-black/50 font-medium">{d.minutes}m</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </PropertyRow>
+            )}
+          </div>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center gap-2 px-6 py-3 border-t border-black/[0.06]">
+        <div className="flex items-center gap-2 px-8 py-4 border-t border-black/[0.06]">
           <span className="text-[10px] text-black/20 flex-1">
             Auto-saved
           </span>
@@ -529,10 +682,10 @@ export default function TaskDetailOverlay({
                 onDelete(task.id);
                 onClose();
               }}
-              className="text-[#C0614A]/40 hover:text-[#C0614A] cursor-pointer p-2 rounded-md hover:bg-[#C0614A]/[0.06] transition-colors"
+              className="text-[#C0614A]/60 hover:text-[#C0614A] cursor-pointer p-2 rounded-md hover:bg-[#C0614A]/[0.08] transition-colors"
               title="Delete task"
             >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />
               </svg>
             </button>

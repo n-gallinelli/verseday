@@ -96,7 +96,7 @@ export default function MoodSelector({ value, onChange, tintColor = "var(--accen
             className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-[7px] cursor-pointer transition-colors border-[1.5px] ${
               selected
                 ? ""
-                : "border-line-hairline bg-elevated hover:bg-overlay-hover hover:border-line-soft"
+                : "border-line-hairline bg-elevated hover:border-line-soft"
             }`}
             style={
               selected

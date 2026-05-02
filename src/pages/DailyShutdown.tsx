@@ -110,6 +110,16 @@ export default function DailyShutdown() {
     }
   }, [selectedDate]);
 
+  // Shutdown is always for today — if the user got here with selectedDate
+  // pointing at another day (e.g., they were paging through a past Daily
+  // Plan), snap it to today on mount.
+  useEffect(() => {
+    const today = new Date().toISOString().split("T")[0];
+    if (selectedDate !== today) setSelectedDate(today);
+    // intentionally only on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     loadData();
     setStep(1);
@@ -221,12 +231,6 @@ export default function DailyShutdown() {
     setShowSunset(true);
   }
 
-  function changeDate(offset: number) {
-    const d = new Date(selectedDate + "T00:00:00");
-    d.setDate(d.getDate() + offset);
-    setSelectedDate(d.toISOString().split("T")[0]);
-  }
-
   async function handleToggleHighlight(taskId: number) {
     const isCurrently = highlightIds.has(taskId);
     try {
@@ -273,31 +277,13 @@ export default function DailyShutdown() {
         <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-accent-blue-soft-fg block mb-1">
           Daily shutdown
         </span>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => changeDate(-1)}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M10 4l-4 4 4 4" />
-            </svg>
-          </button>
-          <h2 className="text-[14px] font-medium text-fg">
-            {new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
-          </h2>
-          <button
-            onClick={() => changeDate(1)}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M6 4l4 4-4 4" />
-            </svg>
-          </button>
-        </div>
+        <h2 className="text-[14px] font-medium text-fg">
+          {new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+          })}
+        </h2>
       </div>
 
       {/* ── Body — two-step flow ────────────────────────────────────── */}

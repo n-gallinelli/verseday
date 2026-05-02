@@ -76,10 +76,10 @@ Each ends with **"Ready for Verse review."**
 - Modal stack: TaskDetailOverlay, ProjectDetail, SummaryOverlay, CalendarPicker, ProjectPicker, SimpleSelect, TimeFieldPill popover
 
 **Known global-CSS breaks to convert during M2 (carried over from M1, by file:line):**
-- `src/index.css:272` — native `<select>` caret SVG hardcodes `stroke='%23999'` (light gray). Convert to a token-driven caret or replace with `currentColor` via Tailwind's appearance utilities.
-- `src/index.css:297–304` — `.shutdown-page` background gradient uses raw hex stops (`#dde8f0`, `#e8e4dc`, `#ede8e0`). Add `--shutdown-bg-from/mid/to` tokens (light values match current; pick dark values during the shutdown-screen pass in M3 — earlier OK if convenient).
-- `src/index.css:479–493` — `@keyframes focusAmbientBg` and the `prefers-reduced-motion` fallback hold raw light-mode hex (`#f0f2f5`, `#f5f3ee`, `#f5f0e6`). Either use the `--focus-ambient-from/to` tokens in a token-aware keyframe, or define a separate keyframe under `@media (prefers-color-scheme: dark)` that interpolates between dark stops.
-- `src/index.css:499–516` — `[data-palette="new"]` palette-preview block. **Disposable** per its own comment. Delete during/before M2 — do not propagate.
+- ⏳ `src/index.css:272` — native `<select>` caret SVG hardcodes `stroke='%23999'`. Three callsites still use native `<select>` (DailyPlanner inline-edit, WeeklyPlanner quick-add, ProjectDetail edit form). Deferred to M3/M4 — `color-scheme: light dark` on `:root` makes the OS render the form chrome itself, so the custom caret is mostly redundant; revisit during the audit.
+- ⏳ `src/index.css:.shutdown-page` background gradient (raw hex stops `#dde8f0`, `#e8e4dc`, `#ede8e0`). Deferred to M3 (when shutdown screens get themed).
+- ✅ `@keyframes focusAmbientBg` + reduced-motion fallback. Resolved in **M2.5**: tokens `--focus-ambient-cool` / `--focus-ambient-neutral` / `--focus-ambient-warm` defined with hand-tuned dark variants; keyframe and reduced-motion `background-color` both reference them. The previously-defined-but-unused `--focus-ambient-from/to` tokens were renamed to reflect actual consumption.
+- ✅ `[data-palette="new"]` palette-preview block. Deleted in **M2.5** per its own disposable comment. The `!important` hex-literal selectors no longer matched anything once Daily Plan was tokenized in M2.3a/b.
 
 ### Milestone 3 — secondary surfaces
 - Daily/Weekly Shutdown

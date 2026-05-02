@@ -468,14 +468,14 @@ export default function FocusMode() {
             className="w-1.5 h-1.5 rounded-full"
             style={{ backgroundColor: project.color }}
           />
-          <span className="text-[11px] text-black/30">{project.name}</span>
+          <span className="text-[11px] text-fg-faded">{project.name}</span>
         </div>
       )}
 
       {/* Center content */}
       <div className="relative text-center max-w-[560px] px-8 flex flex-col items-center mt-4">
         {/* Task name — hero */}
-        <h1 className="text-[28px] font-semibold text-[#2c2a35] mb-3 leading-snug font-display">
+        <h1 className="text-[28px] font-semibold text-fg mb-3 leading-snug font-display">
           {focus.task.title}
         </h1>
 
@@ -487,7 +487,7 @@ export default function FocusMode() {
             saveNotes(html);
           }}
           placeholder="Add notes…"
-          className="w-full min-h-[120px] mb-4 px-4 py-3.5 bg-transparent text-center text-[14px] text-[#2c2a35] leading-relaxed"
+          className="w-full min-h-[120px] mb-4 px-4 py-3.5 bg-transparent text-center text-[14px] text-fg leading-relaxed"
         />
 
         {/* Completion burst — concentric rings that scale out and fade */}
@@ -499,7 +499,7 @@ export default function FocusMode() {
               className="absolute inset-0 animate-focus-complete-burst"
               style={{ transformOrigin: "center" }}
             >
-              <circle cx="120" cy="120" r="92" stroke="#6A9E7F" strokeWidth="6" />
+              <circle cx="120" cy="120" r="92" stroke="var(--accent-green)" strokeWidth="6" />
             </svg>
             <svg
               viewBox="0 0 240 240"
@@ -507,18 +507,18 @@ export default function FocusMode() {
               className="absolute inset-0 animate-focus-complete-core"
               style={{ transformOrigin: "center" }}
             >
-              <circle cx="120" cy="120" r="62" stroke="#6A9E7F" strokeWidth="3" opacity="0.5" />
+              <circle cx="120" cy="120" r="62" stroke="var(--accent-green)" strokeWidth="3" opacity="0.5" />
             </svg>
           </div>
         )}
 
         {/* Break prompt */}
         {isPrompting && prompt && (
-          <div className="mb-8 p-6 rounded-2xl bg-white border border-black/[0.08] shadow-sm w-full animate-scale-in">
-            <p className="text-[15px] font-medium text-[#2c2a35] mb-1">
+          <div className="mb-8 p-6 rounded-2xl bg-elevated border border-line-soft w-full animate-scale-in" style={{ boxShadow: "var(--shadow-card)" }}>
+            <p className="text-[15px] font-medium text-fg mb-1">
               Pomodoro complete!
             </p>
-            <p className="text-[13px] text-black/40 mb-5">
+            <p className="text-[13px] text-fg-muted mb-5">
               {prompt.isLongBreak
                 ? "You've completed 4 cycles. Time for a longer break?"
                 : "Nice work. Take a break?"}
@@ -556,7 +556,7 @@ export default function FocusMode() {
                     cx="110"
                     cy="110"
                     r={ARC_RADIUS}
-                    stroke={isOnBreak ? "#4a9e6e" : "#7B9ED9"}
+                    stroke={isOnBreak ? "var(--focus-glow-break)" : "var(--focus-glow-base)"}
                     strokeWidth="14"
                     fill="none"
                   />
@@ -576,7 +576,7 @@ export default function FocusMode() {
                   cx="110"
                   cy="110"
                   r={ARC_RADIUS}
-                  stroke="rgba(0,0,0,0.05)"
+                  stroke="var(--focus-ring-track)"
                   strokeWidth="7"
                   fill="none"
                 />
@@ -587,7 +587,7 @@ export default function FocusMode() {
                     cx="110"
                     cy="110"
                     r={ARC_RADIUS}
-                    stroke="#4a9e6e"
+                    stroke="var(--focus-ring-progress)"
                     strokeWidth="7"
                     fill="none"
                     strokeLinecap="round"
@@ -607,10 +607,10 @@ export default function FocusMode() {
                 style={{
                   letterSpacing: "-1px",
                   color: isOnBreak
-                    ? "#4a9e6e"
+                    ? "var(--focus-ring-progress)"
                     : paused
-                      ? "rgba(0,0,0,0.25)"
-                      : "#7B9ED9",
+                      ? "var(--text-faded)"
+                      : "var(--focus-glow-base)",
                 }}
               >
                 {isOnBreak
@@ -618,15 +618,15 @@ export default function FocusMode() {
                   : formatTime(totalWorkedMs)}
               </div>
               {isOnBreak ? (
-                <p className="text-[11px] tracking-[0.06em] text-black/30 mt-1">
+                <p className="text-[11px] tracking-[0.06em] text-fg-faded mt-1">
                   break
                 </p>
               ) : paused ? (
-                <p className="text-[11px] tracking-[0.06em] text-black/30 mt-1">
+                <p className="text-[11px] tracking-[0.06em] text-fg-faded mt-1">
                   paused
                 </p>
               ) : estimatedMs > 0 ? (
-                <p className="text-[11px] tracking-[0.06em] text-black/30 mt-1">
+                <p className="text-[11px] tracking-[0.06em] text-fg-faded mt-1">
                   of {formatTime(estimatedMs)}
                 </p>
               ) : null}
@@ -638,7 +638,7 @@ export default function FocusMode() {
         {isOnBreak && (
           <button
             onClick={handleSkipBreak}
-            className="text-[13px] text-black/30 cursor-pointer hover:text-black/50 transition-colors mb-6"
+            className="text-[13px] text-fg-faded cursor-pointer hover:text-fg-secondary transition-colors mb-6"
           >
             Skip break
           </button>
@@ -651,11 +651,11 @@ export default function FocusMode() {
             {!isPrompting && (
               <button
                 onClick={handlePause}
-                className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer text-black/25 hover:text-black/50 hover:bg-black/[0.05] transition-colors"
+                className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover transition-colors"
                 title={paused ? "Resume" : "Pause"}
               >
                 {paused ? (
-                  <svg width="18" height="18" viewBox="0 0 14 14" fill="#7B9ED9">
+                  <svg width="18" height="18" viewBox="0 0 14 14" fill="var(--accent-blue)">
                     <path d="M3 1v12l10-6z" />
                   </svg>
                 ) : (
@@ -670,10 +670,10 @@ export default function FocusMode() {
             {/* Mark Done — primary */}
             <button
               onClick={handleDone}
-              className="w-12 h-12 rounded-full border-2 border-[#C0DD97] flex items-center justify-center cursor-pointer hover:bg-[#C0DD97]/10 transition-colors"
+              className="w-12 h-12 rounded-full border-2 border-accent-green-bright/50 flex items-center justify-center cursor-pointer hover:bg-accent-green-bright/10 transition-colors"
               title="Mark done"
             >
-              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="#3B6D11" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 8.5l3.5 3.5 6.5-7" />
               </svg>
             </button>
@@ -681,7 +681,7 @@ export default function FocusMode() {
             {/* Stop & Save — secondary */}
             <button
               onClick={handleStop}
-              className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer text-black/25 hover:text-black/50 hover:bg-black/[0.05] transition-colors"
+              className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover transition-colors"
               title="Stop & save"
             >
               <svg width="16" height="16" viewBox="0 0 14 14" fill="currentColor">

@@ -74,8 +74,9 @@
   --mood-tint-daily: #7B9ED9;
 
   /* — Focus mode — */
-  --focus-ambient-from: #f0eeea;
-  --focus-ambient-to: #e8e4dc;
+  --focus-ambient-cool: #f0f2f5;
+  --focus-ambient-neutral: #f5f3ee;
+  --focus-ambient-warm: #f5f0e6;
   --focus-ring-track: rgba(0, 0, 0, 0.05);
   --focus-ring-progress: #4a9e6e;
   --focus-glow-base: #7B9ED9;
@@ -183,8 +184,9 @@
     --mood-tint-daily: #7396cc;
 
     /* — Focus mode — */
-    --focus-ambient-from: #1a1c22;
-    --focus-ambient-to: #0f1014;
+    --focus-ambient-cool: #161921;
+    --focus-ambient-neutral: #16161a;
+    --focus-ambient-warm: #1c1916;
     --focus-ring-track: rgba(255, 255, 255, 0.06);
     --focus-ring-progress: #52a981;
     --focus-glow-base: #7396cc;
@@ -488,9 +490,9 @@ select {
 }
 
 @keyframes focusAmbientBg {
-  0% { background-color: #f0f2f5; }    /* cool blue-neutral */
-  50% { background-color: #f5f3ee; }   /* neutral midpoint */
-  100% { background-color: #f5f0e6; }  /* warm amber-neutral */
+  0% { background-color: var(--focus-ambient-cool); }
+  50% { background-color: var(--focus-ambient-neutral); }
+  100% { background-color: var(--focus-ambient-warm); }
 }
 
 .focus-ambient-bg {
@@ -500,27 +502,10 @@ select {
 @media (prefers-reduced-motion: reduce) {
   .focus-ambient-bg {
     animation: none;
-    background-color: #f5f3ee;
+    background-color: var(--focus-ambient-neutral);
   }
   .focus-glow-layer {
     animation: none;
   }
 }
 
-/* === PALETTE PREVIEW — DISPOSABLE MOCK === */
-/* Remove this block + the toggle in DailyPlanner.tsx after the A/B decision. */
-[data-palette="new"] {
-  --color-primary: #8B9BA8;
-  --color-primary-hover: #7A8B98;
-  --color-primary-light: #A8B5BF;
-  --color-success: #8A9E8F;
-  --color-text: #3A3835;
-}
-
-/* Hex-literal overrides for the most visible Daily Plan elements that
-   bypass the CSS-variable system. Scoped to the preview only. */
-[data-palette="new"] .bg-\[\#7B9ED9\] { background-color: #8B9BA8 !important; }
-[data-palette="new"] .hover\:bg-\[\#6889c4\]:hover { background-color: #7A8B98 !important; }
-[data-palette="new"] .text-\[\#7B9ED9\] { color: #8B9BA8 !important; }
-[data-palette="new"] .hover\:text-\[\#6889c4\]:hover { color: #7A8B98 !important; }
-[data-palette="new"] .border-\[\#7B9ED9\] { border-color: #8B9BA8 !important; }

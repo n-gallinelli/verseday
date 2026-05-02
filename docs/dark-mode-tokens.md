@@ -108,8 +108,9 @@ The Focus screen and PiP have their own surfaces because they ride on top of an 
 
 | Token                         | Light                            | Dark                              | Usage                                       |
 | ----------------------------- | -------------------------------- | --------------------------------- | ------------------------------------------- |
-| `--focus-ambient-from`        | `#f0eeea`                        | `#1a1c22`                         | Top of focus ambient gradient               |
-| `--focus-ambient-to`          | `#e8e4dc`                        | `#0f1014`                         | Bottom of focus ambient gradient            |
+| `--focus-ambient-cool`        | `#f0f2f5`                        | `#161921`                         | 0% stop of the 25-min ambient bg keyframe (cool blue-neutral) |
+| `--focus-ambient-neutral`     | `#f5f3ee`                        | `#16161a`                         | 50% stop (neutral midpoint, also reduced-motion fallback)     |
+| `--focus-ambient-warm`        | `#f5f0e6`                        | `#1c1916`                         | 100% stop (warm amber-neutral)              |
 | `--focus-ring-track`          | `rgba(0,0,0,0.05)`               | `rgba(255,255,255,0.06)`          | Timer ring background stroke                |
 | `--focus-ring-progress`       | `#4a9e6e`                        | `#52a981`                         | Timer ring break progress stroke            |
 | `--focus-glow-base`           | `#7B9ED9`                        | `#7396cc`                         | Glow layer ring during work                 |

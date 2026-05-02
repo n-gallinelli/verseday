@@ -247,7 +247,7 @@ export default function TaskCard({
           {onStart && task.status !== "done" && (
             <button
               onClick={() => onStart(task)}
-              className="w-6 h-6 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
+              className="w-6 h-6 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)] opacity-0 group-hover/row:opacity-100"
               title="Start focus"
             >
               <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">

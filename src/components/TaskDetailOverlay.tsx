@@ -521,7 +521,7 @@ export default function TaskDetailOverlay({
         <div className="flex-1 flex min-h-0">
           {/* Left: Notes — work surface */}
           <div className="flex-1 min-w-0 px-8 py-7 overflow-y-auto">
-            <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-2">
+            <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-4">
               Notes
             </div>
             <RichTextEditor

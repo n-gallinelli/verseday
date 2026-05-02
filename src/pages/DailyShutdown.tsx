@@ -229,7 +229,6 @@ export default function DailyShutdown() {
 
   async function handleToggleHighlight(taskId: number) {
     const isCurrently = highlightIds.has(taskId);
-    if (!isCurrently && highlightIds.size >= 3) return;
     try {
       await toggleTaskHighlight(taskId, !isCurrently);
       setHighlightIds((prev) => {
@@ -321,7 +320,9 @@ export default function DailyShutdown() {
                   </h3>
                   {completedTasks.length > 0 && (
                     <span className="text-[11px] text-fg-faded">
-                      {highlightIds.size < 3 ? "Star up to 3 highlights" : "3 highlights starred"}
+                      {highlightIds.size === 0
+                        ? "Star anything worth remembering"
+                        : `${highlightIds.size} ${highlightIds.size === 1 ? "highlight" : "highlights"} starred`}
                     </span>
                   )}
                 </div>
@@ -339,7 +340,7 @@ export default function DailyShutdown() {
                           <button
                             onClick={() => handleToggleHighlight(task.id)}
                             className="flex-shrink-0 cursor-pointer"
-                            title={isHighlight ? "Remove highlight" : highlightIds.size >= 3 ? "Max 3 highlights" : "Mark as highlight"}
+                            title={isHighlight ? "Remove highlight" : "Mark as highlight"}
                           >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill={isHighlight ? "var(--accent-warning)" : "none"} stroke={isHighlight ? "var(--accent-warning)" : "var(--text-disabled)"} strokeWidth="2">
                               <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />

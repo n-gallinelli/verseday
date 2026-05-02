@@ -59,6 +59,8 @@
   --accent-orange-soft-bg: #FFF8F0;
   --accent-orange-soft-bg-hover: #FFF4E8;
 
+  --accent-warning: #c9923a;
+
   --accent-danger: #d95f5f;
 
   /* — Calendar — */
@@ -91,7 +93,7 @@
   --color-primary-light: #9bb5e3;
   --color-danger: var(--accent-danger);
   --color-success: var(--accent-green);
-  --color-warning: #c9923a;
+  --color-warning: var(--accent-warning);
   --color-bg: var(--bg-base);
   --color-surface: var(--bg-elevated);
   --color-surface-hover: var(--bg-sunken);
@@ -165,6 +167,8 @@
     --accent-orange-soft-bg: rgba(214, 134, 71, 0.10);
     --accent-orange-soft-bg-hover: rgba(214, 134, 71, 0.14);
 
+    --accent-warning: #d6a35a;
+
     --accent-danger: #e07474;
 
     /* — Calendar — */
@@ -193,7 +197,6 @@
     /* — Legacy aliases automatically follow because they reference the
        semantic tokens above. No need to redeclare here. — */
     --color-primary-light: #8aa6cc;
-    --color-warning: #d6a35a;
   }
 }
 
@@ -249,6 +252,8 @@
   --color-accent-orange-hover: var(--accent-orange-hover);
   --color-accent-orange-soft: var(--accent-orange-soft-bg);
   --color-accent-orange-soft-hover: var(--accent-orange-soft-bg-hover);
+
+  --color-accent-warning: var(--accent-warning);
 
   --color-accent-danger: var(--accent-danger);
 }

@@ -809,7 +809,7 @@ export default function DailyPlanner() {
 
       {/* ── Right panel: Projects (collapsible) ─────────────────────── */}
       <div
-        className="flex-shrink-0 border-l border-black/[0.06] bg-[#efede8] flex flex-col overflow-hidden transition-[width] duration-200 ease-out"
+        className="flex-shrink-0 border-l border-line-hairline bg-sidebar flex flex-col overflow-hidden transition-[width] duration-200 ease-out"
         style={{ width: rightPanelCollapsed ? 28 : 220 }}
       >
       {rightPanelCollapsed ? (
@@ -817,7 +817,7 @@ export default function DailyPlanner() {
           <button
             onClick={toggleRightPanel}
             title="Show projects panel"
-            className="w-6 h-6 rounded-md flex items-center justify-center text-black/35 hover:bg-black/[0.05] hover:text-black/60 cursor-pointer transition-colors"
+            className="w-6 h-6 rounded-md flex items-center justify-center text-fg-muted hover:bg-overlay-hover hover:text-fg-secondary cursor-pointer transition-colors"
           >
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
               <path d="M7.5 2.5L4 6l3.5 3.5" />
@@ -827,13 +827,13 @@ export default function DailyPlanner() {
       ) : (
       <div className="w-[220px] flex-shrink-0 flex flex-col overflow-y-auto">
         <div className="flex items-center px-3 pt-4 pb-1.5">
-          <span className="flex-1 text-[10px] text-black/[0.2] uppercase tracking-[0.08em]">
+          <span className="flex-1 text-[10px] text-fg-disabled uppercase tracking-[0.08em]">
             Projects
           </span>
           <button
             onClick={toggleRightPanel}
             title="Hide panel"
-            className="w-5 h-5 -mr-1 rounded-md flex items-center justify-center text-black/30 hover:bg-black/[0.05] hover:text-black/55 cursor-pointer transition-colors"
+            className="w-5 h-5 -mr-1 rounded-md flex items-center justify-center text-fg-faded hover:bg-overlay-hover hover:text-fg-secondary cursor-pointer transition-colors"
           >
             <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4.5 2.5L8 6l-3.5 3.5" />
@@ -844,7 +844,7 @@ export default function DailyPlanner() {
           const activeProjects = projects.filter((p) => !p.completed);
           if (activeProjects.length === 0) {
             return (
-              <p className="px-3 py-4 text-[12px] text-black/25 text-center">
+              <p className="px-3 py-4 text-[12px] text-fg-faded text-center">
                 No active projects
               </p>
             );
@@ -857,9 +857,9 @@ export default function DailyPlanner() {
             const pullableTasks = [...unscheduled, ...overdue];
 
             return (
-              <div key={p.id} className="border-b border-black/[0.04]">
+              <div key={p.id} className="border-b border-divider">
                 {/* Project header */}
-                <div className="flex items-center gap-1.5 px-3 py-2 hover:bg-black/[0.04] transition-colors">
+                <div className="flex items-center gap-1.5 px-3 py-2 hover:bg-overlay-hover transition-colors">
                   <button
                     onClick={() => {
                       setExpandedProjectIds((prev) => {
@@ -869,14 +869,14 @@ export default function DailyPlanner() {
                         return next;
                       });
                     }}
-                    className="text-[18px] leading-none text-black/25 cursor-pointer w-5 flex-shrink-0"
+                    className="text-[18px] leading-none text-fg-faded cursor-pointer w-5 flex-shrink-0"
                   >
                     {isExpanded ? "▾" : "▸"}
                   </button>
                   <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
                   <button
                     onClick={() => openProject(p.id)}
-                    className="text-[11px] text-[#2c2a35] truncate flex-1 text-left cursor-pointer hover:underline"
+                    className="text-[11px] text-fg truncate flex-1 text-left cursor-pointer hover:underline"
                   >
                     {p.name}
                   </button>
@@ -886,42 +886,42 @@ export default function DailyPlanner() {
                 {isExpanded && (
                   <div className="px-2 pb-2">
                     {pullableTasks.length === 0 && todayTasks.length === 0 && (
-                      <p className="text-[10px] text-black/20 px-2 py-1">No open tasks</p>
+                      <p className="text-[10px] text-fg-disabled px-2 py-1">No open tasks</p>
                     )}
                     {pullableTasks.map((task) => (
                       <button
                         key={task.id}
                         onClick={() => pullTaskToDay(task.id)}
                         title="Add to today"
-                        className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-black/[0.05] transition-colors group"
+                        className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-overlay-hover transition-colors group"
                       >
-                        <span className="text-[11px] text-[#2c2a35] flex-1 truncate">{task.title}</span>
+                        <span className="text-[11px] text-fg flex-1 truncate">{task.title}</span>
                         {task.estimated_minutes != null && task.estimated_minutes > 0 && (
-                          <span className="text-[9px] text-black/20">{task.estimated_minutes}m</span>
+                          <span className="text-[9px] text-fg-disabled">{task.estimated_minutes}m</span>
                         )}
                         <svg
                           width="13" height="13" viewBox="0 0 14 14" fill="none"
                           stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"
-                          className="text-[#7B9ED9] opacity-40 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                          className="text-accent-blue opacity-40 group-hover:opacity-100 transition-opacity flex-shrink-0"
                         >
                           <path d="M7 3v8M3 7h8" />
                         </svg>
                       </button>
                     ))}
                     {todayTasks.length > 0 && pullableTasks.length > 0 && (
-                      <div className="h-px bg-black/[0.06] mx-2 my-1" />
+                      <div className="h-px bg-line-hairline mx-2 my-1" />
                     )}
                     {todayTasks.map((task) => (
                       <button
                         key={task.id}
                         onClick={() => pullTaskToDay(task.id)}
                         title="Already on today"
-                        className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-black/[0.05] transition-colors"
+                        className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-overlay-hover transition-colors"
                       >
-                        <span className={`text-[11px] flex-1 truncate ${task.status === "done" ? "text-black/25 line-through" : "text-black/40"}`}>
+                        <span className={`text-[11px] flex-1 truncate ${task.status === "done" ? "text-fg-faded line-through" : "text-fg-muted"}`}>
                           {task.title}
                         </span>
-                        <span className="text-[9px] text-black/15 flex-shrink-0">today</span>
+                        <span className="text-[9px] text-fg-disabled flex-shrink-0">today</span>
                       </button>
                     ))}
                   </div>
@@ -938,34 +938,34 @@ export default function DailyPlanner() {
         {(() => {
           const unfinished = unfinishedTasks;
           return (
-          <div className="border-t border-black/[0.06]">
+          <div className="border-t border-line-hairline">
             <button
               onClick={() => setUnfinishedExpanded((v) => !v)}
-              className="w-full flex items-center gap-1.5 px-3 py-2 hover:bg-black/[0.04] transition-colors"
+              className="w-full flex items-center gap-1.5 px-3 py-2 hover:bg-overlay-hover transition-colors"
             >
-              <span className="text-[18px] leading-none text-black/25 w-5 flex-shrink-0">
+              <span className="text-[18px] leading-none text-fg-faded w-5 flex-shrink-0">
                 {unfinishedExpanded ? "▾" : "▸"}
               </span>
-              <span className="text-[10px] text-black/[0.2] uppercase tracking-[0.08em] flex-1 text-left">
+              <span className="text-[10px] text-fg-disabled uppercase tracking-[0.08em] flex-1 text-left">
                 Unfinished
               </span>
               {unfinished.length > 0 && (
-                <span className="text-[9px] text-black/20 tabular-nums">{unfinished.length}</span>
+                <span className="text-[9px] text-fg-disabled tabular-nums">{unfinished.length}</span>
               )}
             </button>
             {unfinishedExpanded && (
               <div className="px-2 pb-2">
                 {unfinished.length === 0 ? (
-                  <p className="text-[10px] text-black/20 px-2 py-1">All caught up</p>
+                  <p className="text-[10px] text-fg-disabled px-2 py-1">All caught up</p>
                 ) : (
                   unfinished.map((task) => (
                     <button
                       key={task.id}
                       onClick={() => setDetailTask(task)}
-                      className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-black/[0.05] transition-colors group"
+                      className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-overlay-hover transition-colors group"
                     >
-                      <span className="text-[11px] text-black/40 group-hover:text-[#2c2a35] flex-1 truncate transition-colors">{task.title}</span>
-                      <span className="text-[9px] text-[#c9923a]/70 tabular-nums">{task.rollover_count}d</span>
+                      <span className="text-[11px] text-fg-muted group-hover:text-fg flex-1 truncate transition-colors">{task.title}</span>
+                      <span className="text-[9px] text-accent-warning/70 tabular-nums">{task.rollover_count}d</span>
                     </button>
                   ))
                 )}
@@ -981,15 +981,15 @@ export default function DailyPlanner() {
           const unscheduledAll = [...sidebarUnscheduled, ...orphanOverdue];
           if (unscheduledAll.length === 0) return null;
           return (
-          <div className="border-t border-black/[0.06]">
+          <div className="border-t border-line-hairline">
             <button
               onClick={() => setUnscheduledExpanded((v) => !v)}
-              className="w-full flex items-center gap-1.5 px-3 py-2 hover:bg-black/[0.04] transition-colors"
+              className="w-full flex items-center gap-1.5 px-3 py-2 hover:bg-overlay-hover transition-colors"
             >
-              <span className="text-[18px] leading-none text-black/25 w-5 flex-shrink-0">
+              <span className="text-[18px] leading-none text-fg-faded w-5 flex-shrink-0">
                 {unscheduledExpanded ? "▾" : "▸"}
               </span>
-              <span className="text-[10px] text-black/[0.2] uppercase tracking-[0.08em] flex-1 text-left">
+              <span className="text-[10px] text-fg-disabled uppercase tracking-[0.08em] flex-1 text-left">
                 Unscheduled
               </span>
             </button>
@@ -999,13 +999,13 @@ export default function DailyPlanner() {
                   <button
                     key={task.id}
                     onClick={() => pullTaskToDay(task.id)}
-                    className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-black/[0.05] transition-colors group"
+                    className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-overlay-hover transition-colors group"
                   >
-                    <span className="text-[11px] text-[#2c2a35] flex-1 truncate">{task.title}</span>
+                    <span className="text-[11px] text-fg flex-1 truncate">{task.title}</span>
                     {task.estimated_minutes != null && task.estimated_minutes > 0 && (
-                      <span className="text-[9px] text-black/20">{task.estimated_minutes}m</span>
+                      <span className="text-[9px] text-fg-disabled">{task.estimated_minutes}m</span>
                     )}
-                    <span className="text-[9px] text-[#7B9ED9] opacity-0 group-hover:opacity-100 transition-opacity">+</span>
+                    <span className="text-[9px] text-accent-blue opacity-0 group-hover:opacity-100 transition-opacity">+</span>
                   </button>
                 ))}
               </div>

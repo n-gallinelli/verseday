@@ -77,6 +77,7 @@ Hand-tuned for each theme — dark variants are slightly desaturated and warmed 
 | `--accent-orange-hover`     | `#cc7633`   | `#c47840`   |                                                         |
 | `--accent-orange-soft-bg`   | `#FFF8F0`   | `rgba(214,134,71,0.10)` | High-priority task card background                |
 | `--accent-orange-soft-bg-hover` | `#FFF4E8` | `rgba(214,134,71,0.14)` |                                              |
+| `--accent-warning`          | `#c9923a`   | `#d6a35a`   | Rollover-day badge, advisory amber (not destructive)    |
 | `--accent-danger`           | `#d95f5f`   | `#e07474`   | Overdue badges, destructive (trash) hover               |
 
 ---
@@ -169,6 +170,8 @@ A subset of these tokens are exposed to Tailwind v4 in `src/index.css` via `@the
   --color-accent-orange-soft: var(--accent-orange-soft-bg);
   --color-accent-orange-soft-hover: var(--accent-orange-soft-bg-hover);
 
+  --color-accent-warning: var(--accent-warning);
+
   --color-accent-danger: var(--accent-danger);
 }
 ```
@@ -235,6 +238,7 @@ These are the Tailwind utilities that resolve through `@theme inline`. The prefi
 | `bg-[#e0873e]` / `text-…`          | `bg-accent-orange` / `text-…`      |
 | `bg-[#FFF8F0]`                     | `bg-accent-orange-soft`            |
 | `hover:bg-[#FFF4E8]`               | `hover:bg-accent-orange-soft-hover`|
+| `text-[#c9923a]` / `bg-…`          | `text-accent-warning` / `bg-…`     |
 | `text-[#d95f5f]` / `bg-…`          | `text-accent-danger` / `bg-…`      |
 | `text-white` (on solid accent)     | `text-fg-on-accent`                |
 | `bg-black/30` (modal scrim)        | `bg-overlay-scrim`                 |

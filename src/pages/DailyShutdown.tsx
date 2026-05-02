@@ -69,6 +69,7 @@ export default function DailyShutdown() {
   const [highlightIds, setHighlightIds] = useState<Set<number>>(new Set());
   const [workedPerTask, setWorkedPerTask] = useState<Map<number, number>>(new Map());
   const [showSummary, setShowSummary] = useState(false);
+  const [step, setStep] = useState<1 | 2>(1);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedDateRef = useRef(selectedDate);
@@ -111,6 +112,7 @@ export default function DailyShutdown() {
 
   useEffect(() => {
     loadData();
+    setStep(1);
   }, [loadData]);
 
   // Auto-save mood + reflection
@@ -299,151 +301,208 @@ export default function DailyShutdown() {
         </div>
       </div>
 
-      {/* ── Body — single column ────────────────────────────────────── */}
+      {/* ── Body — two-step flow ────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-[640px] mx-auto px-6 py-5 space-y-6">
-          {/* Mood */}
-          <section>
-            <h3 className="text-[13px] font-medium text-fg-secondary mb-2">
-              How was your day?
-            </h3>
-            <MoodSelector
-              value={mood}
-              onChange={handleMoodChange}
-              tintColor="var(--mood-tint-daily)"
-            />
-          </section>
+          {/* Step indicator */}
+          <div className="flex items-center gap-2 text-[11px] text-fg-faded">
+            <span className={step === 1 ? "text-fg-secondary font-medium" : ""}>1. Review</span>
+            <span>→</span>
+            <span className={step === 2 ? "text-fg-secondary font-medium" : ""}>2. Reflect</span>
+          </div>
 
-          {/* Reflection — three fields */}
-          <section className="space-y-3">
-            {REFLECTION_FIELDS.map((field) => (
-              <div key={field.key}>
-                <label className="text-[13px] font-medium text-fg-secondary mb-1.5 block">
-                  {field.label}
-                </label>
-                <textarea
-                  value={reflectionFields[field.key]}
-                  onChange={(e) => handleReflectionFieldChange(field.key, e.target.value)}
-                  placeholder={field.placeholder}
-                  rows={2}
-                  className="w-full bg-elevated/60 rounded-md px-3 py-2 text-[13px] text-fg-secondary resize-y leading-relaxed border border-transparent focus:outline-none focus:border-accent-blue placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded transition-colors"
+          {step === 1 && (
+            <>
+              {/* Done today */}
+              <section>
+                <div className="flex items-baseline justify-between mb-2">
+                  <h3 className="text-[13px] font-medium text-fg-secondary">
+                    Done today
+                  </h3>
+                  {completedTasks.length > 0 && (
+                    <span className="text-[11px] text-fg-faded">
+                      {highlightIds.size < 3 ? "Star up to 3 highlights" : "3 highlights starred"}
+                    </span>
+                  )}
+                </div>
+                <div className="bg-elevated/60 rounded-md px-3 py-2.5 border border-transparent">
+                  {completedTasks.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {completedTasks.map((task) => {
+                        const isHighlight = highlightIds.has(task.id);
+                        return (
+                          <div key={task.id} className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleToggleHighlight(task.id)}
+                              className="flex-shrink-0 cursor-pointer"
+                              title={isHighlight ? "Remove highlight" : highlightIds.size >= 3 ? "Max 3 highlights" : "Mark as highlight"}
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill={isHighlight ? "var(--accent-warning)" : "none"} stroke={isHighlight ? "var(--accent-warning)" : "var(--text-disabled)"} strokeWidth="2">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                              </svg>
+                            </button>
+                            <span className="w-[12px] h-[12px] rounded-[2px] bg-accent-green flex items-center justify-center flex-shrink-0">
+                              <svg width="6" height="6" viewBox="0 0 8 8" fill="none" stroke="var(--text-on-accent)" strokeWidth="1.4" strokeLinecap="round">
+                                <path d="M1.5 4l2 2 3-3" />
+                              </svg>
+                            </span>
+                            <span className="text-[13px] text-fg-faded line-through truncate flex-1">{task.title}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-[13px] text-fg-disabled">No tasks completed</p>
+                  )}
+                </div>
+              </section>
+
+              {/* Didn't get to */}
+              <section>
+                <div className="flex items-baseline justify-between mb-2">
+                  <h3 className="text-[13px] font-medium text-fg-secondary">
+                    Didn&rsquo;t get to
+                  </h3>
+                  {incompleteTasks.filter((t) => !carriedIds.has(t.id)).length > 0 && (
+                    <button
+                      onClick={carryAllToTomorrow}
+                      className="text-[11px] text-accent-blue-soft-fg hover:text-accent-blue cursor-pointer"
+                    >
+                      Move all to tomorrow &rarr;
+                    </button>
+                  )}
+                </div>
+                <div className="bg-elevated/60 rounded-md px-3 py-2.5 border border-transparent">
+                  {incompleteTasks.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {incompleteTasks.map((task) => {
+                        const isCarried = carriedIds.has(task.id);
+                        return (
+                          <div key={task.id} className="flex items-center gap-2">
+                            {isCarried ? (
+                              <span className="text-[13px] text-fg-faded italic truncate flex-1">{task.title}</span>
+                            ) : (
+                              <button
+                                onClick={() => carryTaskToTomorrow(task.id)}
+                                className="text-[13px] text-fg truncate flex-1 text-left cursor-pointer hover:text-accent-blue"
+                              >
+                                {task.title}
+                              </button>
+                            )}
+                            {isCarried && (
+                              <span className="text-[10px] text-accent-green flex-shrink-0">Moved</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-[13px] text-fg-disabled">Everything done!</p>
+                  )}
+                </div>
+              </section>
+
+              {/* Time tracked — small footer summary */}
+              {(workedMinutes > 0 || plannedMinutes > 0) && (
+                <p className="text-[11px] text-fg-faded">
+                  {formatHoursMinutes(workedMinutes)} worked
+                  {plannedMinutes > 0 && ` of ${formatHoursMinutes(plannedMinutes)} planned`}
+                </p>
+              )}
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              {/* Highlights summary — read-only carry from step 1 */}
+              {highlightIds.size > 0 && (
+                <section>
+                  <h3 className="text-[13px] font-medium text-fg-secondary mb-2">
+                    Today&rsquo;s highlights
+                  </h3>
+                  <div className="bg-elevated/60 rounded-md px-3 py-2.5 border border-transparent">
+                    <div className="space-y-1.5">
+                      {completedTasks
+                        .filter((t) => highlightIds.has(t.id))
+                        .map((task) => (
+                          <div key={task.id} className="flex items-center gap-2">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--accent-warning)" stroke="var(--accent-warning)" strokeWidth="2" className="flex-shrink-0">
+                              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                            </svg>
+                            <span className="text-[13px] text-fg font-medium truncate flex-1">{task.title}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              {/* Mood */}
+              <section>
+                <h3 className="text-[13px] font-medium text-fg-secondary mb-2">
+                  How was your day?
+                </h3>
+                <MoodSelector
+                  value={mood}
+                  onChange={handleMoodChange}
+                  tintColor="var(--mood-tint-daily)"
                 />
-              </div>
-            ))}
-          </section>
+              </section>
 
-          {/* Done today */}
-          <section>
-            <div className="flex items-baseline justify-between mb-2">
-              <h3 className="text-[13px] font-medium text-fg-secondary">
-                Done today
-              </h3>
-              {completedTasks.length > 0 && highlightIds.size < 3 && (
-                <span className="text-[11px] text-fg-faded">Star up to 3 highlights</span>
-              )}
-            </div>
-            <div className="bg-elevated/60 rounded-md px-3 py-2.5 border border-transparent">
-              {completedTasks.length > 0 ? (
-                <div className="space-y-1.5">
-                  {completedTasks.map((task) => {
-                    const isHighlight = highlightIds.has(task.id);
-                    return (
-                      <div key={task.id} className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleToggleHighlight(task.id)}
-                          className="flex-shrink-0 cursor-pointer"
-                          title={isHighlight ? "Remove highlight" : highlightIds.size >= 3 ? "Max 3 highlights" : "Mark as highlight"}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill={isHighlight ? "var(--accent-warning)" : "none"} stroke={isHighlight ? "var(--accent-warning)" : "var(--text-disabled)"} strokeWidth="2">
-                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                          </svg>
-                        </button>
-                        <span className="w-[12px] h-[12px] rounded-[2px] bg-accent-green flex items-center justify-center flex-shrink-0">
-                          <svg width="6" height="6" viewBox="0 0 8 8" fill="none" stroke="var(--text-on-accent)" strokeWidth="1.4" strokeLinecap="round">
-                            <path d="M1.5 4l2 2 3-3" />
-                          </svg>
-                        </span>
-                        <span className="text-[13px] text-fg-faded line-through truncate flex-1">{task.title}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-[13px] text-fg-disabled">No tasks completed</p>
-              )}
-            </div>
-          </section>
-
-          {/* Didn't get to */}
-          <section>
-            <div className="flex items-baseline justify-between mb-2">
-              <h3 className="text-[13px] font-medium text-fg-secondary">
-                Didn&rsquo;t get to
-              </h3>
-              {incompleteTasks.filter((t) => !carriedIds.has(t.id)).length > 0 && (
-                <button
-                  onClick={carryAllToTomorrow}
-                  className="text-[11px] text-accent-blue-soft-fg hover:text-accent-blue cursor-pointer"
-                >
-                  Move all to tomorrow &rarr;
-                </button>
-              )}
-            </div>
-            <div className="bg-elevated/60 rounded-md px-3 py-2.5 border border-transparent">
-              {incompleteTasks.length > 0 ? (
-                <div className="space-y-1.5">
-                  {incompleteTasks.map((task) => {
-                    const isCarried = carriedIds.has(task.id);
-                    return (
-                      <div key={task.id} className="flex items-center gap-2">
-                        {isCarried ? (
-                          <span className="text-[13px] text-fg-faded italic truncate flex-1">{task.title}</span>
-                        ) : (
-                          <button
-                            onClick={() => carryTaskToTomorrow(task.id)}
-                            className="text-[13px] text-fg truncate flex-1 text-left cursor-pointer hover:text-accent-blue"
-                          >
-                            {task.title}
-                          </button>
-                        )}
-                        {isCarried && (
-                          <span className="text-[10px] text-accent-green flex-shrink-0">Moved</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-[13px] text-fg-disabled">Everything done!</p>
-              )}
-            </div>
-          </section>
-
-          {/* Time tracked — small footer summary */}
-          {(workedMinutes > 0 || plannedMinutes > 0) && (
-            <p className="text-[11px] text-fg-faded">
-              {formatHoursMinutes(workedMinutes)} worked
-              {plannedMinutes > 0 && ` of ${formatHoursMinutes(plannedMinutes)} planned`}
-            </p>
+              {/* Reflection — three fields */}
+              <section className="space-y-3">
+                {REFLECTION_FIELDS.map((field) => (
+                  <div key={field.key}>
+                    <label className="text-[13px] font-medium text-fg-secondary mb-1.5 block">
+                      {field.label}
+                    </label>
+                    <textarea
+                      value={reflectionFields[field.key]}
+                      onChange={(e) => handleReflectionFieldChange(field.key, e.target.value)}
+                      placeholder={field.placeholder}
+                      rows={2}
+                      className="w-full bg-elevated/60 rounded-md px-3 py-2 text-[13px] text-fg-secondary resize-y leading-relaxed border border-transparent focus:outline-none focus:border-accent-blue placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded transition-colors"
+                    />
+                  </div>
+                ))}
+              </section>
+            </>
           )}
         </div>
       </div>
 
       {/* ── Footer ──────────────────────────────────────────────────── */}
       <div className="px-6 py-4 flex-shrink-0">
-        <div className="max-w-[860px] mx-auto flex items-center gap-2">
-          <button
-            onClick={completeShutdown}
-            className="flex-1 py-2.5 rounded-lg bg-accent-blue text-fg-on-accent text-[13px] font-medium cursor-pointer hover:bg-accent-blue-hover transition-colors"
-          >
-            Shutdown
-          </button>
-          <button
-            onClick={() => setShowSummary(true)}
-            className="px-5 py-2.5 rounded-lg border border-line-soft text-fg-secondary text-[13px] font-medium cursor-pointer hover:bg-overlay-hover transition-colors"
-          >
-            Summary
-          </button>
+        <div className="max-w-[640px] mx-auto flex items-center gap-2">
+          {step === 1 ? (
+            <button
+              onClick={() => setStep(2)}
+              className="flex-1 py-2.5 rounded-lg bg-accent-blue text-fg-on-accent text-[13px] font-medium cursor-pointer hover:bg-accent-blue-hover transition-colors"
+            >
+              Continue &rarr;
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => setStep(1)}
+                className="px-3.5 py-2.5 rounded-lg border border-line-soft text-fg-secondary text-[13px] font-medium cursor-pointer hover:bg-overlay-hover transition-colors"
+              >
+                &larr; Back
+              </button>
+              <button
+                onClick={completeShutdown}
+                className="flex-1 py-2.5 rounded-lg bg-accent-blue text-fg-on-accent text-[13px] font-medium cursor-pointer hover:bg-accent-blue-hover transition-colors"
+              >
+                Shutdown
+              </button>
+              <button
+                onClick={() => setShowSummary(true)}
+                className="px-5 py-2.5 rounded-lg border border-line-soft text-fg-secondary text-[13px] font-medium cursor-pointer hover:bg-overlay-hover transition-colors"
+              >
+                Summary
+              </button>
+            </>
+          )}
         </div>
       </div>
 

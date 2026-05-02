@@ -487,9 +487,17 @@ export async function checkpointTimeEntry(id: number): Promise<void> {
 
 export async function closeOrphanedTimeEntries(): Promise<number> {
   const db = await getDb();
+  // Cap orphaned entries at 4 hours from their start_time. If the app was
+  // force-quit / asleep for days, naively setting end_time = now would
+  // attribute that entire wall-clock gap as "worked time" — see the
+  // 166h-on-a-15m-task bug. 4 hours is the longest plausible single
+  // unbroken focus session.
+  const MAX_ORPHAN_HOURS = 4;
   const result = await db.execute(
-    "UPDATE time_entries SET end_time = $1 WHERE end_time IS NULL",
-    [new Date().toISOString()]
+    `UPDATE time_entries
+     SET end_time = datetime(start_time, '+' || $1 || ' hours')
+     WHERE end_time IS NULL`,
+    [MAX_ORPHAN_HOURS]
   );
   return result.rowsAffected;
 }
@@ -847,7 +855,7 @@ export async function setManualWorkedMinutes(
   targetMinutes: number
 ): Promise<void> {
   const db = await getDb();
-  // Get current worked minutes
+  // Current worked minutes (sums closed entries only).
   const rows: { total: number }[] = await db.select(
     `SELECT COALESCE(SUM(
       (julianday(COALESCE(end_time, datetime('now'))) - julianday(start_time)) * 1440
@@ -859,15 +867,35 @@ export async function setManualWorkedMinutes(
   );
   const currentMinutes = Math.round(rows[0]?.total ?? 0);
   const diff = targetMinutes - currentMinutes;
-  if (diff <= 0) return; // Can't reduce — would need to delete entries
+  if (diff === 0) return;
 
-  // Add an adjustment entry for the difference
   const now = new Date().toISOString();
-  const startTime = new Date(Date.now() - diff * 60 * 1000).toISOString();
+
+  if (diff > 0) {
+    // Add an adjustment entry for the difference.
+    const startTime = new Date(Date.now() - diff * 60 * 1000).toISOString();
+    await db.execute(
+      "INSERT INTO time_entries (task_id, start_time, end_time, entry_type) VALUES ($1, $2, $3, 'tracked')",
+      [taskId, startTime, now]
+    );
+    return;
+  }
+
+  // diff < 0: user wants to reduce. Wipe closed entries for this task and
+  // insert one fresh entry sized to the target. Keeps unclosed entries
+  // (active focus sessions) untouched. If targetMinutes is 0, skip the
+  // insert entirely.
   await db.execute(
-    "INSERT INTO time_entries (task_id, start_time, end_time, entry_type) VALUES ($1, $2, $3, 'tracked')",
-    [taskId, startTime, now]
+    "DELETE FROM time_entries WHERE task_id = $1 AND end_time IS NOT NULL",
+    [taskId]
   );
+  if (targetMinutes > 0) {
+    const startTime = new Date(Date.now() - targetMinutes * 60 * 1000).toISOString();
+    await db.execute(
+      "INSERT INTO time_entries (task_id, start_time, end_time, entry_type) VALUES ($1, $2, $3, 'tracked')",
+      [taskId, startTime, now]
+    );
+  }
 }
 
 export async function updateTaskNotes(

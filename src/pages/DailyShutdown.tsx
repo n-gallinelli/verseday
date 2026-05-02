@@ -477,9 +477,9 @@ export default function DailyShutdown() {
           {step === 1 ? (
             <button
               onClick={() => setStep(2)}
-              className="flex-1 py-2.5 rounded-lg bg-accent-blue text-fg-on-accent text-[13px] font-medium cursor-pointer hover:bg-accent-blue-hover transition-colors"
+              className="flex-1 py-2.5 rounded-lg border border-accent-blue/50 text-accent-blue-soft-fg text-[13px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors"
             >
-              Continue &rarr;
+              Reflect
             </button>
           ) : (
             <>
@@ -491,7 +491,7 @@ export default function DailyShutdown() {
               </button>
               <button
                 onClick={completeShutdown}
-                className="flex-1 py-2.5 rounded-lg bg-accent-blue text-fg-on-accent text-[13px] font-medium cursor-pointer hover:bg-accent-blue-hover transition-colors"
+                className="flex-1 py-2.5 rounded-lg border border-accent-blue/50 text-accent-blue-soft-fg text-[13px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors"
               >
                 Shutdown
               </button>

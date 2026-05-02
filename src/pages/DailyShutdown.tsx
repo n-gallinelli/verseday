@@ -360,7 +360,7 @@ export default function DailyShutdown() {
                               title={project.name}
                             />
                           )}
-                          <span className="flex-1 text-[12px] text-fg-faded line-through truncate">{task.title}</span>
+                          <span className="flex-1 text-[12px] text-fg-secondary truncate">{task.title}</span>
                           {project && (
                             <span className="text-[10px] text-fg-faded shrink-0 max-w-[120px] truncate">{project.name}</span>
                           )}
@@ -474,8 +474,8 @@ export default function DailyShutdown() {
                       value={reflectionFields[field.key]}
                       onChange={(e) => handleReflectionFieldChange(field.key, e.target.value)}
                       placeholder={field.placeholder}
-                      rows={2}
-                      className="w-full bg-elevated/60 rounded-md px-3 py-2 text-[13px] text-fg-secondary resize-y leading-relaxed border border-transparent focus:outline-none focus:border-accent-blue placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded transition-colors"
+                      rows={3}
+                      className="w-full bg-elevated/60 rounded-md px-3 py-2 text-[13px] text-fg-secondary resize-none leading-relaxed border border-transparent focus:outline-none focus:border-accent-blue placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded transition-colors"
                     />
                   </div>
                 ))}

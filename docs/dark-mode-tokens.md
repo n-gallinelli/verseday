@@ -73,6 +73,7 @@ Hand-tuned for each theme — dark variants are slightly desaturated and warmed 
 | `--accent-green-bright`     | `#5DCAA5`   | `#55b598`   | Active timer text, mood-positive tint                   |
 | `--accent-green-deep`       | `#0F6E56`   | `#3aa386`   | "Done today" labels, weekly shutdown chip               |
 | `--accent-green-glow`       | `rgba(106,158,127,0.22)` | `rgba(111,160,136,0.28)` | Top-of-modal completion gradient (peak)        |
+| `--accent-green-soft-bg`    | `#F0F9F5`   | `rgba(111,160,136,0.14)` | Soft-tinted callout banner bg (e.g. weekly carry-forward) |
 | `--accent-orange`           | `#e0873e`   | `#d68647`   | Priority high tint, weekly planner accents              |
 | `--accent-orange-hover`     | `#cc7633`   | `#c47840`   |                                                         |
 | `--accent-orange-soft-bg`   | `#FFF8F0`   | `rgba(214,134,71,0.10)` | High-priority task card background                |
@@ -164,6 +165,7 @@ A subset of these tokens are exposed to Tailwind v4 in `src/index.css` via `@the
   --color-accent-green-hover: var(--accent-green-hover);
   --color-accent-green-bright: var(--accent-green-bright);
   --color-accent-green-deep: var(--accent-green-deep);
+  --color-accent-green-soft: var(--accent-green-soft-bg);
 
   --color-accent-orange: var(--accent-orange);
   --color-accent-orange-hover: var(--accent-orange-hover);

@@ -53,6 +53,7 @@
   --accent-green-bright: #5DCAA5;
   --accent-green-deep: #0F6E56;
   --accent-green-glow: rgba(106, 158, 127, 0.22);
+  --accent-green-soft-bg: #F0F9F5;
 
   --accent-orange: #e0873e;
   --accent-orange-hover: #cc7633;
@@ -161,6 +162,7 @@
     --accent-green-bright: #55b598;
     --accent-green-deep: #3aa386;
     --accent-green-glow: rgba(111, 160, 136, 0.28);
+    --accent-green-soft-bg: rgba(111, 160, 136, 0.14);
 
     --accent-orange: #d68647;
     --accent-orange-hover: #c47840;
@@ -247,6 +249,7 @@
   --color-accent-green-hover: var(--accent-green-hover);
   --color-accent-green-bright: var(--accent-green-bright);
   --color-accent-green-deep: var(--accent-green-deep);
+  --color-accent-green-soft: var(--accent-green-soft-bg);
 
   --color-accent-orange: var(--accent-orange);
   --color-accent-orange-hover: var(--accent-orange-hover);

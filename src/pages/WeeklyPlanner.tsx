@@ -104,14 +104,14 @@ function DraggableTaskRow({
     <div
       ref={setNodeRef}
       className={`flex items-center gap-2 px-2.5 py-2 mb-0.5 ${
-        !isLast ? "border-b border-black/[0.04]" : ""
+        !isLast ? "border-b border-divider" : ""
       } ${isDragging ? "opacity-30" : ""}`}
     >
       {/* Drag handle */}
       <span
         {...attributes}
         {...listeners}
-        className="text-[10px] text-black/15 cursor-grab active:cursor-grabbing select-none"
+        className="text-[10px] text-fg-disabled cursor-grab active:cursor-grabbing select-none"
       >
         ⠿
       </span>
@@ -122,8 +122,8 @@ function DraggableTaskRow({
         title={task.status === "done" ? "Mark as not done" : "Mark complete"}
         className={`w-[18px] h-[18px] rounded-full border-2 flex-shrink-0 cursor-pointer flex items-center justify-center transition-colors ${
           task.status === "done"
-            ? "bg-[#6A9E7F] border-[#6A9E7F] hover:bg-[#5a8a6e] hover:border-[#5a8a6e]"
-            : "border-black/20 hover:border-[#6A9E7F]"
+            ? "bg-accent-green border-accent-green hover:bg-accent-green-hover hover:border-accent-green-hover"
+            : "border-line-strong hover:border-accent-green"
         }`}
       >
         <svg
@@ -131,7 +131,7 @@ function DraggableTaskRow({
           height="9"
           viewBox="0 0 12 12"
           fill="none"
-          stroke={task.status === "done" ? "white" : "rgba(0,0,0,0.25)"}
+          stroke={task.status === "done" ? "var(--text-on-accent)" : "var(--text-faded)"}
           strokeWidth="2.2"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -147,8 +147,8 @@ function DraggableTaskRow({
       <span
         className={`text-[12px] flex-1 truncate ${
           task.status === "done"
-            ? "text-black/30 line-through"
-            : "text-[#2c2a35]"
+            ? "text-fg-faded line-through"
+            : "text-fg"
         }`}
       >
         {task.title}
@@ -156,18 +156,18 @@ function DraggableTaskRow({
 
       {/* Duration */}
       {task.estimated_minutes != null && task.estimated_minutes > 0 && (
-        <span className="text-[11px] text-black/30">
+        <span className="text-[11px] text-fg-faded">
           {task.estimated_minutes}m
         </span>
       )}
 
       {/* Day pill */}
       {dayAbbrev ? (
-        <span className="text-[10px] bg-black/[0.05] text-black/40 px-1.5 py-0.5 rounded">
+        <span className="text-[10px] bg-overlay-hover text-fg-muted px-1.5 py-0.5 rounded">
           {dayAbbrev}
         </span>
       ) : (
-        <span className="text-[10px] bg-[#e0873e]/[0.08] text-[#e0873e] px-1.5 py-0.5 rounded">
+        <span className="text-[10px] bg-accent-orange/[0.08] text-accent-orange px-1.5 py-0.5 rounded">
           —
         </span>
       )}
@@ -193,12 +193,12 @@ function ProjectCard({
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="bg-white border border-black/[0.08] rounded-[9px] mb-2.5 overflow-hidden">
+    <div className="bg-elevated border border-line-soft rounded-[9px] mb-2.5 overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button
           onClick={() => setExpanded(!expanded)}
-          className="text-[18px] leading-none text-black/25 cursor-pointer hover:text-black/40 w-5 flex-shrink-0 transition-transform duration-150"
+          className="text-[18px] leading-none text-fg-faded cursor-pointer hover:text-fg-muted w-5 flex-shrink-0 transition-transform duration-150"
           style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
         >
           ▸
@@ -208,9 +208,9 @@ function ProjectCard({
           style={{ backgroundColor: project.color }}
         />
         <span
-          className={`text-[13px] font-medium text-[#2c2a35] flex-1 truncate ${
+          className={`text-[13px] font-medium text-fg flex-1 truncate ${
             project.id !== null
-              ? "cursor-pointer hover:text-[#e0873e]"
+              ? "cursor-pointer hover:text-accent-orange"
               : ""
           }`}
           onClick={() => {
@@ -223,7 +223,7 @@ function ProjectCard({
 
       {/* Tasks — collapsible */}
       {expanded && tasks.length > 0 && (
-            <div className="border-t border-black/[0.05]">
+            <div className="border-t border-line-hairline">
               {tasks.map((task, i) => (
                 <DraggableTaskRow
                   key={task.id}
@@ -268,8 +268,8 @@ function CalendarTaskChip({
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      className={`bg-white border-[0.5px] border-black/[0.08] rounded-md px-3 py-2.5 cursor-grab active:cursor-grabbing hover:bg-[#faf9f7] ${isDragging ? "opacity-30" : ""}`}
-      style={{ borderLeftWidth: 3, borderLeftColor: project?.color ?? "#999" }}
+      className={`bg-elevated border-[0.5px] border-line-soft rounded-md px-3 py-2.5 cursor-grab active:cursor-grabbing hover:bg-overlay-hover ${isDragging ? "opacity-30" : ""}`}
+      style={{ borderLeftWidth: 3, borderLeftColor: project?.color ?? "var(--text-faded)" }}
     >
       {/* Title row with checkbox */}
       <div className="flex items-start gap-1.5">
@@ -281,8 +281,8 @@ function CalendarTaskChip({
           title={task.status === "done" ? "Mark as not done" : "Mark complete"}
           className={`w-[18px] h-[18px] rounded-full border-2 flex-shrink-0 cursor-pointer flex items-center justify-center mt-[1px] transition-colors ${
             task.status === "done"
-              ? "bg-[#6A9E7F] border-[#6A9E7F] hover:bg-[#5a8a6e] hover:border-[#5a8a6e]"
-              : "border-black/20 hover:border-[#6A9E7F]"
+              ? "bg-accent-green border-accent-green hover:bg-accent-green-hover hover:border-accent-green-hover"
+              : "border-line-strong hover:border-accent-green"
           }`}
         >
           <svg
@@ -290,7 +290,7 @@ function CalendarTaskChip({
             height="9"
             viewBox="0 0 12 12"
             fill="none"
-            stroke={task.status === "done" ? "white" : "rgba(0,0,0,0.25)"}
+            stroke={task.status === "done" ? "var(--text-on-accent)" : "var(--text-faded)"}
             strokeWidth="2.2"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -302,10 +302,10 @@ function CalendarTaskChip({
           </svg>
         </button>
         <span
-          className={`text-[12px] leading-snug flex-1 line-clamp-3 cursor-pointer hover:text-[#e0873e] transition-colors ${
+          className={`text-[12px] leading-snug flex-1 line-clamp-3 cursor-pointer hover:text-accent-orange transition-colors ${
             task.status === "done"
-              ? "text-black/30 line-through"
-              : "text-[#2c2a35]"
+              ? "text-fg-faded line-through"
+              : "text-fg"
           }`}
           onClick={(e) => {
             e.stopPropagation();
@@ -320,7 +320,7 @@ function CalendarTaskChip({
       <div className="flex items-center gap-1.5 mt-0.5 ml-[19px]">
         {project && (
           <span
-            className="text-[10px] text-black/35 truncate max-w-[100px] cursor-pointer hover:text-[#e0873e]"
+            className="text-[10px] text-fg-faded truncate max-w-[100px] cursor-pointer hover:text-accent-orange"
             onClick={(e) => {
               e.stopPropagation();
               onNavigateProject(project.id);
@@ -330,7 +330,7 @@ function CalendarTaskChip({
           </span>
         )}
         {task.estimated_minutes != null && task.estimated_minutes > 0 && (
-          <span className="text-[10px] text-black/30">
+          <span className="text-[10px] text-fg-faded">
             {task.estimated_minutes}m
           </span>
         )}
@@ -381,8 +381,8 @@ function DayColumn({
     <div ref={setDropRef} className="flex flex-col min-w-0">
       {/* Column body */}
       <div
-        className={`border-r border-black/[0.05] last:border-r-0 p-1.5 flex flex-col gap-[6px] flex-1 transition-colors duration-150 ${
-          isOver ? "bg-[#e0873e]/[0.08]" : isToday ? "bg-[#e0873e]/[0.02]" : ""
+        className={`border-r border-line-hairline last:border-r-0 p-1.5 flex flex-col gap-[6px] flex-1 transition-colors duration-150 ${
+          isOver ? "bg-accent-orange/[0.08]" : isToday ? "bg-accent-orange/[0.02]" : ""
         }`}
       >
         {tasks.map((task) => (
@@ -404,7 +404,7 @@ function DayColumn({
             onChange={(e) => setQuickAddTitle(e.target.value)}
             maxLength={MAX_TITLE_LENGTH}
             placeholder="+ Add"
-            className="text-[11px] text-black/25 cursor-pointer px-1 py-1 rounded hover:bg-black/[0.04] hover:text-black/45 block w-full bg-transparent border-none outline-none placeholder-black/25"
+            className="text-[11px] text-fg-faded cursor-pointer px-1 py-1 rounded hover:bg-overlay-hover hover:text-fg-muted block w-full bg-transparent border-none outline-none placeholder:text-fg-faded"
           />
           {quickAddTitle.trim() && (
             <select
@@ -414,7 +414,7 @@ function DayColumn({
                   e.target.value === "" ? null : Number(e.target.value)
                 )
               }
-              className="text-[10px] text-black/40 bg-transparent border border-black/[0.08] rounded px-1 py-0.5 mt-0.5 w-full outline-none cursor-pointer"
+              className="text-[10px] text-fg-muted bg-transparent border border-line-soft rounded px-1 py-0.5 mt-0.5 w-full outline-none cursor-pointer"
             >
               <option value="">No project</option>
               {projects.map((p) => (
@@ -689,18 +689,18 @@ export default function WeeklyPlanner() {
   // ── Render ────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-full bg-[#f5f4f0] overflow-hidden">
+    <div className="flex flex-col h-full bg-base overflow-hidden">
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
       {pendingMove && (
-        <div className="flex items-center gap-3 px-7 py-2 bg-[#2c2a35] text-white text-[12px] flex-shrink-0">
+        <div className="flex items-center gap-3 px-7 py-2 bg-fg text-base text-[12px] flex-shrink-0">
           <span className="flex-1 truncate">
             Moved &ldquo;{pendingMove.taskTitle}&rdquo;
             {pendingMove.fromDate ? "" : " to scheduled"}
           </span>
           <button
             onClick={undoMove}
-            className="text-[#f0b070] font-medium cursor-pointer hover:text-white"
+            className="text-accent-orange font-medium cursor-pointer hover:text-base"
           >
             Undo
           </button>
@@ -708,13 +708,13 @@ export default function WeeklyPlanner() {
       )}
 
       {/* ── Header — hero title + utility row ─────────────────────────── */}
-      <div className="px-7 pt-6 pb-4 border-b border-black/[0.07] flex-shrink-0">
+      <div className="px-7 pt-6 pb-4 border-b border-line-soft flex-shrink-0">
         <div className="flex items-center gap-3 mb-3">
-          <h2 className="flex-1 text-[22px] font-medium text-[#2c2a35] leading-tight min-w-0 truncate">
+          <h2 className="flex-1 text-[22px] font-medium text-fg leading-tight min-w-0 truncate">
             {formatWeekHeader(selectedWeek)}
           </h2>
           {isThisWeek && (
-            <span className="text-[11px] bg-[#e0873e]/10 text-[#e0873e] px-2 py-0.5 rounded-full flex-shrink-0">
+            <span className="text-[11px] bg-accent-orange-soft text-accent-orange px-2 py-0.5 rounded-full flex-shrink-0">
               This week
             </span>
           )}
@@ -722,7 +722,7 @@ export default function WeeklyPlanner() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => changeWeek(-1)}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[#999] cursor-pointer hover:bg-[#f0f0f0] transition-colors duration-150 ease-out"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10 4l-4 4 4 4" />
@@ -730,7 +730,7 @@ export default function WeeklyPlanner() {
           </button>
           <button
             onClick={() => changeWeek(1)}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[#999] cursor-pointer hover:bg-[#f0f0f0] transition-colors duration-150 ease-out"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M6 4l4 4-4 4" />
@@ -739,14 +739,14 @@ export default function WeeklyPlanner() {
           {!isThisWeek && (
             <button
               onClick={() => setSelectedWeek(getMondayOfWeek())}
-              className="text-[11px] text-[#e0873e] hover:text-[#cc7633] cursor-pointer ml-1"
+              className="text-[11px] text-accent-orange hover:text-accent-orange-hover cursor-pointer ml-1"
             >
               Jump to this week
             </button>
           )}
-          <span className="text-[12px] text-black/35 ml-auto">
+          <span className="text-[12px] text-fg-faded ml-auto">
             Planned{" "}
-            <span className="text-black/50 tabular-nums">
+            <span className="text-fg-secondary tabular-nums">
               {totalPlannedHours}h
             </span>
           </span>
@@ -763,24 +763,24 @@ export default function WeeklyPlanner() {
         {/* ── Main: Calendar ────────────────────────────────────────────── */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
           {/* Calendar header */}
-          <div className="grid grid-cols-5 border-b border-black/[0.07] flex-shrink-0">
+          <div className="grid grid-cols-5 border-b border-line-soft flex-shrink-0">
             {weekDates.map((date, i) => {
               const dayNum = new Date(date + "T00:00:00").getDate();
               const isToday = date === todayStr;
               return (
                 <div
                   key={date}
-                  className="px-2.5 pt-3 pb-3 text-center border-r border-black/[0.05] last:border-r-0"
+                  className="px-2.5 pt-3 pb-3 text-center border-r border-line-hairline last:border-r-0"
                 >
-                  <div className="text-[11px] font-medium tracking-[0.06em] text-black/50 mb-1">
+                  <div className="text-[11px] font-medium tracking-[0.06em] text-fg-secondary mb-1">
                     {DAY_NAMES[i]}
                   </div>
                   {isToday ? (
-                    <div className="w-[30px] h-[30px] rounded-full bg-[#e0873e] text-white flex items-center justify-center text-[16px] font-medium mx-auto leading-none">
+                    <div className="w-[30px] h-[30px] rounded-full bg-accent-orange text-fg-on-accent flex items-center justify-center text-[16px] font-medium mx-auto leading-none">
                       {dayNum}
                     </div>
                   ) : (
-                    <div className="text-[17px] font-medium text-[#2c2a35] leading-none">
+                    <div className="text-[17px] font-medium text-fg leading-none">
                       {dayNum}
                     </div>
                   )}
@@ -811,38 +811,38 @@ export default function WeeklyPlanner() {
         {/* ── Right rail: projects + weekly notes ────────────────────────── */}
         <div
           className="w-[300px] flex-shrink-0 flex flex-col overflow-hidden"
-          style={{ borderLeft: "1px solid rgba(0,0,0,0.10)" }}
+          style={{ borderLeft: "1px solid var(--border-medium)" }}
         >
           {/* Top: scrollable — carry forward + projects */}
           <div className="flex-1 overflow-y-auto px-5 py-5 min-h-0">
             {carryForwardNotes && !carryForwardDismissed && (
               <div
-                className="bg-[#F0F9F5] rounded-lg px-3 py-2.5 mb-4 relative"
-                style={{ border: "0.5px solid #9FE1CB" }}
+                className="bg-accent-green-soft rounded-lg px-3 py-2.5 mb-4 relative"
+                style={{ border: "0.5px solid color-mix(in srgb, var(--accent-green) 50%, transparent)" }}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-[#0F6E56]">
+                  <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-accent-green-deep">
                     From last week
                   </span>
                   <button
                     onClick={() => setCarryForwardDismissed(true)}
-                    className="text-[11px] text-[#0F6E56]/40 hover:text-[#0F6E56] cursor-pointer"
+                    className="text-[11px] text-accent-green-deep/40 hover:text-accent-green-deep cursor-pointer"
                   >
                     ✕
                   </button>
                 </div>
-                <p className="text-[12px] text-black/50 leading-[1.6] whitespace-pre-wrap">
+                <p className="text-[12px] text-fg-secondary leading-[1.6] whitespace-pre-wrap">
                   {carryForwardNotes}
                 </p>
               </div>
             )}
 
-            <span className="uppercase text-black/30 mb-2.5 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
+            <span className="uppercase text-fg-faded mb-2.5 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
               Projects
             </span>
 
             {projectGroups.length === 0 && unassignedTasks.length === 0 ? (
-              <p className="text-[12px] text-black/25 py-4 text-center">
+              <p className="text-[12px] text-fg-faded py-4 text-center">
                 No active projects
               </p>
             ) : (
@@ -859,11 +859,11 @@ export default function WeeklyPlanner() {
                 ))}
 
                 {unassignedTasks.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-black/[0.06]">
-                    <span className="uppercase text-black/25 mb-1.5 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
+                  <div className="mt-3 pt-3 border-t border-line-hairline">
+                    <span className="uppercase text-fg-faded mb-1.5 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
                       Unassigned
                     </span>
-                    <div className="bg-black/[0.02] border border-black/[0.05] rounded-[8px] overflow-hidden">
+                    <div className="bg-overlay-hover border border-line-hairline rounded-[8px] overflow-hidden">
                       {unassignedTasks.map((task, i) => (
                         <DraggableTaskRow
                           key={task.id}
@@ -881,15 +881,15 @@ export default function WeeklyPlanner() {
           </div>
 
           {/* Bottom: weekly notes — always visible writing surface */}
-          <div className="flex-shrink-0 px-5 py-3 border-t border-black/[0.07] bg-white">
-            <span className="uppercase text-black/30 mb-1.5 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
+          <div className="flex-shrink-0 px-5 py-3 border-t border-line-soft bg-elevated">
+            <span className="uppercase text-fg-faded mb-1.5 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
               Weekly notes
             </span>
             <textarea
               value={weeklyNotes}
               onChange={(e) => handleWeeklyNotesChange(e.target.value)}
               placeholder="Notes for this week..."
-              className="w-full bg-white border border-black/[0.06] rounded-md px-3 py-2 text-[13px] text-black/65 placeholder-black/20 leading-relaxed resize-none h-[72px] outline-none focus:border-[#7B9ED9]/30"
+              className="w-full bg-elevated border border-line-hairline rounded-md px-3 py-2 text-[13px] text-fg-secondary placeholder:text-fg-disabled leading-relaxed resize-none h-[72px] outline-none focus:border-accent-blue"
             />
           </div>
         </div>
@@ -898,7 +898,7 @@ export default function WeeklyPlanner() {
       {/* Drag overlay — floating task chip while dragging */}
       <DragOverlay dropAnimation={null}>
         {activeDragTask && (
-          <div className="bg-white border border-[#e0873e]/30 rounded-md px-3 py-1.5 shadow-lg text-[12px] text-[#2c2a35] max-w-[200px] truncate opacity-90">
+          <div className="bg-elevated border border-accent-orange/30 rounded-md px-3 py-1.5 text-[12px] text-fg max-w-[200px] truncate opacity-90" style={{ boxShadow: "var(--shadow-card)" }}>
             {activeDragTask.title}
           </div>
         )}

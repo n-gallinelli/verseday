@@ -11,7 +11,7 @@ import type { Task, Project } from "../types";
 import { formatHoursMinutes, getEmptyDayMessage } from "../utils/format";
 
 export default function FocusLanding() {
-  const { startFocus } = useAppStore();
+  const { startFocus, setPage, setPendingDetailTask } = useAppStore();
   const today = useMemo(() => new Date().toISOString().split("T")[0], []);
 
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -68,11 +68,15 @@ export default function FocusLanding() {
       } else if ((e.key === " " || e.key === "Enter") && currentTask) {
         e.preventDefault();
         handleStartFocus(currentTask);
+      } else if (e.key === "Escape" && currentTask) {
+        e.preventDefault();
+        setPendingDetailTask(currentTask);
+        setPage("daily");
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedIndex, remainingTasks.length, currentTask]);
+  }, [selectedIndex, remainingTasks.length, currentTask, setPage, setPendingDetailTask]);
 
   if (loading) {
     return (

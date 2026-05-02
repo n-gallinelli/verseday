@@ -49,7 +49,7 @@ function serializeReflection(fields: ReflectionFields): string {
 }
 
 export default function DailyShutdown() {
-  const { selectedDate, setSelectedDate } = useAppStore();
+  const { selectedDate, setSelectedDate, setPage } = useAppStore();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -135,6 +135,25 @@ export default function DailyShutdown() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
+
+  // Escape: leave shutdown back to the daily plan. Skip while typing in any
+  // textarea/input so the user can hit Escape to blur first.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      const el = document.activeElement;
+      const isInput =
+        el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
+      if (isInput) {
+        (el as HTMLElement).blur();
+        return;
+      }
+      e.preventDefault();
+      setPage("daily");
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setPage]);
 
   function handleMoodChange(value: string | null) {
     setMood(value);
@@ -310,8 +329,7 @@ export default function DailyShutdown() {
                       onChange={(e) => handleReflectionFieldChange(field.key, e.target.value)}
                       placeholder={field.placeholder}
                       rows={2}
-                      className="w-full bg-elevated rounded-lg px-3.5 py-2.5 text-[13px] text-fg-secondary resize-y leading-relaxed focus:outline-none focus:border-accent-blue placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded"
-                      style={{ border: "0.5px solid var(--border-hairline)" }}
+                      className="w-full bg-elevated/60 rounded-md px-3 py-2 text-[13px] text-fg-secondary resize-y leading-relaxed border border-transparent focus:outline-none focus:border-accent-blue placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded transition-colors"
                     />
                   </div>
                 ))}
@@ -326,7 +344,7 @@ export default function DailyShutdown() {
               <section className="mb-6">
                 <h3 aria-hidden className="text-[13px] font-medium mb-2 invisible select-none">&nbsp;</h3>
                 {/* Time card */}
-                <div className="bg-elevated/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid var(--border-soft)" }}>
+                <div className="bg-elevated/40 rounded-lg px-3 py-2.5" style={{ border: "0.5px solid var(--border-hairline)" }}>
                 <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1">Time</div>
                 {workedMinutes === 0 && plannedMinutes === 0 ? (
                   <p className="text-[13px] text-fg-faded">No time tracked today</p>
@@ -345,7 +363,7 @@ export default function DailyShutdown() {
 
               <section className="space-y-3">
               {/* Done today card */}
-              <div className="bg-elevated/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid var(--border-medium)" }}>
+              <div className="bg-elevated/40 rounded-lg px-3 py-2.5" style={{ border: "0.5px solid var(--border-hairline)" }}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded">Done today</span>
                   {completedTasks.length > 0 && highlightIds.size < 3 && (
@@ -383,7 +401,7 @@ export default function DailyShutdown() {
               </div>
 
               {/* Didn't get to card */}
-              <div className="bg-elevated/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid var(--border-medium)" }}>
+              <div className="bg-elevated/40 rounded-lg px-3 py-2.5" style={{ border: "0.5px solid var(--border-hairline)" }}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded">Didn&rsquo;t get to</span>
                   {incompleteTasks.filter((t) => !carriedIds.has(t.id)).length > 0 && (
@@ -428,20 +446,20 @@ export default function DailyShutdown() {
         </div>
       </div>
 
-      {/* ── Footer — shutdown button ────────────────────────────────── */}
-      <div className="px-6 py-4 flex-shrink-0">
-        <div className="max-w-[860px] mx-auto flex gap-2">
-          <button
-            onClick={() => setShowSummary(true)}
-            className="px-4 py-2.5 rounded-lg border border-accent-blue text-accent-blue-soft-fg text-[13px] font-medium cursor-pointer hover:bg-accent-blue-soft transition-colors"
-          >
-            Generate summary
-          </button>
+      {/* ── Footer ──────────────────────────────────────────────────── */}
+      <div className="px-6 py-3 flex-shrink-0">
+        <div className="max-w-[860px] mx-auto flex items-center justify-between gap-2">
           <button
             onClick={completeShutdown}
-            className="flex-1 py-2.5 rounded-lg bg-accent-blue text-fg-on-accent text-[13px] font-medium cursor-pointer hover:bg-accent-blue-hover transition-colors"
+            className="px-3.5 py-1.5 rounded-md bg-accent-blue text-fg-on-accent text-[12px] font-medium cursor-pointer hover:bg-accent-blue-hover transition-colors"
           >
-            Save & shutdown
+            Shutdown
+          </button>
+          <button
+            onClick={() => setShowSummary(true)}
+            className="px-3.5 py-1.5 rounded-md border border-line-soft text-fg-secondary text-[12px] font-medium cursor-pointer hover:bg-overlay-hover transition-colors"
+          >
+            Summary
           </button>
         </div>
       </div>

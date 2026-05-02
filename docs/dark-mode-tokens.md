@@ -190,7 +190,7 @@ The following tokens are intentionally consumed directly via `var(--…)` (in CS
 | Shadows         | `--shadow-card`, `--shadow-modal`                                                                    | `style={{ boxShadow: "var(--shadow-modal)" }}`                          |
 | Calendar        | `--calendar-selected-bg`, `--calendar-today-ring`, `--calendar-day-hover`                            | `style={{ backgroundColor: "var(--calendar-selected-bg)" }}` or in CSS |
 | Mood tints      | `--mood-tint-shutdown`, `--mood-tint-daily`                                                          | `tintColor="var(--mood-tint-shutdown)"` prop / inline style             |
-| Focus mode      | `--focus-ambient-from/to`, `--focus-ring-track`, `--focus-ring-progress`, `--focus-glow-base/break`, `--focus-pip-bg`, `--focus-pip-border` | CSS rules in `index.css` or SVG `stroke="var(--…)"` / `style={{}}`     |
+| Focus mode      | `--focus-ambient-cool/neutral/warm`, `--focus-ring-track`, `--focus-ring-progress`, `--focus-glow-base/break`, `--focus-pip-bg`, `--focus-pip-border` | CSS rules in `index.css` or SVG `stroke="var(--…)"` / `style={{}}`     |
 | Scrollbar       | `--scrollbar-thumb`, `--scrollbar-thumb-hover`                                                       | CSS rules in `index.css` only                                          |
 | Accent glow     | `--accent-green-glow`                                                                                | Inline `style={{ background: "linear-gradient(..., var(--accent-green-glow), ...)" }}` (used in TaskDetailOverlay completion gradient) |
 
@@ -241,6 +241,7 @@ These are the Tailwind utilities that resolve through `@theme inline`. The prefi
 | `bg-[#e0873e]` / `text-…`          | `bg-accent-orange` / `text-…`      |
 | `bg-[#FFF8F0]`                     | `bg-accent-orange-soft`            |
 | `hover:bg-[#FFF4E8]`               | `hover:bg-accent-orange-soft-hover`|
+| `bg-[#F0F9F5]`                     | `bg-accent-green-soft`             |
 | `text-[#c9923a]` / `bg-…`          | `text-accent-warning` / `bg-…`     |
 | `text-[#d95f5f]` / `bg-…`          | `text-accent-danger` / `bg-…`      |
 | `text-white` (on solid accent)     | `text-fg-on-accent`                |
@@ -275,6 +276,26 @@ For tokens not registered in `@theme inline` (shadows, focus, calendar, mood, sc
 ### Box-shadow gotcha
 
 Tailwind's `shadow-md`, `shadow-lg`, etc. resolve to **Tailwind defaults**, not `--shadow-card` / `--shadow-modal`. Convert these explicitly during M2 — see the "Important" callout in the registration section above.
+
+### Inverted-contrast banner pattern
+
+When a banner needs to **always read as a high-contrast notification** against its surrounding page — regardless of theme — use:
+
+```jsx
+<div className="bg-fg text-base">…</div>
+```
+
+`--text-primary` (the `bg-fg` source) is dark in light mode and light in dark mode; `--bg-base` is its inverse. The pair flips automatically and stays high-contrast in both themes without a dedicated "always-dark" surface token.
+
+Use sparingly — this is for transient notifications and undo affordances, not for content panels. Mixing inverted banners with the rest of the chrome on the same page works because the banner is visually unmistakable as a momentary overlay, not a persistent surface.
+
+| Element type                                  | Pattern                              |
+| --------------------------------------------- | ------------------------------------ |
+| Banner outer surface                          | `bg-fg text-base`                    |
+| Action / link inside the banner               | A theme-stable accent (e.g. `text-accent-orange`, `text-accent-green-bright`) — readable on both inverted-banner shades |
+| Hover state on banner action                  | Pull toward the banner's text color (`hover:text-base`) for a subtle "absorbing" effect, or toward white in light mode |
+
+Example: `WeeklyPlanner.tsx:696` (undo banner after a drag-drop date move).
 
 ### Modal background rule
 

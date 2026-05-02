@@ -402,13 +402,13 @@ export default function DailyPlanner() {
         <div className="flex items-center gap-2.5">
           <button
             onClick={() => changeDate(-1)}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[#999] cursor-pointer hover:bg-[#f0f0f0] transition-colors duration-150 ease-out"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10 4l-4 4 4 4" />
             </svg>
           </button>
-          <h2 className="text-[16px] font-medium text-[#2c2a35]">
+          <h2 className="text-[16px] font-medium text-fg">
             {new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", {
               weekday: "short",
               month: "short",
@@ -417,7 +417,7 @@ export default function DailyPlanner() {
           </h2>
           <button
             onClick={() => changeDate(1)}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[#999] cursor-pointer hover:bg-[#f0f0f0] transition-colors duration-150 ease-out"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M6 4l4 4-4 4" />
@@ -429,8 +429,8 @@ export default function DailyPlanner() {
               onClick={() => setShowDatePicker(!showDatePicker)}
               className={`text-[11px] leading-none px-2 py-1 rounded-full cursor-pointer ${
                 isToday
-                  ? "bg-[#7B9ED9]/10 text-[#7B9ED9]"
-                  : "bg-black/[0.04] text-black/40 hover:bg-black/[0.07]"
+                  ? "bg-accent-blue-soft text-accent-blue"
+                  : "bg-overlay-hover text-fg-muted hover:bg-overlay-pressed"
               }`}
             >
               {isToday ? "Today" : "Jump to..."}
@@ -447,24 +447,24 @@ export default function DailyPlanner() {
           {(workedMinutes > 0 || plannedMinutes > 0) && (
             <div className="flex items-center gap-3 ml-1">
               <div
-                className="bg-[#fafafa] rounded-md px-3 py-2 flex flex-col"
-                style={{ border: "0.5px solid #e8e8e8" }}
+                className="bg-rail rounded-md px-3 py-2 flex flex-col"
+                style={{ border: "0.5px solid var(--border-soft)" }}
               >
-                <span className="text-[10px] font-medium text-[#999] tracking-[0.5px] mb-[2px] leading-none">
+                <span className="text-[10px] font-medium text-fg-muted tracking-[0.5px] mb-[2px] leading-none">
                   Focused
                 </span>
-                <span className="text-[13px] font-medium text-[#1a1a1a] leading-[1.2] tabular-nums">
+                <span className="text-[13px] font-medium text-fg leading-[1.2] tabular-nums">
                   {formatHoursMinutes(workedMinutes)}
                 </span>
               </div>
               <div
-                className="bg-[#fafafa] rounded-md px-3 py-2 flex flex-col"
-                style={{ border: "0.5px solid #e8e8e8" }}
+                className="bg-rail rounded-md px-3 py-2 flex flex-col"
+                style={{ border: "0.5px solid var(--border-soft)" }}
               >
-                <span className="text-[10px] font-medium text-[#999] tracking-[0.5px] mb-[2px] leading-none">
+                <span className="text-[10px] font-medium text-fg-muted tracking-[0.5px] mb-[2px] leading-none">
                   Planned
                 </span>
-                <span className="text-[13px] font-medium text-[#1a1a1a] leading-[1.2] tabular-nums">
+                <span className="text-[13px] font-medium text-fg leading-[1.2] tabular-nums">
                   {formatHoursMinutes(plannedMinutes)}
                 </span>
               </div>
@@ -480,9 +480,9 @@ export default function DailyPlanner() {
               return (
                 <button
                   onClick={() => setPage("focus")}
-                  className="rounded-lg bg-[#7B9ED9] text-white hover:bg-[#6889c4] cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_rgba(123,158,217,0.18)]"
+                  className="rounded-lg bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
                 >
-                  <svg width="8" height="10" viewBox="0 0 8 10" fill="white" className="ml-[1px]">
+                  <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
                     <path d="M0 0v10l8-5z" />
                   </svg>
                   <span className="text-[13px] font-medium">Focusing...</span>
@@ -495,10 +495,10 @@ export default function DailyPlanner() {
             return (
               <button
                 onClick={() => handleStartFocus(nextTask)}
-                className="rounded-lg bg-[#7B9ED9] text-white hover:bg-[#6889c4] cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors"
+                className="rounded-lg bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors"
                 title={`Start focus: ${nextTask.title}`}
               >
-                <svg width="8" height="10" viewBox="0 0 8 10" fill="white" className="ml-[1px]">
+                <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
                   <path d="M0 0v10l8-5z" />
                 </svg>
                 <span className="text-[13px] font-medium">Start focusing</span>
@@ -513,7 +513,7 @@ export default function DailyPlanner() {
         {/* Task Input — collapses when unfocused */}
         <form onSubmit={handleAddTask} className="mb-5" ref={taskInputRef}>
           <div
-            className="bg-white border border-black/[0.08] rounded-[10px] p-3.5 cursor-text overflow-hidden"
+            className="bg-elevated border border-line-soft rounded-[10px] p-3.5 cursor-text overflow-hidden"
             onClick={(e) => {
               const t = e.target as HTMLElement;
               if (t.closest("button, select, input, a, [role='button']")) return;
@@ -529,11 +529,11 @@ export default function DailyPlanner() {
                 onFocus={() => setTaskInputExpanded(true)}
                 maxLength={MAX_TITLE_LENGTH}
                 placeholder="Add a task..."
-                className="flex-1 bg-transparent border-none outline-none text-[14px] text-[#2c2a35] placeholder-black/25"
+                className="flex-1 bg-transparent border-none outline-none text-[14px] text-fg placeholder:text-fg-faded"
               />
               <button
                 type="submit"
-                className="bg-[#7B9ED9] text-white rounded-lg px-4 py-1.5 text-[13px] font-medium cursor-pointer hover:bg-[#6889c4] transition-colors whitespace-nowrap"
+                className="bg-accent-blue text-fg-on-accent rounded-lg px-4 py-1.5 text-[13px] font-medium cursor-pointer hover:bg-accent-blue-hover transition-colors whitespace-nowrap"
               >
                 Add
               </button>
@@ -550,7 +550,7 @@ export default function DailyPlanner() {
                 />
               </div>
 
-              <div className="w-px h-3.5 bg-black/[0.08]" />
+              <div className="w-px h-3.5 bg-line-soft" />
 
               {/* Duration picker */}
               <DurationPicker
@@ -581,14 +581,14 @@ export default function DailyPlanner() {
                     : { title: "Nothing planned for this day", subtitle: "Add your first task above to start filling it in." };
                   return (
                     <div className="flex-1 flex flex-col items-center justify-center gap-2.5 px-8 py-8 text-center">
-                      <div className="w-10 h-10 bg-[#7B9ED9]/10 rounded-[10px] flex items-center justify-center mb-1">
+                      <div className="w-10 h-10 bg-accent-blue-soft rounded-[10px] flex items-center justify-center mb-1">
                         <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                          <circle cx="9" cy="9" r="6" stroke="#7B9ED9" strokeWidth="1.2" opacity="0.5" fill="none" />
-                          <path d="M6 9l2 2 4-4" stroke="#7B9ED9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                          <circle cx="9" cy="9" r="6" stroke="var(--accent-blue)" strokeWidth="1.2" opacity="0.5" fill="none" />
+                          <path d="M6 9l2 2 4-4" stroke="var(--accent-blue)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
                         </svg>
                       </div>
-                      <p className="text-[14px] font-medium text-black/50">{msg.title}</p>
-                      <p className="text-[12px] text-black/25 leading-relaxed max-w-[260px]">
+                      <p className="text-[14px] font-medium text-fg-secondary">{msg.title}</p>
+                      <p className="text-[12px] text-fg-faded leading-relaxed max-w-[260px]">
                         {msg.subtitle}
                       </p>
                     </div>
@@ -616,10 +616,10 @@ export default function DailyPlanner() {
                         <div className="flex items-center gap-1.5 mb-1 px-1 max-w-[300px]">
                           <div
                             className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: proj?.color ?? "#999" }}
+                            style={{ backgroundColor: proj?.color ?? "var(--text-faded)" }}
                           />
                           <span
-                            className={`text-[11px] font-medium text-black/35 truncate ${pid != null ? "cursor-pointer hover:text-[#7B9ED9] transition-colors" : ""}`}
+                            className={`text-[11px] font-medium text-fg-faded truncate ${pid != null ? "cursor-pointer hover:text-accent-blue transition-colors" : ""}`}
                             onClick={() => { if (pid != null) openProject(pid); }}
                             title={proj?.name ?? "No project"}
                           >
@@ -631,7 +631,7 @@ export default function DailyPlanner() {
                     return (
                       <div
                         key={task.id}
-                        className="p-3.5 rounded-[10px] bg-white border border-black/[0.08] space-y-2"
+                        className="p-3.5 rounded-[10px] bg-elevated border border-line-soft space-y-2"
                         onKeyDown={handleEditKeyDown}
                       >
                         <div className="flex gap-2">
@@ -641,7 +641,7 @@ export default function DailyPlanner() {
                             onChange={(e) => setEditTitle(e.target.value)}
                             maxLength={MAX_TITLE_LENGTH}
                             autoFocus
-                            className="flex-1 bg-transparent border border-black/[0.08] rounded-md px-2.5 py-1.5 text-[13px] text-[#2c2a35] focus:outline-none focus:border-[#7B9ED9]/40"
+                            className="flex-1 bg-transparent border border-line-soft rounded-md px-2.5 py-1.5 text-[13px] text-fg focus:outline-none focus:border-accent-blue"
                           />
                           <input
                             type="number"
@@ -650,14 +650,14 @@ export default function DailyPlanner() {
                             min={1}
                             max={MAX_ESTIMATE_MINUTES}
                             placeholder="min"
-                            className="w-20 bg-transparent border border-black/[0.08] rounded-md px-2.5 py-1.5 text-[13px] text-[#2c2a35] placeholder-black/25 focus:outline-none focus:border-[#7B9ED9]/40"
+                            className="w-20 bg-transparent border border-line-soft rounded-md px-2.5 py-1.5 text-[13px] text-fg placeholder:text-fg-faded focus:outline-none focus:border-accent-blue"
                           />
                         </div>
                         <div className="flex gap-2">
                           <select
                             value={editProjectId}
                             onChange={(e) => setEditProjectId(e.target.value)}
-                            className="flex-1 bg-transparent border border-black/[0.08] rounded-md px-2.5 py-1.5 text-[12px] text-black/50 focus:outline-none focus:border-[#7B9ED9]/40"
+                            className="flex-1 bg-transparent border border-line-soft rounded-md px-2.5 py-1.5 text-[12px] text-fg-secondary focus:outline-none focus:border-accent-blue"
                           >
                             <option value="">No project</option>
                             {projects.map((p) => (
@@ -675,15 +675,15 @@ export default function DailyPlanner() {
                             }
                             className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] cursor-pointer border ${
                               editPriority === "high"
-                                ? "bg-[#d95f5f]/10 border-[#d95f5f]/25 text-[#d95f5f]"
-                                : "bg-transparent border-black/[0.08] text-black/45"
+                                ? "bg-accent-danger/10 border-accent-danger/25 text-accent-danger"
+                                : "bg-transparent border-line-soft text-fg-muted"
                             }`}
                           >
                             <span
                               className={`w-1.5 h-1.5 rounded-full ${
                                 editPriority === "high"
-                                  ? "bg-[#d95f5f]"
-                                  : "bg-black/20"
+                                  ? "bg-accent-danger"
+                                  : "bg-fg-disabled"
                               }`}
                             />
                             High
@@ -693,22 +693,22 @@ export default function DailyPlanner() {
                           value={editNotes}
                           onChange={(html) => setEditNotes(html)}
                           placeholder="Notes..."
-                          className="w-full bg-transparent border border-black/[0.08] rounded-md px-2.5 py-2 text-[12px] text-black/55 min-h-[60px] focus-within:border-[#7B9ED9]/40"
+                          className="w-full bg-transparent border border-line-soft rounded-md px-2.5 py-2 text-[12px] text-fg-secondary min-h-[60px] focus-within:border-accent-blue"
                         />
                         <div className="flex gap-2">
                           <button
                             onClick={saveEdit}
-                            className="bg-[#7B9ED9] text-white rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-[#6889c4] transition-colors"
+                            className="bg-accent-blue text-fg-on-accent rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-accent-blue-hover transition-colors"
                           >
                             Save
                           </button>
                           <button
                             onClick={() => setEditingId(null)}
-                            className="bg-black/[0.05] text-black/45 rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-black/[0.07] transition-colors"
+                            className="bg-overlay-hover text-fg-muted rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-overlay-pressed transition-colors"
                           >
                             Cancel
                           </button>
-                          <span className="text-[11px] text-black/20 self-center ml-auto">
+                          <span className="text-[11px] text-fg-disabled self-center ml-auto">
                             Cmd+Enter to save, Esc to cancel
                           </span>
                         </div>
@@ -720,21 +720,21 @@ export default function DailyPlanner() {
                     return (
                       <div
                         key={task.id}
-                        className="p-3.5 rounded-[10px] bg-white border border-black/[0.08] flex items-center gap-3"
+                        className="p-3.5 rounded-[10px] bg-elevated border border-line-soft flex items-center gap-3"
                       >
-                        <span className="flex-1 text-[13px] text-[#e4a945]">
+                        <span className="flex-1 text-[13px] text-accent-warning">
                           Delete &ldquo;{task.title}&rdquo;? Time entries will
                           also be deleted.
                         </span>
                         <button
                           onClick={() => handleDelete(task.id)}
-                          className="bg-[#d95f5f] text-white rounded-md px-3 py-1 text-[12px] cursor-pointer"
+                          className="bg-accent-danger text-fg-on-accent rounded-md px-3 py-1 text-[12px] cursor-pointer"
                         >
                           Delete
                         </button>
                         <button
                           onClick={() => setConfirmDeleteId(null)}
-                          className="text-black/35 text-[12px] cursor-pointer hover:text-black/50"
+                          className="text-fg-faded text-[12px] cursor-pointer hover:text-fg-secondary"
                         >
                           Cancel
                         </button>
@@ -773,19 +773,19 @@ export default function DailyPlanner() {
         {/* Daily Notes + Shutdown link — bottom of scroll area */}
         <div className="mt-auto pt-3">
           <div className="flex items-center justify-between mb-1.5">
-            <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30">
+            <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded">
               Daily notes
             </label>
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setShowSummary(true)}
-                className="text-[11px] text-[#7B9ED9] cursor-pointer hover:text-[#6889c4] transition-colors"
+                className="text-[11px] text-accent-blue cursor-pointer hover:text-accent-blue-hover transition-colors"
               >
                 Summarize plan
               </button>
               <button
                 onClick={() => setPage("daily_shutdown")}
-                className="flex items-center gap-1 text-[12px] text-black/30 cursor-pointer hover:text-black/50 transition-colors"
+                className="flex items-center gap-1 text-[12px] text-fg-faded cursor-pointer hover:text-fg-secondary transition-colors"
               >
                 <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
                   <circle cx="7" cy="7" r="5.5" />
@@ -800,7 +800,7 @@ export default function DailyPlanner() {
             onChange={(e) => setDailyNotes(e.target.value)}
             onBlur={saveDailyNotes}
             placeholder="Write notes for today..."
-            className="w-full bg-white border border-black/[0.06] rounded-lg px-3 py-2 text-[13px] text-black/55 placeholder-black/20 resize-none min-h-[72px] leading-relaxed focus:outline-none focus:border-[#7B9ED9]/30"
+            className="w-full bg-elevated border border-line-hairline rounded-lg px-3 py-2 text-[13px] text-fg-secondary placeholder:text-fg-disabled resize-none min-h-[72px] leading-relaxed focus:outline-none focus:border-accent-blue"
           />
         </div>
 

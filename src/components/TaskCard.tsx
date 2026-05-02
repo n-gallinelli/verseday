@@ -50,8 +50,8 @@ function TrashButton({ onDelete }: { onDelete: () => void }) {
       onClick={handleClick}
       className={`w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors ${
         armed
-          ? "text-[#d95f5f] bg-[#d95f5f]/[0.08]"
-          : "text-black/25 hover:text-black/40 hover:bg-black/[0.04]"
+          ? "text-accent-danger bg-accent-danger/10"
+          : "text-fg-faded hover:text-fg-muted hover:bg-overlay-hover"
       }`}
       title={armed ? "Click again to delete" : "Delete"}
     >
@@ -159,8 +159,8 @@ export default function TaskCard({
       style={style}
       className={`px-3 py-[7px] rounded-lg border transition-colors duration-150 ease-out group/row ${
         isHigh
-          ? "bg-[#FFF8F0] border-[#e0873e]/15 hover:bg-[#FFF4E8]"
-          : "bg-white border-black/[0.07] hover:bg-black/[0.02]"
+          ? "bg-accent-orange-soft border-accent-orange/15 hover:bg-accent-orange-soft-hover"
+          : "bg-elevated border-line-soft hover:bg-overlay-hover"
       }`}
     >
       <div className="flex items-center gap-3">
@@ -168,7 +168,7 @@ export default function TaskCard({
         <div
           {...attributes}
           {...listeners}
-          className="cursor-grab active:cursor-grabbing text-black/25 shrink-0 select-none"
+          className="cursor-grab active:cursor-grabbing text-fg-faded shrink-0 select-none"
           title="Drag to reorder"
         >
           ⠿
@@ -180,8 +180,8 @@ export default function TaskCard({
           title={task.status === "done" ? "Mark as not done" : "Mark complete"}
           className={`w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
             task.status === "done"
-              ? `bg-[#6A9E7F] border-[#6A9E7F] hover:bg-[#5a8a6e] hover:border-[#5a8a6e]${justCompleted ? " animate-task-done" : ""}`
-              : "border-black/20 hover:border-[#6A9E7F]"
+              ? `bg-accent-green border-accent-green hover:bg-accent-green-hover hover:border-accent-green-hover${justCompleted ? " animate-task-done" : ""}`
+              : "border-line-strong hover:border-accent-green"
           }`}
         >
           <svg
@@ -189,7 +189,7 @@ export default function TaskCard({
             height="11"
             viewBox="0 0 12 12"
             fill="none"
-            stroke={task.status === "done" ? "white" : "rgba(0,0,0,0.25)"}
+            stroke={task.status === "done" ? "var(--text-on-accent)" : "var(--text-faded)"}
             strokeWidth="2.2"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -212,7 +212,7 @@ export default function TaskCard({
 
         {/* Title — clickable to open detail overlay */}
         <span
-          className={`flex-1 text-[#2c2a35] [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)] ${task.status === "done" ? "line-through !text-black/30" : ""} ${onOpenDetail ? "cursor-pointer hover:text-[#7B9ED9] transition-colors" : ""}`}
+          className={`flex-1 text-fg [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)] ${task.status === "done" ? "line-through !text-fg-faded" : ""} ${onOpenDetail ? "cursor-pointer hover:text-accent-blue transition-colors" : ""}`}
           onClick={() => onOpenDetail?.(task)}
         >
           {task.title}
@@ -220,7 +220,7 @@ export default function TaskCard({
 
         {/* Meta */}
         {showProject && project && (
-          <span className="text-black/35 [font-size:var(--font-size-meta)] [font-weight:var(--font-weight-meta)] [opacity:var(--opacity-meta)]">{project.name}</span>
+          <span className="text-fg-faded [font-size:var(--font-size-meta)] [font-weight:var(--font-weight-meta)] [opacity:var(--opacity-meta)]">{project.name}</span>
         )}
         {/* Time: worked / estimated — always show both */}
         {(() => {
@@ -231,11 +231,11 @@ export default function TaskCard({
           const overBudget = est > 0 && worked > est;
           return (
             <span className="text-[11px] tabular-nums flex items-center gap-0.5 shrink-0">
-              <span className={overBudget ? "text-[#d95f5f] font-medium" : "text-[#7B9ED9] font-medium"}>
+              <span className={overBudget ? "text-accent-danger font-medium" : "text-accent-blue font-medium"}>
                 {worked > 0 ? `${worked}m` : "0m"}
               </span>
-              <span className="text-black/15">/</span>
-              <span className="text-black/30">
+              <span className="text-fg-disabled">/</span>
+              <span className="text-fg-faded">
                 {est > 0 ? `${est}m` : "—"}
               </span>
             </span>
@@ -247,10 +247,10 @@ export default function TaskCard({
           {onStart && task.status !== "done" && (
             <button
               onClick={() => onStart(task)}
-              className="w-6 h-6 rounded-full bg-[#7B9ED9] text-white hover:bg-[#6889c4] cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_rgba(123,158,217,0.18)]"
+              className="w-6 h-6 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
               title="Start focus"
             >
-              <svg width="8" height="10" viewBox="0 0 8 10" fill="white" className="ml-[1px]">
+              <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
                 <path d="M0 0v10l8-5z" />
               </svg>
             </button>
@@ -272,7 +272,7 @@ export default function TaskCard({
               saveNotes(html);
             }}
             placeholder="Add notes..."
-            className="w-full p-2.5 rounded-md bg-[#f5f4f0] border border-black/[0.06] text-[12px] text-black/55 min-h-[60px] leading-relaxed focus-within:border-[#7B9ED9]/30"
+            className="w-full p-2.5 rounded-md bg-base border border-line-hairline text-[12px] text-fg-secondary min-h-[60px] leading-relaxed focus-within:border-accent-blue"
           />
 
           {/* Links */}
@@ -284,24 +284,24 @@ export default function TaskCard({
                     key={link.id}
                     className="flex items-center gap-2 text-[11px]"
                   >
-                    <span className="text-black/25">🔗</span>
+                    <span className="text-fg-faded">🔗</span>
                     {isSafeUrl(link.url) ? (
                       <a
                         href={link.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[#7B9ED9] hover:underline truncate flex-1"
+                        className="text-accent-blue hover:underline truncate flex-1"
                       >
                         {link.label || link.url}
                       </a>
                     ) : (
-                      <span className="text-black/40 truncate flex-1">
+                      <span className="text-fg-muted truncate flex-1">
                         {link.label || link.url}
                       </span>
                     )}
                     <button
                       onClick={() => handleDeleteLink(link.id)}
-                      className="text-black/25 hover:text-[#d95f5f] cursor-pointer text-[10px]"
+                      className="text-fg-faded hover:text-accent-danger cursor-pointer text-[10px]"
                     >
                       ✕
                     </button>
@@ -315,11 +315,11 @@ export default function TaskCard({
                 value={newUrl}
                 onChange={(e) => setNewUrl(e.target.value)}
                 placeholder="Add a URL..."
-                className="flex-1 bg-[#f5f4f0] border border-black/[0.06] rounded-md px-2 py-1 text-[11px] text-[#2c2a35] placeholder-black/20 outline-none focus:border-[#7B9ED9]/30"
+                className="flex-1 bg-base border border-line-hairline rounded-md px-2 py-1 text-[11px] text-fg placeholder:text-fg-disabled outline-none focus:border-accent-blue"
               />
               <button
                 type="submit"
-                className="text-[10px] text-[#7B9ED9] px-2 py-1 rounded-md border border-[#7B9ED9]/20 bg-[#7B9ED9]/[0.06] cursor-pointer hover:bg-[#7B9ED9]/[0.12]"
+                className="text-[10px] text-accent-blue px-2 py-1 rounded-md border border-accent-blue/20 bg-accent-blue/[0.06] cursor-pointer hover:bg-accent-blue/[0.12]"
               >
                 Add
               </button>

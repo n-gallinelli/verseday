@@ -507,7 +507,7 @@ export default function DailyPlanner() {
             return (
               <button
                 onClick={() => handleStartFocus(nextTask)}
-                className="rounded-lg bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors"
+                className="rounded-lg border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors"
                 title={`Start focus: ${nextTask.title}`}
               >
                 <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
@@ -545,7 +545,7 @@ export default function DailyPlanner() {
               />
               <button
                 type="submit"
-                className="bg-accent-blue text-fg-on-accent rounded-lg px-4 py-1.5 text-[13px] font-medium cursor-pointer hover:bg-accent-blue-hover transition-colors whitespace-nowrap"
+                className="border border-accent-blue/50 text-accent-blue-soft-fg rounded-lg px-4 py-1.5 text-[13px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors whitespace-nowrap"
               >
                 Add
               </button>

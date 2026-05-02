@@ -457,29 +457,19 @@ export default function DailyPlanner() {
             )}
           </div>
           {(workedMinutes > 0 || plannedMinutes > 0) && (
-            <div className="flex items-center gap-3 ml-1">
-              <div
-                className="bg-rail rounded-md px-3 py-2 flex flex-col"
-                style={{ border: "0.5px solid var(--border-soft)" }}
-              >
-                <span className="text-[10px] font-medium text-fg-muted tracking-[0.5px] mb-[2px] leading-none">
-                  Focused
-                </span>
-                <span className="text-[13px] font-medium text-fg leading-[1.2] tabular-nums">
+            <div className="flex items-center gap-3 ml-2 text-[11px]">
+              <span className="text-fg-faded">
+                Focused{" "}
+                <span className="text-fg-secondary tabular-nums">
                   {formatHoursMinutes(workedMinutes)}
                 </span>
-              </div>
-              <div
-                className="bg-rail rounded-md px-3 py-2 flex flex-col"
-                style={{ border: "0.5px solid var(--border-soft)" }}
-              >
-                <span className="text-[10px] font-medium text-fg-muted tracking-[0.5px] mb-[2px] leading-none">
-                  Planned
-                </span>
-                <span className="text-[13px] font-medium text-fg leading-[1.2] tabular-nums">
+              </span>
+              <span className="text-fg-faded">
+                Planned{" "}
+                <span className="text-fg-secondary tabular-nums">
                   {formatHoursMinutes(plannedMinutes)}
                 </span>
-              </div>
+              </span>
             </div>
           )}
           <div className="flex-1" />

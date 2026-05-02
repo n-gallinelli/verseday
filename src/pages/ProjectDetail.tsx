@@ -970,9 +970,13 @@ export default function ProjectDetail() {
                         key={task.id}
                         className="p-3 rounded-lg bg-elevated border border-line-soft flex items-center gap-3 mb-[5px]"
                       >
-                        <span className="flex-1 text-[12px] text-accent-warning">
-                          Delete &ldquo;{task.title}&rdquo;? Time entries will
-                          also be deleted.
+                        <span className="flex-1 text-[12px]">
+                          <span className="text-accent-destructive">
+                            Delete &ldquo;{task.title}&rdquo;?
+                          </span>{" "}
+                          <span className="text-accent-warning">
+                            Time entries will also be deleted.
+                          </span>
                         </span>
                         <button
                           onClick={() => handleDeleteTask(task.id)}

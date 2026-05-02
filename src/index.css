@@ -110,7 +110,6 @@
      resolve until the migration sweep replaces them. — */
   --color-primary: var(--accent-blue);
   --color-primary-hover: var(--accent-blue-hover);
-  --color-primary-light: #9bb5e3;
   --color-danger: var(--accent-danger);
   --color-success: var(--accent-green);
   --color-warning: var(--accent-warning);
@@ -232,7 +231,6 @@
 
     /* — Legacy aliases automatically follow because they reference the
        semantic tokens above. No need to redeclare here. — */
-    --color-primary-light: #8aa6cc;
   }
 }
 
@@ -318,6 +316,13 @@ body {
   box-sizing: border-box;
 }
 
+/* Native <select> chevron. -webkit-appearance: none forces our custom SVG
+   to be the only chevron drawn (color-scheme: light dark does NOT bypass
+   appearance suppression). Data URIs can't inherit currentColor, so the
+   stroke must be hardcoded per theme. Recalibrate against --text-muted
+   baked over --bg-input-hover if either token shifts.
+     light #999 ≈ rgba(0,0,0,0.40) over rgba(0,0,0,0.06) on #f5f4f0
+     dark  #888 ≈ rgba(232,230,224,0.50) over rgba(255,255,255,0.07) on #16161a */
 select {
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -326,6 +331,12 @@ select {
   background-repeat: no-repeat;
   background-position: right 8px center;
   padding-right: 22px;
+}
+
+@media (prefers-color-scheme: dark) {
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg width='8' height='5' viewBox='0 0 8 5' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l3 3 3-3' stroke='%23888' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
 }
 
 ::-webkit-scrollbar {
@@ -368,7 +379,7 @@ select {
 }
 
 .tiptap a {
-  color: var(--color-primary);
+  color: var(--accent-blue);
   text-decoration: underline;
   text-underline-offset: 2px;
   word-break: break-all;

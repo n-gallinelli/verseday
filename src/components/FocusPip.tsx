@@ -86,7 +86,7 @@ function ProgressBar({ elapsed, estimatedMinutes }: { elapsed: number; estimated
     const pct = Math.min((elapsedMin / estimatedMinutes) * 100, 100);
     const isOver = elapsedMin > estimatedMinutes;
     return (
-      <div className="h-[3px] w-full bg-black/[0.04]">
+      <div className="h-[3px] w-full bg-overlay-hover">
         <div
           className="h-full transition-all duration-500"
           style={{
@@ -101,7 +101,7 @@ function ProgressBar({ elapsed, estimatedMinutes }: { elapsed: number; estimated
 
   // No estimate — slow, faint pulsing bar
   return (
-    <div className="h-[3px] w-full bg-black/[0.04] overflow-hidden">
+    <div className="h-[3px] w-full bg-overlay-hover overflow-hidden">
       <div
         className="h-full bg-accent-blue rounded-full"
         style={{

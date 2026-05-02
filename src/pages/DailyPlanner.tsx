@@ -607,38 +607,7 @@ export default function DailyPlanner() {
                   );
                 })()
               ) : (
-                (() => {
-                  // Group sorted tasks by project
-                  const grouped = new Map<number | null, Task[]>();
-                  const groupOrder: (number | null)[] = [];
-                  for (const task of sortedTasks) {
-                    const pid = task.project_id;
-                    if (!grouped.has(pid)) {
-                      grouped.set(pid, []);
-                      groupOrder.push(pid);
-                    }
-                    grouped.get(pid)!.push(task);
-                  }
-                  return groupOrder.map((pid) => {
-                    const groupTasks = grouped.get(pid)!;
-                    const proj = pid != null ? projectMap.get(pid) : null;
-                    return (
-                      <div key={pid ?? "none"} className="mb-2">
-                        {/* Project section header — compact chip */}
-                        <div className="flex items-center gap-1.5 mb-1 px-1 max-w-[300px]">
-                          <div
-                            className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: proj?.color ?? "var(--text-faded)" }}
-                          />
-                          <span
-                            className={`text-[11px] font-medium text-fg-faded truncate ${pid != null ? "cursor-pointer hover:text-accent-blue transition-colors" : ""}`}
-                            onClick={() => { if (pid != null) openProject(pid); }}
-                            title={proj?.name ?? "No project"}
-                          >
-                            {proj?.name ?? "No project"}
-                          </span>
-                        </div>
-                        {groupTasks.map((task) => {
+                sortedTasks.map((task) => {
                   if (editingId === task.id) {
                     return (
                       <div
@@ -773,14 +742,10 @@ export default function DailyPlanner() {
                       onOpenDetail={setDetailTask}
                       expandedNotes={expandedId === task.id}
                       workedMinutes={workedMap.get(task.id)}
-                      showProject={false}
+                      showProject={true}
                     />
                   );
-                })}
-                      </div>
-                    );
-                  });
-                })()
+                })
               )}
             </div>
           </SortableContext>

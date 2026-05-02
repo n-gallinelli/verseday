@@ -218,9 +218,15 @@ export default function TaskCard({
           {task.title}
         </span>
 
-        {/* Meta */}
+        {/* Meta — project name; fades out on row hover so the actions
+            slot to its right reads as the replacement affordance */}
         {showProject && project && (
-          <span className="text-fg-faded [font-size:var(--font-size-meta)] [font-weight:var(--font-weight-meta)] [opacity:var(--opacity-meta)]">{project.name}</span>
+          <span
+            className="text-fg-faded [font-size:var(--font-size-meta)] [font-weight:var(--font-weight-meta)] [opacity:var(--opacity-meta)] truncate max-w-[160px] group-hover/row:opacity-0 transition-opacity duration-150"
+            title={project.name}
+          >
+            {project.name}
+          </span>
         )}
         {/* Time: worked / estimated — always show both */}
         {(() => {

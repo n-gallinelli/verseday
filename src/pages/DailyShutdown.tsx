@@ -303,9 +303,18 @@ export default function DailyShutdown() {
       {/* ── Body — two-step flow ────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-[640px] mx-auto px-6 py-5 space-y-6">
-          {/* Step indicator */}
+          {/* Step indicator — Review breadcrumb is clickable from step 2 */}
           <div className="flex items-center gap-2 text-[11px] text-fg-faded">
-            <span className={step === 1 ? "text-fg-secondary font-medium" : ""}>Review</span>
+            {step === 2 ? (
+              <button
+                onClick={() => setStep(1)}
+                className="cursor-pointer hover:text-fg-secondary transition-colors"
+              >
+                Review
+              </button>
+            ) : (
+              <span className="text-fg-secondary font-medium">Review</span>
+            )}
             <span>→</span>
             <span className={step === 2 ? "text-fg-secondary font-medium" : ""}>Reflect</span>
           </div>
@@ -442,29 +451,6 @@ export default function DailyShutdown() {
 
           {step === 2 && (
             <>
-              {/* Highlights summary — read-only carry from step 1 */}
-              {highlightIds.size > 0 && (
-                <section>
-                  <h3 className="text-[13px] font-medium text-fg-secondary mb-2">
-                    Today&rsquo;s highlights
-                  </h3>
-                  <div className="bg-elevated/60 rounded-md px-3 py-2.5 border border-transparent">
-                    <div className="space-y-1.5">
-                      {completedTasks
-                        .filter((t) => highlightIds.has(t.id))
-                        .map((task) => (
-                          <div key={task.id} className="flex items-center gap-2">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--accent-warning)" stroke="var(--accent-warning)" strokeWidth="2" className="flex-shrink-0">
-                              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                            </svg>
-                            <span className="text-[13px] text-fg font-medium truncate flex-1">{task.title}</span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                </section>
-              )}
-
               {/* Mood */}
               <section>
                 <h3 className="text-[13px] font-medium text-fg-secondary mb-2">
@@ -494,6 +480,29 @@ export default function DailyShutdown() {
                   </div>
                 ))}
               </section>
+
+              {/* Highlights summary — read-only carry from step 1, anchored at bottom */}
+              {highlightIds.size > 0 && (
+                <section>
+                  <h3 className="text-[13px] font-medium text-fg-secondary mb-2">
+                    Today&rsquo;s highlights
+                  </h3>
+                  <div className="bg-elevated/60 rounded-md px-3 py-2.5 border border-transparent">
+                    <div className="space-y-1.5">
+                      {completedTasks
+                        .filter((t) => highlightIds.has(t.id))
+                        .map((task) => (
+                          <div key={task.id} className="flex items-center gap-2">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--accent-warning)" stroke="var(--accent-warning)" strokeWidth="2" className="flex-shrink-0">
+                              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                            </svg>
+                            <span className="text-[13px] text-fg font-medium truncate flex-1">{task.title}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </section>
+              )}
             </>
           )}
         </div>
@@ -515,12 +524,6 @@ export default function DailyShutdown() {
             </button>
           ) : (
             <>
-              <button
-                onClick={() => setStep(1)}
-                className="px-3.5 py-2.5 rounded-lg border border-line-soft text-fg-secondary text-[13px] font-medium cursor-pointer hover:bg-overlay-hover transition-colors"
-              >
-                &larr; Back
-              </button>
               <button
                 onClick={completeShutdown}
                 className="flex-1 py-2.5 rounded-lg border border-accent-blue/50 text-accent-blue-soft-fg text-[13px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors flex items-center justify-center gap-1.5"

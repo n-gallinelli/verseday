@@ -329,7 +329,7 @@ export default function DailyShutdown() {
                   </h3>
                   {highlightIds.size > 0 && (
                     <span className="text-[11px] text-fg-faded">
-                      {highlightIds.size} {highlightIds.size === 1 ? "highlight" : "highlights"} starred
+                      {highlightIds.size} {highlightIds.size === 1 ? "highlight" : "highlights"}
                     </span>
                   )}
                 </div>

@@ -152,10 +152,10 @@ export default function CalendarPicker({
             if (!open) updatePosition();
             setOpen(!open);
           }}
-          className={`bg-black/[0.03] rounded-md text-[13px] font-medium leading-tight cursor-pointer transition-colors hover:border-black/[0.12] ${
-            value ? "text-[#2c2a35]" : "text-black/30"
+          className={`bg-input rounded-md text-[13px] font-medium leading-tight cursor-pointer transition-colors hover:border-line-medium ${
+            value ? "text-fg" : "text-fg-faded"
           }`}
-          style={{ padding: "5px 12px", border: "0.5px solid rgba(0,0,0,0.06)" }}
+          style={{ padding: "5px 12px", border: "0.5px solid var(--border-hairline)" }}
         >
           {displayLabel}
         </button>
@@ -166,7 +166,7 @@ export default function CalendarPicker({
               onClear();
               setOpen(false);
             }}
-            className="text-[11px] text-black/25 hover:text-black/50 cursor-pointer"
+            className="text-[11px] text-fg-faded hover:text-fg-secondary cursor-pointer"
             title="Clear date"
           >
             ✕
@@ -178,9 +178,10 @@ export default function CalendarPicker({
       {open && popoverPos && createPortal(
         <div
           ref={popoverRef}
-          className="fixed z-[100] bg-white rounded-lg p-4 animate-scale-in"
+          className="fixed z-[100] bg-elevated rounded-lg p-4 animate-scale-in"
           style={{
-            boxShadow: "0 4px 16px rgba(0,0,0,0.10)",
+            boxShadow: "var(--shadow-card)",
+            border: "0.5px solid var(--border-soft)",
             minWidth: 280,
             top: popoverPos.top,
             left: popoverPos.left,
@@ -191,19 +192,19 @@ export default function CalendarPicker({
             <button
               type="button"
               onClick={prevMonth}
-              className="w-5 h-5 flex items-center justify-center rounded text-black/40 hover:text-black/70 hover:bg-black/[0.04] cursor-pointer"
+              className="w-5 h-5 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-overlay-hover cursor-pointer"
             >
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                 <path d="M6.5 1.5L3 5l3.5 3.5" />
               </svg>
             </button>
-            <span className="text-[14px] font-medium text-[#2c2a35]">
+            <span className="text-[14px] font-medium text-fg">
               {formatMonthYear(viewYear, viewMonth)}
             </span>
             <button
               type="button"
               onClick={nextMonth}
-              className="w-5 h-5 flex items-center justify-center rounded text-black/40 hover:text-black/70 hover:bg-black/[0.04] cursor-pointer"
+              className="w-5 h-5 flex items-center justify-center rounded text-fg-muted hover:text-fg hover:bg-overlay-hover cursor-pointer"
             >
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                 <path d="M3.5 1.5L7 5l-3.5 3.5" />
@@ -216,7 +217,7 @@ export default function CalendarPicker({
             {DAY_NAMES.map((d) => (
               <div
                 key={d}
-                className="text-center text-[11px] uppercase text-[#AAAAAA] py-1"
+                className="text-center text-[11px] uppercase text-fg-muted py-1"
               >
                 {d}
               </div>
@@ -234,18 +235,45 @@ export default function CalendarPicker({
               const isToday = iso === todayIso;
               const isSelected = iso === value;
 
+              const baseCell = "w-9 h-9 rounded-full text-[13px] cursor-pointer transition-colors flex items-center justify-center";
+              if (isSelected) {
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => selectDay(day)}
+                    className={`${baseCell} text-fg-on-accent`}
+                    style={{ backgroundColor: "var(--calendar-selected-bg)" }}
+                  >
+                    {day}
+                  </button>
+                );
+              }
+              if (isToday) {
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => selectDay(day)}
+                    className={`${baseCell} font-medium`}
+                    style={{
+                      boxShadow: "inset 0 0 0 2px var(--calendar-today-ring)",
+                      color: "var(--calendar-today-ring)",
+                    }}
+                  >
+                    {day}
+                  </button>
+                );
+              }
               return (
                 <button
                   key={day}
                   type="button"
                   onClick={() => selectDay(day)}
-                  className={`w-9 h-9 rounded-full text-[13px] cursor-pointer transition-colors flex items-center justify-center ${
-                    isSelected
-                      ? "bg-[#6B84A3] text-white"
-                      : isToday
-                        ? "ring-2 ring-[#6B84A3] ring-inset text-[#6B84A3] font-medium"
-                        : "text-[#2c2a35] hover:bg-[#F0F0ED]"
-                  }`}
+                  className={`${baseCell} text-fg`}
+                  style={{ backgroundColor: "transparent" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--calendar-day-hover)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
                 >
                   {day}
                 </button>
@@ -254,25 +282,25 @@ export default function CalendarPicker({
           </div>
 
           {/* Push-back quick actions */}
-          <div className="mt-3 pt-3 border-t border-black/[0.06] flex flex-col gap-1">
+          <div className="mt-3 pt-3 border-t border-line-hairline flex flex-col gap-1">
             <button
               type="button"
               onClick={() => pushBackDays(7)}
-              className="text-[12px] text-black/55 hover:text-[#2c2a35] hover:bg-[#F0F0ED] rounded-md px-2 py-1.5 text-left cursor-pointer transition-colors"
+              className="text-[12px] text-fg-secondary hover:text-fg hover:bg-overlay-hover rounded-md px-2 py-1.5 text-left cursor-pointer transition-colors"
             >
               Push back one week
             </button>
             <button
               type="button"
               onClick={() => pushBackDays(14)}
-              className="text-[12px] text-black/55 hover:text-[#2c2a35] hover:bg-[#F0F0ED] rounded-md px-2 py-1.5 text-left cursor-pointer transition-colors"
+              className="text-[12px] text-fg-secondary hover:text-fg hover:bg-overlay-hover rounded-md px-2 py-1.5 text-left cursor-pointer transition-colors"
             >
               Push back two weeks
             </button>
             <button
               type="button"
               onClick={pushBackMonth}
-              className="text-[12px] text-black/55 hover:text-[#2c2a35] hover:bg-[#F0F0ED] rounded-md px-2 py-1.5 text-left cursor-pointer transition-colors"
+              className="text-[12px] text-fg-secondary hover:text-fg hover:bg-overlay-hover rounded-md px-2 py-1.5 text-left cursor-pointer transition-colors"
             >
               Push back a month
             </button>

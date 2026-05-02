@@ -269,6 +269,17 @@ For tokens not registered in `@theme inline` (shadows, focus, calendar, mood, sc
 
 Tailwind's `shadow-md`, `shadow-lg`, etc. resolve to **Tailwind defaults**, not `--shadow-card` / `--shadow-modal`. Convert these explicitly during M2 — see the "Important" callout in the registration section above.
 
+### Modal background rule
+
+Modals don't all use the same outer surface. The right token depends on what the modal renders inside:
+
+- **Single-content modal** (no internal `bg-elevated` cards) → outer uses **`bg-elevated`**.  
+  Examples: `TaskDetailOverlay`, `SummaryOverlay`, `CalendarPicker` popover, `TimeFieldPill` popover, `ProjectPicker` / `SimpleSelect` dropdowns.
+- **Container modal** (renders `bg-elevated` cards/sub-surfaces inside, with the modal's bg showing in the gaps) → outer uses **`bg-base`**.  
+  Example: `ProjectDetail` (1080px container, internal task cards at `bg-elevated`, right rail at `bg-rail`).
+
+Why: in dark mode, `bg-elevated` (`#1f1f24`) and a card on `bg-elevated` have **zero contrast** — the cards visually merge with the modal background. The `bg-base` outer keeps card surfaces ~9 hex points lighter, so cards still read as cards. In light mode the values are close so either choice looks fine, but the rule is set by the dark-mode constraint.
+
 ---
 
 ## Intentional exceptions (don't tokenize)

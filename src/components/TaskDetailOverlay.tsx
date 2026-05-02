@@ -152,17 +152,17 @@ function TimeFieldPill({
           hideLabel ? "flex items-center" : "flex flex-col items-start"
         } ${
           isOpen
-            ? "bg-[#EEF3FB] border-[#7B9ED9]"
-            : "bg-black/[0.03] border-black/[0.06] hover:border-black/[0.12]"
+            ? "bg-accent-blue-soft border-accent-blue"
+            : "bg-input border-line-hairline hover:border-line-medium"
         }`}
         style={{ padding: hideLabel ? "5px 12px" : "4px 10px", borderWidth: "0.5px" }}
       >
         {!hideLabel && (
-          <span className="text-[9px] uppercase tracking-[0.07em] text-black/25 leading-none">
+          <span className="text-[9px] uppercase tracking-[0.07em] text-fg-faded leading-none">
             {label}
           </span>
         )}
-        <span className={`text-[13px] font-medium leading-tight ${hasValue ? "text-[#2c2a35]" : "text-black/20"}`}>
+        <span className={`text-[13px] font-medium leading-tight ${hasValue ? "text-fg" : "text-fg-disabled"}`}>
           {displayValue}
         </span>
       </button>
@@ -170,16 +170,17 @@ function TimeFieldPill({
       {isOpen && popoverPos && createPortal(
         <div
           data-time-pill
-          className="fixed bg-white border border-black/[0.08] rounded-lg shadow-lg z-[60]"
+          className="fixed bg-elevated rounded-lg z-[60]"
           style={{
             top: popoverPos.top,
             left: popoverPos.left,
             width: 240,
             padding: 10,
-            borderWidth: "0.5px",
+            border: "0.5px solid var(--border-soft)",
+            boxShadow: "var(--shadow-card)",
           }}
         >
-          <div className="text-[10px] uppercase text-black/25 tracking-[0.05em] mb-2">
+          <div className="text-[10px] uppercase text-fg-faded tracking-[0.05em] mb-2">
             {label === "Estimated" ? "Estimated time" : "Time worked"}
           </div>
           <div className="flex flex-wrap gap-1 mb-2">
@@ -190,8 +191,8 @@ function TimeFieldPill({
                 onClick={() => onChange(value === p.value ? "" : p.value)}
                 className={`px-2.5 py-1 rounded-md text-[12px] cursor-pointer transition-colors border ${
                   value === p.value
-                    ? "bg-[#EEF3FB] border-[#7B9ED9] text-[#3D6FCC]"
-                    : "bg-black/[0.03] border-black/[0.06] text-black/40 hover:bg-black/[0.06]"
+                    ? "bg-accent-blue-soft border-accent-blue text-accent-blue-soft-fg"
+                    : "bg-input border-line-hairline text-fg-muted hover:bg-input-hover"
                 }`}
               >
                 {p.label}
@@ -220,10 +221,10 @@ function TimeFieldPill({
               }
             }}
             placeholder="custom (e.g. 1h 30m)"
-            className="w-full bg-black/[0.03] border border-black/[0.06] rounded-md px-2.5 py-1.5 text-[12px] text-black/50 placeholder-black/20 outline-none focus:border-[#7B9ED9]/40"
+            className="w-full bg-input border border-line-hairline rounded-md px-2.5 py-1.5 text-[12px] text-fg-secondary placeholder:text-fg-disabled outline-none focus:border-accent-blue"
           />
           {autoTrackedNote && (
-            <div className="text-[10px] text-black/25 mt-1.5">
+            <div className="text-[10px] text-fg-faded mt-1.5">
               {autoTrackedNote}
             </div>
           )}
@@ -247,13 +248,13 @@ function PropertyRow({
 }) {
   return (
     <div>
-      <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1.5">
+      <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1.5">
         {label}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         {children}
       </div>
-      {hint && <div className="text-[10px] text-black/25 mt-1.5">{hint}</div>}
+      {hint && <div className="text-[10px] text-fg-faded mt-1.5">{hint}</div>}
     </div>
   );
 }
@@ -389,11 +390,11 @@ export default function TaskDetailOverlay({
       className="fixed inset-0 z-50 flex items-center justify-center"
       onClick={handleClose}
     >
-      <div className="absolute inset-0 bg-black/30" />
+      <div className="absolute inset-0 bg-overlay-scrim" />
       <div
         ref={modalRef}
-        className="relative bg-white rounded-[12px] w-[880px] max-w-[94vw] max-h-[88vh] flex flex-col overflow-hidden animate-scale-in"
-        style={{ boxShadow: "0 8px 40px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06)" }}
+        className="relative bg-elevated rounded-[12px] w-[880px] max-w-[94vw] max-h-[88vh] flex flex-col overflow-hidden animate-scale-in"
+        style={{ boxShadow: "var(--shadow-modal)" }}
         onClick={(e) => { e.stopPropagation(); handleModalClick(e); }}
         onKeyDown={(e) => {
           if (e.key === "Escape") {
@@ -407,12 +408,12 @@ export default function TaskDetailOverlay({
             className="absolute top-0 left-0 right-0 h-[220px] pointer-events-none animate-completion-glow z-10"
             style={{
               background:
-                "linear-gradient(to bottom, rgba(106,158,127,0.22) 0%, rgba(106,158,127,0.08) 55%, rgba(106,158,127,0) 100%)",
+                "linear-gradient(to bottom, var(--accent-green-glow) 0%, color-mix(in srgb, var(--accent-green-glow) 36%, transparent) 55%, transparent 100%)",
             }}
           />
         )}
         {/* Header strip — title hero */}
-        <div className="flex items-center gap-3 px-8 pt-7 pb-6 border-b border-black/[0.04]">
+        <div className="flex items-center gap-3 px-8 pt-7 pb-6 border-b border-divider">
           {onToggle && (
             <button
               onClick={() => {
@@ -423,8 +424,8 @@ export default function TaskDetailOverlay({
               title={localStatus === "done" ? "Mark as not done" : "Mark complete"}
               className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer transition-colors mt-[3px] ${
                 localStatus === "done"
-                  ? "bg-[#6A9E7F] border-[#6A9E7F] hover:bg-[#5a8a6e] hover:border-[#5a8a6e]"
-                  : "border-black/25 hover:border-[#6A9E7F]"
+                  ? "bg-accent-green border-accent-green hover:bg-accent-green-hover hover:border-accent-green-hover"
+                  : "border-line-strong hover:border-accent-green"
               }`}
             >
               <svg
@@ -432,7 +433,7 @@ export default function TaskDetailOverlay({
                 height="12"
                 viewBox="0 0 12 12"
                 fill="none"
-                stroke={localStatus === "done" ? "white" : "rgba(0,0,0,0.25)"}
+                stroke={localStatus === "done" ? "var(--text-on-accent)" : "var(--text-faded)"}
                 strokeWidth="2.2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -465,10 +466,10 @@ export default function TaskDetailOverlay({
             rows={1}
             maxLength={MAX_TITLE_LENGTH}
             placeholder="Untitled task"
-            className={`flex-1 min-w-0 text-[24px] font-medium bg-transparent border-none outline-none leading-tight placeholder-black/15 resize-none overflow-hidden transition-colors duration-150 ease-out ${
+            className={`flex-1 min-w-0 text-[24px] font-medium bg-transparent border-none outline-none leading-tight placeholder:text-fg-disabled resize-none overflow-hidden transition-colors duration-150 ease-out ${
               localStatus === "done"
-                ? "text-black/35 line-through"
-                : "text-[#2c2a35]"
+                ? "text-fg-faded line-through"
+                : "text-fg"
             }`}
           />
           {onStartFocus && localStatus !== "done" && (
@@ -478,17 +479,17 @@ export default function TaskDetailOverlay({
                 onStartFocus(task);
                 onClose();
               }}
-              className="w-8 h-8 rounded-full bg-[#7B9ED9] text-white hover:bg-[#6889c4] cursor-pointer flex items-center justify-center flex-shrink-0"
+              className="w-8 h-8 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center flex-shrink-0"
               title="Start focus"
             >
-              <svg width="8" height="10" viewBox="0 0 8 10" fill="white" className="ml-[1px]">
+              <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
                 <path d="M0 0v10l8-5z" />
               </svg>
             </button>
           )}
           <button
             onClick={handleClose}
-            className="text-black/25 hover:text-black/50 cursor-pointer text-[16px] flex-shrink-0 w-7 h-7 flex items-center justify-center"
+            className="text-fg-faded hover:text-fg-secondary cursor-pointer text-[16px] flex-shrink-0 w-7 h-7 flex items-center justify-center"
           >
             ✕
           </button>
@@ -498,7 +499,7 @@ export default function TaskDetailOverlay({
         <div className="flex-1 flex min-h-0">
           {/* Left: Notes — work surface */}
           <div className="flex-1 min-w-0 px-8 py-7 overflow-y-auto">
-            <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-2">
+            <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-2">
               Notes
             </div>
             <RichTextEditor
@@ -508,12 +509,12 @@ export default function TaskDetailOverlay({
                 debouncedSave({ notes: html });
               }}
               placeholder="Add notes..."
-              className="w-full bg-white border border-black/[0.06] rounded-md px-3.5 py-3 text-[13px] text-black/65 leading-relaxed min-h-[380px] focus-within:border-[#7B9ED9]/30"
+              className="w-full bg-elevated border border-line-hairline rounded-md px-3.5 py-3 text-[13px] text-fg-secondary leading-relaxed min-h-[380px] focus-within:border-accent-blue"
             />
           </div>
 
           {/* Right: Properties rail */}
-          <div className="w-[320px] flex-shrink-0 border-l border-black/[0.06] bg-[#FAFAF7] px-6 py-7 overflow-y-auto space-y-6">
+          <div className="w-[320px] flex-shrink-0 border-l border-line-hairline bg-rail px-6 py-7 overflow-y-auto space-y-6">
             <PropertyRow label="Project">
               <ProjectPicker
                 value={projectId}
@@ -540,7 +541,7 @@ export default function TaskDetailOverlay({
             </PropertyRow>
 
             <div>
-              <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1.5">
+              <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1.5">
                 Time
               </div>
               <div className="flex items-stretch gap-1.5">
@@ -643,7 +644,7 @@ export default function TaskDetailOverlay({
               </PropertyRow>
             )}
             {isInstance && (
-              <div className="text-[10px] text-black/25">Recurring task instance</div>
+              <div className="text-[10px] text-fg-faded">Recurring task instance</div>
             )}
 
             {dayBreakdown.length > 1 && (
@@ -653,15 +654,15 @@ export default function TaskDetailOverlay({
                     const maxMin = Math.max(...dayBreakdown.map((x) => x.minutes));
                     const barWidth = maxMin > 0 ? Math.max(12, Math.round((d.minutes / maxMin) * 100)) : 12;
                     return (
-                      <div key={d.date} className="flex items-center gap-1.5 bg-white rounded-md px-2 py-1 border border-black/[0.04]">
+                      <div key={d.date} className="flex items-center gap-1.5 bg-elevated rounded-md px-2 py-1 border border-divider">
                         <div
-                          className="h-[3px] rounded-full bg-[#7B9ED9]"
+                          className="h-[3px] rounded-full bg-accent-blue"
                           style={{ width: `${barWidth}%`, minWidth: 8, maxWidth: 48 }}
                         />
-                        <span className="text-[10px] text-black/35 whitespace-nowrap">
+                        <span className="text-[10px] text-fg-muted whitespace-nowrap">
                           {new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
                         </span>
-                        <span className="text-[10px] text-black/50 font-medium">{d.minutes}m</span>
+                        <span className="text-[10px] text-fg-secondary font-medium">{d.minutes}m</span>
                       </div>
                     );
                   })}
@@ -672,8 +673,8 @@ export default function TaskDetailOverlay({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center gap-2 px-8 py-4 border-t border-black/[0.06]">
-          <span className="text-[10px] text-black/20 flex-1">
+        <div className="flex items-center gap-2 px-8 py-4 border-t border-line-hairline">
+          <span className="text-[10px] text-fg-disabled flex-1">
             Auto-saved
           </span>
           {onDelete && (
@@ -682,7 +683,7 @@ export default function TaskDetailOverlay({
                 onDelete(task.id);
                 onClose();
               }}
-              className="text-[#C0614A]/60 hover:text-[#C0614A] cursor-pointer p-2 rounded-md hover:bg-[#C0614A]/[0.08] transition-colors"
+              className="text-accent-danger/60 hover:text-accent-danger cursor-pointer p-2 rounded-md hover:bg-accent-danger/10 transition-colors"
               title="Delete task"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

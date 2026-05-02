@@ -66,11 +66,11 @@ function DailySection({ groups }: { groups: ProjectGroup[] }) {
   return (
     <div>
       <div className="flex items-center gap-2 mb-4">
-        <span className="w-2 h-2 rounded-full bg-[#7B9ED9] flex-shrink-0" />
-        <span className="text-[14px] font-semibold text-[#1a1a1a]">Today</span>
+        <span className="w-2 h-2 rounded-full bg-accent-blue flex-shrink-0" />
+        <span className="text-[14px] font-semibold text-fg">Today</span>
       </div>
       {groups.length === 0 ? (
-        <p className="text-[13px] italic text-[#bbb] ml-4">Nothing here.</p>
+        <p className="text-[13px] italic text-fg-faded ml-4">Nothing here.</p>
       ) : (
         <div className="space-y-5 ml-4">
           {groups.map((g, i) => (
@@ -78,9 +78,9 @@ function DailySection({ groups }: { groups: ProjectGroup[] }) {
               <div className="flex items-start gap-2 mb-2">
                 <span
                   className="w-2 h-2 rounded-full flex-shrink-0 mt-[6px]"
-                  style={{ backgroundColor: g.project?.color ?? "#999" }}
+                  style={{ backgroundColor: g.project?.color ?? "var(--text-faded)" }}
                 />
-                <span className="text-[13px] font-medium text-[#333] line-clamp-2 leading-[1.4]">
+                <span className="text-[13px] font-medium text-fg line-clamp-2 leading-[1.4]">
                   {g.project?.name ?? "No project"}
                 </span>
               </div>
@@ -98,7 +98,7 @@ function DailySection({ groups }: { groups: ProjectGroup[] }) {
                           height="13"
                           viewBox="0 0 13 13"
                           fill="none"
-                          stroke="#6A9E7F"
+                          stroke="var(--accent-green)"
                           strokeWidth="1.8"
                           strokeLinecap="round"
                           strokeLinejoin="round"
@@ -107,13 +107,13 @@ function DailySection({ groups }: { groups: ProjectGroup[] }) {
                           <path d="M2.5 6.7l2.5 2.5L10.5 3.5" />
                         </svg>
                       ) : (
-                        <span className="text-[#bbb] flex-shrink-0">·</span>
+                        <span className="text-fg-faded flex-shrink-0">·</span>
                       )}
                       <span
                         className={
                           done
-                            ? "text-[#999] line-through font-normal"
-                            : "text-[#333] font-normal"
+                            ? "text-fg-muted line-through font-normal"
+                            : "text-fg font-normal"
                         }
                       >
                         {t.title}
@@ -142,11 +142,11 @@ function WeeklySection({
   return (
     <div>
       <div className="flex items-center gap-2 mb-4">
-        <span className="w-2 h-2 rounded-full bg-[#7B9ED9] flex-shrink-0" />
-        <span className="text-[15px] font-semibold text-[#2c2a35]">{label}</span>
+        <span className="w-2 h-2 rounded-full bg-accent-blue flex-shrink-0" />
+        <span className="text-[15px] font-semibold text-fg">{label}</span>
       </div>
       {groups.length === 0 ? (
-        <p className="text-[13px] text-black/30 italic ml-4">Nothing here.</p>
+        <p className="text-[13px] text-fg-faded italic ml-4">Nothing here.</p>
       ) : (
         <div className="space-y-5 ml-4">
           {groups.map((g, i) => (
@@ -154,9 +154,9 @@ function WeeklySection({
               <div className="flex items-start gap-2 mb-1.5">
                 <span
                   className="w-2 h-2 rounded-full flex-shrink-0 mt-[5px]"
-                  style={{ backgroundColor: g.project?.color ?? "#999" }}
+                  style={{ backgroundColor: g.project?.color ?? "var(--text-faded)" }}
                 />
-                <span className="text-[12px] font-semibold text-[#2c2a35] line-clamp-2 leading-[1.4]">
+                <span className="text-[12px] font-semibold text-fg line-clamp-2 leading-[1.4]">
                   {g.project?.name ?? "No project"}
                 </span>
               </div>
@@ -164,12 +164,12 @@ function WeeklySection({
                 {g.tasks.map((t) => (
                   <li
                     key={t.id}
-                    className="text-[13px] text-[#555] leading-[1.5] flex items-start gap-2"
+                    className="text-[13px] text-fg-secondary leading-[1.5] flex items-start gap-2"
                   >
                     {completed ? (
-                      <span className="text-[#6A9E7F] flex-shrink-0 mt-[1px]">✓</span>
+                      <span className="text-accent-green flex-shrink-0 mt-[1px]">✓</span>
                     ) : (
-                      <span className="text-black/30 flex-shrink-0">·</span>
+                      <span className="text-fg-faded flex-shrink-0">·</span>
                     )}
                     <span>{t.title}</span>
                   </li>
@@ -315,26 +315,27 @@ export default function SummaryOverlay({ type, anchorDate, onClose }: SummaryOve
       className="fixed inset-0 z-50 flex items-center justify-center"
       onClick={onClose}
     >
-      <div className="absolute inset-0 bg-black/30" />
+      <div className="absolute inset-0 bg-overlay-scrim" />
       <div
         ref={modalRef}
-        className="relative bg-white rounded-xl shadow-xl w-[640px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden animate-scale-in"
+        className="relative bg-elevated rounded-xl w-[640px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden animate-scale-in"
+        style={{ boxShadow: "var(--shadow-modal)" }}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === "Escape") onClose();
         }}
       >
         {/* Header */}
-        <div className="flex items-start gap-3 px-8 pt-7 pb-5 border-b border-black/[0.04]">
+        <div className="flex items-start gap-3 px-8 pt-7 pb-5 border-b border-divider">
           <div className="flex-1 min-w-0">
-            <h2 className="text-[24px] font-semibold text-[#1a1a1a] leading-tight">
+            <h2 className="text-[24px] font-semibold text-fg leading-tight">
               {title}
             </h2>
-            <p className="text-[12px] text-[#999] mt-1">{subtitle}</p>
+            <p className="text-[12px] text-fg-muted mt-1">{subtitle}</p>
           </div>
           <button
             onClick={onClose}
-            className="text-black/25 hover:text-black/50 cursor-pointer text-[16px] flex-shrink-0 w-7 h-7 flex items-center justify-center"
+            className="text-fg-faded hover:text-fg-secondary cursor-pointer text-[16px] flex-shrink-0 w-7 h-7 flex items-center justify-center"
           >
             ✕
           </button>
@@ -344,7 +345,7 @@ export default function SummaryOverlay({ type, anchorDate, onClose }: SummaryOve
         <div className="flex-1 overflow-y-auto px-8 py-8">
           {loading ? (
             <div className="flex items-center justify-center py-16">
-              <div className="w-5 h-5 border-2 border-[#7B9ED9] border-t-transparent rounded-full animate-spin" />
+              <div className="w-5 h-5 border-2 border-accent-blue border-t-transparent rounded-full animate-spin" />
             </div>
           ) : type === "daily" ? (
             <DailySection groups={dailyGroups} />
@@ -357,7 +358,7 @@ export default function SummaryOverlay({ type, anchorDate, onClose }: SummaryOve
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-8 py-3.5 border-t border-black/[0.06]">
+        <div className="flex items-center justify-end gap-2 px-8 py-3.5 border-t border-line-hairline">
           <Button size="sm" onClick={handleCopy} className="min-w-[148px]">
             {copied ? "Copied!" : "Copy to clipboard"}
           </Button>

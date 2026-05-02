@@ -59,8 +59,8 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
         ref={triggerRef}
         type="button"
         onClick={toggle}
-        className="w-full flex items-start gap-2 bg-white hover:bg-[#f5f5f5] rounded-lg px-3 py-2 text-left cursor-pointer transition-colors"
-        style={{ border: "0.5px solid #e0e0e0" }}
+        className="w-full flex items-start gap-2 bg-elevated hover:bg-overlay-hover rounded-lg px-3 py-2 text-left cursor-pointer transition-colors"
+        style={{ border: "0.5px solid var(--border-medium)" }}
       >
         {selected ? (
           <>
@@ -68,12 +68,12 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
               className="w-2 h-2 rounded-full flex-shrink-0 mt-[6px]"
               style={{ backgroundColor: selected.color }}
             />
-            <span className="flex-1 min-w-0 text-[13px] font-normal text-[#555] leading-[1.4] line-clamp-2">
+            <span className="flex-1 min-w-0 text-[13px] font-normal text-fg-secondary leading-[1.4] line-clamp-2">
               {selected.name}
             </span>
           </>
         ) : (
-          <span className="flex-1 text-[13px] font-normal text-[#999]">No project</span>
+          <span className="flex-1 text-[13px] font-normal text-fg-muted">No project</span>
         )}
         <svg
           width="10"
@@ -84,7 +84,7 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="text-[#999] flex-shrink-0 mt-[6px]"
+          className="text-fg-muted flex-shrink-0 mt-[6px]"
         >
           <path d="M2 4l3 3 3-3" />
         </svg>
@@ -93,12 +93,13 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
       {open && pos && createPortal(
         <div
           ref={popoverRef}
-          className="fixed z-[60] bg-white rounded-lg shadow-lg max-h-[440px] overflow-y-auto animate-scale-in"
+          className="fixed z-[60] bg-elevated rounded-lg max-h-[440px] overflow-y-auto animate-scale-in"
           style={{
             top: pos.top,
             left: pos.left,
             width: pos.width,
-            border: "0.5px solid #e0e0e0",
+            border: "0.5px solid var(--border-soft)",
+            boxShadow: "var(--shadow-card)",
           }}
         >
           <button
@@ -106,8 +107,8 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
             onClick={() => pick("")}
             className={`w-full flex items-center gap-2 px-3 py-2 text-left cursor-pointer transition-colors text-[13px] font-normal ${
               value === ""
-                ? "bg-[#EEF3FB] text-[#3D6FCC]"
-                : "hover:bg-[#f5f5f5] text-[#555]"
+                ? "bg-accent-blue-soft text-accent-blue-soft-fg"
+                : "hover:bg-overlay-hover text-fg-secondary"
             }`}
           >
             <span className="flex-1 truncate">No project</span>
@@ -121,8 +122,8 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
                 onClick={() => pick(String(p.id))}
                 className={`w-full flex items-center gap-2 px-3 py-2 text-left cursor-pointer transition-colors text-[13px] font-normal ${
                   isSelected
-                    ? "bg-[#EEF3FB] text-[#3D6FCC]"
-                    : "hover:bg-[#f5f5f5] text-[#555]"
+                    ? "bg-accent-blue-soft text-accent-blue-soft-fg"
+                    : "hover:bg-overlay-hover text-fg-secondary"
                 }`}
               >
                 <span

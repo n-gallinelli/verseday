@@ -71,12 +71,12 @@ export default function SimpleSelect({
         ref={triggerRef}
         type="button"
         onClick={toggle}
-        className="w-full flex items-center gap-2 bg-white hover:bg-[#f5f5f5] rounded-lg px-3 py-2 text-left cursor-pointer transition-colors"
-        style={{ border: "0.5px solid #e0e0e0" }}
+        className="w-full flex items-center gap-2 bg-elevated hover:bg-overlay-hover rounded-lg px-3 py-2 text-left cursor-pointer transition-colors"
+        style={{ border: "0.5px solid var(--border-medium)" }}
       >
         <span
           className={`flex-1 truncate text-[13px] font-normal ${
-            selected ? "text-[#555]" : "text-[#999]"
+            selected ? "text-fg-secondary" : "text-fg-muted"
           }`}
         >
           {selected ? selected.label : placeholder ?? ""}
@@ -90,7 +90,7 @@ export default function SimpleSelect({
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="text-[#999] flex-shrink-0"
+          className="text-fg-muted flex-shrink-0"
         >
           <path d="M2 4l3 3 3-3" />
         </svg>
@@ -99,12 +99,13 @@ export default function SimpleSelect({
       {open && pos && createPortal(
         <div
           ref={popoverRef}
-          className="fixed z-[60] bg-white rounded-lg shadow-lg max-h-[320px] overflow-y-auto animate-scale-in"
+          className="fixed z-[60] bg-elevated rounded-lg max-h-[320px] overflow-y-auto animate-scale-in"
           style={{
             top: pos.top,
             left: pos.left,
             width: pos.width,
-            border: "0.5px solid #e0e0e0",
+            border: "0.5px solid var(--border-soft)",
+            boxShadow: "var(--shadow-card)",
           }}
         >
           {options.map((o) => {
@@ -116,8 +117,8 @@ export default function SimpleSelect({
                 onClick={() => pick(o.value)}
                 className={`w-full flex items-center px-3 py-2 text-left cursor-pointer transition-colors text-[13px] font-normal ${
                   isSelected
-                    ? "bg-[#EEF3FB] text-[#3D6FCC]"
-                    : "hover:bg-[#f5f5f5] text-[#555]"
+                    ? "bg-accent-blue-soft text-accent-blue-soft-fg"
+                    : "hover:bg-overlay-hover text-fg-secondary"
                 }`}
               >
                 <span className="flex-1 truncate">{o.label}</span>

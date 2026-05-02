@@ -153,8 +153,8 @@ export default function FocusLanding() {
                   disabled={selectedIndex === 0}
                   className="w-8 h-8 flex items-center justify-center rounded-full text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer disabled:opacity-20 disabled:cursor-default transition-colors"
                 >
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                    <path d="M8.5 2.5L4 7l4.5 4.5" />
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 7H3M3 7l4-4M3 7l4 4" />
                   </svg>
                 </button>
                 <button
@@ -162,8 +162,8 @@ export default function FocusLanding() {
                   disabled={selectedIndex >= remainingTasks.length - 1}
                   className="w-8 h-8 flex items-center justify-center rounded-full text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer disabled:opacity-20 disabled:cursor-default transition-colors"
                 >
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                    <path d="M5.5 2.5L10 7l-4.5 4.5" />
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 7h8M11 7l-4-4M11 7l-4 4" />
                   </svg>
                 </button>
               </div>

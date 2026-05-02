@@ -507,12 +507,12 @@ export default function DailyShutdown() {
               onClick={() => setStep(2)}
               className="flex-1 py-2.5 rounded-lg border border-accent-blue/50 text-accent-blue-soft-fg text-[13px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors flex items-center justify-center gap-1.5"
             >
-              <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                {/* Closed eye — top eyelid arc + a few short lashes */}
-                <path d="M1.5 4 Q7 9 12.5 4" />
-                <path d="M3 6.5 l-0.5 1.5" />
-                <path d="M7 7.5 l0 1.5" />
-                <path d="M11 6.5 l0.5 1.5" />
+              <svg width="12" height="14" viewBox="0 0 12 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                {/* Journal page with three lines — reflection/writing */}
+                <rect x="2" y="2" width="8" height="10" rx="0.5" />
+                <line x1="4" y1="5" x2="8" y2="5" />
+                <line x1="4" y1="7.5" x2="8" y2="7.5" />
+                <line x1="4" y1="10" x2="6" y2="10" />
               </svg>
               Reflect
             </button>
@@ -526,8 +526,15 @@ export default function DailyShutdown() {
               </button>
               <button
                 onClick={completeShutdown}
-                className="flex-1 py-2.5 rounded-lg border border-accent-blue/50 text-accent-blue-soft-fg text-[13px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors"
+                className="flex-1 py-2.5 rounded-lg border border-accent-blue/50 text-accent-blue-soft-fg text-[13px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors flex items-center justify-center gap-1.5"
               >
+                <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  {/* Closed eye — eyelid arc + lashes */}
+                  <path d="M1.5 4 Q7 9 12.5 4" />
+                  <path d="M3 6.5 l-0.5 1.5" />
+                  <path d="M7 7.5 l0 1.5" />
+                  <path d="M11 6.5 l0.5 1.5" />
+                </svg>
                 Shutdown
               </button>
               <button

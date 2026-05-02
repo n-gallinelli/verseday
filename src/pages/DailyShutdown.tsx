@@ -319,9 +319,14 @@ export default function DailyShutdown() {
             </div>
 
             {/* ── Right column: info cards (180px) ──────────────── */}
-            <div className="w-[180px] flex-shrink-0 space-y-3">
-              {/* Time card */}
-              <div className="bg-elevated/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid var(--border-soft)" }}>
+            <div className="w-[180px] flex-shrink-0">
+              {/* Mirror the left column's <section mb-6> + <h3 mb-2> wrapper
+                  so the Time card top aligns with the mood selector top.
+                  Heading is invisible — same height contributor only. */}
+              <section className="mb-6">
+                <h3 aria-hidden className="text-[13px] font-medium mb-2 invisible select-none">&nbsp;</h3>
+                {/* Time card */}
+                <div className="bg-elevated/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid var(--border-soft)" }}>
                 <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1">Time</div>
                 {workedMinutes === 0 && plannedMinutes === 0 ? (
                   <p className="text-[13px] text-fg-faded">No time tracked today</p>
@@ -335,8 +340,10 @@ export default function DailyShutdown() {
                     </div>
                   </>
                 )}
-              </div>
+                </div>
+              </section>
 
+              <section className="space-y-3">
               {/* Done today card */}
               <div className="bg-elevated/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid var(--border-medium)" }}>
                 <div className="flex items-center justify-between mb-2">
@@ -415,6 +422,7 @@ export default function DailyShutdown() {
                   <p className="text-[13px] text-fg-disabled">Everything done!</p>
                 )}
               </div>
+              </section>
             </div>
           </div>
         </div>

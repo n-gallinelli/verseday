@@ -305,9 +305,9 @@ export default function DailyShutdown() {
         <div className="max-w-[640px] mx-auto px-6 py-5 space-y-6">
           {/* Step indicator */}
           <div className="flex items-center gap-2 text-[11px] text-fg-faded">
-            <span className={step === 1 ? "text-fg-secondary font-medium" : ""}>1. Review</span>
+            <span className={step === 1 ? "text-fg-secondary font-medium" : ""}>Review</span>
             <span>→</span>
-            <span className={step === 2 ? "text-fg-secondary font-medium" : ""}>2. Reflect</span>
+            <span className={step === 2 ? "text-fg-secondary font-medium" : ""}>Reflect</span>
           </div>
 
           {step === 1 && (

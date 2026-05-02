@@ -73,6 +73,9 @@
   --accent-destructive: #C0614A;
   --accent-destructive-hover: #A8543F;
 
+  /* — Chart visualization (data-only; not for action/alert/mood) — */
+  --chart-bar-neutral: #c49a6c;
+
   /* — Calendar — */
   --calendar-selected-bg: #6B84A3;
   --calendar-today-ring: #6B84A3;
@@ -198,6 +201,9 @@
     --accent-destructive: #cb6e58;
     --accent-destructive-hover: #b35e48;
 
+    /* — Chart visualization — */
+    --chart-bar-neutral: #c8a47d;
+
     /* — Calendar — */
     --calendar-selected-bg: #6e8aa9;
     --calendar-today-ring: #88a5c4;
@@ -292,6 +298,9 @@
 
   --color-accent-destructive: var(--accent-destructive);
   --color-accent-destructive-hover: var(--accent-destructive-hover);
+
+  /* Chart */
+  --color-chart-bar-neutral: var(--chart-bar-neutral);
 }
 
 body {

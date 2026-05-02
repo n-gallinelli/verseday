@@ -141,6 +141,23 @@ Daily and Weekly Shutdown share a vertical "dusk sky" gradient (`.shutdown-page`
 
 ---
 
+## 10. Chart visualization (`--chart-*` namespace)
+
+| Token                  | Light       | Dark        | Usage                                     |
+| ---------------------- | ----------- | ----------- | ----------------------------------------- |
+| `--chart-bar-neutral`  | `#c49a6c`   | `#c8a47d`   | Default neutral bar in data-viz charts (Dashboard daily breakdown). Desaturated wheat/tan, deliberately calm. |
+
+**Namespace rule.** `--chart-*` tokens describe **data-visualization treatment**, not action / alert / mood / status. Use a chart token when the surface is purely data-rendering and the goal is **non-alarming visual encoding**. Don't reuse `--accent-warning`, `--accent-orange`, or other state-bearing accents for chart bars — even when the hue family is similar — because the saturation/intensity differences encode different emotional registers (calm data vs. attention-demanding alert).
+
+**Naming convention.** The neutral suffix front-loads the "default / non-emphasized" semantic. Future siblings follow the same shape:
+- `--chart-bar-highlight` for an emphasized comparison series
+- `--chart-bar-emphasis` for a "spotlight this datum" overlay
+- `--chart-line-*`, `--chart-axis-*`, etc. for non-bar primitives
+
+> **If D3 (or any JS-side SVG painting library) is introduced for charts later:** CSS variables don't resolve through `.attr("fill", "#…")` — D3 hardcodes whatever string you pass in and won't reactively repaint when `prefers-color-scheme` flips. The bridge pattern is `getComputedStyle(document.documentElement).getPropertyValue('--chart-bar-neutral')` plus a `matchMedia('(prefers-color-scheme: dark)').addEventListener('change', …)` re-render trigger. Today (M3.5) Dashboard charts are CSS-only `<div>`s and don't need this — bars repaint automatically when `prefers-color-scheme` flips because the background is a class-driven CSS variable. The note exists so a future contributor doesn't reinvent the analysis.
+
+---
+
 ## Tailwind registration
 
 A subset of these tokens are exposed to Tailwind v4 in `src/index.css` via `@theme inline`. Tailwind utility names are deliberately shorter than the underlying var name (e.g. `text-fg` rather than `text-text-primary`) to avoid the awkward `text-text-…` doubling.
@@ -201,6 +218,9 @@ A subset of these tokens are exposed to Tailwind v4 in `src/index.css` via `@the
 
   --color-accent-destructive: var(--accent-destructive);
   --color-accent-destructive-hover: var(--accent-destructive-hover);
+
+  /* Chart */
+  --color-chart-bar-neutral: var(--chart-bar-neutral);
 }
 ```
 
@@ -312,6 +332,8 @@ These are the Tailwind utilities that resolve through `@theme inline`. The prefi
 | `text-[#d95f5f]` / `bg-…`          | `text-accent-danger` / `bg-…`      |
 | `bg-[#C0614A]` / `text-[#C0614A]`  | `bg-accent-destructive` / `text-accent-destructive` |
 | `hover:bg-[#A8543F]`               | `hover:bg-accent-destructive-hover` |
+| `bg-[#c49a6c]` (chart bar)         | `bg-chart-bar-neutral`              |
+| `text-[#3a9e6e]` (project completion) | `text-accent-green` (collapsed; slight sage drift) |
 | `text-white` (on solid accent)     | `text-fg-on-accent`                |
 | `bg-black/30` (modal scrim)        | `bg-overlay-scrim`                 |
 

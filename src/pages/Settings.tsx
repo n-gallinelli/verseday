@@ -77,9 +77,9 @@ export default function Settings() {
   );
 
   return (
-    <div className="flex flex-col h-full bg-[#f5f4f0] overflow-hidden">
-      <div className="px-6 py-4 flex-shrink-0" style={{ borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}>
-        <h2 className="text-[18px] font-medium text-[#2c2a35] font-display">Settings</h2>
+    <div className="flex flex-col h-full bg-base overflow-hidden">
+      <div className="px-6 py-4 flex-shrink-0" style={{ borderBottom: "0.5px solid var(--border-hairline)" }}>
+        <h2 className="text-[18px] font-medium text-fg font-display">Settings</h2>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -88,55 +88,55 @@ export default function Settings() {
           <section className="mt-1">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="rgba(0,0,0,0.3)" strokeWidth="1.2" strokeLinecap="round">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--text-faded)" strokeWidth="1.2" strokeLinecap="round">
                   <circle cx="7" cy="7" r="5.5" />
                   <path d="M7 4v3.5l2.5 1.5" />
                 </svg>
-                <h3 className="uppercase [font-size:var(--font-size-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30" style={{ fontWeight: 500 }}>
+                <h3 className="uppercase [font-size:var(--font-size-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded" style={{ fontWeight: 500 }}>
                   Focus timer
                 </h3>
               </div>
               {!isDefaultValues && (
                 <button
                   onClick={resetFocusDefaults}
-                  className="text-[11px] text-black/30 hover:text-black/50 cursor-pointer"
+                  className="text-[11px] text-fg-faded hover:text-fg-secondary cursor-pointer"
                 >
                   Reset to defaults
                 </button>
               )}
             </div>
-            <div className="bg-white rounded-lg p-6 space-y-5" style={{ border: "0.5px solid rgba(0,0,0,0.06)" }}>
+            <div className="bg-elevated rounded-lg p-6 space-y-5" style={{ border: "0.5px solid var(--border-hairline)" }}>
               {FOCUS_FIELDS.map((field) => (
                 <div key={field.key} className="flex items-center justify-between">
                   <div>
-                    <div className="text-[13px] text-[#2c2a35]">{field.label}</div>
-                    <div className="text-[11px] text-black/30">{field.description}</div>
+                    <div className="text-[13px] text-fg">{field.label}</div>
+                    <div className="text-[11px] text-fg-faded">{field.description}</div>
                   </div>
                   {/* Pill stepper: [ − | 25 min | + ] */}
                   <div
-                    className="flex items-center bg-white rounded-lg overflow-hidden flex-shrink-0 w-[168px]"
-                    style={{ border: "1px solid rgba(0,0,0,0.10)" }}
+                    className="flex items-center bg-elevated rounded-lg overflow-hidden flex-shrink-0 w-[168px]"
+                    style={{ border: "1px solid var(--border-medium)" }}
                   >
                     <button
                       onClick={() => handleStep(field.key, -1, field.min, field.max)}
                       disabled={focusValues[field.key] <= field.min}
-                      className="w-8 h-8 flex items-center justify-center text-black/40 hover:text-black/80 cursor-pointer disabled:opacity-25 disabled:cursor-default text-[15px] transition-colors"
+                      className="w-8 h-8 flex items-center justify-center text-fg-muted hover:text-fg cursor-pointer disabled:opacity-25 disabled:cursor-default text-[15px] transition-colors"
                     >
                       −
                     </button>
                     <div className="flex-1 flex items-center justify-center gap-1.5">
-                      <span className="text-[15px] font-medium text-[#2c2a35] min-w-[28px] text-center tabular-nums">
+                      <span className="text-[15px] font-medium text-fg min-w-[28px] text-center tabular-nums">
                         {focusValues[field.key]}
                       </span>
-                      <div className="w-px h-4 bg-black/[0.08]" />
-                      <span className="text-[12px] text-black/35 w-[40px]">
+                      <div className="w-px h-4 bg-line-soft" />
+                      <span className="text-[12px] text-fg-faded w-[40px]">
                         {field.unit}
                       </span>
                     </div>
                     <button
                       onClick={() => handleStep(field.key, 1, field.min, field.max)}
                       disabled={focusValues[field.key] >= field.max}
-                      className="w-8 h-8 flex items-center justify-center text-black/40 hover:text-black/80 cursor-pointer disabled:opacity-25 disabled:cursor-default text-[15px] transition-colors"
+                      className="w-8 h-8 flex items-center justify-center text-fg-muted hover:text-fg cursor-pointer disabled:opacity-25 disabled:cursor-default text-[15px] transition-colors"
                     >
                       +
                     </button>

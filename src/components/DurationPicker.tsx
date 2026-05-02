@@ -100,7 +100,7 @@ export default function DurationPicker({
           className={`px-1.5 py-0.5 rounded text-[10px] cursor-pointer transition-colors ${
             value === p.value
               ? "bg-accent-blue text-fg-on-accent"
-              : "bg-overlay-hover text-fg-muted hover:bg-overlay-pressed"
+              : "bg-overlay-hover text-fg-secondary hover:bg-overlay-pressed"
           }`}
         >
           {p.label}
@@ -115,7 +115,7 @@ export default function DurationPicker({
           className={`flex items-center gap-1 border rounded-md px-1.5 py-0.5 text-[10px] cursor-pointer transition-colors ${
             value && !QUICK_PRESETS.some((p) => p.value === value)
               ? "bg-accent-blue-soft border-accent-blue/30 text-accent-blue-soft-fg"
-              : "bg-overlay-hover border-line-soft text-fg-muted hover:bg-overlay-pressed"
+              : "bg-overlay-hover border-line-soft text-fg-secondary hover:bg-overlay-pressed"
           }`}
         >
           <svg
@@ -172,7 +172,7 @@ export default function DurationPicker({
                   className={`px-2 py-1 rounded-md text-[11px] cursor-pointer transition-colors ${
                     value === p.value
                       ? "bg-accent-blue text-fg-on-accent"
-                      : "bg-overlay-hover text-fg-muted hover:bg-overlay-pressed"
+                      : "bg-overlay-hover text-fg-secondary hover:bg-overlay-pressed"
                   }`}
                 >
                   {p.label}
@@ -185,7 +185,7 @@ export default function DurationPicker({
               <button
                 type="button"
                 onClick={handleClear}
-                className="w-full mt-1.5 text-[10px] text-fg-faded cursor-pointer hover:text-fg-muted text-center py-0.5"
+                className="w-full mt-1.5 text-[10px] text-fg-secondary cursor-pointer hover:text-fg text-center py-0.5"
               >
                 Clear
               </button>

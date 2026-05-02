@@ -131,7 +131,7 @@ function NavSection({
             className={`w-full flex items-center gap-2.5 px-4 py-2 cursor-pointer transition-colors ${
               isActive
                 ? "bg-accent-blue-soft text-accent-blue"
-                : "text-fg-muted hover:bg-overlay-hover hover:text-fg-secondary"
+                : "text-fg-secondary hover:bg-overlay-hover hover:text-fg"
             } [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)]`}
           >
             {icon}
@@ -278,7 +278,7 @@ export default function Sidebar() {
           <div className="px-4 pb-3 space-y-1">
             {SHORTCUTS.map((s) => (
               <div key={s.keys} className="flex items-center justify-between">
-                <span className="text-[10px] text-fg-muted">{s.desc}</span>
+                <span className="text-[10px] text-fg-secondary">{s.desc}</span>
                 <kbd className="text-[9px] text-fg-faded bg-overlay-hover px-1.5 py-0.5 rounded font-mono">
                   {s.keys}
                 </kbd>

@@ -1141,7 +1141,7 @@ export default function ProjectDetail() {
               </button>
               <button
                 onClick={() => setConfirmDeleteProject(false)}
-                className="text-[11px] text-fg-muted hover:text-fg-secondary cursor-pointer px-1.5"
+                className="text-[11px] text-fg-secondary hover:text-fg cursor-pointer px-1.5"
               >
                 Cancel
               </button>

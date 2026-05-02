@@ -69,7 +69,7 @@ export default function NewProjectPanel({
       <div className="px-[18px] py-4 flex flex-col gap-[14px] flex-1">
         {/* Name */}
         <div>
-          <label className="text-[11px] text-fg-muted mb-[5px] block">
+          <label className="text-[11px] text-fg-secondary mb-[5px] block">
             Project name
           </label>
           <input
@@ -85,7 +85,7 @@ export default function NewProjectPanel({
 
         {/* Color */}
         <div>
-          <label className="text-[11px] text-fg-muted mb-[5px] block">
+          <label className="text-[11px] text-fg-secondary mb-[5px] block">
             Color
           </label>
           <div className="flex items-center gap-[7px] flex-wrap">

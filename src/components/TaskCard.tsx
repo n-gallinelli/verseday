@@ -295,7 +295,7 @@ export default function TaskCard({
                         {link.label || link.url}
                       </a>
                     ) : (
-                      <span className="text-fg-muted truncate flex-1">
+                      <span className="text-fg-secondary truncate flex-1">
                         {link.label || link.url}
                       </span>
                     )}

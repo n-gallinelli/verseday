@@ -34,6 +34,24 @@ Light values follow the existing palette. Dark values are hand-tuned (not progra
 | `--text-disabled`    | `rgba(0,0,0,0.15)`     | `rgba(232,230,224,0.18)` | Disabled controls, very subtle metadata        |
 | `--text-on-accent`   | `#ffffff`              | `#0f0f12`             | Text/icons on solid accent backgrounds (play button, save button) |
 
+### Contrast carveouts (M4.3 audit)
+
+The four-tier text hierarchy is design-load-bearing. Two tiers fall below WCAG 2.1 AA's 4.5:1 body-text threshold by design; both rely on the SC 1.4.3 Note that exempts "incidental" text (decorative, non-information-conveying, or where the same information is conveyed by surrounding context).
+
+**`--text-faded` — ghost-hint register, intentionally below AA.**
+Light: ~1.8:1 baked. Dark: ~2.8:1 baked. Used for placeholder text, "no data" empty-state copy, very-low-emphasis ✕ buttons, and stale-rollover badges. WCAG SC 1.4.3 Note explicitly carves out placeholder text and incidental UI from the contrast requirement; this register IS that carveout. Never use `--text-faded` for text that's the only identifier of its associated control or content.
+
+**`--text-muted` — two-bucket rule.** Light: ~2.8:1 baked (fails AA). Dark: ~4.4:1 baked (borderline, ~AA). Every body-text use of `text-fg-muted` falls into one of two buckets:
+
+- **B1 — Incidental support**: stays `text-fg-muted`. The text is supporting / non-information-conveying; surrounding context (heading, icon, labeled input) carries the identification. Test: *if I removed only this muted text, would the user still know what it referred to?* If yes → B1.
+- **B2 — Primary identifier**: reassign to `text-fg-secondary`. The muted text IS the identification; without it the user can't tell what control or content it belongs to. Test: *if I removed only this muted text, would the user be unable to tell what control or content it belonged to?* If yes → B2.
+
+Canonical B1 patterns (stay muted): timestamps paired with a contrasting task title; "Auto-saved" footers; small "X tasks done" meta counts beside a stronger heading; supporting subtitles under a heading; placeholder text inside form controls; "Coming soon" decorations; per-shortcut keys where the kbd chip carries the binding ID *and* the description identifies the action — wait, the description is B2 (M4.3.5 Step A audit promoted Sidebar shortcut descriptions to secondary).
+
+Canonical B2 patterns (reassign to secondary): field labels above inputs that the placeholder doesn't fully replace; option labels in pill toggles, filter chips, dropdown rows; section headings that are the only date/identifier marker for a content block; task titles rendered in side-list panels; the action label of a button whose only content is the word ("Cancel", "Clear", "Show all").
+
+`--text-fg-secondary` clears AA in both modes (light: 4.7:1; dark: 7.0:1).
+
 ---
 
 ## 3. Borders & dividers
@@ -45,6 +63,12 @@ Light values follow the existing palette. Dark values are hand-tuned (not progra
 | `--border-medium`    | `rgba(0,0,0,0.12)`     | `rgba(255,255,255,0.14)`   | Hover/active border emphasis                |
 | `--border-strong`    | `rgba(0,0,0,0.20)`     | `rgba(255,255,255,0.24)`   | Default checkbox border                     |
 | `--divider`          | `rgba(0,0,0,0.04)`     | `rgba(255,255,255,0.06)`   | Vertical dividers, super-subtle separators  |
+
+### Contrast carveout (M4.3 audit)
+
+All five border tokens fall below WCAG 2.1 SC 1.4.11's 3:1 graphical-UI threshold (light ~1.3–1.6:1; dark ~1.5–2.2:1). This is **intentional**. SC 1.4.11 applies to "graphical objects required to understand the content or interact with the controls" — load-bearing UI like form-field outlines, focus rings, icons that convey state. Hairline dividers separating cards, panels, or sections are decorative grouping aids; the eye reads them as "these things are related" rather than "this is an interactive boundary." Industry-standard design systems (Material, iOS, Tailwind UI) all ship hairline dividers below 3:1 for the same reason.
+
+If a border IS load-bearing (e.g. a button's resting outline as the sole affordance, an active-input ring), use a brand accent (`--accent-blue` solid) or a high-contrast token (`--text-secondary`-baked) instead — the `--border-*` family is for grouping, not for "this is interactive."
 
 ---
 

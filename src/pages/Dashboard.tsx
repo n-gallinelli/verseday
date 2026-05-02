@@ -412,7 +412,7 @@ export default function Dashboard() {
                         key={date}
                         className="py-2 border-b border-divider last:border-b-0"
                       >
-                        <div className="text-[11px] font-medium text-fg-muted mb-1">
+                        <div className="text-[11px] font-medium text-fg-secondary mb-1">
                           {formatDateLabel(date)}
                         </div>
                         {tasks.slice(0, 3).map((task) => (

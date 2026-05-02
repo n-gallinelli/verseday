@@ -430,7 +430,7 @@ export default function DailyPlanner() {
               className={`text-[11px] leading-none px-2 py-1 rounded-full cursor-pointer ${
                 isToday
                   ? "bg-accent-blue-soft text-accent-blue"
-                  : "bg-overlay-hover text-fg-muted hover:bg-overlay-pressed"
+                  : "bg-overlay-hover text-fg-secondary hover:bg-overlay-pressed"
               }`}
             >
               {isToday ? "Today" : "Jump to..."}
@@ -676,7 +676,7 @@ export default function DailyPlanner() {
                             className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] cursor-pointer border ${
                               editPriority === "high"
                                 ? "bg-accent-danger/10 border-accent-danger/25 text-accent-danger"
-                                : "bg-transparent border-line-soft text-fg-muted"
+                                : "bg-transparent border-line-soft text-fg-secondary"
                             }`}
                           >
                             <span
@@ -722,9 +722,13 @@ export default function DailyPlanner() {
                         key={task.id}
                         className="p-3.5 rounded-[10px] bg-elevated border border-line-soft flex items-center gap-3"
                       >
-                        <span className="flex-1 text-[13px] text-accent-warning">
-                          Delete &ldquo;{task.title}&rdquo;? Time entries will
-                          also be deleted.
+                        <span className="flex-1 text-[13px]">
+                          <span className="text-accent-destructive">
+                            Delete &ldquo;{task.title}&rdquo;?
+                          </span>{" "}
+                          <span className="text-accent-warning">
+                            Time entries will also be deleted.
+                          </span>
                         </span>
                         <button
                           onClick={() => handleDelete(task.id)}
@@ -918,7 +922,7 @@ export default function DailyPlanner() {
                         title="Already on today"
                         className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-overlay-hover transition-colors"
                       >
-                        <span className={`text-[11px] flex-1 truncate ${task.status === "done" ? "text-fg-faded line-through" : "text-fg-muted"}`}>
+                        <span className={`text-[11px] flex-1 truncate ${task.status === "done" ? "text-fg-faded line-through" : "text-fg-secondary"}`}>
                           {task.title}
                         </span>
                         <span className="text-[9px] text-fg-disabled flex-shrink-0">today</span>
@@ -964,7 +968,7 @@ export default function DailyPlanner() {
                       onClick={() => setDetailTask(task)}
                       className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-overlay-hover transition-colors group"
                     >
-                      <span className="text-[11px] text-fg-muted group-hover:text-fg flex-1 truncate transition-colors">{task.title}</span>
+                      <span className="text-[11px] text-fg-secondary group-hover:text-fg flex-1 truncate transition-colors">{task.title}</span>
                       <span className="text-[9px] text-accent-warning/70 tabular-nums">{task.rollover_count}d</span>
                     </button>
                   ))

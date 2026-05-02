@@ -235,7 +235,7 @@ export default function QuickAdd() {
                 className={`text-[11px] font-medium px-2 py-[3px] rounded-md cursor-pointer border transition-colors ${
                   active
                     ? "border-accent-blue/40 bg-accent-blue-soft text-accent-blue"
-                    : "border-line-hairline bg-elevated/50 text-fg-faded hover:text-fg-muted hover:bg-elevated/70"
+                    : "border-line-hairline bg-elevated/50 text-fg-secondary hover:text-fg hover:bg-elevated/70"
                 }`}
               >
                 {preset.label}
@@ -254,7 +254,7 @@ export default function QuickAdd() {
             className={`flex items-center gap-1.5 text-[12px] px-2.5 py-[5px] rounded-lg border cursor-pointer transition-colors ${
               selectedProject
                 ? "border-line-soft bg-elevated/70 text-fg"
-                : "border-line-hairline bg-elevated/40 text-fg-faded hover:text-fg-muted"
+                : "border-line-hairline bg-elevated/40 text-fg-secondary hover:text-fg"
             }`}
             style={{ maxWidth: 150 }}
           >
@@ -295,7 +295,7 @@ export default function QuickAdd() {
                 onClick={() => { setProjectId(null); setShowProjectPicker(false); }}
                 className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-[12px] text-left cursor-pointer transition-colors ${
                   projectId === null
-                    ? "bg-accent-blue-soft font-medium text-fg-muted"
+                    ? "bg-accent-blue-soft font-medium text-fg-secondary"
                     : "text-fg-faded hover:bg-overlay-hover"
                 }`}
               >

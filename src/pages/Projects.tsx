@@ -264,7 +264,7 @@ export default function Projects() {
             className={`px-3 py-1 rounded-full text-[12px] cursor-pointer transition-colors border ${
               filter === f.key
                 ? "bg-accent-blue-soft border-accent-blue text-accent-blue-soft-fg"
-                : "bg-input border-line-soft text-fg-muted hover:bg-input-hover"
+                : "bg-input border-line-soft text-fg-secondary hover:bg-input-hover"
             }`}
           >
             {f.label}

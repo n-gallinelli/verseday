@@ -326,7 +326,7 @@ export default function Dashboard() {
 
       {/* ── Scrollable body ─────────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
-        {!hasAnyData ? (
+        {!hasAnyData && pastShutdowns.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <p className="text-[14px] text-fg-faded mb-1">
               Nothing tracked yet this week
@@ -337,6 +337,13 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="max-w-[680px] mx-auto px-6 py-6">
+            {!hasAnyData && (
+              <div className="mb-8 animate-slide-up animate-stagger">
+                <p className="text-[13px] text-fg-faded">Nothing tracked yet this week.</p>
+              </div>
+            )}
+            {hasAnyData && (
+              <>
             {/* ── Week summary ────────────────────────────────────────── */}
             <div className="mb-8 animate-slide-up animate-stagger">
               <div className="text-[36px] font-semibold leading-none font-display text-fg">
@@ -450,6 +457,8 @@ export default function Dashboard() {
                   })}
                 </div>
               </section>
+            )}
+              </>
             )}
 
             {/* ── Past shutdowns ─────────────────────────────────────── */}

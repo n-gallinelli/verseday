@@ -20,16 +20,16 @@ export default class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="flex items-center justify-center h-screen">
-          <div className="text-center p-8 rounded-lg bg-[var(--color-surface)] max-w-md">
-            <h2 className="text-xl font-bold mb-2 text-[var(--color-danger)]">
+          <div className="text-center p-8 rounded-lg bg-elevated max-w-md">
+            <h2 className="text-xl font-bold mb-2 text-accent-danger">
               Something went wrong
             </h2>
-            <p className="text-[var(--color-text-muted)] mb-4 text-sm">
+            <p className="text-fg-muted mb-4 text-sm">
               {this.state.error?.message}
             </p>
             <button
               onClick={() => this.setState({ hasError: false, error: null })}
-              className="px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-light)] cursor-pointer"
+              className="px-4 py-2 rounded-lg bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer"
             >
               Try Again
             </button>

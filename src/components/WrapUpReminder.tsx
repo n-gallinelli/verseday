@@ -84,18 +84,18 @@ export default function WrapUpReminder() {
   return (
     <div className="fixed top-4 right-4 z-40 animate-slide-in">
       <div
-        className="bg-white border border-black/[0.08] rounded-xl shadow-lg px-5 py-4 w-[280px]"
+        className="bg-elevated border border-line-soft rounded-xl shadow-lg px-5 py-4 w-[280px]"
         style={{ borderWidth: "0.5px" }}
       >
         <div className="flex items-center gap-2.5 mb-3">
-          <span className="text-[15px] font-medium text-[#7B9ED9] tracking-tight">
+          <span className="text-[15px] font-medium text-accent-blue tracking-tight">
             VerseDay
           </span>
         </div>
-        <p className="text-[14px] text-[#2c2a35] font-medium mb-1">
+        <p className="text-[14px] text-fg font-medium mb-1">
           Wrap up your day
         </p>
-        <p className="text-[12px] text-black/40 mb-4">
+        <p className="text-[12px] text-fg-muted mb-4">
           Take a few minutes to reflect and plan for tomorrow.
         </p>
         <div className="flex items-center gap-2">

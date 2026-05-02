@@ -47,19 +47,19 @@ export default function NewProjectPanel({
 
   return (
     <div
-      className={`absolute top-0 right-0 h-full w-[260px] bg-white border-l border-black/[0.09] flex flex-col z-10 transition-transform duration-200 ${
+      className={`absolute top-0 right-0 h-full w-[260px] bg-elevated border-l border-line-soft flex flex-col z-10 transition-transform duration-200 ${
         isOpen ? "translate-x-0" : "translate-x-full"
       }`}
       onKeyDown={handleKeyDown}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-[18px] pt-4 pb-3.5 border-b border-black/[0.07] flex-shrink-0">
-        <span className="text-[14px] font-medium text-[#2c2a35]">
+      <div className="flex items-center justify-between px-[18px] pt-4 pb-3.5 border-b border-line-hairline flex-shrink-0">
+        <span className="text-[14px] font-medium text-fg">
           New project
         </span>
         <button
           onClick={onClose}
-          className="w-6 h-6 rounded-md bg-black/[0.04] border border-black/[0.08] flex items-center justify-center text-[13px] text-black/40 cursor-pointer hover:bg-black/[0.07]"
+          className="w-6 h-6 rounded-md bg-overlay-hover border border-line-soft flex items-center justify-center text-[13px] text-fg-muted cursor-pointer hover:bg-overlay-pressed"
         >
           ✕
         </button>
@@ -69,7 +69,7 @@ export default function NewProjectPanel({
       <div className="px-[18px] py-4 flex flex-col gap-[14px] flex-1">
         {/* Name */}
         <div>
-          <label className="text-[11px] text-black/40 mb-[5px] block">
+          <label className="text-[11px] text-fg-muted mb-[5px] block">
             Project name
           </label>
           <input
@@ -79,13 +79,13 @@ export default function NewProjectPanel({
             maxLength={MAX_NAME_LENGTH}
             placeholder="e.g. Q2 launch, Website redesign..."
             autoFocus={isOpen}
-            className="w-full bg-[#f5f4f0] border border-black/[0.1] rounded-lg px-[10px] py-2 text-[13px] text-[#2c2a35] outline-none focus:border-[#6b5fd4]/40 focus:bg-white placeholder-black/25"
+            className="w-full bg-base border border-line-medium rounded-lg px-[10px] py-2 text-[13px] text-fg outline-none focus:border-accent-blue/40 focus:bg-elevated placeholder-fg-faded"
           />
         </div>
 
         {/* Color */}
         <div>
-          <label className="text-[11px] text-black/40 mb-[5px] block">
+          <label className="text-[11px] text-fg-muted mb-[5px] block">
             Color
           </label>
           <div className="flex items-center gap-[7px] flex-wrap">
@@ -98,7 +98,7 @@ export default function NewProjectPanel({
                 style={{
                   backgroundColor: c,
                   borderColor:
-                    color === c ? "rgba(0,0,0,0.25)" : "transparent",
+                    color === c ? "var(--border-strong)" : "transparent",
                 }}
               />
             ))}
@@ -107,7 +107,7 @@ export default function NewProjectPanel({
       </div>
 
       {/* Footer */}
-      <div className="px-[18px] py-[14px] border-t border-black/[0.07] flex-shrink-0">
+      <div className="px-[18px] py-[14px] border-t border-line-hairline flex-shrink-0">
         <Button size="sm" className="w-full" onClick={handleCreate}>Create project</Button>
       </div>
     </div>

@@ -99,8 +99,8 @@ export default function DurationPicker({
           onClick={() => handleQuickPreset(p.value)}
           className={`px-1.5 py-0.5 rounded text-[10px] cursor-pointer transition-colors ${
             value === p.value
-              ? "bg-[#7B9ED9] text-white"
-              : "bg-black/[0.04] text-black/40 hover:bg-black/[0.07]"
+              ? "bg-accent-blue text-fg-on-accent"
+              : "bg-overlay-hover text-fg-muted hover:bg-overlay-pressed"
           }`}
         >
           {p.label}
@@ -114,8 +114,8 @@ export default function DurationPicker({
           onClick={() => setIsOpen(!isOpen)}
           className={`flex items-center gap-1 border rounded-md px-1.5 py-0.5 text-[10px] cursor-pointer transition-colors ${
             value && !QUICK_PRESETS.some((p) => p.value === value)
-              ? "bg-[#7B9ED9]/[0.08] border-[#7B9ED9]/20 text-[#7B9ED9]"
-              : "bg-black/[0.04] border-black/[0.08] text-black/40 hover:bg-black/[0.07]"
+              ? "bg-accent-blue-soft border-accent-blue/30 text-accent-blue-soft-fg"
+              : "bg-overlay-hover border-line-soft text-fg-muted hover:bg-overlay-pressed"
           }`}
         >
           <svg
@@ -136,7 +136,7 @@ export default function DurationPicker({
         </button>
 
         {isOpen && (
-          <div className="absolute top-full mt-1 right-0 z-30 bg-white border border-black/[0.1] rounded-[10px] shadow-lg p-2 w-[180px] animate-scale-in">
+          <div className="absolute top-full mt-1 right-0 z-30 bg-elevated border border-line-medium rounded-[10px] shadow-lg p-2 w-[180px] animate-scale-in">
             {/* Custom input */}
             <div className="flex gap-1 mb-1.5">
               <input
@@ -151,12 +151,12 @@ export default function DurationPicker({
                   }
                 }}
                 placeholder="Minutes..."
-                className="flex-1 min-w-0 bg-black/[0.04] border border-black/[0.08] rounded-md px-2 py-1 text-[11px] text-[#2c2a35] placeholder-black/25 outline-none focus:border-[#7B9ED9]/40"
+                className="flex-1 min-w-0 bg-overlay-hover border border-line-soft rounded-md px-2 py-1 text-[11px] text-fg placeholder-fg-faded outline-none focus:border-accent-blue/40"
               />
               <button
                 type="button"
                 onClick={handleCustomSubmit}
-                className="text-[10px] text-[#7B9ED9] px-1.5 py-1 rounded-md border border-[#7B9ED9]/20 bg-[#7B9ED9]/[0.06] cursor-pointer hover:bg-[#7B9ED9]/[0.12]"
+                className="text-[10px] text-accent-blue-soft-fg px-1.5 py-1 rounded-md border border-accent-blue/30 bg-accent-blue-soft cursor-pointer hover:bg-accent-blue/15"
               >
                 Set
               </button>
@@ -171,8 +171,8 @@ export default function DurationPicker({
                   onClick={() => handlePreset(p.value)}
                   className={`px-2 py-1 rounded-md text-[11px] cursor-pointer transition-colors ${
                     value === p.value
-                      ? "bg-[#7B9ED9] text-white"
-                      : "bg-black/[0.04] text-black/50 hover:bg-black/[0.07]"
+                      ? "bg-accent-blue text-fg-on-accent"
+                      : "bg-overlay-hover text-fg-muted hover:bg-overlay-pressed"
                   }`}
                 >
                   {p.label}
@@ -185,7 +185,7 @@ export default function DurationPicker({
               <button
                 type="button"
                 onClick={handleClear}
-                className="w-full mt-1.5 text-[10px] text-black/30 cursor-pointer hover:text-black/50 text-center py-0.5"
+                className="w-full mt-1.5 text-[10px] text-fg-faded cursor-pointer hover:text-fg-muted text-center py-0.5"
               >
                 Clear
               </button>

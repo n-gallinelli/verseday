@@ -89,11 +89,12 @@ Each ends with **"Ready for Verse review."**
 - FocusPip (Tauri webview — verify color-scheme propagates on macOS)
 
 ### Milestone 4 — audit
-1. **Automated grep**: `grep -rE '#[0-9a-fA-F]{3,8}|rgb\(|rgba\(' src/` — every hit must be intentional (e.g. dark-mode-only color in CSS) or a token.
-2. **Contrast check**: every token pair (text-on-bg) hits WCAG AA — 4.5:1 for body, 3:1 for large/UI. Use a tool, not eyeballs.
-3. **Focus ring visibility**: confirm focus-visible rings render against dark surfaces (current rings often assume light bg).
-4. **Visual sweep**: every page in dark mode, every interactive state (hover/focus/active/disabled).
-5. **PiP test on macOS**: launch a focus session in dark mode, confirm the PiP webview matches.
+1. **Iterate every `*.tsx` under `src/`** — open each file, not just feature-scoped sets. The M3 sweep was scoped by feature ("sidebar / shutdowns / projects / dashboard / Tauri webviews") and that left non-feature components (FocusLanding, DatePicker, DurationPicker, NewProjectPanel, WrapUpReminder, ErrorBanner, ErrorBoundary, RichTextEditor) homeless until the recovery slice. Don't repeat that.
+2. **Automated grep**: `grep -rE '#[0-9a-fA-F]{3,8}|rgb\(|rgba\(' src/` — every hit must be intentional (e.g. dark-mode-only color in CSS), a token, or a row in the Intentional exceptions table in `dark-mode-tokens.md`. Dead-code hits get deleted, not excepted (cf. ProjectCard.tsx in M3.5, CheckIcon.tsx in this recovery slice).
+3. **Contrast check**: every token pair (text-on-bg) hits WCAG AA — 4.5:1 for body, 3:1 for large/UI. Use a tool, not eyeballs.
+4. **Focus ring visibility**: confirm focus-visible rings render against dark surfaces (current rings often assume light bg).
+5. **Visual sweep**: every page in dark mode, every interactive state (hover/focus/active/disabled).
+6. **PiP test on macOS**: launch a focus session in dark mode, confirm the PiP webview matches.
 
 ## Out of scope (track as follow-ups)
 

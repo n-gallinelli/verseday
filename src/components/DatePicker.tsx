@@ -96,23 +96,23 @@ export default function DatePicker({
   return createPortal(
     <div
       ref={ref}
-      className="fixed z-[100] bg-white border border-black/[0.1] rounded-[10px] shadow-lg p-3 w-[252px] animate-scale-in"
+      className="fixed z-[100] bg-elevated border border-line-medium rounded-[10px] shadow-lg p-3 w-[252px] animate-scale-in"
       style={{ top: pos.top, left: pos.left }}
     >
       {/* Month nav */}
       <div className="flex items-center justify-between mb-2">
         <button
           onClick={prevMonth}
-          className="w-6 h-6 rounded-md hover:bg-black/[0.05] flex items-center justify-center text-[12px] text-black/40 cursor-pointer"
+          className="w-6 h-6 rounded-md hover:bg-overlay-hover flex items-center justify-center text-[12px] text-fg-muted cursor-pointer"
         >
           ‹
         </button>
-        <span className="text-[13px] font-medium text-[#2c2a35]">
+        <span className="text-[13px] font-medium text-fg">
           {monthLabel}
         </span>
         <button
           onClick={nextMonth}
-          className="w-6 h-6 rounded-md hover:bg-black/[0.05] flex items-center justify-center text-[12px] text-black/40 cursor-pointer"
+          className="w-6 h-6 rounded-md hover:bg-overlay-hover flex items-center justify-center text-[12px] text-fg-muted cursor-pointer"
         >
           ›
         </button>
@@ -123,7 +123,7 @@ export default function DatePicker({
         {DAY_HEADERS.map((d) => (
           <div
             key={d}
-            className="text-center text-[10px] text-black/30 py-0.5"
+            className="text-center text-[10px] text-fg-faded py-0.5"
           >
             {d}
           </div>
@@ -149,10 +149,10 @@ export default function DatePicker({
               }}
               className={`w-[32px] h-[32px] rounded-full flex items-center justify-center text-[12px] cursor-pointer transition-colors ${
                 isSelected
-                  ? "bg-[#7B9ED9] text-white"
+                  ? "bg-accent-blue text-fg-on-accent"
                   : isToday
-                    ? "bg-[#7B9ED9]/10 text-[#7B9ED9] font-medium"
-                    : "text-[#2c2a35] hover:bg-black/[0.05]"
+                    ? "bg-accent-blue-soft text-accent-blue-soft-fg font-medium"
+                    : "text-fg hover:bg-overlay-hover"
               }`}
             >
               {date.getDate()}
@@ -167,7 +167,7 @@ export default function DatePicker({
           onSelect(todayStr);
           onClose();
         }}
-        className="w-full mt-2 text-[11px] text-[#7B9ED9] cursor-pointer hover:underline text-center py-1"
+        className="w-full mt-2 text-[11px] text-accent-blue cursor-pointer hover:underline text-center py-1"
       >
         Go to today
       </button>

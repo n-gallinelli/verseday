@@ -76,17 +76,17 @@ export default function FocusLanding() {
 
   if (loading) {
     return (
-      <div className="flex flex-col h-full bg-[#f5f4f0] items-center justify-center">
-        <span className="text-[14px] text-black/30">Loading...</span>
+      <div className="flex flex-col h-full bg-base items-center justify-center">
+        <span className="text-[14px] text-fg-faded">Loading...</span>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full bg-[#f5f4f0] overflow-hidden">
+    <div className="flex flex-col h-full bg-base overflow-hidden">
       {/* Header */}
-      <div className="px-6 py-4 flex-shrink-0 text-center" style={{ borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}>
-        <h2 className="text-[18px] font-medium text-[#2c2a35] font-display">Focus</h2>
+      <div className="px-6 py-4 flex-shrink-0 text-center" style={{ borderBottom: "0.5px solid var(--border-hairline)" }}>
+        <h2 className="text-[18px] font-medium text-fg font-display">Focus</h2>
       </div>
 
       {/* Content — vertically centered */}
@@ -96,8 +96,8 @@ export default function FocusLanding() {
           const msg = getEmptyDayMessage();
           return (
             <div className="text-center max-w-[300px]">
-              <p className="text-[14px] text-black/45 mb-1">{msg.title}</p>
-              <p className="text-[12px] text-black/25 leading-relaxed">{msg.subtitle}</p>
+              <p className="text-[14px] text-fg-muted mb-1">{msg.title}</p>
+              <p className="text-[12px] text-fg-faded leading-relaxed">{msg.subtitle}</p>
             </div>
           );
         })()}
@@ -106,8 +106,8 @@ export default function FocusLanding() {
         {tasks.length > 0 && remainingTasks.length === 0 && (
           <div className="text-center">
             <span className="text-[32px] mb-3 block">🎉</span>
-            <p className="text-[16px] font-medium text-[#2c2a35] mb-1">All tasks complete</p>
-            <p className="text-[12px] text-black/30">{completedTasks.length} tasks done today</p>
+            <p className="text-[16px] font-medium text-fg mb-1">All tasks complete</p>
+            <p className="text-[12px] text-fg-faded">{completedTasks.length} tasks done today</p>
           </div>
         )}
 
@@ -122,7 +122,7 @@ export default function FocusLanding() {
                     className="w-2 h-2 rounded-full"
                     style={{ backgroundColor: projectMap.get(currentTask.project_id)!.color }}
                   />
-                  <span className="text-[11px] text-black/30 truncate max-w-[280px]">
+                  <span className="text-[11px] text-fg-faded truncate max-w-[280px]">
                     {projectMap.get(currentTask.project_id)!.name}
                   </span>
                 </>
@@ -130,13 +130,13 @@ export default function FocusLanding() {
             </div>
 
             {/* Task title — full text, wraps to as many lines as needed */}
-            <h1 className="text-[20px] font-medium text-[#2c2a35] leading-snug mb-6 font-display break-words">
+            <h1 className="text-[20px] font-medium text-fg leading-snug mb-6 font-display break-words">
               {currentTask.title}
             </h1>
 
             {/* Start button */}
-            <Button size="sm" className="flex items-center justify-center gap-2 transition-all duration-200 ease-out hover:shadow-[0_0_0_6px_rgba(123,158,217,0.18)]" onClick={() => handleStartFocus(currentTask)}>
-              <svg width="10" height="12" viewBox="0 0 8 10" fill="white">
+            <Button size="sm" className="flex items-center justify-center gap-2 transition-all duration-200 ease-out hover:shadow-[0_0_0_6px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]" onClick={() => handleStartFocus(currentTask)}>
+              <svg width="10" height="12" viewBox="0 0 8 10" fill="currentColor">
                 <path d="M0 0v10l8-5z" />
               </svg>
               Start focusing
@@ -148,7 +148,7 @@ export default function FocusLanding() {
                 <button
                   onClick={() => setSelectedIndex((i) => i - 1)}
                   disabled={selectedIndex === 0}
-                  className="w-8 h-8 flex items-center justify-center rounded-full text-black/25 hover:text-black/50 hover:bg-black/[0.04] cursor-pointer disabled:opacity-20 disabled:cursor-default transition-colors"
+                  className="w-8 h-8 flex items-center justify-center rounded-full text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer disabled:opacity-20 disabled:cursor-default transition-colors"
                 >
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                     <path d="M8.5 2.5L4 7l4.5 4.5" />
@@ -157,7 +157,7 @@ export default function FocusLanding() {
                 <button
                   onClick={() => setSelectedIndex((i) => i + 1)}
                   disabled={selectedIndex >= remainingTasks.length - 1}
-                  className="w-8 h-8 flex items-center justify-center rounded-full text-black/25 hover:text-black/50 hover:bg-black/[0.04] cursor-pointer disabled:opacity-20 disabled:cursor-default transition-colors"
+                  className="w-8 h-8 flex items-center justify-center rounded-full text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer disabled:opacity-20 disabled:cursor-default transition-colors"
                 >
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                     <path d="M5.5 2.5L10 7l-4.5 4.5" />

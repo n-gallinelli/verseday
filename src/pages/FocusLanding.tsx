@@ -88,11 +88,6 @@ export default function FocusLanding() {
 
   return (
     <div className="flex flex-col h-full bg-base overflow-hidden">
-      {/* Header */}
-      <div className="px-6 py-4 flex-shrink-0 text-center" style={{ borderBottom: "0.5px solid var(--border-hairline)" }}>
-        <h2 className="text-[18px] font-medium text-fg font-display">Focus</h2>
-      </div>
-
       {/* Content — vertically centered */}
       <div className="flex-1 flex flex-col items-center justify-center px-6">
         {/* No tasks state */}

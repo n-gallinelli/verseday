@@ -119,7 +119,7 @@ function NavSection({
 }) {
   return (
     <div>
-      <div className="px-4 pt-4 pb-1.5 uppercase text-black/30 [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
+      <div className="px-4 pt-4 pb-1.5 uppercase text-fg-faded [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
         {label}
       </div>
       {items.map(({ page, label: itemLabel, icon }) => {
@@ -130,8 +130,8 @@ function NavSection({
             onClick={() => onSelect(page)}
             className={`w-full flex items-center gap-2.5 px-4 py-2 cursor-pointer transition-colors ${
               isActive
-                ? "bg-[#7B9ED9]/10 text-[#7B9ED9]"
-                : "text-black/40 hover:bg-black/[0.04] hover:text-black/60"
+                ? "bg-accent-blue-soft text-accent-blue"
+                : "text-fg-muted hover:bg-overlay-hover hover:text-fg-secondary"
             } [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)]`}
           >
             {icon}
@@ -243,22 +243,22 @@ export default function Sidebar() {
     currentPage === "project_detail" ? "projects" : currentPage === "focus" ? "focus_landing" : currentPage as Page;
 
   return (
-    <aside className="w-[200px] shrink-0 h-screen bg-[#efede8] border-r border-black/[0.06] flex flex-col pt-4">
-      <div className="px-4 pb-5 flex items-center gap-3 text-black/30">
+    <aside className="w-[200px] shrink-0 h-screen bg-sidebar border-r border-line-hairline flex flex-col pt-4">
+      <div className="px-4 pb-5 flex items-center gap-3 text-fg-faded">
         <VerseDayLogo />
-        <span className="text-[20px] font-semibold text-[#7B9ED9] tracking-tight font-display">VerseDay</span>
+        <span className="text-[20px] font-semibold text-accent-blue tracking-tight font-display">VerseDay</span>
       </div>
       <nav className="flex-1">
         <NavSection label="Planning" items={planningItems} activePage={activePage} onSelect={setPage} />
-        <div className="h-px bg-black/[0.06] mx-4 my-1" />
+        <div className="h-px bg-line-hairline mx-4 my-1" />
         <NavSection label="Manage" items={manageItems} activePage={activePage} onSelect={setPage} />
       </nav>
 
       {/* Shortcut glossary */}
-      <div className="border-t border-black/[0.06]">
+      <div className="border-t border-line-hairline">
         <button
           onClick={() => setShowShortcuts(!showShortcuts)}
-          className="w-full flex items-center gap-1.5 px-4 py-2.5 text-[11px] text-black/30 cursor-pointer hover:text-black/45 transition-colors"
+          className="w-full flex items-center gap-1.5 px-4 py-2.5 text-[11px] text-fg-faded cursor-pointer hover:text-fg-muted transition-colors"
         >
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
             <rect x="1" y="3" width="10" height="7" rx="1.5" />
@@ -278,8 +278,8 @@ export default function Sidebar() {
           <div className="px-4 pb-3 space-y-1">
             {SHORTCUTS.map((s) => (
               <div key={s.keys} className="flex items-center justify-between">
-                <span className="text-[10px] text-black/35">{s.desc}</span>
-                <kbd className="text-[9px] text-black/30 bg-black/[0.05] px-1.5 py-0.5 rounded font-mono">
+                <span className="text-[10px] text-fg-muted">{s.desc}</span>
+                <kbd className="text-[9px] text-fg-faded bg-overlay-hover px-1.5 py-0.5 rounded font-mono">
                   {s.keys}
                 </kbd>
               </div>

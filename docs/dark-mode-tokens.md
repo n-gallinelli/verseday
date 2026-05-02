@@ -10,7 +10,8 @@ Light values follow the existing palette. Dark values are hand-tuned (not progra
 
 | Token              | Light        | Dark         | Usage                                                       |
 | ------------------ | ------------ | ------------ | ----------------------------------------------------------- |
-| `--bg-base`        | `#f5f4f0`    | `#16161a`    | App background (main shell, sidebar)                        |
+| `--bg-base`        | `#f5f4f0`    | `#16161a`    | App main background, primary canvas                         |
+| `--bg-sidebar`     | `#efede8`    | `#1a1a1f`    | Left sidebar nav (chrome surface, slightly distinct from base) |
 | `--bg-elevated`    | `#ffffff`    | `#1f1f24`    | Cards, modals, popovers, task rows                          |
 | `--bg-rail`        | `#FAFAF7`    | `#1b1b20`    | Side rails (project detail right rail, task detail rail)    |
 | `--bg-sunken`      | `#f0eeea`    | `#121215`    | Focus mode ambient base, deep recesses                      |
@@ -124,6 +125,7 @@ A subset of these tokens are exposed to Tailwind v4 in `src/index.css` via `@the
 @theme inline {
   /* Surfaces */
   --color-base: var(--bg-base);
+  --color-sidebar: var(--bg-sidebar);
   --color-elevated: var(--bg-elevated);
   --color-rail: var(--bg-rail);
   --color-sunken: var(--bg-sunken);
@@ -266,3 +268,15 @@ For tokens not registered in `@theme inline` (shadows, focus, calendar, mood, sc
 ### Box-shadow gotcha
 
 Tailwind's `shadow-md`, `shadow-lg`, etc. resolve to **Tailwind defaults**, not `--shadow-card` / `--shadow-modal`. Convert these explicitly during M2 — see the "Important" callout in the registration section above.
+
+---
+
+## Intentional exceptions (don't tokenize)
+
+Some color literals are deliberately **not** tokens because they're decorative brand illustration that should look identical in light and dark mode. These are pre-approved exclusions for the M4 audit grep:
+
+| File                                  | Lines     | What                                                                                  |
+| ------------------------------------- | --------- | ------------------------------------------------------------------------------------- |
+| `src/components/Sidebar.tsx`          | 165–230   | `VerseDayLogo` SVG — sunrise/ocean gradient stops + four sunset ring segments. Brand mark, fixed regardless of theme. |
+
+If a new decorative illustration is added in the future and should not theme, append a row here in the same commit. Otherwise the M4 grep will flag it.

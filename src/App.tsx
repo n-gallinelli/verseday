@@ -234,7 +234,7 @@ function MainApp() {
 
   return (
     <ErrorBoundary>
-      <div className="flex h-screen overflow-hidden bg-[#f5f4f0]">
+      <div className="flex h-screen overflow-hidden bg-base">
         <Sidebar />
         <WrapUpReminder />
         <main
@@ -250,9 +250,10 @@ function MainApp() {
             className="fixed inset-0 z-40 flex items-center justify-center"
             onClick={goBack}
           >
-            <div className="absolute inset-0 bg-black/30" />
+            <div className="absolute inset-0 bg-overlay-scrim" />
             <div
-              className="relative w-[1080px] max-w-[95vw] max-h-[85vh] bg-[#f5f4f0] rounded-xl shadow-xl animate-scale-in flex flex-col"
+              className="relative w-[1080px] max-w-[95vw] max-h-[85vh] bg-base rounded-xl animate-scale-in flex flex-col"
+              style={{ boxShadow: "var(--shadow-modal)" }}
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => {
                 if (e.key === "Escape") goBack();

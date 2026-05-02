@@ -12,6 +12,7 @@
 
   /* — Surfaces — */
   --bg-base: #f5f4f0;
+  --bg-sidebar: #efede8;
   --bg-elevated: #ffffff;
   --bg-rail: #FAFAF7;
   --bg-sunken: #f0eeea;
@@ -117,6 +118,7 @@
   :root {
     /* — Surfaces — */
     --bg-base: #16161a;
+    --bg-sidebar: #1a1a1f;
     --bg-elevated: #1f1f24;
     --bg-rail: #1b1b20;
     --bg-sunken: #121215;
@@ -204,6 +206,7 @@
 @theme inline {
   /* Surfaces */
   --color-base: var(--bg-base);
+  --color-sidebar: var(--bg-sidebar);
   --color-elevated: var(--bg-elevated);
   --color-rail: var(--bg-rail);
   --color-sunken: var(--bg-sunken);

@@ -381,6 +381,28 @@ export default function TaskDetailOverlay({
     onClose();
   }
 
+  // Global Escape: close the modal regardless of focus position. The
+  // inline onKeyDown on the modal div only fires when focus sits inside
+  // the modal, which isn't the case immediately after opening.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      if (openPopover) {
+        e.preventDefault();
+        setOpenPopover(null);
+        return;
+      }
+      e.preventDefault();
+      handleClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // handleClose closes over current state via flushSave/onSave references;
+    // re-binding on openPopover changes is needed so the popover-precedence
+    // check sees the latest value.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openPopover]);
+
   const autoTrackedNote = autoTrackedMinutes && autoTrackedMinutes > 0
     ? `+ ${formatDisplayMinutes(autoTrackedMinutes.toString())} tracked automatically`
     : undefined;

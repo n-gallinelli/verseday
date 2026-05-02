@@ -531,7 +531,7 @@ export default function TaskDetailOverlay({
                 debouncedSave({ notes: html });
               }}
               placeholder="Add notes..."
-              className="w-full bg-elevated border border-line-hairline rounded-md px-3.5 py-3 text-[13px] text-fg-secondary leading-relaxed min-h-[380px] focus-within:border-accent-blue"
+              className="w-full bg-elevated px-3.5 py-3 text-[13px] text-fg-secondary leading-relaxed min-h-[380px]"
             />
           </div>
 

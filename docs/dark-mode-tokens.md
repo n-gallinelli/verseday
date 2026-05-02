@@ -325,6 +325,18 @@ Earlier iterations tried an "inverted-contrast" trick (`bg-fg` + `text-base`) th
 | Action / link inside the banner               | A theme-stable accent (e.g. `text-accent-orange`, `text-accent-green-bright`) — readable against `--bg-banner` in both themes |
 | Hover state on banner action                  | Pull toward `--text-banner`: `onMouseEnter={(e) => e.currentTarget.style.color = "var(--text-banner)"}` |
 
+#### Action color in banners — pick the page's accent register
+
+The banner surface is theme-fixed (`--bg-banner` / `--text-banner`), but the action link inside it picks up the page's primary accent so the per-page identity survives the shared notification chrome. Three banners are live as of M3.3, each tinted by its page:
+
+| Page                  | Page accent leaning | Action-link class            |
+| --------------------- | ------------------- | ---------------------------- |
+| Weekly Planner (M2.4) | orange              | `text-accent-orange`         |
+| Weekly Shutdown (M3.2) | green              | `text-accent-green-bright`   |
+| Projects list (M3.3)  | blue                | `text-accent-blue`           |
+
+Hover handler in all three swaps the link's color to `var(--text-banner)` (cream against the dark banner surface) so the link "absorbs" into the banner text register on hover. New banners follow the same recipe: pick the host page's primary accent for the action; hover flips to `var(--text-banner)`. Don't introduce a "neutral" or `text-fg-muted` action — it would break the per-page identity convention.
+
 Example: `WeeklyPlanner.tsx:696` (undo banner after a drag-drop date move).
 
 ### Modal background rule

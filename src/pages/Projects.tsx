@@ -57,14 +57,14 @@ function SortableProjectRow({
 }
 
 function getDueDateColor(dueDate: string | null): string {
-  if (!dueDate) return "text-black/30";
+  if (!dueDate) return "text-fg-faded";
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   const due = new Date(dueDate + "T00:00:00");
   const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-  if (diffDays < 0) return "text-[#A32D2D]";
-  if (diffDays <= 3) return "text-[#BA7517]";
-  return "text-black/30";
+  if (diffDays < 0) return "text-accent-danger";
+  if (diffDays <= 3) return "text-accent-warning";
+  return "text-fg-faded";
 }
 
 function formatDate(iso: string): string {
@@ -209,13 +209,13 @@ export default function Projects() {
   ];
 
   return (
-    <div className="flex flex-col h-full bg-[#f5f4f0] overflow-hidden relative" onClick={() => setMenuOpenId(null)}>
+    <div className="flex flex-col h-full bg-base overflow-hidden relative" onClick={() => setMenuOpenId(null)}>
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
       {/* Undo archive banner */}
       {archivedUndo && (
-        <div className="px-6 py-2 bg-[#2c2a35] flex items-center gap-3 flex-shrink-0">
-          <span className="text-[12px] text-white/70">
+        <div className="px-6 py-2 bg-banner flex items-center gap-3 flex-shrink-0" style={{ color: "var(--text-banner)" }}>
+          <span className="text-[12px] opacity-70">
             Archived &ldquo;{archivedUndo.name}&rdquo;
           </span>
           <button
@@ -225,7 +225,9 @@ export default function Projects() {
               if (archiveTimerRef.current) clearTimeout(archiveTimerRef.current);
               loadData();
             }}
-            className="text-[12px] text-[#7B9ED9] hover:text-white cursor-pointer"
+            className="text-[12px] text-accent-blue cursor-pointer transition-colors"
+            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-banner)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = ""; }}
           >
             Undo
           </button>
@@ -233,12 +235,12 @@ export default function Projects() {
       )}
 
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-6 py-[18px] border-b border-black/[0.07] flex-shrink-0">
-        <h2 className="text-[18px] font-medium text-[#2c2a35] font-display">Projects</h2>
+      <div className="flex items-center justify-between px-6 py-[18px] border-b border-line-soft flex-shrink-0">
+        <h2 className="text-[18px] font-medium text-fg font-display">Projects</h2>
         <div className="flex items-center gap-3">
           {/* Search */}
           <div className="relative">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth="1.3" strokeLinecap="round" className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--text-faded)" strokeWidth="1.3" strokeLinecap="round" className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
               <circle cx="6" cy="6" r="4.5" />
               <path d="M9.5 9.5L12.5 12.5" />
             </svg>
@@ -247,7 +249,7 @@ export default function Projects() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search..."
-              className="w-[160px] pl-8 pr-3 py-1.5 text-[12px] bg-black/[0.03] border border-black/[0.08] rounded-lg text-[#2c2a35] placeholder-black/25 outline-none focus:border-[#7B9ED9]/40 focus:bg-white transition-colors"
+              className="w-[160px] pl-8 pr-3 py-1.5 text-[12px] bg-input border border-line-soft rounded-lg text-fg placeholder:text-fg-faded outline-none focus:border-accent-blue focus:bg-elevated transition-colors"
             />
           </div>
         </div>
@@ -261,12 +263,12 @@ export default function Projects() {
             onClick={() => setFilter(f.key)}
             className={`px-3 py-1 rounded-full text-[12px] cursor-pointer transition-colors border ${
               filter === f.key
-                ? "bg-[#EEF3FB] border-[#7B9ED9] text-[#3D6FCC]"
-                : "bg-black/[0.03] border-black/[0.08] text-black/40 hover:bg-black/[0.06]"
+                ? "bg-accent-blue-soft border-accent-blue text-accent-blue-soft-fg"
+                : "bg-input border-line-soft text-fg-muted hover:bg-input-hover"
             }`}
           >
             {f.label}
-            <span className={`ml-1 ${filter === f.key ? "text-[#3D6FCC]/60" : "text-black/20"}`}>
+            <span className={`ml-1 ${filter === f.key ? "text-accent-blue-soft-fg/60" : "text-fg-disabled"}`}>
               {f.count}
             </span>
           </button>
@@ -288,7 +290,7 @@ export default function Projects() {
             <div className="flex flex-col gap-[6px]">
               {filteredProjects.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <p className="text-[14px] text-black/35 mb-1">
+                  <p className="text-[14px] text-fg-faded mb-1">
                     {searchQuery
                       ? `No projects matching "${searchQuery}"`
                       : filter === "all"
@@ -296,7 +298,7 @@ export default function Projects() {
                         : `No ${filter} projects`}
                   </p>
                   {filter === "all" && !searchQuery && (
-                    <p className="text-[12px] text-black/25">
+                    <p className="text-[12px] text-fg-faded">
                       Give your work a home. Type a name below to begin.
                     </p>
                   )}
@@ -313,15 +315,15 @@ export default function Projects() {
                   return (
                     <SortableProjectRow key={project.id} id={project.id}>
                       <div
-                        className={`bg-white rounded-[10px] overflow-hidden ${
+                        className={`bg-elevated rounded-[10px] overflow-hidden ${
                           isCompleted ? "opacity-55" : ""
                         }`}
-                        style={{ border: "0.5px solid rgba(0,0,0,0.06)" }}
+                        style={{ border: "0.5px solid var(--border-hairline)" }}
                       >
                         <div className="flex-1 min-w-0">
                           <div
                             onClick={() => openProject(project.id)}
-                            className="group/row px-4 py-[14px] cursor-pointer hover:bg-black/[0.01] relative"
+                            className="group/row px-4 py-[14px] cursor-pointer hover:bg-overlay-hover relative"
                           >
                             <div className="flex items-center gap-2.5">
                               <div className="flex-1 min-w-0">
@@ -335,12 +337,12 @@ export default function Projects() {
                                   )}
                                   {/* Completed checkmark */}
                                   {isCompleted && (
-                                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#6A9E7F" strokeWidth="2" strokeLinecap="round" className="shrink-0">
+                                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" className="shrink-0">
                                       <path d="M3 8.5l3.5 3.5 6.5-7" />
                                     </svg>
                                   )}
                                   <span className={`block truncate [font-size:var(--font-size-primary)] [font-weight:var(--font-weight-primary)] ${
-                                    isCompleted ? "text-black/40 line-through" : "text-[#2c2a35]"
+                                    isCompleted ? "text-fg-muted line-through" : "text-fg"
                                   }`}>
                                     {project.name}
                                   </span>
@@ -351,7 +353,7 @@ export default function Projects() {
                                   </span>
                                 )}
                                 {isCompleted && dueDate && (
-                                  <span className="text-[11px] text-black/30">
+                                  <span className="text-[11px] text-fg-faded">
                                     Completed {formatDate(dueDate)}
                                   </span>
                                 )}
@@ -366,8 +368,8 @@ export default function Projects() {
                                   }}
                                   className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] cursor-pointer transition-colors flex-shrink-0 ${
                                     isExpanded
-                                      ? "bg-[#EEF3FB] text-[#3D6FCC]"
-                                      : "bg-black/[0.04] text-black/35 hover:bg-black/[0.07]"
+                                      ? "bg-accent-blue-soft text-accent-blue-soft-fg"
+                                      : "bg-overlay-hover text-fg-faded hover:bg-overlay-pressed"
                                   }`}
                                 >
                                   <span>{openCount} open</span>
@@ -382,7 +384,7 @@ export default function Projects() {
                                     e.stopPropagation();
                                     setMenuOpenId(menuOpenId === project.id ? null : project.id);
                                   }}
-                                  className={`w-7 h-7 flex items-center justify-center rounded-md text-black/25 hover:text-black/50 hover:bg-black/[0.04] cursor-pointer transition-opacity ${
+                                  className={`w-7 h-7 flex items-center justify-center rounded-md text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer transition-opacity ${
                                     menuOpenId === project.id ? "opacity-100" : "opacity-0 group-hover/row:opacity-100"
                                   }`}
                                 >
@@ -394,12 +396,13 @@ export default function Projects() {
                                 </button>
                                 {menuOpenId === project.id && (
                                   <div
-                                    className="absolute right-0 top-8 z-20 bg-white rounded-lg shadow-lg border border-black/[0.08] py-1 min-w-[140px]"
+                                    className="absolute right-0 top-8 z-20 bg-elevated rounded-lg border border-line-soft py-1 min-w-[140px]"
+                                    style={{ boxShadow: "var(--shadow-card)" }}
                                     onClick={(e) => e.stopPropagation()}
                                   >
                                     <button
                                       onClick={() => { setMenuOpenId(null); openProject(project.id); }}
-                                      className="w-full text-left px-3 py-1.5 text-[12px] text-[#2c2a35] hover:bg-black/[0.03] cursor-pointer"
+                                      className="w-full text-left px-3 py-1.5 text-[12px] text-fg hover:bg-overlay-hover cursor-pointer"
                                     >
                                       Edit
                                     </button>
@@ -409,7 +412,7 @@ export default function Projects() {
                                         await completeProject(project.id, !isCompleted);
                                         loadData();
                                       }}
-                                      className="w-full text-left px-3 py-1.5 text-[12px] text-[#2c2a35] hover:bg-black/[0.03] cursor-pointer"
+                                      className="w-full text-left px-3 py-1.5 text-[12px] text-fg hover:bg-overlay-hover cursor-pointer"
                                     >
                                       {isCompleted ? "Mark active" : "Mark complete"}
                                     </button>
@@ -422,7 +425,7 @@ export default function Projects() {
                                         archiveTimerRef.current = setTimeout(() => setArchivedUndo(null), 5000);
                                         loadData();
                                       }}
-                                      className="w-full text-left px-3 py-1.5 text-[12px] text-[#C0614A] hover:bg-black/[0.03] cursor-pointer"
+                                      className="w-full text-left px-3 py-1.5 text-[12px] text-accent-danger hover:bg-overlay-hover cursor-pointer"
                                     >
                                       Archive
                                     </button>
@@ -434,7 +437,7 @@ export default function Projects() {
 
                           {/* Expanded tasks */}
                           {isExpanded && tasks.length > 0 && (
-                            <div className="border-t border-black/[0.05] px-4 py-2">
+                            <div className="border-t border-line-hairline px-4 py-2">
                               {tasks.map((task) => {
                                 const dateLabel = task.date_scheduled
                                   ? new Date(task.date_scheduled + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
@@ -443,23 +446,23 @@ export default function Projects() {
                                   <button
                                     key={task.id}
                                     onClick={() => setDetailTask(task)}
-                                    className="w-full flex items-center gap-2 px-1 py-1.5 text-left rounded-md cursor-pointer hover:bg-black/[0.03] transition-colors"
+                                    className="w-full flex items-center gap-2 px-1 py-1.5 text-left rounded-md cursor-pointer hover:bg-overlay-hover transition-colors"
                                   >
                                     {task.status === "done" ? (
-                                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#6A9E7F" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                                         <path d="M3 8.5l3.5 3.5 6.5-7" />
                                       </svg>
                                     ) : (
-                                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="rgba(0,0,0,0.15)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="var(--text-disabled)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                                         <path d="M3 8.5l3.5 3.5 6.5-7" />
                                       </svg>
                                     )}
-                                    <span className={`text-[12px] flex-1 truncate ${task.status === "done" ? "text-black/30 line-through" : "text-[#2c2a35]"}`}>{task.title}</span>
+                                    <span className={`text-[12px] flex-1 truncate ${task.status === "done" ? "text-fg-faded line-through" : "text-fg"}`}>{task.title}</span>
                                     {task.estimated_minutes != null && task.estimated_minutes > 0 && (
-                                      <span className="text-[10px] text-black/20">{task.estimated_minutes}m</span>
+                                      <span className="text-[10px] text-fg-disabled">{task.estimated_minutes}m</span>
                                     )}
                                     {dateLabel && (
-                                      <span className="text-[10px] text-black/20">{dateLabel}</span>
+                                      <span className="text-[10px] text-fg-disabled">{dateLabel}</span>
                                     )}
                                   </button>
                                 );
@@ -467,8 +470,8 @@ export default function Projects() {
                             </div>
                           )}
                           {isExpanded && tasks.length === 0 && (
-                            <div className="border-t border-black/[0.05] px-4 py-2">
-                              <p className="text-[11px] text-black/20">Loading...</p>
+                            <div className="border-t border-line-hairline px-4 py-2">
+                              <p className="text-[11px] text-fg-disabled">Loading...</p>
                             </div>
                           )}
                         </div>
@@ -480,10 +483,10 @@ export default function Projects() {
 
               {/* ── Inline create row ─────────────────────────────────────── */}
               <div
-                className="flex items-center gap-2.5 bg-white rounded-[10px] px-4 py-[12px] overflow-hidden"
-                style={{ border: "0.5px solid rgba(0,0,0,0.06)" }}
+                className="flex items-center gap-2.5 bg-elevated rounded-[10px] px-4 py-[12px] overflow-hidden"
+                style={{ border: "0.5px solid var(--border-hairline)" }}
               >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="rgba(0,0,0,0.2)" strokeWidth="1.5" strokeLinecap="round" className="shrink-0">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--text-disabled)" strokeWidth="1.5" strokeLinecap="round" className="shrink-0">
                   <path d="M7 2v10M2 7h10" />
                 </svg>
                 <input
@@ -500,12 +503,12 @@ export default function Projects() {
                   }}
                   placeholder="New project..."
                   maxLength={100}
-                  className="flex-1 text-[13px] text-[#2c2a35] placeholder-black/20 bg-transparent outline-none"
+                  className="flex-1 text-[13px] text-fg placeholder:text-fg-disabled bg-transparent outline-none"
                 />
                 {inlineCreateName.trim() && (
                   <button
                     onClick={handleInlineCreate}
-                    className="text-[11px] text-[#7B9ED9] hover:text-[#3D6FCC] cursor-pointer flex-shrink-0"
+                    className="text-[11px] text-accent-blue hover:text-accent-blue-soft-fg cursor-pointer flex-shrink-0"
                   >
                     Create
                   </button>

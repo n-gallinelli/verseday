@@ -78,6 +78,12 @@
   /* — Mood tints — */
   --mood-tint-shutdown: #5DCAA5;
   --mood-tint-daily: #7B9ED9;
+  /* Note: --mood-bad's value (#C0614A) coincides with the clay-red used
+     across destructive UI (delete/archive). Do NOT reuse this token for
+     destructive surfaces — the semantics are unrelated, and a future
+     mood-palette tweak would silently re-color delete buttons. The
+     destructive-UI palette resolves through --accent-danger (or its
+     deeper variant if M3.4 promotes one). */
   --mood-bad: #C0614A;
   --mood-okay: #D4A843;
 

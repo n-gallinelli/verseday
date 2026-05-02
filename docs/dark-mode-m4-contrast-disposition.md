@@ -198,7 +198,21 @@ Fails even the 3:1 large-text threshold on every surface where it's actually use
 
 **M4.3.2 hue-family constraint commitment (forthcoming).** The M4.3.2 plan (when reached) will commit upfront to: *"hue family preserved per accent; only luminance/saturation adjusted within ±N% to clear AA."* Concrete `N` value chosen during M4.3.2 plan-write; visual review then has a measurable contract, not a "does this still feel right?" subjective gate.
 
-### M4.3.5 (this slice) — final scope
+### M4.3 status — all five sub-slices landed
+
+| Slice | Commit | Closes |
+|---|---|---|
+| M4.3.5 — carveouts + per-callsite text-muted audit | `c25abec` | a6, b1, b2, b3 (rolls up), b4, c1, c2 |
+| M4.3.1 — accent-text token migrations + new soft-text tokens | `eba3bde` | a2, a3, a4, A1 |
+| M4.3.3 — calendar token tightening | `07a23fe` | a5 |
+| M4.3.2 — solid-accent contrast tightening (light mode) | `6983254` | a1 |
+| M4.3.4 — focus-ring solid accent | `0931de4` | A2 |
+
+**Failure trajectory**: 131 baseline → 125 (M4.3.5) → 128 (M4.3.1, +3 from new tokens, with most passing) → 126 (M4.3.3) → 94 (M4.3.2, biggest impact) → 90 (M4.3.4).
+
+Remaining 90 failures are all in pre-documented carveout categories: aesthetic borders (b2), text-faded ghost-hints (b1), text-muted incidentals (a6 carveout, B1 bucket), accent-green-bright in its decorative register (a1 amendment), the dark accent-destructive-hover transient state (b3), and accent-tint-on-accent-tint patterns where the resting accent is already paired with soft-fg text (the audit also tests speculative fg/bg pairings that aren't actual callsites).
+
+### M4.3.5 — original landing scope
 
 - **21 `text-fg-muted` → `text-fg-secondary` reassignments** (B2 callsites per Step A) + 1 mashed-span split at DailyPlanner.tsx:725.
 - **3 carveout sections added** to `dark-mode-tokens.md` (text-faded ghost-hint, text-muted two-bucket rule, borders aesthetic-separator).

@@ -693,14 +693,19 @@ export default function WeeklyPlanner() {
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
       {pendingMove && (
-        <div className="flex items-center gap-3 px-7 py-2 bg-fg text-base text-[12px] flex-shrink-0">
+        <div
+          className="flex items-center gap-3 px-7 py-2 bg-fg text-[12px] flex-shrink-0"
+          style={{ color: "var(--bg-base)" }}
+        >
           <span className="flex-1 truncate">
             Moved &ldquo;{pendingMove.taskTitle}&rdquo;
             {pendingMove.fromDate ? "" : " to scheduled"}
           </span>
           <button
             onClick={undoMove}
-            className="text-accent-orange font-medium cursor-pointer hover:text-base"
+            className="text-accent-orange font-medium cursor-pointer transition-colors"
+            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--bg-base)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = ""; }}
           >
             Undo
           </button>

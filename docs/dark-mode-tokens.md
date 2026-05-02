@@ -279,21 +279,23 @@ Tailwind's `shadow-md`, `shadow-lg`, etc. resolve to **Tailwind defaults**, not 
 
 ### Inverted-contrast banner pattern
 
-When a banner needs to **always read as a high-contrast notification** against its surrounding page — regardless of theme — use:
+When a banner needs to **always read as a high-contrast notification** against its surrounding page — regardless of theme — use the `bg-fg` Tailwind utility for the surface and an inline `style={{ color: "var(--bg-base)" }}` for the text:
 
 ```jsx
-<div className="bg-fg text-base">…</div>
+<div className="bg-fg" style={{ color: "var(--bg-base)" }}>…</div>
 ```
 
 `--text-primary` (the `bg-fg` source) is dark in light mode and light in dark mode; `--bg-base` is its inverse. The pair flips automatically and stays high-contrast in both themes without a dedicated "always-dark" surface token.
+
+> **⚠ Tailwind collision — do NOT use `text-base`.** Tailwind v4 reserves `text-base` as a built-in font-size utility (`1rem`), which silently shadows our `--color-base` color registration. Use the inline-style form above (or `text-[var(--bg-base)]`) for the banner text color. The `bg-base` and `bg-fg` utilities are unaffected because Tailwind has no built-in utility of that name.
 
 Use sparingly — this is for transient notifications and undo affordances, not for content panels. Mixing inverted banners with the rest of the chrome on the same page works because the banner is visually unmistakable as a momentary overlay, not a persistent surface.
 
 | Element type                                  | Pattern                              |
 | --------------------------------------------- | ------------------------------------ |
-| Banner outer surface                          | `bg-fg text-base`                    |
+| Banner outer surface                          | `className="bg-fg"` + `style={{ color: "var(--bg-base)" }}` |
 | Action / link inside the banner               | A theme-stable accent (e.g. `text-accent-orange`, `text-accent-green-bright`) — readable on both inverted-banner shades |
-| Hover state on banner action                  | Pull toward the banner's text color (`hover:text-base`) for a subtle "absorbing" effect, or toward white in light mode |
+| Hover state on banner action                  | Pull toward the banner's text color: `onMouseEnter={(e) => e.currentTarget.style.color = "var(--bg-base)"}` (the `hover:text-[var(--bg-base)]` arbitrary-value form also works but is verbose) |
 
 Example: `WeeklyPlanner.tsx:696` (undo banner after a drag-drop date move).
 

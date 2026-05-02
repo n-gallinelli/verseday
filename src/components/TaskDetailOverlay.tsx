@@ -530,7 +530,7 @@ export default function TaskDetailOverlay({
                 setNotes(html);
                 debouncedSave({ notes: html });
               }}
-              placeholder="Add notes..."
+              placeholder="..."
               className="w-full bg-elevated text-[13px] text-fg-secondary leading-relaxed min-h-[380px]"
             />
           </div>

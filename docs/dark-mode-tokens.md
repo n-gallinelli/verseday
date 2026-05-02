@@ -82,7 +82,9 @@ Hand-tuned for each theme — dark variants are slightly desaturated and warmed 
 | `--accent-orange-soft-bg`   | `#FFF8F0`   | `rgba(214,134,71,0.10)` | High-priority task card background                |
 | `--accent-orange-soft-bg-hover` | `#FFF4E8` | `rgba(214,134,71,0.14)` |                                              |
 | `--accent-warning`          | `#c9923a`   | `#d6a35a`   | Rollover-day badge, advisory amber (not destructive)    |
-| `--accent-danger`           | `#d95f5f`   | `#e07474`   | Overdue badges, destructive (trash) hover               |
+| `--accent-danger`           | `#d95f5f`   | `#e07474`   | Soft alert / advisory red — text labels, ghost links, thin-border badges (overdue dates, "delete will…" hint copy) |
+| `--accent-destructive`      | `#C0614A`   | `#cb6e58`   | Heavy destructive red — solid-fill buttons that execute irreversible operations (delete project, delete task confirm) |
+| `--accent-destructive-hover` | `#A8543F`  | `#b35e48`   | Paired hover for `--accent-destructive` (press-confirm chrome) |
 
 ---
 
@@ -196,8 +198,49 @@ A subset of these tokens are exposed to Tailwind v4 in `src/index.css` via `@the
   --color-accent-warning: var(--accent-warning);
 
   --color-accent-danger: var(--accent-danger);
+
+  --color-accent-destructive: var(--accent-destructive);
+  --color-accent-destructive-hover: var(--accent-destructive-hover);
 }
 ```
+
+#### `--accent-danger` vs `--accent-destructive`
+
+Both are red-register tokens, but they encode different **semantic roles**, not just different intensities:
+
+- **`--accent-danger`** → **advisory / alert**. The user is being **informed of a risk** that exists in the data — overdue dates, the high-priority task indicator, over-budget time labels. There is no destructive action attached; the token's job is to draw attention to the state. Treatment is typically text-only or thin-tinted-bg, no paired hover.
+- **`--accent-destructive`** → **destructive-action register**. Anything that is the **trigger, the confirm, or the press-confirm chrome of an irreversible operation** — delete-project ghost trash icon, delete-task confirm button, archive menu item, drop-to-delete zones. Has a paired `--accent-destructive-hover` for solid-fill press states.
+
+**The rule (single test):** *"Does this UI lead to or commit an irreversible operation?"*
+
+| Pattern                                                              | Token                  |
+| -------------------------------------------------------------------- | ---------------------- |
+| Ghost trash icon button (opens a delete-confirm flow)                | `--accent-destructive` |
+| Solid-fill **Delete** button inside a confirm row                    | `--accent-destructive` (with `--accent-destructive-hover`) |
+| The confirm-message *text* itself ("Delete project & all tasks?")    | `--accent-destructive` |
+| Menu item that triggers archive/delete                               | `--accent-destructive` |
+| Armed state of a click-to-confirm trash button                       | `--accent-destructive` |
+| Inline ✕ to delete a sub-item (link, attachment)                     | `--accent-destructive` |
+| Overdue-date badge / label                                           | `--accent-danger`      |
+| High-priority task indicator                                         | `--accent-danger`      |
+| "Worked time over estimate" warning label                            | `--accent-danger`      |
+| Hint copy advising about a risk ("Time entries will also be deleted") | `--accent-warning` (amber) — even softer than danger, since it's only advisory and the destructive action is on a separate button |
+
+> **Why "trigger" sits in the destructive register, not danger.** The trash icon is the **affordance** for an irreversible flow; using `--accent-destructive` on it pre-announces to the user (and to the codebase) what surface they're about to enter. Demoting affordances to `--accent-danger` would split visually-equivalent ghost icons across two registers depending on whether they trigger destruction or just label a risk — that's exactly the drift this contract is supposed to prevent.
+
+In light mode the two values look distinguishable (pink-red `#d95f5f` vs. clay-red `#C0614A`). In dark mode they're closer in hue space (`#e07474` vs. `#cb6e58`); the differentiation comes more from the **role context** than the color alone, which is fine — the role is what's load-bearing, not the perceptual contrast.
+
+#### Dark-mode `*-hover` direction convention
+
+Across the contract, brand-accent `*-hover` tokens go **darker than the rest state in dark mode**, mirroring light-mode behavior:
+
+- `--accent-blue` `#7396cc` → `--accent-blue-hover` `#5f86bc`
+- `--accent-green` `#6fa088` → `--accent-green-hover` `#5e8c75`
+- `--accent-green-bright` `#55b598` → `--accent-green-bright-hover` `#4ba089`
+- `--accent-orange` `#d68647` → `--accent-orange-hover` `#c47840`
+- `--accent-destructive` `#cb6e58` → `--accent-destructive-hover` `#b35e48`
+
+The press-darkens convention beats press-lightens because (a) it matches the user's mental model from light mode, where pressing a button visibly "depresses" it darker; (b) on dark surfaces, lifting toward white reads as "elevation" not "press", which conflicts with the affordance. Don't introduce a `*-hover` token that lifts in dark mode without an explicit reason.
 
 Components then write standard Tailwind utilities — e.g. `bg-elevated`, `text-fg`, `text-fg-muted`, `border-line-soft`, `bg-accent-blue`.
 
@@ -267,6 +310,8 @@ These are the Tailwind utilities that resolve through `@theme inline`. The prefi
 | `bg-[#F0F9F5]`                     | `bg-accent-green-soft`             |
 | `text-[#c9923a]` / `bg-…`          | `text-accent-warning` / `bg-…`     |
 | `text-[#d95f5f]` / `bg-…`          | `text-accent-danger` / `bg-…`      |
+| `bg-[#C0614A]` / `text-[#C0614A]`  | `bg-accent-destructive` / `text-accent-destructive` |
+| `hover:bg-[#A8543F]`               | `hover:bg-accent-destructive-hover` |
 | `text-white` (on solid accent)     | `text-fg-on-accent`                |
 | `bg-black/30` (modal scrim)        | `bg-overlay-scrim`                 |
 

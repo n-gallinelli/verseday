@@ -70,6 +70,9 @@
 
   --accent-danger: #d95f5f;
 
+  --accent-destructive: #C0614A;
+  --accent-destructive-hover: #A8543F;
+
   /* — Calendar — */
   --calendar-selected-bg: #6B84A3;
   --calendar-today-ring: #6B84A3;
@@ -78,12 +81,10 @@
   /* — Mood tints — */
   --mood-tint-shutdown: #5DCAA5;
   --mood-tint-daily: #7B9ED9;
-  /* Note: --mood-bad's value (#C0614A) coincides with the clay-red used
-     across destructive UI (delete/archive). Do NOT reuse this token for
-     destructive surfaces — the semantics are unrelated, and a future
-     mood-palette tweak would silently re-color delete buttons. The
-     destructive-UI palette resolves through --accent-danger (or its
-     deeper variant if M3.4 promotes one). */
+  /* Note: --mood-bad's value (#C0614A) coincides with --accent-destructive
+     above, but the two represent different semantic registers (mood tier
+     vs. action class). Do NOT consolidate — a future mood-palette tweak
+     should not silently re-color delete buttons, and vice-versa. */
   --mood-bad: #C0614A;
   --mood-okay: #D4A843;
 
@@ -194,6 +195,9 @@
 
     --accent-danger: #e07474;
 
+    --accent-destructive: #cb6e58;
+    --accent-destructive-hover: #b35e48;
+
     /* — Calendar — */
     --calendar-selected-bg: #6e8aa9;
     --calendar-today-ring: #88a5c4;
@@ -285,6 +289,9 @@
   --color-accent-warning: var(--accent-warning);
 
   --color-accent-danger: var(--accent-danger);
+
+  --color-accent-destructive: var(--accent-destructive);
+  --color-accent-destructive-hover: var(--accent-destructive-hover);
 }
 
 body {

@@ -728,7 +728,7 @@ export default function DailyPlanner() {
                         </span>
                         <button
                           onClick={() => handleDelete(task.id)}
-                          className="bg-accent-danger text-fg-on-accent rounded-md px-3 py-1 text-[12px] cursor-pointer"
+                          className="bg-accent-destructive text-fg-on-accent rounded-md px-3 py-1 text-[12px] cursor-pointer hover:bg-accent-destructive-hover"
                         >
                           Delete
                         </button>

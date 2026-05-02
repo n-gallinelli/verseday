@@ -425,7 +425,7 @@ export default function Projects() {
                                         archiveTimerRef.current = setTimeout(() => setArchivedUndo(null), 5000);
                                         loadData();
                                       }}
-                                      className="w-full text-left px-3 py-1.5 text-[12px] text-accent-danger hover:bg-overlay-hover cursor-pointer"
+                                      className="w-full text-left px-3 py-1.5 text-[12px] text-accent-destructive hover:bg-overlay-hover cursor-pointer"
                                     >
                                       Archive
                                     </button>

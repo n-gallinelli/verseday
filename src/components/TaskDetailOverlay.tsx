@@ -683,7 +683,7 @@ export default function TaskDetailOverlay({
                 onDelete(task.id);
                 onClose();
               }}
-              className="text-accent-danger/60 hover:text-accent-danger cursor-pointer p-2 rounded-md hover:bg-accent-danger/10 transition-colors"
+              className="text-accent-destructive/60 hover:text-accent-destructive cursor-pointer p-2 rounded-md hover:bg-accent-destructive/10 transition-colors"
               title="Delete task"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

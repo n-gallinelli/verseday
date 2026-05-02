@@ -71,7 +71,7 @@ function PropertyRow({
 }) {
   return (
     <div>
-      <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1.5">
+      <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1.5">
         {label}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
@@ -161,13 +161,13 @@ function SortableTaskRow({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex flex-row items-start gap-3 p-4 bg-white border border-black/[0.07] rounded-lg mb-4 hover:border-black/[0.11] group"
+      className="flex flex-row items-start gap-3 p-4 bg-elevated border border-line-soft rounded-lg mb-4 hover:border-line-medium group"
     >
       {/* Drag handle */}
       <span
         {...attributes}
         {...listeners}
-        className="text-[12px] text-black/15 cursor-grab active:cursor-grabbing select-none flex-shrink-0 mt-[3px]"
+        className="text-[12px] text-fg-disabled cursor-grab active:cursor-grabbing select-none flex-shrink-0 mt-[3px]"
       >
         ⠿
       </span>
@@ -178,8 +178,8 @@ function SortableTaskRow({
         title={task.status === "done" ? "Mark as not done" : "Mark complete"}
         className={`w-[18px] h-[18px] rounded-full border-2 flex-shrink-0 cursor-pointer flex items-center justify-center mt-[1px] transition-colors ${
           task.status === "done"
-            ? "bg-[#6A9E7F] border-[#6A9E7F] hover:bg-[#5a8a6e] hover:border-[#5a8a6e]"
-            : "border-black/20 hover:border-[#6A9E7F]"
+            ? "bg-accent-green border-accent-green hover:bg-accent-green-hover hover:border-accent-green-hover"
+            : "border-line-strong hover:border-accent-green"
         }`}
       >
         <svg
@@ -187,7 +187,7 @@ function SortableTaskRow({
           height="9"
           viewBox="0 0 12 12"
           fill="none"
-          stroke={task.status === "done" ? "white" : "rgba(0,0,0,0.25)"}
+          stroke={task.status === "done" ? "var(--text-on-accent)" : "var(--text-faded)"}
           strokeWidth="2.2"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -205,15 +205,15 @@ function SortableTaskRow({
           onClick={() => onOpenDetail(task)}
           className={`text-[13px] font-normal text-left cursor-pointer hover:underline block w-full leading-[1.5] line-clamp-2 ${
             task.status === "done"
-              ? "text-black/30 line-through"
-              : "text-[#2c2a35]"
+              ? "text-fg-faded line-through"
+              : "text-fg"
           }`}
         >
           {task.title}
         </button>
 
         {/* Metadata row — date picker + estimate, below title */}
-        <div className="flex items-center gap-3 mt-1.5 text-[12px] text-[#999]">
+        <div className="flex items-center gap-3 mt-1.5 text-[12px] text-fg-muted">
           <CalendarPicker
             value={task.date_scheduled ?? ""}
             onChange={(date) => onSetDate(task.id, date)}
@@ -241,16 +241,16 @@ function SortableTaskRow({
               onFocus={(e) => e.currentTarget.select()}
               placeholder="0m"
               title="Click to edit time worked"
-              className="bg-[#f0f0f0] border border-transparent hover:bg-[#e8e8e8] focus:bg-white focus:border-[#7B9ED9]/30 rounded-md px-3 text-[12px] text-[#555] placeholder-[#999] tabular-nums w-[76px] h-[28px] leading-none outline-none cursor-text transition-colors"
+              className="bg-input-hover border border-transparent hover:bg-overlay-pressed focus:bg-elevated focus:border-accent-blue rounded-md px-3 text-[12px] text-fg-secondary placeholder:text-fg-muted tabular-nums w-[76px] h-[28px] leading-none outline-none cursor-text transition-colors"
             />
-            <span className="text-[#999]">/</span>
+            <span className="text-fg-muted">/</span>
             <select
               value={task.estimated_minutes ?? ""}
               onChange={(e) => {
                 const v = e.target.value;
                 onSetEstimate(task.id, v ? parseInt(v) : null);
               }}
-              className="bg-[#f0f0f0] hover:bg-[#e8e8e8] rounded-md px-3 text-[12px] text-[#555] cursor-pointer outline-none h-[28px] leading-none transition-colors"
+              className="bg-input-hover hover:bg-overlay-pressed rounded-md px-3 text-[12px] text-fg-secondary cursor-pointer outline-none h-[28px] leading-none transition-colors"
               title="Estimated time"
             >
               <option value="">— est</option>
@@ -272,7 +272,7 @@ function SortableTaskRow({
         {task.status !== "done" && (
           <button
             onClick={() => onStart(task)}
-            className="text-[11px] text-[#6B84A3] border border-[#6B84A3]/20 bg-[#6B84A3]/[0.06] px-1.5 py-0.5 rounded-[5px] cursor-pointer hover:bg-[#6B84A3]/[0.12]"
+            className="text-[11px] text-accent-blue border border-accent-blue/20 bg-accent-blue/[0.06] px-1.5 py-0.5 rounded-[5px] cursor-pointer hover:bg-accent-blue/[0.12]"
           >
             Start
           </button>
@@ -280,7 +280,7 @@ function SortableTaskRow({
         <button
           onClick={() => onDelete(task.id)}
           title="Delete task"
-          className="text-black/35 p-1 rounded-[5px] cursor-pointer hover:text-[#C0614A] hover:bg-[#C0614A]/[0.08] transition-colors"
+          className="text-fg-faded p-1 rounded-[5px] cursor-pointer hover:text-accent-destructive hover:bg-accent-destructive/[0.08] transition-colors"
         >
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />
@@ -730,7 +730,7 @@ export default function ProjectDetail() {
   if (!project) {
     return (
       <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 flex items-center justify-center text-black/30 text-[14px]">
+        <div className="flex-1 flex items-center justify-center text-fg-faded text-[14px]">
           Loading...
         </div>
       </div>
@@ -745,13 +745,18 @@ export default function ProjectDetail() {
 
         {/* Undo delete banner */}
         {pendingDelete && (
-          <div className="flex items-center gap-3 px-8 py-2 bg-[#2c2a35] text-white text-[12px] flex-shrink-0">
+          <div
+            className="flex items-center gap-3 px-8 py-2 bg-banner text-[12px] flex-shrink-0"
+            style={{ color: "var(--text-banner)" }}
+          >
             <span className="flex-1">
               Deleted &ldquo;{pendingDelete.task.title}&rdquo;
             </span>
             <button
               onClick={undoDelete}
-              className="text-[#f0b070] font-medium cursor-pointer hover:text-white"
+              className="text-accent-blue font-medium cursor-pointer transition-colors"
+              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-banner)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = ""; }}
             >
               Undo
             </button>
@@ -759,15 +764,15 @@ export default function ProjectDetail() {
         )}
 
         {/* Header strip — hero title row */}
-        <div className="px-8 pt-7 pb-5 border-b border-black/[0.04] flex-shrink-0">
+        <div className="px-8 pt-7 pb-5 border-b border-divider flex-shrink-0">
           <div className="flex items-center gap-3">
             {/* Color picker */}
             <div className="relative group flex-shrink-0">
               <div
-                className="w-[14px] h-[14px] rounded-full cursor-pointer ring-2 ring-transparent hover:ring-black/10 transition-all"
+                className="w-[14px] h-[14px] rounded-full cursor-pointer ring-2 ring-transparent hover:ring-overlay-pressed transition-all"
                 style={{ backgroundColor: editColor }}
               />
-              <div className="absolute top-full left-0 mt-1 z-20 bg-white border border-black/[0.1] rounded-lg shadow-lg p-2 hidden group-hover:flex gap-1.5 flex-wrap w-[120px]">
+              <div className="absolute top-full left-0 mt-1 z-20 bg-elevated border border-line-soft rounded-lg p-2 hidden group-hover:flex gap-1.5 flex-wrap w-[120px]" style={{ boxShadow: "var(--shadow-card)" }}>
                 {PRESET_COLORS.slice(0, 8).map((c) => (
                   <button
                     key={c}
@@ -775,7 +780,7 @@ export default function ProjectDetail() {
                     className="w-4 h-4 rounded-full cursor-pointer border"
                     style={{
                       backgroundColor: c,
-                      borderColor: editColor === c ? "#2c2a35" : "transparent",
+                      borderColor: editColor === c ? "var(--text-primary)" : "transparent",
                     }}
                   />
                 ))}
@@ -789,7 +794,7 @@ export default function ProjectDetail() {
               onChange={(e) => updateField("name", e.target.value.replace(/\n/g, ""))}
               maxLength={MAX_TITLE_LENGTH}
               rows={1}
-              className="flex-1 min-w-0 font-medium text-[#2c2a35] bg-transparent border-none outline-none resize-none leading-tight overflow-hidden focus:bg-white focus:border focus:border-[#7B9ED9]/30 focus:rounded-md focus:px-2 focus:-mx-2"
+              className="flex-1 min-w-0 font-medium text-fg bg-transparent border-none outline-none resize-none leading-tight overflow-hidden focus:bg-elevated focus:border focus:border-accent-blue focus:rounded-md focus:px-2 focus:-mx-2"
               style={{
                 fontSize:
                   editName.length <= 40
@@ -809,15 +814,15 @@ export default function ProjectDetail() {
               onClick={handleCompleteToggle}
               className={`text-[12px] cursor-pointer px-2.5 py-1 rounded-md border flex-shrink-0 ${
                 project.completed
-                  ? "bg-[#6A9E7F] border-[#6A9E7F] text-white"
-                  : "bg-[#6B84A3] border-[#6B84A3] text-white hover:bg-[#5A7390]"
+                  ? "bg-accent-green border-accent-green text-fg-on-accent"
+                  : "bg-accent-blue border-accent-blue text-fg-on-accent hover:bg-accent-blue-hover"
               }`}
             >
               {project.completed ? "✓ Completed" : "Mark Complete"}
             </button>
             <button
               onClick={handleClose}
-              className="text-black/25 hover:text-black/50 cursor-pointer text-[16px] flex-shrink-0 w-7 h-7 flex items-center justify-center"
+              className="text-fg-faded hover:text-fg-secondary cursor-pointer text-[16px] flex-shrink-0 w-7 h-7 flex items-center justify-center"
               title="Close"
             >
               ✕
@@ -832,14 +837,14 @@ export default function ProjectDetail() {
             {/* Task input row — prominent, right under the header */}
             <form
               onSubmit={handleAddTask}
-              className="flex items-center gap-2 mx-8 mt-7 mb-5 px-3.5 py-3 border border-black/[0.08] rounded-lg bg-white flex-shrink-0"
+              className="flex items-center gap-2 mx-8 mt-7 mb-5 px-3.5 py-3 border border-line-soft rounded-lg bg-elevated flex-shrink-0"
             >
               <svg
                 width="14"
                 height="14"
                 viewBox="0 0 14 14"
                 fill="none"
-                stroke="rgba(0,0,0,0.2)"
+                stroke="var(--text-disabled)"
                 strokeWidth="1.5"
                 strokeLinecap="round"
               >
@@ -852,11 +857,11 @@ export default function ProjectDetail() {
                 onChange={(e) => setNewTaskTitle(e.target.value)}
                 maxLength={MAX_TITLE_LENGTH}
                 placeholder="Add a task to this project..."
-                className="flex-1 bg-transparent border-none outline-none text-[13px] text-[#2c2a35] placeholder-black/25"
+                className="flex-1 bg-transparent border-none outline-none text-[13px] text-fg placeholder:text-fg-faded"
               />
               <button
                 type="submit"
-                className="bg-[#6B84A3] text-white border-none rounded-lg px-3.5 py-1.5 text-[12px] font-medium cursor-pointer hover:bg-[#5A7390]"
+                className="bg-accent-blue text-fg-on-accent border-none rounded-lg px-3.5 py-1.5 text-[12px] font-medium cursor-pointer hover:bg-accent-blue-hover"
               >
                 Add
               </button>
@@ -864,15 +869,15 @@ export default function ProjectDetail() {
 
             {/* Task list header */}
             <div className="flex items-center justify-between px-8 pb-2 flex-shrink-0">
-              <span className="uppercase text-black/30 [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
+              <span className="uppercase text-fg-faded [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
                 Tasks
               </span>
               <button
                 onClick={() => setShowDone(!showDone)}
-                className={`flex items-center gap-1.5 text-[11px] cursor-pointer px-2 py-1 rounded-full border bg-white hover:bg-black/[0.03] ${
+                className={`flex items-center gap-1.5 text-[11px] cursor-pointer px-2 py-1 rounded-full border bg-elevated hover:bg-overlay-hover ${
                   showDone
-                    ? "text-[#6B84A3] border-[#6B84A3]/20"
-                    : "text-black/35 border-black/[0.08]"
+                    ? "text-accent-blue border-accent-blue/20"
+                    : "text-fg-faded border-line-soft"
                 }`}
               >
                 {showDone ? "Hide completed" : "Show completed"}
@@ -891,7 +896,7 @@ export default function ProjectDetail() {
               strategy={verticalListSortingStrategy}
             >
               {tasks.length === 0 ? (
-                <p className="text-center text-black/25 py-8 text-[13px]">
+                <p className="text-center text-fg-faded py-8 text-[13px]">
                   No tasks yet. Add one above.
                 </p>
               ) : (
@@ -900,7 +905,7 @@ export default function ProjectDetail() {
                     return (
                       <div
                         key={task.id}
-                        className="p-3 rounded-lg bg-white border border-black/[0.08] space-y-2 mb-[5px]"
+                        className="p-3 rounded-lg bg-elevated border border-line-soft space-y-2 mb-[5px]"
                         onKeyDown={handleTaskEditKeyDown}
                       >
                         <div className="flex gap-2">
@@ -910,7 +915,7 @@ export default function ProjectDetail() {
                             onChange={(e) => setTaskEditTitle(e.target.value)}
                             maxLength={MAX_TITLE_LENGTH}
                             autoFocus
-                            className="flex-1 px-2.5 py-1.5 rounded-md bg-black/[0.03] border border-black/[0.08] text-[13px] text-[#2c2a35] focus:outline-none focus:border-[#7B9ED9]/30"
+                            className="flex-1 px-2.5 py-1.5 rounded-md bg-input border border-line-soft text-[13px] text-fg focus:outline-none focus:border-accent-blue"
                           />
                           <input
                             type="number"
@@ -921,7 +926,7 @@ export default function ProjectDetail() {
                             min={1}
                             max={MAX_ESTIMATE_MINUTES}
                             placeholder="min"
-                            className="w-20 px-2.5 py-1.5 rounded-md bg-black/[0.03] border border-black/[0.08] text-[13px] text-[#2c2a35] placeholder-black/25 focus:outline-none focus:border-[#7B9ED9]/30"
+                            className="w-20 px-2.5 py-1.5 rounded-md bg-input border border-line-soft text-[13px] text-fg placeholder:text-fg-faded focus:outline-none focus:border-accent-blue"
                           />
                         </div>
                         <div className="flex gap-2">
@@ -929,29 +934,29 @@ export default function ProjectDetail() {
                             type="date"
                             value={taskEditDate}
                             onChange={(e) => setTaskEditDate(e.target.value)}
-                            className="px-2.5 py-1.5 rounded-md bg-black/[0.03] border border-black/[0.08] text-[12px] text-black/50 focus:outline-none focus:border-[#7B9ED9]/30"
+                            className="px-2.5 py-1.5 rounded-md bg-input border border-line-soft text-[12px] text-fg-secondary focus:outline-none focus:border-accent-blue"
                           />
                         </div>
                         <RichTextEditor
                           value={taskEditNotes}
                           onChange={(html) => setTaskEditNotes(html)}
                           placeholder="Notes..."
-                          className="w-full px-2.5 py-2 rounded-md bg-black/[0.03] border border-black/[0.08] text-[12px] text-black/55 min-h-[60px] focus-within:border-[#7B9ED9]/30"
+                          className="w-full px-2.5 py-2 rounded-md bg-input border border-line-soft text-[12px] text-fg-secondary min-h-[60px] focus-within:border-accent-blue"
                         />
                         <div className="flex gap-2">
                           <button
                             onClick={saveTaskEdit}
-                            className="bg-[#6B84A3] text-white rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-[#5A7390]"
+                            className="bg-accent-blue text-fg-on-accent rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-accent-blue-hover"
                           >
                             Save
                           </button>
                           <button
                             onClick={() => setEditingTaskId(null)}
-                            className="bg-black/[0.05] text-black/45 rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-black/[0.07]"
+                            className="bg-overlay-hover text-fg-muted rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-overlay-pressed"
                           >
                             Cancel
                           </button>
-                          <span className="text-[10px] text-black/20 self-center ml-auto">
+                          <span className="text-[10px] text-fg-disabled self-center ml-auto">
                             Cmd+Enter to save, Esc to cancel
                           </span>
                         </div>
@@ -963,21 +968,21 @@ export default function ProjectDetail() {
                     return (
                       <div
                         key={task.id}
-                        className="p-3 rounded-lg bg-white border border-black/[0.08] flex items-center gap-3 mb-[5px]"
+                        className="p-3 rounded-lg bg-elevated border border-line-soft flex items-center gap-3 mb-[5px]"
                       >
-                        <span className="flex-1 text-[12px] text-[#c9923a]">
+                        <span className="flex-1 text-[12px] text-accent-warning">
                           Delete &ldquo;{task.title}&rdquo;? Time entries will
                           also be deleted.
                         </span>
                         <button
                           onClick={() => handleDeleteTask(task.id)}
-                          className="bg-[#C0614A] text-white rounded-md px-3 py-1 text-[11px] cursor-pointer"
+                          className="bg-accent-destructive text-fg-on-accent rounded-md px-3 py-1 text-[11px] cursor-pointer hover:bg-accent-destructive-hover"
                         >
                           Delete
                         </button>
                         <button
                           onClick={() => setConfirmDeleteId(null)}
-                          className="text-black/35 text-[11px] cursor-pointer hover:text-black/50"
+                          className="text-fg-faded text-[11px] cursor-pointer hover:text-fg-secondary"
                         >
                           Cancel
                         </button>
@@ -1029,10 +1034,10 @@ export default function ProjectDetail() {
           </div>
 
           {/* Right rail: dates + notes */}
-          <div className="flex-1 min-w-[200px] border-l border-black/[0.06] bg-[#FAFAF7] p-8 overflow-y-auto space-y-8">
+          <div className="flex-1 min-w-[200px] border-l border-line-hairline bg-rail p-8 overflow-y-auto space-y-8">
             <div className="flex gap-3">
               <div>
-                <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1.5">
+                <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1.5">
                   Start
                 </div>
                 <CalendarPicker
@@ -1043,7 +1048,7 @@ export default function ProjectDetail() {
                 />
               </div>
               <div>
-                <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-1.5">
+                <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1.5">
                   End
                 </div>
                 <CalendarPicker
@@ -1056,19 +1061,19 @@ export default function ProjectDetail() {
             </div>
 
             <div>
-              <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-2">
+              <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-2">
                 Notes
               </div>
               <RichTextEditor
                 value={editNotes}
                 onChange={(html) => updateField("notes", html)}
                 placeholder="Add notes..."
-                className="w-full bg-white border border-black/[0.06] rounded-md px-3.5 py-3 text-[13px] text-black/65 leading-relaxed min-h-[280px] focus-within:border-[#7B9ED9]/30"
+                className="w-full bg-elevated border border-line-hairline rounded-md px-3.5 py-3 text-[13px] text-fg-secondary leading-relaxed min-h-[280px] focus-within:border-accent-blue"
               />
             </div>
 
             <div>
-              <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-3">
+              <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-3">
                 This week
               </div>
               <div className="grid grid-cols-5 gap-2">
@@ -1080,14 +1085,14 @@ export default function ProjectDetail() {
                       <div
                         className="text-[10px] font-medium uppercase tracking-[0.05em] text-center pb-1.5 mb-2 border-b transition-colors"
                         style={{
-                          color: hasTasks ? editColor : "#999",
-                          borderColor: hasTasks ? `${editColor}40` : "#e5e5e5",
+                          color: hasTasks ? editColor : "var(--text-muted)",
+                          borderColor: hasTasks ? `color-mix(in srgb, ${editColor} 25%, transparent)` : "var(--border-soft)",
                         }}
                       >
                         {DAY_NAMES[i]}
                       </div>
                       {dayTasks.length === 0 ? (
-                        <div className="text-[10px] text-black/15 text-center">—</div>
+                        <div className="text-[10px] text-fg-disabled text-center">—</div>
                       ) : (
                         <div className="space-y-1">
                           {dayTasks.map((task) => (
@@ -1095,10 +1100,10 @@ export default function ProjectDetail() {
                               key={task.id}
                               onClick={() => setDetailTask(task)}
                               title={task.title}
-                              className={`block w-full text-left text-[11px] hover:text-[#2c2a35] cursor-pointer truncate leading-snug ${
+                              className={`block w-full text-left text-[11px] hover:text-fg cursor-pointer truncate leading-snug ${
                                 task.status === "done"
-                                  ? "text-black/30 line-through"
-                                  : "text-black/55"
+                                  ? "text-fg-faded line-through"
+                                  : "text-fg-secondary"
                               }`}
                             >
                               {task.title}
@@ -1115,24 +1120,24 @@ export default function ProjectDetail() {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center gap-2 px-8 py-3.5 border-t border-black/[0.06] flex-shrink-0">
-          <span className="text-[10px] text-black/20 flex-1">
+        <div className="flex items-center gap-2 px-8 py-3.5 border-t border-line-hairline flex-shrink-0">
+          <span className="text-[10px] text-fg-disabled flex-1">
             Auto-saved
           </span>
           {confirmDeleteProject ? (
             <div className="flex items-center gap-2">
-              <span className="text-[12px] text-[#C0614A]">
+              <span className="text-[12px] text-accent-destructive">
                 Delete project &amp; all tasks?
               </span>
               <button
                 onClick={handleDeleteProject}
-                className="bg-[#C0614A] text-white text-[11px] font-medium rounded-md px-2.5 py-1 cursor-pointer hover:bg-[#A8543F]"
+                className="bg-accent-destructive text-fg-on-accent text-[11px] font-medium rounded-md px-2.5 py-1 cursor-pointer hover:bg-accent-destructive-hover"
               >
                 Delete
               </button>
               <button
                 onClick={() => setConfirmDeleteProject(false)}
-                className="text-[11px] text-black/40 hover:text-black/60 cursor-pointer px-1.5"
+                className="text-[11px] text-fg-muted hover:text-fg-secondary cursor-pointer px-1.5"
               >
                 Cancel
               </button>
@@ -1141,7 +1146,7 @@ export default function ProjectDetail() {
             <button
               onClick={() => setConfirmDeleteProject(true)}
               title="Delete project"
-              className="text-[#C0614A]/60 hover:text-[#C0614A] cursor-pointer p-2 rounded-md hover:bg-[#C0614A]/[0.08] transition-colors"
+              className="text-accent-destructive/60 hover:text-accent-destructive cursor-pointer p-2 rounded-md hover:bg-accent-destructive/[0.08] transition-colors"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />

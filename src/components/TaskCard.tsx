@@ -50,7 +50,7 @@ function TrashButton({ onDelete }: { onDelete: () => void }) {
       onClick={handleClick}
       className={`w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors ${
         armed
-          ? "text-accent-danger bg-accent-danger/10"
+          ? "text-accent-destructive bg-accent-destructive/10"
           : "text-fg-faded hover:text-fg-muted hover:bg-overlay-hover"
       }`}
       title={armed ? "Click again to delete" : "Delete"}
@@ -301,7 +301,7 @@ export default function TaskCard({
                     )}
                     <button
                       onClick={() => handleDeleteLink(link.id)}
-                      className="text-fg-faded hover:text-accent-danger cursor-pointer text-[10px]"
+                      className="text-fg-faded hover:text-accent-destructive cursor-pointer text-[10px]"
                     >
                       ✕
                     </button>

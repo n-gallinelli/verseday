@@ -233,21 +233,30 @@ export default function PastShutdownCard({
               )}
               {completedTasks && completedTasks.length > 0 && (
                 <ul className="space-y-1">
-                  {completedTasks.map((task) => {
-                    const project = task.project_id != null ? projectMap.get(task.project_id) : null;
-                    return (
-                      <li key={task.id} className="flex items-center gap-2">
-                        <span className="text-[11px] text-accent-green flex-shrink-0">✓</span>
-                        {project && (
-                          <span
-                            className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: project.color }}
-                          />
-                        )}
-                        <span className="text-[12px] text-fg truncate">{task.title}</span>
-                      </li>
-                    );
-                  })}
+                  {[...completedTasks]
+                    .sort((a, b) => (b.is_highlight ?? 0) - (a.is_highlight ?? 0))
+                    .map((task) => {
+                      const project = task.project_id != null ? projectMap.get(task.project_id) : null;
+                      const isHighlight = !!task.is_highlight;
+                      return (
+                        <li key={task.id} className="flex items-center gap-2">
+                          {isHighlight ? (
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--accent-warning)" stroke="var(--accent-warning)" strokeWidth="2" className="flex-shrink-0">
+                              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                            </svg>
+                          ) : (
+                            <span className="text-[11px] text-accent-green flex-shrink-0">✓</span>
+                          )}
+                          {project && (
+                            <span
+                              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: project.color }}
+                            />
+                          )}
+                          <span className={`text-[12px] truncate ${isHighlight ? "text-fg font-medium" : "text-fg"}`}>{task.title}</span>
+                        </li>
+                      );
+                    })}
                 </ul>
               )}
             </div>

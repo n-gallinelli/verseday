@@ -313,7 +313,7 @@ export default function DailyShutdown() {
 
           {step === 1 && (
             <>
-              {/* Done today */}
+              {/* Done today — task cards */}
               <section>
                 <div className="flex items-baseline justify-between mb-2">
                   <h3 className="text-[13px] font-medium text-fg-secondary">
@@ -325,39 +325,55 @@ export default function DailyShutdown() {
                     </span>
                   )}
                 </div>
-                <div className="bg-elevated/60 rounded-md px-3 py-2.5 border border-transparent">
-                  {completedTasks.length > 0 ? (
-                    <div className="space-y-1.5">
-                      {completedTasks.map((task) => {
-                        const isHighlight = highlightIds.has(task.id);
-                        return (
-                          <div key={task.id} className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleToggleHighlight(task.id)}
-                              className="flex-shrink-0 cursor-pointer"
-                              title={isHighlight ? "Remove highlight" : highlightIds.size >= 3 ? "Max 3 highlights" : "Mark as highlight"}
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill={isHighlight ? "var(--accent-warning)" : "none"} stroke={isHighlight ? "var(--accent-warning)" : "var(--text-disabled)"} strokeWidth="2">
-                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                              </svg>
-                            </button>
-                            <span className="w-[12px] h-[12px] rounded-[2px] bg-accent-green flex items-center justify-center flex-shrink-0">
-                              <svg width="6" height="6" viewBox="0 0 8 8" fill="none" stroke="var(--text-on-accent)" strokeWidth="1.4" strokeLinecap="round">
-                                <path d="M1.5 4l2 2 3-3" />
-                              </svg>
-                            </span>
-                            <span className="text-[13px] text-fg-faded line-through truncate flex-1">{task.title}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-[13px] text-fg-disabled">No tasks completed</p>
-                  )}
-                </div>
+                {completedTasks.length > 0 ? (
+                  <div className="space-y-1">
+                    {completedTasks.map((task) => {
+                      const isHighlight = highlightIds.has(task.id);
+                      const project = task.project_id != null ? projectMap.get(task.project_id) : null;
+                      const worked = workedPerTask.get(task.id) ?? 0;
+                      return (
+                        <div
+                          key={task.id}
+                          className="px-2.5 py-[6px] rounded-md border border-line-soft bg-elevated/60 flex items-center gap-2.5 transition-colors hover:bg-overlay-hover"
+                        >
+                          <button
+                            onClick={() => handleToggleHighlight(task.id)}
+                            className="flex-shrink-0 cursor-pointer"
+                            title={isHighlight ? "Remove highlight" : highlightIds.size >= 3 ? "Max 3 highlights" : "Mark as highlight"}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill={isHighlight ? "var(--accent-warning)" : "none"} stroke={isHighlight ? "var(--accent-warning)" : "var(--text-disabled)"} strokeWidth="2">
+                              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                            </svg>
+                          </button>
+                          <span className="w-[14px] h-[14px] rounded-full bg-accent-green flex items-center justify-center flex-shrink-0">
+                            <svg width="7" height="7" viewBox="0 0 8 8" fill="none" stroke="var(--text-on-accent)" strokeWidth="1.6" strokeLinecap="round">
+                              <path d="M1.5 4l2 2 3-3" />
+                            </svg>
+                          </span>
+                          {project && (
+                            <span
+                              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: project.color }}
+                              title={project.name}
+                            />
+                          )}
+                          <span className="flex-1 text-[12px] text-fg-faded line-through truncate">{task.title}</span>
+                          {project && (
+                            <span className="text-[10px] text-fg-faded shrink-0 max-w-[120px] truncate">{project.name}</span>
+                          )}
+                          {worked > 0 && (
+                            <span className="text-[10px] text-fg-faded tabular-nums shrink-0">{worked}m</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-[12px] text-fg-disabled px-2.5">No tasks completed</p>
+                )}
               </section>
 
-              {/* Didn't get to */}
+              {/* Didn't get to — task cards */}
               <section>
                 <div className="flex items-baseline justify-between mb-2">
                   <h3 className="text-[13px] font-medium text-fg-secondary">
@@ -372,34 +388,50 @@ export default function DailyShutdown() {
                     </button>
                   )}
                 </div>
-                <div className="bg-elevated/60 rounded-md px-3 py-2.5 border border-transparent">
-                  {incompleteTasks.length > 0 ? (
-                    <div className="space-y-1.5">
-                      {incompleteTasks.map((task) => {
-                        const isCarried = carriedIds.has(task.id);
-                        return (
-                          <div key={task.id} className="flex items-center gap-2">
-                            {isCarried ? (
-                              <span className="text-[13px] text-fg-faded italic truncate flex-1">{task.title}</span>
-                            ) : (
-                              <button
-                                onClick={() => carryTaskToTomorrow(task.id)}
-                                className="text-[13px] text-fg truncate flex-1 text-left cursor-pointer hover:text-accent-blue"
-                              >
-                                {task.title}
-                              </button>
-                            )}
-                            {isCarried && (
-                              <span className="text-[10px] text-accent-green flex-shrink-0">Moved</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-[13px] text-fg-disabled">Everything done!</p>
-                  )}
-                </div>
+                {incompleteTasks.length > 0 ? (
+                  <div className="space-y-1">
+                    {incompleteTasks.map((task) => {
+                      const isCarried = carriedIds.has(task.id);
+                      const project = task.project_id != null ? projectMap.get(task.project_id) : null;
+                      const est = task.estimated_minutes ?? 0;
+                      return (
+                        <div
+                          key={task.id}
+                          className="group/row px-2.5 py-[6px] rounded-md border border-line-soft bg-elevated/60 flex items-center gap-2.5 transition-colors hover:bg-overlay-hover"
+                        >
+                          <span className={`w-[14px] h-[14px] rounded-full border-2 flex-shrink-0 ${task.priority === "high" ? "border-accent-danger" : "border-line-strong"}`} />
+                          {project && (
+                            <span
+                              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: project.color }}
+                              title={project.name}
+                            />
+                          )}
+                          <span className={`flex-1 text-[12px] truncate ${isCarried ? "text-fg-faded italic" : "text-fg"}`}>{task.title}</span>
+                          {project && !isCarried && (
+                            <span className="text-[10px] text-fg-faded shrink-0 max-w-[120px] truncate">{project.name}</span>
+                          )}
+                          {est > 0 && !isCarried && (
+                            <span className="text-[10px] text-fg-faded tabular-nums shrink-0">{est}m</span>
+                          )}
+                          {isCarried ? (
+                            <span className="text-[10px] text-accent-green flex-shrink-0">Moved →</span>
+                          ) : (
+                            <button
+                              onClick={() => carryTaskToTomorrow(task.id)}
+                              className="text-[10px] text-accent-blue-soft-fg hover:text-accent-blue cursor-pointer flex-shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity"
+                              title="Move to tomorrow"
+                            >
+                              Move →
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-[12px] text-fg-disabled px-2.5">Everything done!</p>
+                )}
               </section>
 
               {/* Time tracked — small footer summary */}
@@ -477,8 +509,15 @@ export default function DailyShutdown() {
           {step === 1 ? (
             <button
               onClick={() => setStep(2)}
-              className="flex-1 py-2.5 rounded-lg border border-accent-blue/50 text-accent-blue-soft-fg text-[13px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors"
+              className="flex-1 py-2.5 rounded-lg border border-accent-blue/50 text-accent-blue-soft-fg text-[13px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors flex items-center justify-center gap-1.5"
             >
+              <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                {/* Closed eye — top eyelid arc + a few short lashes */}
+                <path d="M1.5 4 Q7 9 12.5 4" />
+                <path d="M3 6.5 l-0.5 1.5" />
+                <path d="M7 7.5 l0 1.5" />
+                <path d="M11 6.5 l0.5 1.5" />
+              </svg>
               Reflect
             </button>
           ) : (

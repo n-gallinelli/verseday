@@ -318,11 +318,9 @@ export default function DailyShutdown() {
                   <h3 className="text-[13px] font-medium text-fg-secondary">
                     Done today
                   </h3>
-                  {completedTasks.length > 0 && (
+                  {highlightIds.size > 0 && (
                     <span className="text-[11px] text-fg-faded">
-                      {highlightIds.size === 0
-                        ? "Star anything worth remembering"
-                        : `${highlightIds.size} ${highlightIds.size === 1 ? "highlight" : "highlights"} starred`}
+                      {highlightIds.size} {highlightIds.size === 1 ? "highlight" : "highlights"} starred
                     </span>
                   )}
                 </div>

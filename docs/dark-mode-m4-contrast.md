@@ -82,18 +82,18 @@ Filled buttons (Start, Delete, etc.). AA threshold 4.5:1. Verse-flagged risk: da
 
 | Pair | Contrast | WCAG threshold |
 |---|---|---|
-| `text-on-accent on accent-blue` | 2.7:1 ❌ | 4.5:1 |
-| `text-on-accent on accent-blue-hover` | 3.5:1 ❌ | 4.5:1 |
-| `text-on-accent on accent-green` | 3.1:1 ❌ | 4.5:1 |
-| `text-on-accent on accent-green-hover` | 4.0:1 ❌ | 4.5:1 |
+| `text-on-accent on accent-blue` | 5.0:1 ✅ | 4.5:1 |
+| `text-on-accent on accent-blue-hover` | 6.2:1 ✅ | 4.5:1 |
+| `text-on-accent on accent-green` | 4.7:1 ✅ | 4.5:1 |
+| `text-on-accent on accent-green-hover` | 5.9:1 ✅ | 4.5:1 |
 | `text-on-accent on accent-green-bright` | 2.0:1 ❌ | 4.5:1 |
 | `text-on-accent on accent-green-bright-hover` | 2.5:1 ❌ | 4.5:1 |
-| `text-on-accent on accent-orange` | 2.7:1 ❌ | 4.5:1 |
-| `text-on-accent on accent-orange-hover` | 3.4:1 ❌ | 4.5:1 |
-| `text-on-accent on accent-warning` | 2.7:1 ❌ | 4.5:1 |
-| `text-on-accent on accent-danger` | 3.7:1 ❌ | 4.5:1 |
-| `text-on-accent on accent-destructive` | 4.2:1 ❌ | 4.5:1 |
-| `text-on-accent on accent-destructive-hover` | 5.2:1 ✅ | 4.5:1 |
+| `text-on-accent on accent-orange` | 4.9:1 ✅ | 4.5:1 |
+| `text-on-accent on accent-orange-hover` | 6.1:1 ✅ | 4.5:1 |
+| `text-on-accent on accent-warning` | 4.9:1 ✅ | 4.5:1 |
+| `text-on-accent on accent-danger` | 5.7:1 ✅ | 4.5:1 |
+| `text-on-accent on accent-destructive` | 5.3:1 ✅ | 4.5:1 |
+| `text-on-accent on accent-destructive-hover` | 7.0:1 ✅ | 4.5:1 |
 
 ### 3. Accent-as-text on surface
 
@@ -101,30 +101,30 @@ Accent colors used inline as text on plain surfaces (status messages, links, moo
 
 | Pair | Contrast | WCAG threshold |
 |---|---|---|
-| `accent-blue-soft-text on bg-base` | 4.4:1 ❌ | 4.5:1 |
-| `accent-blue-soft-text on bg-elevated` | 4.8:1 ✅ | 4.5:1 |
-| `accent-blue-soft-text on bg-sidebar` | 4.1:1 ❌ | 4.5:1 |
-| `accent-blue on bg-base` | 2.5:1 ❌ | 4.5:1 |
-| `accent-blue on bg-elevated` | 2.7:1 ❌ | 4.5:1 |
-| `accent-blue on bg-sidebar` | 2.3:1 ❌ | 4.5:1 |
+| `accent-blue-soft-text on bg-base` | 5.6:1 ✅ | 4.5:1 |
+| `accent-blue-soft-text on bg-elevated` | 6.1:1 ✅ | 4.5:1 |
+| `accent-blue-soft-text on bg-sidebar` | 5.2:1 ✅ | 4.5:1 |
+| `accent-blue on bg-base` | 4.5:1 ✅ | 4.5:1 |
+| `accent-blue on bg-elevated` | 5.0:1 ✅ | 4.5:1 |
+| `accent-blue on bg-sidebar` | 4.3:1 ❌ | 4.5:1 |
 | `accent-orange-soft-text on bg-base` | 6.3:1 ✅ | 4.5:1 |
 | `accent-orange-soft-text on bg-elevated` | 7.0:1 ✅ | 4.5:1 |
 | `accent-orange-soft-text on bg-sidebar` | 6.0:1 ✅ | 4.5:1 |
-| `accent-orange on bg-base` | 2.5:1 ❌ | 4.5:1 |
-| `accent-orange on bg-elevated` | 2.7:1 ❌ | 4.5:1 |
-| `accent-orange on bg-sidebar` | 2.3:1 ❌ | 4.5:1 |
+| `accent-orange on bg-base` | 4.5:1 ❌ | 4.5:1 |
+| `accent-orange on bg-elevated` | 4.9:1 ✅ | 4.5:1 |
+| `accent-orange on bg-sidebar` | 4.2:1 ❌ | 4.5:1 |
 | `accent-warning-soft-text on bg-base` | 6.2:1 ✅ | 4.5:1 |
 | `accent-warning-soft-text on bg-elevated` | 6.8:1 ✅ | 4.5:1 |
 | `accent-warning-soft-text on bg-sidebar` | 5.8:1 ✅ | 4.5:1 |
-| `accent-warning on bg-base` | 2.5:1 ❌ | 4.5:1 |
-| `accent-warning on bg-elevated` | 2.7:1 ❌ | 4.5:1 |
-| `accent-warning on bg-sidebar` | 2.3:1 ❌ | 4.5:1 |
-| `accent-danger on bg-base` | 3.3:1 ❌ | 4.5:1 |
-| `accent-danger on bg-elevated` | 3.7:1 ❌ | 4.5:1 |
-| `accent-danger on bg-sidebar` | 3.1:1 ❌ | 4.5:1 |
-| `accent-destructive on bg-base` | 3.8:1 ❌ | 4.5:1 |
-| `accent-destructive on bg-elevated` | 4.2:1 ❌ | 4.5:1 |
-| `accent-destructive on bg-sidebar` | 3.6:1 ❌ | 4.5:1 |
+| `accent-warning on bg-base` | 4.5:1 ❌ | 4.5:1 |
+| `accent-warning on bg-elevated` | 4.9:1 ✅ | 4.5:1 |
+| `accent-warning on bg-sidebar` | 4.2:1 ❌ | 4.5:1 |
+| `accent-danger on bg-base` | 5.2:1 ✅ | 4.5:1 |
+| `accent-danger on bg-elevated` | 5.7:1 ✅ | 4.5:1 |
+| `accent-danger on bg-sidebar` | 4.9:1 ✅ | 4.5:1 |
+| `accent-destructive on bg-base` | 4.9:1 ✅ | 4.5:1 |
+| `accent-destructive on bg-elevated` | 5.3:1 ✅ | 4.5:1 |
+| `accent-destructive on bg-sidebar` | 4.6:1 ✅ | 4.5:1 |
 | `accent-green-deep on bg-base` | 5.6:1 ✅ | 4.5:1 |
 | `accent-green-deep on bg-elevated` | 6.2:1 ✅ | 4.5:1 |
 | `accent-green-deep on bg-sidebar` | 5.3:1 ✅ | 4.5:1 |
@@ -138,22 +138,22 @@ The third-tier bake: accent text on tinted bg of the same accent over a parent s
 
 | Pair | Contrast | WCAG threshold |
 |---|---|---|
-| `accent-blue on accent-blue/[0.06] ▸ bg-base` | 2.4:1 ❌ | 4.5:1 |
-| `accent-blue on accent-blue/[0.06] ▸ bg-elevated` | 2.6:1 ❌ | 4.5:1 |
-| `accent-blue on accent-blue/[0.12]  (hover) ▸ bg-base` | 2.2:1 ❌ | 4.5:1 |
-| `accent-blue on accent-blue/[0.12]  (hover) ▸ bg-elevated` | 2.4:1 ❌ | 4.5:1 |
-| `accent-blue-soft-text on accent-blue-soft-bg ▸ bg-base` | 4.3:1 ❌ | 4.5:1 |
-| `accent-blue-soft-text on accent-blue-soft-bg ▸ bg-elevated` | 4.3:1 ❌ | 4.5:1 |
-| `accent-orange on accent-orange/[0.08] ▸ bg-base` | 2.3:1 ❌ | 4.5:1 |
-| `accent-orange on accent-orange/[0.08] ▸ bg-elevated` | 2.5:1 ❌ | 4.5:1 |
-| `accent-orange on accent-orange/[0.02]  (today col) ▸ bg-base` | 2.4:1 ❌ | 4.5:1 |
-| `accent-orange on accent-orange/[0.02]  (today col) ▸ bg-elevated` | 2.7:1 ❌ | 4.5:1 |
-| `accent-orange on accent-orange-soft-bg ▸ bg-base` | 2.6:1 ❌ | 4.5:1 |
-| `accent-orange on accent-orange-soft-bg ▸ bg-elevated` | 2.6:1 ❌ | 4.5:1 |
-| `accent-danger on accent-danger/10 ▸ bg-base` | 3.0:1 ❌ | 4.5:1 |
-| `accent-danger on accent-danger/10 ▸ bg-elevated` | 3.2:1 ❌ | 4.5:1 |
-| `accent-destructive on accent-destructive/[0.08] ▸ bg-base` | 3.4:1 ❌ | 4.5:1 |
-| `accent-destructive on accent-destructive/[0.08] ▸ bg-elevated` | 3.8:1 ❌ | 4.5:1 |
+| `accent-blue on accent-blue/[0.06] ▸ bg-base` | 4.2:1 ❌ | 4.5:1 |
+| `accent-blue on accent-blue/[0.06] ▸ bg-elevated` | 4.6:1 ✅ | 4.5:1 |
+| `accent-blue on accent-blue/[0.12]  (hover) ▸ bg-base` | 3.9:1 ❌ | 4.5:1 |
+| `accent-blue on accent-blue/[0.12]  (hover) ▸ bg-elevated` | 4.3:1 ❌ | 4.5:1 |
+| `accent-blue-soft-text on accent-blue-soft-bg ▸ bg-base` | 5.5:1 ✅ | 4.5:1 |
+| `accent-blue-soft-text on accent-blue-soft-bg ▸ bg-elevated` | 5.5:1 ✅ | 4.5:1 |
+| `accent-orange on accent-orange/[0.08] ▸ bg-base` | 4.0:1 ❌ | 4.5:1 |
+| `accent-orange on accent-orange/[0.08] ▸ bg-elevated` | 4.4:1 ❌ | 4.5:1 |
+| `accent-orange on accent-orange/[0.02]  (today col) ▸ bg-base` | 4.3:1 ❌ | 4.5:1 |
+| `accent-orange on accent-orange/[0.02]  (today col) ▸ bg-elevated` | 4.8:1 ✅ | 4.5:1 |
+| `accent-orange on accent-orange-soft-bg ▸ bg-base` | 4.7:1 ✅ | 4.5:1 |
+| `accent-orange on accent-orange-soft-bg ▸ bg-elevated` | 4.7:1 ✅ | 4.5:1 |
+| `accent-danger on accent-danger/10 ▸ bg-base` | 4.5:1 ✅ | 4.5:1 |
+| `accent-danger on accent-danger/10 ▸ bg-elevated` | 4.9:1 ✅ | 4.5:1 |
+| `accent-destructive on accent-destructive/[0.08] ▸ bg-base` | 4.4:1 ❌ | 4.5:1 |
+| `accent-destructive on accent-destructive/[0.08] ▸ bg-elevated` | 4.8:1 ✅ | 4.5:1 |
 | `accent-green-deep on accent-green-soft-bg ▸ bg-base` | 5.8:1 ✅ | 4.5:1 |
 | `accent-green-deep on accent-green-soft-bg ▸ bg-elevated` | 5.8:1 ✅ | 4.5:1 |
 
@@ -198,12 +198,12 @@ Non-text shapes the user must perceive: progress-bar fills, focus rings, accent 
 
 | Pair | Contrast | WCAG threshold |
 |---|---|---|
-| `PiP inner bar (accent-blue) vs track (overlay-hover ▸ bg-base)` | 2.3:1 ❌ | 3.0:1 |
-| `PiP inner bar (accent-blue) vs track (overlay-hover ▸ bg-elevated)` | 2.5:1 ❌ | 3.0:1 |
-| `accent-blue/40 (focus-ring) on bg-base` | 1.4:1 ❌ | 3.0:1 |
-| `accent-blue/40 (focus-ring) on bg-elevated` | 1.4:1 ❌ | 3.0:1 |
-| `accent-blue/20 outline on bg-base` | 1.2:1 ❌ | 3.0:1 |
-| `accent-blue/30 outline on bg-base` | 1.3:1 ❌ | 3.0:1 |
+| `PiP inner bar (accent-blue) vs track (overlay-hover ▸ bg-base)` | 4.2:1 ✅ | 3.0:1 |
+| `PiP inner bar (accent-blue) vs track (overlay-hover ▸ bg-elevated)` | 4.6:1 ✅ | 3.0:1 |
+| `accent-blue/40 (focus-ring) on bg-base` | 1.7:1 ❌ | 3.0:1 |
+| `accent-blue/40 (focus-ring) on bg-elevated` | 1.7:1 ❌ | 3.0:1 |
+| `accent-blue/20 outline on bg-base` | 1.3:1 ❌ | 3.0:1 |
+| `accent-blue/30 outline on bg-base` | 1.5:1 ❌ | 3.0:1 |
 
 ## Dark mode
 
@@ -417,53 +417,23 @@ All pairs that fall below the WCAG AA threshold in either mode. Disposition (whi
 | light | Body text on surface | `text-faded on bg-input-hover ▸ bg-elevated` | 1.8:1 | 4.5:1 |
 | light | Body text on surface | `text-muted on bg-tag-soft ▸ bg-base` | 2.8:1 | 4.5:1 |
 | light | Body text on surface | `text-muted on bg-tag-soft ▸ bg-elevated` | 2.8:1 | 4.5:1 |
-| light | Solid-fill button text (text-on-accent on accent bg) | `text-on-accent on accent-blue` | 2.7:1 | 4.5:1 |
-| light | Solid-fill button text (text-on-accent on accent bg) | `text-on-accent on accent-blue-hover` | 3.5:1 | 4.5:1 |
-| light | Solid-fill button text (text-on-accent on accent bg) | `text-on-accent on accent-green` | 3.1:1 | 4.5:1 |
-| light | Solid-fill button text (text-on-accent on accent bg) | `text-on-accent on accent-green-hover` | 4.0:1 | 4.5:1 |
 | light | Solid-fill button text (text-on-accent on accent bg) | `text-on-accent on accent-green-bright` | 2.0:1 | 4.5:1 |
 | light | Solid-fill button text (text-on-accent on accent bg) | `text-on-accent on accent-green-bright-hover` | 2.5:1 | 4.5:1 |
-| light | Solid-fill button text (text-on-accent on accent bg) | `text-on-accent on accent-orange` | 2.7:1 | 4.5:1 |
-| light | Solid-fill button text (text-on-accent on accent bg) | `text-on-accent on accent-orange-hover` | 3.4:1 | 4.5:1 |
-| light | Solid-fill button text (text-on-accent on accent bg) | `text-on-accent on accent-warning` | 2.7:1 | 4.5:1 |
-| light | Solid-fill button text (text-on-accent on accent bg) | `text-on-accent on accent-danger` | 3.7:1 | 4.5:1 |
-| light | Solid-fill button text (text-on-accent on accent bg) | `text-on-accent on accent-destructive` | 4.2:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-blue-soft-text on bg-base` | 4.4:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-blue-soft-text on bg-sidebar` | 4.1:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-blue on bg-base` | 2.5:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-blue on bg-elevated` | 2.7:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-blue on bg-sidebar` | 2.3:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-orange on bg-base` | 2.5:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-orange on bg-elevated` | 2.7:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-orange on bg-sidebar` | 2.3:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-warning on bg-base` | 2.5:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-warning on bg-elevated` | 2.7:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-warning on bg-sidebar` | 2.3:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-danger on bg-base` | 3.3:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-danger on bg-elevated` | 3.7:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-danger on bg-sidebar` | 3.1:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-destructive on bg-base` | 3.8:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-destructive on bg-elevated` | 4.2:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-destructive on bg-sidebar` | 3.6:1 | 4.5:1 |
+| light | Accent-as-text on surface | `accent-blue on bg-sidebar` | 4.3:1 | 4.5:1 |
+| light | Accent-as-text on surface | `accent-orange on bg-base` | 4.5:1 | 4.5:1 |
+| light | Accent-as-text on surface | `accent-orange on bg-sidebar` | 4.2:1 | 4.5:1 |
+| light | Accent-as-text on surface | `accent-warning on bg-base` | 4.5:1 | 4.5:1 |
+| light | Accent-as-text on surface | `accent-warning on bg-sidebar` | 4.2:1 | 4.5:1 |
 | light | Accent-as-text on surface | `accent-green-bright on bg-base` | 1.8:1 | 4.5:1 |
 | light | Accent-as-text on surface | `accent-green-bright on bg-elevated` | 2.0:1 | 4.5:1 |
 | light | Accent-as-text on surface | `accent-green-bright on bg-sidebar` | 1.7:1 | 4.5:1 |
-| light | Accent-text on accent-tint background | `accent-blue on accent-blue/[0.06] ▸ bg-base` | 2.4:1 | 4.5:1 |
-| light | Accent-text on accent-tint background | `accent-blue on accent-blue/[0.06] ▸ bg-elevated` | 2.6:1 | 4.5:1 |
-| light | Accent-text on accent-tint background | `accent-blue on accent-blue/[0.12]  (hover) ▸ bg-base` | 2.2:1 | 4.5:1 |
-| light | Accent-text on accent-tint background | `accent-blue on accent-blue/[0.12]  (hover) ▸ bg-elevated` | 2.4:1 | 4.5:1 |
-| light | Accent-text on accent-tint background | `accent-blue-soft-text on accent-blue-soft-bg ▸ bg-base` | 4.3:1 | 4.5:1 |
-| light | Accent-text on accent-tint background | `accent-blue-soft-text on accent-blue-soft-bg ▸ bg-elevated` | 4.3:1 | 4.5:1 |
-| light | Accent-text on accent-tint background | `accent-orange on accent-orange/[0.08] ▸ bg-base` | 2.3:1 | 4.5:1 |
-| light | Accent-text on accent-tint background | `accent-orange on accent-orange/[0.08] ▸ bg-elevated` | 2.5:1 | 4.5:1 |
-| light | Accent-text on accent-tint background | `accent-orange on accent-orange/[0.02]  (today col) ▸ bg-base` | 2.4:1 | 4.5:1 |
-| light | Accent-text on accent-tint background | `accent-orange on accent-orange/[0.02]  (today col) ▸ bg-elevated` | 2.7:1 | 4.5:1 |
-| light | Accent-text on accent-tint background | `accent-orange on accent-orange-soft-bg ▸ bg-base` | 2.6:1 | 4.5:1 |
-| light | Accent-text on accent-tint background | `accent-orange on accent-orange-soft-bg ▸ bg-elevated` | 2.6:1 | 4.5:1 |
-| light | Accent-text on accent-tint background | `accent-danger on accent-danger/10 ▸ bg-base` | 3.0:1 | 4.5:1 |
-| light | Accent-text on accent-tint background | `accent-danger on accent-danger/10 ▸ bg-elevated` | 3.2:1 | 4.5:1 |
-| light | Accent-text on accent-tint background | `accent-destructive on accent-destructive/[0.08] ▸ bg-base` | 3.4:1 | 4.5:1 |
-| light | Accent-text on accent-tint background | `accent-destructive on accent-destructive/[0.08] ▸ bg-elevated` | 3.8:1 | 4.5:1 |
+| light | Accent-text on accent-tint background | `accent-blue on accent-blue/[0.06] ▸ bg-base` | 4.2:1 | 4.5:1 |
+| light | Accent-text on accent-tint background | `accent-blue on accent-blue/[0.12]  (hover) ▸ bg-base` | 3.9:1 | 4.5:1 |
+| light | Accent-text on accent-tint background | `accent-blue on accent-blue/[0.12]  (hover) ▸ bg-elevated` | 4.3:1 | 4.5:1 |
+| light | Accent-text on accent-tint background | `accent-orange on accent-orange/[0.08] ▸ bg-base` | 4.0:1 | 4.5:1 |
+| light | Accent-text on accent-tint background | `accent-orange on accent-orange/[0.08] ▸ bg-elevated` | 4.4:1 | 4.5:1 |
+| light | Accent-text on accent-tint background | `accent-orange on accent-orange/[0.02]  (today col) ▸ bg-base` | 4.3:1 | 4.5:1 |
+| light | Accent-text on accent-tint background | `accent-destructive on accent-destructive/[0.08] ▸ bg-base` | 4.4:1 | 4.5:1 |
 | light | Borders / graphical edges | `border-medium on bg-base` | 1.3:1 | 3.0:1 |
 | light | Borders / graphical edges | `border-medium on bg-elevated` | 1.3:1 | 3.0:1 |
 | light | Borders / graphical edges | `border-medium on bg-sidebar` | 1.3:1 | 3.0:1 |
@@ -474,12 +444,10 @@ All pairs that fall below the WCAG AA threshold in either mode. Disposition (whi
 | light | Borders / graphical edges | `border-strong on bg-sidebar` | 1.6:1 | 3.0:1 |
 | light | Borders / graphical edges | `border-strong on bg-rail` | 1.6:1 | 3.0:1 |
 | light | Borders / graphical edges | `border-strong on bg-sunken` | 1.6:1 | 3.0:1 |
-| light | Graphical UI shapes | `PiP inner bar (accent-blue) vs track (overlay-hover ▸ bg-base)` | 2.3:1 | 3.0:1 |
-| light | Graphical UI shapes | `PiP inner bar (accent-blue) vs track (overlay-hover ▸ bg-elevated)` | 2.5:1 | 3.0:1 |
-| light | Graphical UI shapes | `accent-blue/40 (focus-ring) on bg-base` | 1.4:1 | 3.0:1 |
-| light | Graphical UI shapes | `accent-blue/40 (focus-ring) on bg-elevated` | 1.4:1 | 3.0:1 |
-| light | Graphical UI shapes | `accent-blue/20 outline on bg-base` | 1.2:1 | 3.0:1 |
-| light | Graphical UI shapes | `accent-blue/30 outline on bg-base` | 1.3:1 | 3.0:1 |
+| light | Graphical UI shapes | `accent-blue/40 (focus-ring) on bg-base` | 1.7:1 | 3.0:1 |
+| light | Graphical UI shapes | `accent-blue/40 (focus-ring) on bg-elevated` | 1.7:1 | 3.0:1 |
+| light | Graphical UI shapes | `accent-blue/20 outline on bg-base` | 1.3:1 | 3.0:1 |
+| light | Graphical UI shapes | `accent-blue/30 outline on bg-base` | 1.5:1 | 3.0:1 |
 | dark | Body text on surface | `text-muted on bg-base` | 4.5:1 | 4.5:1 |
 | dark | Body text on surface | `text-muted on bg-elevated` | 4.3:1 | 4.5:1 |
 | dark | Body text on surface | `text-muted on bg-sidebar` | 4.4:1 | 4.5:1 |
@@ -520,5 +488,5 @@ All pairs that fall below the WCAG AA threshold in either mode. Disposition (whi
 | dark | Graphical UI shapes | `accent-blue/20 outline on bg-base` | 1.4:1 | 3.0:1 |
 | dark | Graphical UI shapes | `accent-blue/30 outline on bg-base` | 1.6:1 | 3.0:1 |
 
-_Total failures: 126 across 2 mode(s)._
+_Total failures: 94 across 2 mode(s)._
 

@@ -47,33 +47,41 @@
   --shadow-card: 0 2px 10px -2px rgba(0, 0, 0, 0.07);
   --shadow-modal: 0 8px 40px rgba(0, 0, 0, 0.10), 0 2px 8px rgba(0, 0, 0, 0.06);
 
-  /* — Brand accents — */
-  --accent-blue: #7B9ED9;
-  --accent-blue-hover: #6889c4;
+  /* — Brand accents —
+     Light-mode values tightened in M4.3.2 to clear WCAG AA 4.5:1 against
+     --text-on-accent (#ffffff) on solid-fill button surfaces. Hue family
+     preserved per accent; only luminance/saturation adjusted. Dark-mode
+     values unchanged — already pass at 5.4–6.7:1 against dark
+     --text-on-accent (#0f0f12). The single known dark-mode exception is
+     --accent-destructive-hover (4.2:1, transient hover state) — kept
+     as-is for the warm clay-red destructive register; documented in
+     dark-mode-m4-contrast-disposition.md b3. */
+  --accent-blue: #4070B5;
+  --accent-blue-hover: #3661A0;
   --accent-blue-soft-bg: #EEF3FB;
-  --accent-blue-soft-text: #3D6FCC;
+  --accent-blue-soft-text: #345FB3;
 
-  --accent-green: #6A9E7F;
-  --accent-green-hover: #5a8a6e;
+  --accent-green: #3F8060;
+  --accent-green-hover: #34704F;
   --accent-green-bright: #5DCAA5;
   --accent-green-bright-hover: #4ab893;
   --accent-green-deep: #0F6E56;
   --accent-green-glow: rgba(106, 158, 127, 0.22);
   --accent-green-soft-bg: #F0F9F5;
 
-  --accent-orange: #e0873e;
-  --accent-orange-hover: #cc7633;
+  --accent-orange: #A85E1E;
+  --accent-orange-hover: #94511A;
   --accent-orange-soft-bg: #FFF8F0;
   --accent-orange-soft-bg-hover: #FFF4E8;
   --accent-orange-soft-text: #8a4810;
 
-  --accent-warning: #c9923a;
+  --accent-warning: #946818;
   --accent-warning-soft-text: #7a5400;
 
-  --accent-danger: #d95f5f;
+  --accent-danger: #B0413E;
 
-  --accent-destructive: #C0614A;
-  --accent-destructive-hover: #A8543F;
+  --accent-destructive: #AC4F38;
+  --accent-destructive-hover: #943F2C;
 
   /* — Chart visualization (data-only; not for action/alert/mood) — */
   --chart-bar-neutral: #c49a6c;

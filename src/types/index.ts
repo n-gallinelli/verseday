@@ -85,4 +85,5 @@ export type Page =
   | "dashboard"
   | "focus"
   | "focus_landing"
+  | "past_shutdowns"
   | "settings";

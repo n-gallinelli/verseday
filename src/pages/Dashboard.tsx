@@ -7,8 +7,11 @@ import {
   getProjectStats,
   getProjects,
   getRecentCompletedTasks,
+  getCompletedShutdowns,
+  type CompletedShutdown,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
+import PastShutdownCard from "../components/PastShutdownCard";
 import type { Project, Task } from "../types";
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
@@ -185,6 +188,7 @@ export default function Dashboard() {
   >(new Map());
   const [projects, setProjects] = useState<Project[]>([]);
   const [recentCompleted, setRecentCompleted] = useState<Task[]>([]);
+  const [pastShutdowns, setPastShutdowns] = useState<CompletedShutdown[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const weekDates = getWeekdayDates(selectedWeek);
@@ -193,13 +197,14 @@ export default function Dashboard() {
 
   const loadData = useCallback(async () => {
     try {
-      const [wt, pbd, wbd, ps, p, rc] = await Promise.all([
+      const [wt, pbd, wbd, ps, p, rc, sd] = await Promise.all([
         getTasksForWeek(selectedWeek, fridayIso),
         getPlannedMinutesPerDay(selectedWeek, fridayIso),
         getWorkedMinutesForWeek(selectedWeek, fridayIso),
         getProjectStats(),
         getProjects(),
         getRecentCompletedTasks(selectedWeek, fridayIso),
+        getCompletedShutdowns(4),
       ]);
       setWeekTasks(wt);
       setPlannedByDay(pbd);
@@ -207,6 +212,7 @@ export default function Dashboard() {
       setProjectStatsMap(ps);
       setProjects(p);
       setRecentCompleted(rc);
+      setPastShutdowns(sd);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load dashboard");
@@ -442,6 +448,38 @@ export default function Dashboard() {
                       </div>
                     );
                   })}
+                </div>
+              </section>
+            )}
+
+            {/* ── Past shutdowns ─────────────────────────────────────── */}
+            {pastShutdowns.length > 0 && (
+              <section className="animate-slide-up animate-stagger mt-8">
+                <div className="flex items-baseline justify-between mb-2">
+                  <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded">
+                    Past shutdowns
+                  </h3>
+                  {pastShutdowns.length > 3 && (
+                    <button
+                      onClick={() => useAppStore.getState().setPage("past_shutdowns")}
+                      className="text-[11px] text-accent-blue-soft-fg hover:text-accent-blue cursor-pointer"
+                    >
+                      View all →
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  {pastShutdowns.slice(0, 3).map((s) => (
+                    <PastShutdownCard
+                      key={s.date}
+                      date={s.date}
+                      mood={s.mood}
+                      reflection={s.reflection}
+                      tasksDone={s.tasksDone}
+                      workedMinutes={s.workedMinutes}
+                      projects={projects}
+                    />
+                  ))}
                 </div>
               </section>
             )}

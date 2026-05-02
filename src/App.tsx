@@ -16,6 +16,7 @@ import WeeklyShutdown from "./pages/WeeklyShutdown";
 import Dashboard from "./pages/Dashboard";
 import Settings from "./pages/Settings";
 import FocusLanding from "./pages/FocusLanding";
+import PastShutdowns from "./pages/PastShutdowns";
 import WrapUpReminder from "./components/WrapUpReminder";
 import { useAppStore } from "./stores/appStore";
 import {
@@ -227,6 +228,8 @@ function MainApp() {
         return <Settings />;
       case "focus_landing":
         return <FocusLanding />;
+      case "past_shutdowns":
+        return <PastShutdowns />;
       default:
         return <DailyPlanner />;
     }

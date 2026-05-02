@@ -394,6 +394,52 @@ export async function upsertDailyShutdown(
   );
 }
 
+export interface CompletedShutdown {
+  date: string;
+  mood: string | null;
+  reflection: string | null;
+  tasksDone: number;
+  workedMinutes: number;
+}
+
+export async function getCompletedShutdowns(
+  limit?: number
+): Promise<CompletedShutdown[]> {
+  const db = await getDb();
+  const rows: { date: string; mood: string | null; reflection: string | null; tasks_done: number; worked_seconds: number | null }[] = await db.select(
+    `SELECT
+       dp.date,
+       dp.mood,
+       dp.reflection,
+       (SELECT COUNT(*) FROM tasks t WHERE t.date_scheduled = dp.date AND t.status = 'done') AS tasks_done,
+       (SELECT COALESCE(SUM(
+          (strftime('%s', te.end_time) - strftime('%s', te.start_time)) - COALESCE(te.break_seconds, 0)
+        ), 0)
+        FROM time_entries te
+        JOIN tasks t ON te.task_id = t.id
+        WHERE t.date_scheduled = dp.date AND te.end_time IS NOT NULL) AS worked_seconds
+     FROM daily_plans dp
+     WHERE dp.mood IS NOT NULL OR (dp.reflection IS NOT NULL AND dp.reflection != '')
+     ORDER BY dp.date DESC
+     ${limit != null ? "LIMIT " + Math.max(1, Math.floor(limit)) : ""}`
+  );
+  return rows.map(r => ({
+    date: r.date,
+    mood: r.mood,
+    reflection: r.reflection,
+    tasksDone: Number(r.tasks_done) || 0,
+    workedMinutes: Math.round((Number(r.worked_seconds) || 0) / 60),
+  }));
+}
+
+export async function getCompletedTasksForDate(date: string): Promise<Task[]> {
+  const db = await getDb();
+  return db.select(
+    `SELECT * FROM tasks WHERE date_scheduled = $1 AND status = 'done' ORDER BY sort_order ASC LIMIT 200`,
+    [date]
+  );
+}
+
 // Time Entries
 export async function getTimeEntriesForDate(
   date: string

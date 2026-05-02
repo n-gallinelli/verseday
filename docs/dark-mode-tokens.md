@@ -18,6 +18,8 @@ Light values follow the existing palette. Dark values are hand-tuned (not progra
 | `--bg-input`       | `rgba(0,0,0,0.03)` | `rgba(255,255,255,0.04)` | Pill inputs, time fields, segmented controls         |
 | `--bg-input-hover` | `rgba(0,0,0,0.06)` | `rgba(255,255,255,0.07)` | Hover state for the above                            |
 | `--bg-tag-soft`    | `rgba(0,0,0,0.04)` | `rgba(255,255,255,0.05)` | Subtle tag/chip backgrounds                          |
+| `--bg-banner`      | `#2c2a35`    | `#2a2a30`    | Notification banner surface (always darker than the page; pairs with `--text-banner`) |
+| `--text-banner`    | `#f5f4f0`    | `#e8e6e0`    | Text/caption color on `--bg-banner` (always light, both themes)                       |
 
 ---
 
@@ -277,25 +279,28 @@ For tokens not registered in `@theme inline` (shadows, focus, calendar, mood, sc
 
 Tailwind's `shadow-md`, `shadow-lg`, etc. resolve to **Tailwind defaults**, not `--shadow-card` / `--shadow-modal`. Convert these explicitly during M2 — see the "Important" callout in the registration section above.
 
-### Inverted-contrast banner pattern
+### Banner pattern
 
-When a banner needs to **always read as a high-contrast notification** against its surrounding page — regardless of theme — use the `bg-fg` Tailwind utility for the surface and an inline `style={{ color: "var(--bg-base)" }}` for the text:
+When a banner needs to **stand out as a transient notification** — drag-drop undo, bulk-action confirmation, etc. — use the dedicated `--bg-banner` + `--text-banner` token pair. Both adapt to the theme: the banner surface is always darker than the surrounding page, the text is always lighter than the surface.
 
 ```jsx
-<div className="bg-fg" style={{ color: "var(--bg-base)" }}>…</div>
+<div className="bg-banner" style={{ color: "var(--text-banner)" }}>…</div>
 ```
 
-`--text-primary` (the `bg-fg` source) is dark in light mode and light in dark mode; `--bg-base` is its inverse. The pair flips automatically and stays high-contrast in both themes without a dedicated "always-dark" surface token.
+| Theme | `--bg-banner` | `--text-banner` | Effect |
+| ----- | ------------- | --------------- | ------ |
+| Light | `#2c2a35`     | `#f5f4f0`       | Strongly dark surface against the warm-beige page; high-attention notification |
+| Dark  | `#2a2a30`     | `#e8e6e0`       | Slightly lifted dark surface against the deeper page bg; reads as native dark-mode chrome, still distinct from `bg-elevated` and `bg-base` |
 
-> **⚠ Tailwind collision — do NOT use `text-base`.** Tailwind v4 reserves `text-base` as a built-in font-size utility (`1rem`), which silently shadows our `--color-base` color registration. Use the inline-style form above (or `text-[var(--bg-base)]`) for the banner text color. The `bg-base` and `bg-fg` utilities are unaffected because Tailwind has no built-in utility of that name.
+Earlier iterations tried an "inverted-contrast" trick (`bg-fg` + `text-base`) that auto-flipped the banner colors via the existing fg/bg primary tokens. It was clever but produced a near-white banner in dark mode, which clashed with the rest of the dark UI. The dedicated pair above stays in the dark-mode register while still standing out.
 
-Use sparingly — this is for transient notifications and undo affordances, not for content panels. Mixing inverted banners with the rest of the chrome on the same page works because the banner is visually unmistakable as a momentary overlay, not a persistent surface.
+> **⚠ Why the text color is inline-style, not `text-banner`.** Tailwind v4 reserves `text-banner` (and similarly `text-base`, `text-lg`, …) as a candidate font-size utility name. To avoid the same shadowing bug that bit the inverted-contrast pattern, the `--text-banner` token is intentionally **not** registered in `@theme inline` — consume it directly via inline `style={{ color: "var(--text-banner)" }}`.
 
 | Element type                                  | Pattern                              |
 | --------------------------------------------- | ------------------------------------ |
-| Banner outer surface                          | `className="bg-fg"` + `style={{ color: "var(--bg-base)" }}` |
-| Action / link inside the banner               | A theme-stable accent (e.g. `text-accent-orange`, `text-accent-green-bright`) — readable on both inverted-banner shades |
-| Hover state on banner action                  | Pull toward the banner's text color: `onMouseEnter={(e) => e.currentTarget.style.color = "var(--bg-base)"}` (the `hover:text-[var(--bg-base)]` arbitrary-value form also works but is verbose) |
+| Banner outer surface                          | `className="bg-banner"` + `style={{ color: "var(--text-banner)" }}` |
+| Action / link inside the banner               | A theme-stable accent (e.g. `text-accent-orange`, `text-accent-green-bright`) — readable against `--bg-banner` in both themes |
+| Hover state on banner action                  | Pull toward `--text-banner`: `onMouseEnter={(e) => e.currentTarget.style.color = "var(--text-banner)"}` |
 
 Example: `WeeklyPlanner.tsx:696` (undo banner after a drag-drop date move).
 

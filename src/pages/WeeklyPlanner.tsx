@@ -694,8 +694,8 @@ export default function WeeklyPlanner() {
 
       {pendingMove && (
         <div
-          className="flex items-center gap-3 px-7 py-2 bg-fg text-[12px] flex-shrink-0"
-          style={{ color: "var(--bg-base)" }}
+          className="flex items-center gap-3 px-7 py-2 bg-banner text-[12px] flex-shrink-0"
+          style={{ color: "var(--text-banner)" }}
         >
           <span className="flex-1 truncate">
             Moved &ldquo;{pendingMove.taskTitle}&rdquo;
@@ -704,7 +704,7 @@ export default function WeeklyPlanner() {
           <button
             onClick={undoMove}
             className="text-accent-orange font-medium cursor-pointer transition-colors"
-            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--bg-base)"; }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-banner)"; }}
             onMouseLeave={(e) => { e.currentTarget.style.color = ""; }}
           >
             Undo

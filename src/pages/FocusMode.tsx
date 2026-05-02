@@ -77,7 +77,7 @@ function playChime() {
 }
 
 export default function FocusMode() {
-  const { focus, stopFocus } = useAppStore();
+  const { focus, stopFocus, setPage, setPendingDetailTask } = useAppStore();
 
   const [project, setProject] = useState<Project | null>(null);
 
@@ -352,6 +352,35 @@ export default function FocusMode() {
     return () =>
       window.removeEventListener("verseday:toggle-pause", onTogglePause);
   }, []);
+
+  // Escape: exit focus, land on daily plan, open detail for the focused task.
+  // Skipped while typing in the notes editor — Tiptap should handle Escape
+  // for blur there. Lifts the active element first so a second Escape fires
+  // this branch.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      const el = document.activeElement;
+      const isInput =
+        el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
+      if (isInput) {
+        (el as HTMLElement).blur();
+        return;
+      }
+      const f = useAppStore.getState().focus;
+      if (!f) return;
+      e.preventDefault();
+      stopTimeEntry(f.timeEntryId, getBreakSeconds()).catch(() => {});
+      setPendingDetailTask(f.task);
+      stopFocus();
+      setPage("daily");
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // getBreakSeconds is stable enough for this slice; deps intentionally
+    // narrowed to the actions used.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopFocus, setPage, setPendingDetailTask]);
 
   function handlePause() {
     if (paused) {

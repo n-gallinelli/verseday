@@ -18,6 +18,7 @@ interface AppState {
   selectedWeek: string;
   selectedProjectId: number | null;
   focus: FocusState | null;
+  pendingDetailTask: Task | null;
   setPage: (page: Page) => void;
   goBack: () => void;
   setSelectedDate: (date: string) => void;
@@ -26,6 +27,7 @@ interface AppState {
   startFocus: (task: Task, timeEntryId: number, previousPage: Page, priorElapsedMs?: number) => void;
   stopFocus: () => Page;
   restoreFocus: () => void;
+  setPendingDetailTask: (task: Task | null) => void;
 }
 
 function todayString(): string {
@@ -66,6 +68,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedWeek: mondayOfWeek(),
   selectedProjectId: null,
   focus: null,
+  pendingDetailTask: null,
   setPage: (page) => {
     const prev = get().currentPage;
     if (prev !== page) {
@@ -113,4 +116,5 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ currentPage: "focus", focus: persisted });
     }
   },
+  setPendingDetailTask: (task) => set({ pendingDetailTask: task }),
 }));

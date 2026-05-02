@@ -58,7 +58,7 @@ const MAX_ESTIMATE_MINUTES = 480;
 
 
 export default function DailyPlanner() {
-  const { selectedDate, setSelectedDate, startFocus, openProject, focus, setPage } = useAppStore();
+  const { selectedDate, setSelectedDate, startFocus, openProject, focus, setPage, pendingDetailTask, setPendingDetailTask } = useAppStore();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [plannedMinutes, setPlannedMinutes] = useState(0);
@@ -194,6 +194,16 @@ export default function DailyPlanner() {
     setConfirmDeleteId(null);
     loadData();
   }, [selectedDate]);
+
+  // Consume pendingDetailTask handed off from another page (e.g. Escape from
+  // FocusMode) — open the detail overlay for that task and clear the pending
+  // slot so a re-mount doesn't reopen it.
+  useEffect(() => {
+    if (pendingDetailTask) {
+      setDetailTask(pendingDetailTask);
+      setPendingDetailTask(null);
+    }
+  }, [pendingDetailTask, setPendingDetailTask]);
 
   async function handleAddTask(e: React.FormEvent) {
     e.preventDefault();

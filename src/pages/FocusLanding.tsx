@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import Button from "../components/Button";
 import { useAppStore } from "../stores/appStore";
 import {
   getTasksForDate,
@@ -113,8 +112,25 @@ export default function FocusLanding() {
         {/* Current task — centered hero */}
         {currentTask && (
           <div className="flex flex-col items-center text-center max-w-[680px]">
-            {/* Project label — always reserve space */}
-            <div className="flex items-center gap-1.5 mb-5 h-[18px]">
+            {/* Screen identity — the same concentric-circle motif used by the
+                Focus nav icon, scaled up. Sits above project + title so the
+                page reads as "this is your focus space." */}
+            <svg
+              width="34" height="34" viewBox="0 0 15 15" fill="none"
+              stroke="currentColor" strokeWidth="1.3"
+              strokeLinecap="round" strokeLinejoin="round"
+              className="text-fg-muted mb-8"
+              aria-hidden
+            >
+              <circle cx="7.5" cy="7.5" r="5.5" />
+              <circle cx="7.5" cy="7.5" r="2.5" />
+              <circle cx="7.5" cy="7.5" r="0.5" fill="currentColor" stroke="none" />
+            </svg>
+
+            {/* Project label — pulled tight to the title so they read as one
+                unit. Reserve a fixed height so the layout doesn't shift when
+                a task has no project. */}
+            <div className="flex items-center gap-1.5 mb-1 h-[18px]">
               {currentTask.project_id && projectMap.get(currentTask.project_id) && (
                 <>
                   <div
@@ -130,40 +146,46 @@ export default function FocusLanding() {
 
             {/* Task title — fixed-height box keeps Start button + arrows
                 anchored when navigating between tasks of varying line counts.
-                Content vertically centered within the box; up to ~3 lines fit. */}
-            <div className="min-h-[96px] flex items-center justify-center mb-10">
+                Top-aligned (items-start) so the title sits flush below the
+                project label instead of floating mid-box for short titles. */}
+            <div className="min-h-[88px] flex items-start justify-center mb-9 pt-1">
               <h1 className="text-[20px] font-medium text-fg leading-snug font-display break-words">
                 {currentTask.title}
               </h1>
             </div>
 
-            {/* Start button */}
-            <Button size="sm" className="flex items-center justify-center gap-2 transition-all duration-200 ease-out hover:shadow-[0_0_0_6px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]" onClick={() => handleStartFocus(currentTask)}>
-              <svg width="10" height="12" viewBox="0 0 8 10" fill="currentColor">
+            {/* Start button — outlined to match the rest of the app's
+                primary-accent action buttons (Daily Plan header, etc). */}
+            <button
+              onClick={() => handleStartFocus(currentTask)}
+              className="flex items-center justify-center gap-2 rounded-lg border border-accent-blue/50 text-accent-blue-soft-fg px-4 py-1.5 text-[13px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors"
+            >
+              <svg width="9" height="11" viewBox="0 0 8 10" fill="currentColor">
                 <path d="M0 0v10l8-5z" />
               </svg>
               Start focusing
-            </Button>
+            </button>
 
-            {/* Nav arrows */}
+            {/* Nav arrows — plain chevrons so they sit quietly below the
+                primary action instead of competing with it. */}
             {remainingTasks.length > 1 && (
-              <div className="flex items-center gap-3 mt-8">
+              <div className="flex items-center gap-2 mt-7">
                 <button
                   onClick={() => setSelectedIndex((i) => i - 1)}
                   disabled={selectedIndex === 0}
-                  className="w-8 h-8 flex items-center justify-center rounded-full text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer disabled:opacity-20 disabled:cursor-default transition-colors"
+                  className="w-7 h-7 flex items-center justify-center rounded-full text-fg-disabled hover:text-fg-faded hover:bg-overlay-hover cursor-pointer disabled:opacity-30 disabled:cursor-default transition-colors"
                 >
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M11 7H3M3 7l4-4M3 7l4 4" />
+                  <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 4l-4 3 4 3" />
                   </svg>
                 </button>
                 <button
                   onClick={() => setSelectedIndex((i) => i + 1)}
                   disabled={selectedIndex >= remainingTasks.length - 1}
-                  className="w-8 h-8 flex items-center justify-center rounded-full text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer disabled:opacity-20 disabled:cursor-default transition-colors"
+                  className="w-7 h-7 flex items-center justify-center rounded-full text-fg-disabled hover:text-fg-faded hover:bg-overlay-hover cursor-pointer disabled:opacity-30 disabled:cursor-default transition-colors"
                 >
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 7h8M11 7l-4-4M11 7l-4 4" />
+                  <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 4l4 3-4 3" />
                   </svg>
                 </button>
               </div>

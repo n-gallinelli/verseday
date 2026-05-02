@@ -101,19 +101,30 @@ function MainApp() {
       // refocus it. When already visible: dismisses + refocuses.
       try {
         await register("CmdOrCtrl+Shift+A", async () => {
-          const win = await WebviewWindow.getByLabel("quick-add");
-          if (!win) return;
-          const visible = await win.isVisible();
-          if (visible) {
-            await invoke("dismiss_quick_add");
-          } else {
-            await invoke("capture_previous_app");
-            await win.center();
-            await win.show();
-            await win.setFocus();
+          try {
+            const win = await WebviewWindow.getByLabel("quick-add");
+            if (!win) {
+              console.warn("quick-add window not found");
+              return;
+            }
+            const visible = await win.isVisible();
+            if (visible) {
+              await invoke("dismiss_quick_add");
+            } else {
+              await invoke("capture_previous_app");
+              await win.center();
+              await win.show();
+              await win.setFocus();
+            }
+          } catch (err) {
+            console.error("quick-add toggle failed:", err);
           }
         });
-      } catch { /* silent */ }
+      } catch (err) {
+        // Most common cause: shortcut already registered by another app or
+        // missing macOS Accessibility permission. Log so we don't ship blind.
+        console.error("Failed to register Cmd+Shift+A shortcut:", err);
+      }
     }
     startup();
   }, [restoreFocus]);

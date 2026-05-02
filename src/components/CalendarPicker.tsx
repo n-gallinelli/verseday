@@ -143,8 +143,10 @@ export default function CalendarPicker({
 
   return (
     <div ref={containerRef} className="relative">
-      {/* Trigger button */}
-      <div className="flex items-center gap-2.5">
+      {/* Trigger button + clear slot. Clear is always rendered (invisible when
+          no value) so the trigger's right edge stays at a fixed x — adjacent
+          fields don't shift when a row gains/loses a date. */}
+      <div className="flex items-center gap-1.5">
         <button
           ref={triggerRef}
           type="button"
@@ -152,22 +154,30 @@ export default function CalendarPicker({
             if (!open) updatePosition();
             setOpen(!open);
           }}
-          className={`bg-input rounded-md text-[13px] font-medium leading-tight cursor-pointer transition-colors hover:border-line-medium ${
+          className={`bg-input rounded-md text-[12px] font-medium leading-tight cursor-pointer transition-colors hover:border-line-medium text-center ${
             value ? "text-fg" : "text-fg-faded"
           }`}
-          style={{ padding: "5px 12px", border: "0.5px solid var(--border-hairline)" }}
+          style={{
+            padding: "3px 10px",
+            border: "0.5px solid var(--border-hairline)",
+            minWidth: 70,
+          }}
         >
           {displayLabel}
         </button>
-        {value && onClear && (
+        {onClear && (
           <button
             type="button"
             onClick={() => {
               onClear();
               setOpen(false);
             }}
-            className="text-[11px] text-fg-faded hover:text-fg-secondary cursor-pointer"
+            className={`w-3.5 text-[11px] text-fg-faded hover:text-fg-secondary cursor-pointer leading-none flex items-center justify-center ${
+              value ? "" : "invisible"
+            }`}
             title="Clear date"
+            aria-hidden={!value}
+            tabIndex={value ? 0 : -1}
           >
             ✕
           </button>

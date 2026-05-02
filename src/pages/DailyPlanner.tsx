@@ -44,6 +44,7 @@ import TaskDetailOverlay from "../components/TaskDetailOverlay";
 import RichTextEditor from "../components/RichTextEditor";
 import SummaryOverlay from "../components/SummaryOverlay";
 import ProjectPicker from "../components/ProjectPicker";
+import DisclosureCaret from "../components/DisclosureCaret";
 import { formatHoursMinutes, parseTimeFromTitle, getEmptyDayMessage } from "../utils/format";
 import type { Task, DailyPlan, Project } from "../types";
 
@@ -93,7 +94,7 @@ export default function DailyPlanner() {
 
   // Right panel — expandable projects + unfinished + unscheduled
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<number>>(new Set());
-  const [unfinishedExpanded, setUnfinishedExpanded] = useState(true);
+  const [unfinishedExpanded, setUnfinishedExpanded] = useState(false);
   const [unscheduledExpanded, setUnscheduledExpanded] = useState(false);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState<boolean>(() => {
     return localStorage.getItem("dailyPlanner.rightPanelCollapsed") === "1";
@@ -118,6 +119,21 @@ export default function DailyPlanner() {
   const [sidebarUnscheduled, setSidebarUnscheduled] = useState<Task[]>([]);
   const [sidebarOverdue, setSidebarOverdue] = useState<Task[]>([]);
   const [unfinishedTasks, setUnfinishedTasks] = useState<Task[]>([]);
+
+  // Per-row undo for tasks pulled from the rail into today (10s window)
+  const [recentlyPulled, setRecentlyPulled] = useState<
+    Map<number, { task: Task; prevDate: string | null }>
+  >(new Map());
+  const recentTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(
+    new Map()
+  );
+  useEffect(() => {
+    const timers = recentTimersRef.current;
+    return () => {
+      for (const t of timers.values()) clearTimeout(t);
+      timers.clear();
+    };
+  }, []);
 
   const hourBudget = dailyPlan?.hour_budget ?? 8;
   const plannedHours = plannedMinutes / 60;
@@ -326,11 +342,57 @@ export default function DailyPlanner() {
   }
 
   async function pullTaskToDay(taskId: number) {
+    // Capture original task + prev date for the undo window. Look in every
+    // rail-side source so undo works regardless of which section it came from.
+    const candidates: Task[] = [
+      ...sidebarUnscheduled,
+      ...sidebarOverdue,
+      ...unfinishedTasks,
+    ];
+    const original = candidates.find((t) => t.id === taskId);
+    const prevDate = original?.date_scheduled ?? null;
     try {
       await updateTaskDateScheduled(taskId, selectedDate);
       loadData();
+      if (original) {
+        const existing = recentTimersRef.current.get(taskId);
+        if (existing) clearTimeout(existing);
+        const timeoutId = setTimeout(() => {
+          setRecentlyPulled((prev) => {
+            const next = new Map(prev);
+            next.delete(taskId);
+            return next;
+          });
+          recentTimersRef.current.delete(taskId);
+        }, 10000);
+        recentTimersRef.current.set(taskId, timeoutId);
+        setRecentlyPulled((prev) => {
+          const next = new Map(prev);
+          next.set(taskId, { task: original, prevDate });
+          return next;
+        });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to schedule task");
+    }
+  }
+
+  async function undoPull(taskId: number) {
+    const entry = recentlyPulled.get(taskId);
+    if (!entry) return;
+    const timer = recentTimersRef.current.get(taskId);
+    if (timer) clearTimeout(timer);
+    recentTimersRef.current.delete(taskId);
+    try {
+      await updateTaskDateScheduled(taskId, entry.prevDate);
+      setRecentlyPulled((prev) => {
+        const next = new Map(prev);
+        next.delete(taskId);
+        return next;
+      });
+      loadData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to undo");
     }
   }
 
@@ -410,8 +472,10 @@ export default function DailyPlanner() {
 
       {/* Date Header */}
       <div className="px-7 pt-5 pb-4">
-        {/* Date row with stats right-aligned */}
-        <div className="flex items-center gap-2.5">
+        {/* Date row with stats right-aligned. Capped to the same column
+            width as the task list below so everything stays on a single
+            visual axis. */}
+        <div className="flex items-center gap-2.5 max-w-[640px] mx-auto">
           <button
             onClick={() => changeDate(-1)}
             className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
@@ -456,22 +520,6 @@ export default function DailyPlanner() {
               />
             )}
           </div>
-          {(workedMinutes > 0 || plannedMinutes > 0) && (
-            <div className="flex items-center gap-3 ml-2 text-[11px]">
-              <span className="text-fg-faded">
-                Focused{" "}
-                <span className="text-fg-secondary tabular-nums">
-                  {formatHoursMinutes(workedMinutes)}
-                </span>
-              </span>
-              <span className="text-fg-faded">
-                Planned{" "}
-                <span className="text-fg-secondary tabular-nums">
-                  {formatHoursMinutes(plannedMinutes)}
-                </span>
-              </span>
-            </div>
-          )}
           <div className="flex-1" />
           {/* Focus button — inline */}
           {(() => {
@@ -510,59 +558,83 @@ export default function DailyPlanner() {
         </div>
       </div>
 
-      {/* Main scrollable area */}
-      <div className="flex-1 overflow-y-auto px-7 py-5 flex flex-col">
-        {/* Task Input — collapses when unfocused */}
-        <form onSubmit={handleAddTask} className="mb-5" ref={taskInputRef}>
-          <div
-            className="bg-elevated border border-line-soft rounded-[10px] p-3.5 cursor-text overflow-hidden"
-            onClick={(e) => {
-              const t = e.target as HTMLElement;
-              if (t.closest("button, select, input, a, [role='button']")) return;
-              e.currentTarget.querySelector("input")?.focus();
-            }}
-          >
-            {/* Row 1: input + add */}
-            <div className={`flex items-center gap-2.5 ${taskInputExpanded ? "mb-2.5" : ""}`}>
-              <input
-                type="text"
-                value={newTaskTitle}
-                onChange={(e) => setNewTaskTitle(e.target.value)}
-                onFocus={() => setTaskInputExpanded(true)}
-                maxLength={MAX_TITLE_LENGTH}
-                placeholder="Add a task..."
-                className="flex-1 bg-transparent border-none outline-none text-[14px] text-fg placeholder:text-fg-faded"
-              />
-              <button
-                type="submit"
-                className="border border-accent-blue/50 text-accent-blue-soft-fg rounded-lg px-4 py-1.5 text-[13px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors whitespace-nowrap"
-              >
-                Add
-              </button>
-            </div>
-            {/* Row 2: metadata pills — visible only when expanded */}
-            {taskInputExpanded && (
-            <div className="flex items-center gap-2 flex-wrap min-w-0">
-              {/* Project dropdown */}
-              <div className="w-[220px]">
-                <ProjectPicker
-                  value={newTaskProjectId}
-                  projects={projects}
-                  onChange={setNewTaskProjectId}
+      {/* Main scrollable area — content lives inside a narrower column so
+          the page reads as a focused single track instead of a wide grid
+          of work. */}
+      <div className="flex-1 overflow-y-auto px-7 py-5">
+        <div className="max-w-[640px] mx-auto flex flex-col min-h-full">
+        {/* Task Input — collapsed bar shows worked / planned for the day on
+            the right so adding more work is in dialogue with the time you
+            already have on the plate. Over-budget tips the planned figure
+            into a warning hue so it nudges before you pile on. Click
+            anywhere on the bar to open the full editor. */}
+        <form onSubmit={handleAddTask} className="mb-9" ref={taskInputRef}>
+          {!taskInputExpanded ? (
+            (() => {
+              const overBudget = plannedHours > hourBudget;
+              const hasTime = workedMinutes > 0 || plannedMinutes > 0;
+              return (
+                <button
+                  type="button"
+                  onClick={() => setTaskInputExpanded(true)}
+                  title="Add a task"
+                  className={`w-full flex items-center gap-3 bg-elevated rounded-[10px] px-4 py-2.5 cursor-pointer transition-colors hover:bg-overlay-hover border ${
+                    overBudget ? "border-accent-warning/30" : "border-line-soft"
+                  }`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" className="text-fg-faded shrink-0">
+                    <path d="M7 2v10M2 7h10" />
+                  </svg>
+                  <span className="flex-1" />
+                  {hasTime && (
+                    <span className="text-[11.5px] tabular-nums">
+                      <span className="text-fg-secondary">{formatHoursMinutes(workedMinutes)}</span>
+                      <span className="text-fg-disabled"> / </span>
+                      <span className={overBudget ? "text-accent-warning-soft-fg font-medium" : "text-fg-secondary"}>
+                        {formatHoursMinutes(plannedMinutes)}
+                      </span>
+                    </span>
+                  )}
+                </button>
+              );
+            })()
+          ) : (
+            <div className="bg-elevated border border-line-soft rounded-[10px] p-3.5 cursor-text overflow-hidden">
+              {/* Row 1: input + add */}
+              <div className="flex items-center gap-2.5 mb-2.5">
+                <input
+                  type="text"
+                  value={newTaskTitle}
+                  onChange={(e) => setNewTaskTitle(e.target.value)}
+                  autoFocus
+                  maxLength={MAX_TITLE_LENGTH}
+                  placeholder="New task"
+                  className="flex-1 bg-transparent border-none outline-none text-[14px] text-fg placeholder:text-fg-faded"
+                />
+                <button
+                  type="submit"
+                  className="border border-accent-blue/50 text-accent-blue-soft-fg rounded-lg px-4 py-1.5 text-[13px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors whitespace-nowrap"
+                >
+                  Add
+                </button>
+              </div>
+              {/* Row 2: metadata pills */}
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                <div className="w-[220px]">
+                  <ProjectPicker
+                    value={newTaskProjectId}
+                    projects={projects}
+                    onChange={setNewTaskProjectId}
+                  />
+                </div>
+                <div className="w-px h-3.5 bg-line-soft" />
+                <DurationPicker
+                  value={newTaskEstimate}
+                  onChange={setNewTaskEstimate}
                 />
               </div>
-
-              <div className="w-px h-3.5 bg-line-soft" />
-
-              {/* Duration picker */}
-              <DurationPicker
-                value={newTaskEstimate}
-                onChange={setNewTaskEstimate}
-              />
-
             </div>
-            )}
-          </div>
+          )}
         </form>
 
         {/* Task List — grouped by project */}
@@ -575,7 +647,7 @@ export default function DailyPlanner() {
             items={sortedTasks.map((t) => t.id)}
             strategy={verticalListSortingStrategy}
           >
-            <div className={`space-y-1.5 flex-1 ${!initialLoadDone.current ? "[&>*]:animate-stagger [&>*]:animate-slide-up" : ""}`}>
+            <div className={`flex-1 ${!initialLoadDone.current ? "[&>*]:animate-stagger [&>*]:animate-slide-up" : ""}`}>
               {tasks.length === 0 ? (
                 (() => {
                   const msg = isToday
@@ -597,145 +669,166 @@ export default function DailyPlanner() {
                   );
                 })()
               ) : (
-                sortedTasks.map((task) => {
-                  if (editingId === task.id) {
-                    return (
-                      <div
-                        key={task.id}
-                        className="p-3.5 rounded-[10px] bg-elevated border border-line-soft space-y-2"
-                        onKeyDown={handleEditKeyDown}
-                      >
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={editTitle}
-                            onChange={(e) => setEditTitle(e.target.value)}
-                            maxLength={MAX_TITLE_LENGTH}
-                            autoFocus
-                            className="flex-1 bg-transparent border border-line-soft rounded-md px-2.5 py-1.5 text-[13px] text-fg focus:outline-none focus:border-accent-blue"
-                          />
-                          <input
-                            type="number"
-                            value={editEstimate}
-                            onChange={(e) => setEditEstimate(e.target.value)}
-                            min={1}
-                            max={MAX_ESTIMATE_MINUTES}
-                            placeholder="min"
-                            className="w-20 bg-transparent border border-line-soft rounded-md px-2.5 py-1.5 text-[13px] text-fg placeholder:text-fg-faded focus:outline-none focus:border-accent-blue"
-                          />
-                        </div>
-                        <div className="flex gap-2">
-                          <select
-                            value={editProjectId}
-                            onChange={(e) => setEditProjectId(e.target.value)}
-                            className="flex-1 bg-transparent border border-line-soft rounded-md px-2.5 py-1.5 text-[12px] text-fg-secondary focus:outline-none focus:border-accent-blue"
-                          >
-                            <option value="">No project</option>
-                            {projects.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setEditPriority(
-                                editPriority === "high" ? "medium" : "high"
-                              )
-                            }
-                            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] cursor-pointer border ${
-                              editPriority === "high"
-                                ? "bg-accent-danger/10 border-accent-danger/25 text-accent-danger"
-                                : "bg-transparent border-line-soft text-fg-secondary"
-                            }`}
-                          >
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                editPriority === "high"
-                                  ? "bg-accent-danger"
-                                  : "bg-fg-disabled"
-                              }`}
+                (() => {
+                  // Flat list with generous spacing — incomplete tasks on
+                  // top, done tasks below (visually distinguished by their
+                  // green tint inside TaskCard).
+                  const incomplete = sortedTasks.filter((t) => t.status !== "done");
+                  const completed = sortedTasks.filter((t) => t.status === "done");
+
+                  function renderRow(task: Task) {
+                    if (editingId === task.id) {
+                      return (
+                        <div
+                          key={task.id}
+                          className="p-3.5 rounded-[10px] bg-elevated border border-line-soft space-y-2"
+                          onKeyDown={handleEditKeyDown}
+                        >
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                              maxLength={MAX_TITLE_LENGTH}
+                              autoFocus
+                              className="flex-1 bg-transparent border border-line-soft rounded-md px-2.5 py-1.5 text-[13px] text-fg focus:outline-none focus:border-accent-blue"
                             />
-                            High
-                          </button>
+                            <input
+                              type="number"
+                              value={editEstimate}
+                              onChange={(e) => setEditEstimate(e.target.value)}
+                              min={1}
+                              max={MAX_ESTIMATE_MINUTES}
+                              placeholder="min"
+                              className="w-20 bg-transparent border border-line-soft rounded-md px-2.5 py-1.5 text-[13px] text-fg placeholder:text-fg-faded focus:outline-none focus:border-accent-blue"
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <select
+                              value={editProjectId}
+                              onChange={(e) => setEditProjectId(e.target.value)}
+                              className="flex-1 bg-transparent border border-line-soft rounded-md px-2.5 py-1.5 text-[12px] text-fg-secondary focus:outline-none focus:border-accent-blue"
+                            >
+                              <option value="">No project</option>
+                              {projects.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditPriority(
+                                  editPriority === "high" ? "medium" : "high"
+                                )
+                              }
+                              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] cursor-pointer border ${
+                                editPriority === "high"
+                                  ? "bg-accent-danger/10 border-accent-danger/25 text-accent-danger"
+                                  : "bg-transparent border-line-soft text-fg-secondary"
+                              }`}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  editPriority === "high"
+                                    ? "bg-accent-danger"
+                                    : "bg-fg-disabled"
+                                }`}
+                              />
+                              High
+                            </button>
+                          </div>
+                          <RichTextEditor
+                            value={editNotes}
+                            onChange={(html) => setEditNotes(html)}
+                            placeholder="Notes..."
+                            className="w-full bg-transparent border border-line-soft rounded-md px-2.5 py-2 text-[12px] text-fg-secondary min-h-[60px] focus-within:border-accent-blue"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={saveEdit}
+                              className="bg-accent-blue text-fg-on-accent rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-accent-blue-hover transition-colors"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingId(null)}
+                              className="bg-overlay-hover text-fg-muted rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-overlay-pressed transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <span className="text-[11px] text-fg-disabled self-center ml-auto">
+                              Cmd+Enter to save, Esc to cancel
+                            </span>
+                          </div>
                         </div>
-                        <RichTextEditor
-                          value={editNotes}
-                          onChange={(html) => setEditNotes(html)}
-                          placeholder="Notes..."
-                          className="w-full bg-transparent border border-line-soft rounded-md px-2.5 py-2 text-[12px] text-fg-secondary min-h-[60px] focus-within:border-accent-blue"
-                        />
-                        <div className="flex gap-2">
+                      );
+                    }
+
+                    if (confirmDeleteId === task.id) {
+                      return (
+                        <div
+                          key={task.id}
+                          className="p-3.5 rounded-[10px] bg-elevated border border-line-soft flex items-center gap-3"
+                        >
+                          <span className="flex-1 text-[13px]">
+                            <span className="text-accent-destructive">
+                              Delete &ldquo;{task.title}&rdquo;?
+                            </span>{" "}
+                            <span className="text-accent-warning-soft-fg">
+                              Time entries will also be deleted.
+                            </span>
+                          </span>
                           <button
-                            onClick={saveEdit}
-                            className="bg-accent-blue text-fg-on-accent rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-accent-blue-hover transition-colors"
+                            onClick={() => handleDelete(task.id)}
+                            className="bg-accent-destructive text-fg-on-accent rounded-md px-3 py-1 text-[12px] cursor-pointer hover:bg-accent-destructive-hover"
                           >
-                            Save
+                            Delete
                           </button>
                           <button
-                            onClick={() => setEditingId(null)}
-                            className="bg-overlay-hover text-fg-muted rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-overlay-pressed transition-colors"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="text-fg-faded text-[12px] cursor-pointer hover:text-fg-secondary"
                           >
                             Cancel
                           </button>
-                          <span className="text-[11px] text-fg-disabled self-center ml-auto">
-                            Cmd+Enter to save, Esc to cancel
-                          </span>
                         </div>
-                      </div>
-                    );
-                  }
+                      );
+                    }
 
-                  if (confirmDeleteId === task.id) {
                     return (
-                      <div
+                      <TaskCard
                         key={task.id}
-                        className="p-3.5 rounded-[10px] bg-elevated border border-line-soft flex items-center gap-3"
-                      >
-                        <span className="flex-1 text-[13px]">
-                          <span className="text-accent-destructive">
-                            Delete &ldquo;{task.title}&rdquo;?
-                          </span>{" "}
-                          <span className="text-accent-warning-soft-fg">
-                            Time entries will also be deleted.
-                          </span>
-                        </span>
-                        <button
-                          onClick={() => handleDelete(task.id)}
-                          className="bg-accent-destructive text-fg-on-accent rounded-md px-3 py-1 text-[12px] cursor-pointer hover:bg-accent-destructive-hover"
-                        >
-                          Delete
-                        </button>
-                        <button
-                          onClick={() => setConfirmDeleteId(null)}
-                          className="text-fg-faded text-[12px] cursor-pointer hover:text-fg-secondary"
-                        >
-                          Cancel
-                        </button>
-                      </div>
+                        task={task}
+                        project={projectMap.get(task.project_id ?? -1)}
+                        onToggle={toggleTask}
+                        onEdit={startEdit}
+                        onDelete={(id) => setConfirmDeleteId(id)}
+                        onToggleNotes={(id) =>
+                          setExpandedId(expandedId === id ? null : id)
+                        }
+                        onStart={handleStartFocus}
+                        onOpenDetail={setDetailTask}
+                        expandedNotes={expandedId === task.id}
+                        workedMinutes={workedMap.get(task.id)}
+                        showProject={true}
+                      />
                     );
                   }
 
+                  // Flat list — generous spacing between cards. Done tasks
+                  // sit at the bottom and pick up a soft-green tint via
+                  // TaskCard so the day's wins visually accumulate.
                   return (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      project={projectMap.get(task.project_id ?? -1)}
-                      onToggle={toggleTask}
-                      onEdit={startEdit}
-                      onDelete={(id) => setConfirmDeleteId(id)}
-                      onToggleNotes={(id) =>
-                        setExpandedId(expandedId === id ? null : id)
-                      }
-                      onStart={handleStartFocus}
-                      onOpenDetail={setDetailTask}
-                      expandedNotes={expandedId === task.id}
-                      workedMinutes={workedMap.get(task.id)}
-                      showProject={true}
-                    />
+                    <div className="space-y-3">
+                      {incomplete.map(renderRow)}
+                      {completed.length > 0 && incomplete.length > 0 && (
+                        <div className="h-2" />
+                      )}
+                      {completed.map(renderRow)}
+                    </div>
                   );
-                })
+                })()
               )}
             </div>
           </SortableContext>
@@ -758,9 +851,10 @@ export default function DailyPlanner() {
                 onClick={() => setPage("daily_shutdown")}
                 className="flex items-center gap-1 text-[12px] text-fg-faded cursor-pointer hover:text-fg-secondary transition-colors"
               >
-                <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
-                  <circle cx="7" cy="7" r="5.5" />
-                  <path d="M7 4v3h2.5" />
+                <svg width="11" height="11" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="7.5" cy="7.5" r="5.5" />
+                  <line x1="7.5" y1="7.5" x2="9.2" y2="10" />
+                  <line x1="7.5" y1="7.5" x2="7.5" y2="11" />
                 </svg>
                 Shutdown day
               </button>
@@ -775,6 +869,7 @@ export default function DailyPlanner() {
           />
         </div>
 
+        </div>
       </div>
       </div>
 
@@ -784,204 +879,249 @@ export default function DailyPlanner() {
         style={{ width: rightPanelCollapsed ? 28 : 220 }}
       >
       {rightPanelCollapsed ? (
-        <div className="flex flex-col items-center pt-3">
+        <div className="flex flex-col items-center pt-[22px]">
           <button
             onClick={toggleRightPanel}
             title="Show projects panel"
             className="w-6 h-6 rounded-md flex items-center justify-center text-fg-muted hover:bg-overlay-hover hover:text-fg-secondary cursor-pointer transition-colors"
           >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M7.5 2.5L4 6l3.5 3.5" />
+            {/* Double chevron — distinguishes "expand this whole panel" from
+                the single-chevron disclosure carets used for tree expansion. */}
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 3.5L4 7l4 3.5" />
+              <path d="M12 3.5L8 7l4 3.5" />
             </svg>
           </button>
         </div>
       ) : (
       <div className="w-[220px] flex-shrink-0 flex flex-col overflow-y-auto">
-        <div className="flex items-center px-3 pt-4 pb-1.5">
-          <span className="flex-1 text-[10px] text-fg-disabled uppercase tracking-[0.08em]">
-            Projects
-          </span>
+        {/* Collapse handle (no top label — goal is "what to add to today").
+            pt-[24px] aligns the button center with the Start focusing button
+            in the main column's header (pt-5 + half of a 28px-tall button). */}
+        <div className="flex items-center justify-end px-3 pt-[24px] pb-1">
           <button
             onClick={toggleRightPanel}
             title="Hide panel"
             className="w-5 h-5 -mr-1 rounded-md flex items-center justify-center text-fg-faded hover:bg-overlay-hover hover:text-fg-secondary cursor-pointer transition-colors"
           >
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4.5 2.5L8 6l-3.5 3.5" />
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 3.5L6 7l-4 3.5" />
+              <path d="M6 3.5L10 7l-4 3.5" />
             </svg>
           </button>
         </div>
+
+        {/* Project list — only projects with at least one open pullable task
+            (or a recently-pulled task still in its undo window) */}
+        <div className="px-2 space-y-1.5">
         {(() => {
           const activeProjects = projects.filter((p) => !p.completed);
-          if (activeProjects.length === 0) {
+          const projectSections = activeProjects
+            .map((p) => {
+              const unscheduled = sidebarUnscheduled.filter(
+                (t) => t.project_id === p.id && t.status !== "done"
+              );
+              const overdue = sidebarOverdue.filter(
+                (t) => t.project_id === p.id && t.status !== "done"
+              );
+              const recent = Array.from(recentlyPulled.values())
+                .map((r) => r.task)
+                .filter((t) => t.project_id === p.id);
+              const pullable = [...unscheduled, ...overdue];
+              return { project: p, pullable, recent };
+            })
+            .filter((s) => s.pullable.length > 0 || s.recent.length > 0);
+
+          if (projectSections.length === 0) {
             return (
-              <p className="px-3 py-4 text-[12px] text-fg-faded text-center">
-                No active projects
+              <p className="px-2 py-4 text-[11px] text-fg-faded text-center">
+                Nothing left to pull in
               </p>
             );
           }
-          return activeProjects.map((p) => {
-            const isExpanded = expandedProjectIds.has(p.id);
-            const unscheduled = sidebarUnscheduled.filter((t) => t.project_id === p.id);
-            const overdue = sidebarOverdue.filter((t) => t.project_id === p.id);
-            const todayTasks = tasks.filter((t) => t.project_id === p.id);
-            const pullableTasks = [...unscheduled, ...overdue];
 
+          return projectSections.map(({ project: p, pullable, recent }) => {
+            const isExpanded = expandedProjectIds.has(p.id);
+            const allInList = [...pullable, ...recent];
             return (
-              <div key={p.id} className="border-b border-divider">
+              <div key={p.id} className="rounded-md bg-elevated/40 overflow-hidden">
                 {/* Project header */}
-                <div className="flex items-center gap-1.5 px-3 py-2 hover:bg-overlay-hover transition-colors">
-                  <button
-                    onClick={() => {
-                      setExpandedProjectIds((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(p.id)) next.delete(p.id);
-                        else next.add(p.id);
-                        return next;
-                      });
-                    }}
-                    className="text-[18px] leading-none text-fg-faded cursor-pointer w-5 flex-shrink-0"
-                  >
-                    {isExpanded ? "▾" : "▸"}
-                  </button>
+                <button
+                  onClick={() => {
+                    setExpandedProjectIds((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(p.id)) next.delete(p.id);
+                      else next.add(p.id);
+                      return next;
+                    });
+                  }}
+                  className="w-full flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-overlay-hover transition-colors text-left cursor-pointer"
+                >
+                  <span className="w-3 flex items-center justify-center text-accent-orange-soft-fg/70 flex-shrink-0">
+                    <DisclosureCaret expanded={isExpanded} />
+                  </span>
                   <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
-                  <button
-                    onClick={() => openProject(p.id)}
-                    className="text-[11px] text-fg truncate flex-1 text-left cursor-pointer hover:underline"
-                  >
-                    {p.name}
-                  </button>
-                </div>
+                  <span className="text-[11.5px] text-fg truncate flex-1">{p.name}</span>
+                  <span className="text-[10px] text-fg-disabled tabular-nums">{pullable.length}</span>
+                </button>
 
                 {/* Expanded task list */}
                 {isExpanded && (
-                  <div className="px-2 pb-2">
-                    {pullableTasks.length === 0 && todayTasks.length === 0 && (
-                      <p className="text-[10px] text-fg-disabled px-2 py-1">No open tasks</p>
-                    )}
-                    {pullableTasks.map((task) => (
-                      <button
-                        key={task.id}
-                        onClick={() => pullTaskToDay(task.id)}
-                        title="Add to today"
-                        className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-overlay-hover transition-colors group"
-                      >
-                        <span className="text-[11px] text-fg flex-1 truncate">{task.title}</span>
-                        {task.estimated_minutes != null && task.estimated_minutes > 0 && (
-                          <span className="text-[9px] text-fg-disabled">{task.estimated_minutes}m</span>
-                        )}
-                        <svg
-                          width="13" height="13" viewBox="0 0 14 14" fill="none"
-                          stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"
-                          className="text-accent-blue opacity-40 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                  <div className="px-1.5 pb-1.5 space-y-px">
+                    {allInList.map((task) => {
+                      const isRecent = recentlyPulled.has(task.id);
+                      return (
+                        <button
+                          key={task.id}
+                          onClick={() => {
+                            if (isRecent) undoPull(task.id);
+                            else pullTaskToDay(task.id);
+                          }}
+                          title={isRecent ? "Undo (within 10s)" : "Add to today"}
+                          className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer transition-colors group ${
+                            isRecent ? "bg-accent-blue/[0.07]" : "hover:bg-overlay-hover"
+                          }`}
                         >
-                          <path d="M7 3v8M3 7h8" />
-                        </svg>
-                      </button>
-                    ))}
-                    {todayTasks.length > 0 && pullableTasks.length > 0 && (
-                      <div className="h-px bg-line-hairline mx-2 my-1" />
-                    )}
-                    {todayTasks.map((task) => (
-                      <button
-                        key={task.id}
-                        onClick={() => pullTaskToDay(task.id)}
-                        title="Already on today"
-                        className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-overlay-hover transition-colors"
-                      >
-                        <span className={`text-[11px] flex-1 truncate ${task.status === "done" ? "text-fg-faded line-through" : "text-fg-secondary"}`}>
-                          {task.title}
-                        </span>
-                        <span className="text-[9px] text-fg-disabled flex-shrink-0">today</span>
-                      </button>
-                    ))}
+                          <span
+                            className={`text-[11px] flex-1 truncate ${
+                              isRecent ? "text-fg-faded" : "text-fg"
+                            }`}
+                          >
+                            {task.title}
+                          </span>
+                          {task.estimated_minutes != null && task.estimated_minutes > 0 && !isRecent && (
+                            <span className="text-[9px] text-fg-disabled">{task.estimated_minutes}m</span>
+                          )}
+                          {isRecent ? (
+                            <span className="text-[10px] text-accent-blue-soft-fg font-medium">
+                              Undo
+                            </span>
+                          ) : (
+                            <svg
+                              width="13" height="13" viewBox="0 0 14 14" fill="none"
+                              stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"
+                              className="text-accent-blue opacity-40 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                            >
+                              <path d="M7 3v8M3 7h8" />
+                            </svg>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
             );
           });
         })()}
+        </div>
 
-        {/* Spacer — push unfinished + unscheduled to bottom third */}
+        {/* Spacer — push backlog + unscheduled to bottom */}
         <div className="flex-1 min-h-[40px]" />
 
-        {/* Unfinished tasks section — tasks rolling over up to 4 days */}
+        {/* Task backlog — tasks rolling over up to 4 days. Header + list share
+            one shaded container so the section reads as a distinct group from
+            the active project list above. */}
         {(() => {
-          const unfinished = unfinishedTasks;
+          const backlog = unfinishedTasks.filter((t) => t.status !== "done");
+          if (backlog.length === 0) return null;
           return (
-          <div className="border-t border-line-hairline">
-            <button
-              onClick={() => setUnfinishedExpanded((v) => !v)}
-              className="w-full flex items-center gap-1.5 px-3 py-2 hover:bg-overlay-hover transition-colors"
-            >
-              <span className="text-[18px] leading-none text-fg-faded w-5 flex-shrink-0">
-                {unfinishedExpanded ? "▾" : "▸"}
-              </span>
-              <span className="text-[10px] text-fg-disabled uppercase tracking-[0.08em] flex-1 text-left">
-                Unfinished
-              </span>
-              {unfinished.length > 0 && (
-                <span className="text-[9px] text-fg-disabled tabular-nums">{unfinished.length}</span>
-              )}
-            </button>
-            {unfinishedExpanded && (
-              <div className="px-2 pb-2">
-                {unfinished.length === 0 ? (
-                  <p className="text-[10px] text-fg-disabled px-2 py-1">All caught up</p>
-                ) : (
-                  unfinished.map((task) => (
-                    <button
-                      key={task.id}
-                      onClick={() => setDetailTask(task)}
-                      className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-overlay-hover transition-colors group"
-                    >
-                      <span className="text-[11px] text-fg-secondary group-hover:text-fg flex-1 truncate transition-colors">{task.title}</span>
-                      <span className="text-[9px] text-accent-warning-soft-fg/70 tabular-nums">{task.rollover_count}d</span>
-                    </button>
-                  ))
+            <div className="px-2 mt-2">
+              <div className="rounded-md bg-overlay-hover/60 overflow-hidden">
+                <button
+                  onClick={() => setUnfinishedExpanded((v) => !v)}
+                  className="w-full flex items-center gap-1.5 px-2.5 py-2 cursor-pointer text-left hover:bg-overlay-hover transition-colors"
+                >
+                  <span className="w-3 flex items-center justify-center text-accent-orange-soft-fg/70 flex-shrink-0">
+                    <DisclosureCaret expanded={unfinishedExpanded} />
+                  </span>
+                  <span className="text-[11px] text-fg-muted flex-1">Task backlog</span>
+                  <span className="text-[10px] text-fg-disabled tabular-nums">{backlog.length}</span>
+                </button>
+                {unfinishedExpanded && (
+                  <div className="px-1.5 pb-1.5 space-y-px">
+                    {backlog.map((task) => (
+                      <button
+                        key={task.id}
+                        onClick={() => setDetailTask(task)}
+                        className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-overlay-hover transition-colors group"
+                      >
+                        <span className="text-[11px] text-fg-secondary group-hover:text-fg flex-1 truncate transition-colors">{task.title}</span>
+                        <span className="text-[9px] text-accent-warning-soft-fg/70 tabular-nums">{task.rollover_count}d</span>
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
+            </div>
           );
         })()}
 
-        {/* Unscheduled tasks section (includes orphan overdue tasks) */}
+        {/* Unscheduled — orphan tasks with no project */}
         {(() => {
-          const orphanOverdue = sidebarOverdue.filter((t) => t.project_id === null);
-          const unscheduledAll = [...sidebarUnscheduled, ...orphanOverdue];
-          if (unscheduledAll.length === 0) return null;
+          const orphanUnscheduled = sidebarUnscheduled.filter(
+            (t) => t.project_id === null && t.status !== "done"
+          );
+          const orphanOverdue = sidebarOverdue.filter(
+            (t) => t.project_id === null && t.status !== "done"
+          );
+          const orphanRecent = Array.from(recentlyPulled.values())
+            .map((r) => r.task)
+            .filter((t) => t.project_id === null);
+          const unscheduledAll = [...orphanUnscheduled, ...orphanOverdue];
+          const allInList = [...unscheduledAll, ...orphanRecent];
+          if (allInList.length === 0) return null;
           return (
-          <div className="border-t border-line-hairline">
-            <button
-              onClick={() => setUnscheduledExpanded((v) => !v)}
-              className="w-full flex items-center gap-1.5 px-3 py-2 hover:bg-overlay-hover transition-colors"
-            >
-              <span className="text-[18px] leading-none text-fg-faded w-5 flex-shrink-0">
-                {unscheduledExpanded ? "▾" : "▸"}
-              </span>
-              <span className="text-[10px] text-fg-disabled uppercase tracking-[0.08em] flex-1 text-left">
-                Unscheduled
-              </span>
-            </button>
-            {unscheduledExpanded && (
-              <div className="px-2 pb-2">
-                {unscheduledAll.map((task) => (
-                  <button
-                    key={task.id}
-                    onClick={() => pullTaskToDay(task.id)}
-                    className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-overlay-hover transition-colors group"
-                  >
-                    <span className="text-[11px] text-fg flex-1 truncate">{task.title}</span>
-                    {task.estimated_minutes != null && task.estimated_minutes > 0 && (
-                      <span className="text-[9px] text-fg-disabled">{task.estimated_minutes}m</span>
-                    )}
-                    <span className="text-[9px] text-accent-blue opacity-0 group-hover:opacity-100 transition-opacity">+</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+            <div className="px-2 mt-1.5 mb-2">
+              <button
+                onClick={() => setUnscheduledExpanded((v) => !v)}
+                className="w-full flex items-center gap-1.5 px-1 py-1.5 cursor-pointer text-left"
+              >
+                <span className="w-3 flex items-center justify-center text-accent-orange-soft-fg/70 flex-shrink-0">
+                  <DisclosureCaret expanded={unscheduledExpanded} />
+                </span>
+                <span className="text-[11px] text-fg-muted flex-1">Unscheduled</span>
+                <span className="text-[10px] text-fg-disabled tabular-nums">{unscheduledAll.length}</span>
+              </button>
+              {unscheduledExpanded && (
+                <div className="rounded-md bg-elevated/40 px-1.5 py-1.5 space-y-px">
+                  {allInList.map((task) => {
+                    const isRecent = recentlyPulled.has(task.id);
+                    return (
+                      <button
+                        key={task.id}
+                        onClick={() => {
+                          if (isRecent) undoPull(task.id);
+                          else pullTaskToDay(task.id);
+                        }}
+                        title={isRecent ? "Undo (within 10s)" : "Add to today"}
+                        className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer transition-colors group ${
+                          isRecent ? "bg-accent-blue/[0.07]" : "hover:bg-overlay-hover"
+                        }`}
+                      >
+                        <span
+                          className={`text-[11px] flex-1 truncate ${
+                            isRecent ? "text-fg-faded" : "text-fg"
+                          }`}
+                        >
+                          {task.title}
+                        </span>
+                        {task.estimated_minutes != null && task.estimated_minutes > 0 && !isRecent && (
+                          <span className="text-[9px] text-fg-disabled">{task.estimated_minutes}m</span>
+                        )}
+                        {isRecent ? (
+                          <span className="text-[10px] text-accent-blue-soft-fg font-medium">
+                            Undo
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-accent-blue opacity-0 group-hover:opacity-100 transition-opacity">+</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           );
         })()}
       </div>

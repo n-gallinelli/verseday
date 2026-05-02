@@ -236,6 +236,25 @@ export async function getTasksForProject(
   );
 }
 
+// Substring match on task title — drives the Objectives page search,
+// which surfaces matching tasks below matching projects. Open tasks first,
+// then completed; newest scheduled date first within each group.
+export async function searchTasksByTitle(
+  query: string,
+  limit = 25
+): Promise<Task[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const db = await getDb();
+  return db.select(
+    `SELECT * FROM tasks
+       WHERE title LIKE $1 COLLATE NOCASE
+       ORDER BY status = 'done', date_scheduled DESC, id DESC
+       LIMIT $2`,
+    [`%${trimmed}%`, limit]
+  );
+}
+
 export async function getIncompleteTasksForProjectIds(
   projectIds: number[]
 ): Promise<Task[]> {
@@ -330,7 +349,20 @@ export async function updateTaskStatus(
 ): Promise<void> {
   validateTaskStatus(status);
   const db = await getDb();
-  await db.execute("UPDATE tasks SET status = $1 WHERE id = $2", [status, id]);
+  // Stamp completed_at when transitioning to done; clear it on any other status
+  // so the weekly shutdown's wins-by-day groups by the day the user checked
+  // the box (independent of date_scheduled).
+  if (status === "done") {
+    await db.execute(
+      "UPDATE tasks SET status = $1, completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = $2",
+      [status, id]
+    );
+  } else {
+    await db.execute(
+      "UPDATE tasks SET status = $1, completed_at = NULL WHERE id = $2",
+      [status, id]
+    );
+  }
 }
 
 export async function updateTaskSortOrders(
@@ -743,6 +775,36 @@ export async function getRecentCompletedTasks(
      ORDER BY date_scheduled DESC, sort_order
      LIMIT 10`,
     [startDate, endDate]
+  );
+}
+
+/**
+ * Tasks completed during a week, grouped by the *check-the-box* day. Uses
+ * `completed_at` (stamped at the moment the user marks done) instead of
+ * `date_scheduled`, so a task scheduled Mon but completed Wed shows under Wed.
+ * Falls back to `date_scheduled` for legacy rows where `completed_at` is null.
+ */
+export async function getTasksCompletedInWeek(
+  mondayIso: string,
+  fridayIso: string
+): Promise<Task[]> {
+  const db = await getDb();
+  // End-of-Friday cutoff so timestamps later in Friday still match.
+  const fridayEnd = `${fridayIso}T23:59:59.999Z`;
+  return db.select(
+    `SELECT * FROM tasks
+     WHERE status = 'done'
+       AND (
+         (completed_at IS NOT NULL
+            AND completed_at >= $1
+            AND completed_at <= $2)
+         OR (completed_at IS NULL
+            AND date_scheduled >= $1
+            AND date_scheduled <= $3)
+       )
+     ORDER BY COALESCE(completed_at, date_scheduled) ASC, sort_order ASC
+     LIMIT 1000`,
+    [mondayIso, fridayEnd, fridayIso]
   );
 }
 

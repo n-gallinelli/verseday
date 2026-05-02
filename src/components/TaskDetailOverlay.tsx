@@ -48,6 +48,7 @@ interface TaskDetailOverlayProps {
   workedMinutes?: number;
   onSetWorkedMinutes?: (taskId: number, minutes: number) => void;
   autoTrackedMinutes?: number;
+  autoFocusTitle?: boolean;
 }
 
 function formatDisplayMinutes(value: string): string {
@@ -272,8 +273,27 @@ export default function TaskDetailOverlay({
   workedMinutes = 0,
   onSetWorkedMinutes,
   autoTrackedMinutes,
+  autoFocusTitle = false,
 }: TaskDetailOverlayProps) {
   const [title, setTitle] = useState(task.title);
+  const titleRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Size + (optionally) focus the title once when the overlay opens. Done
+  // via effect so we only steal focus once — a ref callback runs on every
+  // render and would yank focus back if the user clicked away.
+  useEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = el.scrollHeight + "px";
+    if (autoFocusTitle) {
+      el.focus();
+      el.select();
+    }
+    // intentionally only on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [localStatus, setLocalStatus] = useState(task.status);
   const prevStatusRef = useRef(task.status);
   const justCompleted = localStatus === "done" && prevStatusRef.current !== "done";
@@ -298,7 +318,6 @@ export default function TaskDetailOverlay({
 
   // Recurrence
   const parsedRecurrence = parseRecurrence(task.recurrence ?? null);
-  const isTemplate = task.recurrence != null && task.recurrence_source_id == null;
   const isInstance = task.recurrence_source_id != null;
   const [recurrenceFreq, setRecurrenceFreq] = useState<string>(parsedRecurrence?.freq ?? "none");
   const [recurrenceDay, setRecurrenceDay] = useState<number>(parsedRecurrence?.day ?? 1);
@@ -474,17 +493,20 @@ export default function TaskDetailOverlay({
               setTitle(v);
               debouncedSave({ title: v });
             }}
+            onKeyDown={(e) => {
+              // Enter commits the title (blurs the field) — keeps it from
+              // inserting a newline that the onChange would strip a beat later.
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
             onInput={(e) => {
               const el = e.currentTarget;
               el.style.height = "auto";
               el.style.height = el.scrollHeight + "px";
             }}
-            ref={(el) => {
-              if (el) {
-                el.style.height = "auto";
-                el.style.height = el.scrollHeight + "px";
-              }
-            }}
+            ref={titleRef}
             rows={1}
             maxLength={MAX_TITLE_LENGTH}
             placeholder="Untitled task"
@@ -601,10 +623,7 @@ export default function TaskDetailOverlay({
             </div>
 
             {!isInstance && (
-              <PropertyRow
-                label="Repeat"
-                hint={isTemplate ? "Template — instances created on daily plan load" : undefined}
-              >
+              <PropertyRow label="Repeat">
                 <SimpleSelect
                   value={recurrenceFreq}
                   width="w-[140px]"

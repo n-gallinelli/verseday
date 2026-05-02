@@ -1,4 +1,5 @@
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, type Editor } from "@tiptap/react";
+import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Typography from "@tiptap/extension-typography";
@@ -53,6 +54,7 @@ export default function RichTextEditor({
 }: RichTextEditorProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isEmpty, setIsEmpty] = useState(() => !value || value.trim() === "");
+  const [isFocused, setIsFocused] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -84,6 +86,8 @@ export default function RichTextEditor({
         onChange(e.getHTML());
       }, 300);
     },
+    onFocus: () => setIsFocused(true),
+    onBlur: () => setIsFocused(false),
   });
 
   // Flush pending save on unmount
@@ -116,8 +120,9 @@ export default function RichTextEditor({
         }
       }}
     >
+      <FormattingBubbleMenu editor={editor} />
       <div className="relative">
-        {isEmpty && placeholder && (
+        {isEmpty && !isFocused && placeholder && (
           <div className="absolute inset-0 pointer-events-none text-fg-faded select-none">
             {placeholder}
           </div>
@@ -125,5 +130,93 @@ export default function RichTextEditor({
         <EditorContent editor={editor} />
       </div>
     </div>
+  );
+}
+
+function FormattingBubbleMenu({ editor }: { editor: Editor }) {
+  const btnBase =
+    "h-7 px-2 text-[12px] rounded cursor-pointer transition-colors flex items-center justify-center font-medium";
+  const inactive = "text-fg-secondary hover:bg-overlay-hover";
+  const active = "text-fg bg-overlay-pressed";
+  const cls = (on: boolean) => `${btnBase} ${on ? active : inactive}`;
+
+  return (
+    <BubbleMenu
+      editor={editor}
+      options={{ placement: "top" }}
+      className="flex items-center gap-0.5 p-1 rounded-lg bg-elevated border border-line-soft"
+      style={{ boxShadow: "var(--shadow-card)" }}
+    >
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
+        className={cls(editor.isActive("heading", { level: 1 }))}
+        title="Heading 1"
+      >
+        H1
+      </button>
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+        className={cls(editor.isActive("heading", { level: 2 }))}
+        title="Heading 2"
+      >
+        H2
+      </button>
+      <span className="w-px h-4 bg-line-hairline mx-0.5" aria-hidden />
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => editor.chain().focus().toggleBold().run()}
+        className={cls(editor.isActive("bold"))}
+        title="Bold (⌘B)"
+      >
+        <span className="font-bold">B</span>
+      </button>
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => editor.chain().focus().toggleItalic().run()}
+        className={cls(editor.isActive("italic"))}
+        title="Italic (⌘I)"
+      >
+        <span className="italic">I</span>
+      </button>
+      <span className="w-px h-4 bg-line-hairline mx-0.5" aria-hidden />
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => editor.chain().focus().toggleBulletList().run()}
+        className={cls(editor.isActive("bulletList"))}
+        title="Bulleted list"
+      >
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+          <circle cx="3" cy="4" r="0.8" fill="currentColor" />
+          <line x1="6" y1="4" x2="14" y2="4" />
+          <circle cx="3" cy="8" r="0.8" fill="currentColor" />
+          <line x1="6" y1="8" x2="14" y2="8" />
+          <circle cx="3" cy="12" r="0.8" fill="currentColor" />
+          <line x1="6" y1="12" x2="14" y2="12" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => editor.chain().focus().toggleOrderedList().run()}
+        className={cls(editor.isActive("orderedList"))}
+        title="Numbered list"
+      >
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+          <text x="1" y="6" fontSize="5" fill="currentColor" stroke="none" fontWeight="600">1</text>
+          <line x1="6" y1="4" x2="14" y2="4" />
+          <text x="1" y="10" fontSize="5" fill="currentColor" stroke="none" fontWeight="600">2</text>
+          <line x1="6" y1="8" x2="14" y2="8" />
+          <text x="1" y="14" fontSize="5" fill="currentColor" stroke="none" fontWeight="600">3</text>
+          <line x1="6" y1="12" x2="14" y2="12" />
+        </svg>
+      </button>
+    </BubbleMenu>
   );
 }

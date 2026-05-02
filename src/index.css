@@ -68,6 +68,10 @@
   --accent-green-deep: #0F6E56;
   --accent-green-glow: rgba(106, 158, 127, 0.22);
   --accent-green-soft-bg: #F0F9F5;
+  /* Muted green-tint for "done" task cards — same lightness as
+     accent-green-soft-bg, lower saturation so it reads as quietly
+     positive instead of vivid. */
+  --accent-green-muted-bg: #F2F6F3;
 
   --accent-orange: #A85E1E;
   --accent-orange-hover: #94511A;
@@ -77,6 +81,29 @@
 
   --accent-warning: #946818;
   --accent-warning-soft-text: #7a5400;
+
+  --accent-highlight: #e8b440;
+
+  /* — Sidebar nav icon tints — pastel chips that echo the VerseDay
+     sunrise palette so each section reads with its own personality.
+     Daily and Weekly each share a hue across their plan + shutdown
+     pair so they group visually. Kept fainter than the source pastels
+     so the sidebar stays calm. */
+  --nav-tint-focus: #FFF1DC;        /* warm sun */
+  --nav-tint-daily: #ECF2F8;        /* ocean blue */
+  --nav-tint-weekly: #F8EEF2;       /* sunset pink */
+  --nav-tint-objectives: #F1ECF7;   /* sky lavender */
+  --nav-tint-dashboard: #ECF4EF;    /* meadow green */
+  --nav-tint-settings: #F1EFEA;     /* neutral warm gray */
+
+  /* — Pink accent — sunset family, used on the weekly shutdown page
+     so it inherits the weekly section's pink personality (was green). */
+  --accent-pink: #C4628A;
+  --accent-pink-hover: #B05378;
+  --accent-pink-bright: #D67995;
+  --accent-pink-bright-hover: #C46983;
+  --accent-pink-deep: #A04D6F;
+  --accent-pink-soft-bg: #FBE3EA;
 
   --accent-danger: #B0413E;
 
@@ -197,6 +224,7 @@
     --accent-green-deep: #3aa386;
     --accent-green-glow: rgba(111, 160, 136, 0.28);
     --accent-green-soft-bg: rgba(111, 160, 136, 0.14);
+    --accent-green-muted-bg: rgba(132, 144, 138, 0.10);
 
     --accent-orange: #d68647;
     --accent-orange-hover: #c47840;
@@ -206,6 +234,26 @@
 
     --accent-warning: #d6a35a;
     --accent-warning-soft-text: #e8b970;
+
+    --accent-highlight: #f0c25a;
+
+    /* Sidebar nav icon tints (dark) — same hue families as light, lower
+       alpha so the chips sit quietly on the dark sidebar. */
+    --nav-tint-focus: rgba(255, 217, 160, 0.10);
+    --nav-tint-daily: rgba(168, 207, 229, 0.10);
+    --nav-tint-weekly: rgba(232, 155, 177, 0.10);
+    --nav-tint-objectives: rgba(201, 181, 224, 0.10);
+    --nav-tint-dashboard: rgba(150, 200, 170, 0.10);
+    --nav-tint-settings: rgba(180, 178, 173, 0.08);
+
+    /* Pink accent (dark) — flips deep ↔ light: the "deep" token is
+       brighter so it stays readable on the dark background. */
+    --accent-pink: #E89BB1;
+    --accent-pink-hover: #D88BA1;
+    --accent-pink-bright: #F0AAC0;
+    --accent-pink-bright-hover: #E59AB0;
+    --accent-pink-deep: #F0A8BD;
+    --accent-pink-soft-bg: rgba(232, 155, 177, 0.14);
 
     --accent-danger: #e07474;
 
@@ -303,6 +351,13 @@
   --color-accent-orange-soft-hover: var(--accent-orange-soft-bg-hover);
   --color-accent-orange-soft-fg: var(--accent-orange-soft-text);
 
+  --color-accent-pink: var(--accent-pink);
+  --color-accent-pink-hover: var(--accent-pink-hover);
+  --color-accent-pink-bright: var(--accent-pink-bright);
+  --color-accent-pink-bright-hover: var(--accent-pink-bright-hover);
+  --color-accent-pink-deep: var(--accent-pink-deep);
+  --color-accent-pink-soft: var(--accent-pink-soft-bg);
+
   --color-accent-warning: var(--accent-warning);
   --color-accent-warning-soft-fg: var(--accent-warning-soft-text);
 
@@ -390,6 +445,73 @@ select {
 
 .tiptap p {
   margin: 0 0 0.25em;
+}
+
+.tiptap h1 {
+  font-size: 1.5em;
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0.75em 0 0.35em;
+  color: var(--text-primary);
+}
+
+.tiptap h1:first-child {
+  margin-top: 0;
+}
+
+.tiptap h2 {
+  font-size: 1.25em;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0.65em 0 0.3em;
+  color: var(--text-primary);
+}
+
+.tiptap h2:first-child {
+  margin-top: 0;
+}
+
+.tiptap h3 {
+  font-size: 1.05em;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0.5em 0 0.25em;
+  color: var(--text-primary);
+}
+
+.tiptap h3:first-child {
+  margin-top: 0;
+}
+
+.tiptap strong {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tiptap em {
+  font-style: italic;
+}
+
+.tiptap ul,
+.tiptap ol {
+  margin: 0.25em 0 0.4em;
+  padding-left: 1.4em;
+}
+
+.tiptap ul {
+  list-style: disc;
+}
+
+.tiptap ol {
+  list-style: decimal;
+}
+
+.tiptap li {
+  margin: 0.1em 0;
+}
+
+.tiptap li > p {
+  margin: 0;
 }
 
 .tiptap a {

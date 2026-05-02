@@ -21,12 +21,13 @@ import {
   updateTaskStatus,
   updateTaskDateScheduled,
   getAllTasksForProjectIds,
-  getWorkedMinutesForTask,
   setManualWorkedMinutes,
   getWeeklyShutdown,
+  deleteTask,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import TaskDetailOverlay from "../components/TaskDetailOverlay";
+import DisclosureCaret from "../components/DisclosureCaret";
 import type { Task, Project } from "../types";
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
@@ -82,11 +83,13 @@ function DraggableTaskRow({
   task,
   weekDates,
   onToggleTask,
+  onOpenDetail,
   isLast,
 }: {
   task: Task;
   weekDates: string[];
   onToggleTask: (task: Task) => void;
+  onOpenDetail?: (task: Task) => void;
   isLast: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -103,22 +106,19 @@ function DraggableTaskRow({
   return (
     <div
       ref={setNodeRef}
-      className={`flex items-center gap-2 px-2.5 py-2 mb-0.5 ${
-        !isLast ? "border-b border-divider" : ""
-      } ${isDragging ? "opacity-30" : ""}`}
+      {...attributes}
+      {...listeners}
+      onClick={() => onOpenDetail?.(task)}
+      className={`flex items-center gap-2 px-2.5 py-2 mb-0.5 touch-none hover:bg-overlay-hover ${
+        isDragging ? "cursor-grabbing opacity-30" : "cursor-pointer"
+      } ${!isLast ? "border-b border-divider" : ""}`}
     >
-      {/* Drag handle */}
-      <span
-        {...attributes}
-        {...listeners}
-        className="text-[10px] text-fg-disabled cursor-grab active:cursor-grabbing select-none"
-      >
-        ⠿
-      </span>
-
       {/* Checkbox */}
       <button
-        onClick={() => onToggleTask(task)}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleTask(task);
+        }}
         title={task.status === "done" ? "Mark as not done" : "Mark complete"}
         className={`w-[18px] h-[18px] rounded-full border-2 flex-shrink-0 cursor-pointer flex items-center justify-center transition-colors ${
           task.status === "done"
@@ -161,16 +161,11 @@ function DraggableTaskRow({
         </span>
       )}
 
-      {/* Day pill */}
-      {dayAbbrev ? (
-        <span className="text-[10px] bg-overlay-hover text-fg-muted px-1.5 py-0.5 rounded">
-          {dayAbbrev}
-        </span>
-      ) : (
-        <span className="text-[10px] bg-accent-orange/[0.08] text-accent-orange-soft-fg px-1.5 py-0.5 rounded">
-          —
-        </span>
-      )}
+      {/* Day pill — same gray treatment whether scheduled or not; the dash
+          stands in for "no day yet" without the loud orange call-out. */}
+      <span className="text-[10px] bg-overlay-hover text-fg-muted px-1.5 py-0.5 rounded">
+        {dayAbbrev ?? "—"}
+      </span>
     </div>
   );
 }
@@ -182,44 +177,63 @@ function ProjectCard({
   tasks,
   weekDates,
   onToggleTask,
+  onOpenDetail,
   onNavigateProject,
 }: {
   project: { id: number | null; name: string; color: string };
   tasks: Task[];
   weekDates: string[];
   onToggleTask: (task: Task) => void;
+  onOpenDetail: (task: Task) => void;
   onNavigateProject: (id: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="bg-elevated border border-line-soft rounded-[9px] mb-2.5 overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2.5">
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="text-[18px] leading-none text-fg-faded cursor-pointer hover:text-fg-muted w-5 flex-shrink-0 transition-transform duration-150"
-          style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
-        >
-          ▸
-        </button>
+    <div className="bg-elevated border border-line-soft rounded-[9px] mb-2.5 overflow-hidden group/proj-card">
+      {/* Header — clicking anywhere on the row expands tasks. The "Open project"
+          icon on the right is a separate, smaller affordance. */}
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left cursor-pointer hover:bg-overlay-hover transition-colors"
+      >
+        <span className="w-3 flex items-center justify-center text-accent-orange-soft-fg/70 flex-shrink-0">
+          <DisclosureCaret expanded={expanded} />
+        </span>
         <div
           className="w-2 h-2 rounded-full flex-shrink-0"
           style={{ backgroundColor: project.color }}
         />
-        <span
-          className={`text-[13px] font-medium text-fg flex-1 truncate ${
-            project.id !== null
-              ? "cursor-pointer hover:text-accent-orange"
-              : ""
-          }`}
-          onClick={() => {
-            if (project.id !== null) onNavigateProject(project.id);
-          }}
-        >
+        <span className="text-[13px] font-medium text-fg flex-1 truncate">
           {project.name}
         </span>
-      </div>
+        {project.id !== null && (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onNavigateProject(project.id as number);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                onNavigateProject(project.id as number);
+              }
+            }}
+            title="Open project"
+            className="w-5 h-5 rounded flex items-center justify-center text-fg-faded hover:text-accent-orange hover:bg-overlay-hover cursor-pointer transition-colors opacity-0 group-hover/proj-card:opacity-100 flex-shrink-0"
+          >
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 2h5v5" />
+              <path d="M10 2L5.5 6.5" />
+              <path d="M9 7v3H2V3h3" />
+            </svg>
+          </span>
+        )}
+      </button>
 
       {/* Tasks — collapsible */}
       {expanded && tasks.length > 0 && (
@@ -230,6 +244,7 @@ function ProjectCard({
                   task={task}
                   weekDates={weekDates}
                   onToggleTask={onToggleTask}
+                  onOpenDetail={onOpenDetail}
                   isLast={i === tasks.length - 1}
                 />
               ))}
@@ -239,19 +254,15 @@ function ProjectCard({
   );
 }
 
-// ─── Right panel: Calendar task chip ────────────────────────────────────────
+// ─── Right panel: Calendar task pill (one-line) ─────────────────────────────
 
-function CalendarTaskChip({
+function CalendarTaskPill({
   task,
   project,
-  onToggle,
-  onNavigateProject,
   onOpenDetail,
 }: {
   task: Task;
   project: Project | undefined;
-  onToggle: (task: Task) => void;
-  onNavigateProject: (id: number) => void;
   onOpenDetail: (task: Task) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -259,82 +270,28 @@ function CalendarTaskChip({
     data: { task },
   });
 
-  const prevStatusRef = useRef(task.status);
-  const justCompleted = task.status === "done" && prevStatusRef.current !== "done";
-  useEffect(() => { prevStatusRef.current = task.status; }, [task.status]);
+  const isDone = task.status === "done";
 
   return (
     <div
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      className={`bg-elevated border-[0.5px] border-line-soft rounded-md px-3 py-2.5 cursor-grab active:cursor-grabbing hover:bg-overlay-hover ${isDragging ? "opacity-30" : ""}`}
-      style={{ borderLeftWidth: 3, borderLeftColor: project?.color ?? "var(--text-faded)" }}
+      onClick={() => onOpenDetail(task)}
+      className={`flex items-start gap-1.5 px-1.5 py-1 rounded-[4px] bg-elevated border border-line-hairline hover:bg-overlay-hover touch-none ${isDragging ? "cursor-grabbing opacity-30" : ""}`}
+      title={task.title}
     >
-      {/* Title row with checkbox */}
-      <div className="flex items-start gap-1.5">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggle(task);
-          }}
-          title={task.status === "done" ? "Mark as not done" : "Mark complete"}
-          className={`w-[18px] h-[18px] rounded-full border-2 flex-shrink-0 cursor-pointer flex items-center justify-center mt-[1px] transition-colors ${
-            task.status === "done"
-              ? "bg-accent-green border-accent-green hover:bg-accent-green-hover hover:border-accent-green-hover"
-              : "border-line-strong hover:border-accent-green"
-          }`}
-        >
-          <svg
-            width="9"
-            height="9"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke={task.status === "done" ? "var(--text-on-accent)" : "var(--text-faded)"}
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path
-              d="M2.5 6.2l2.5 2.3L9.5 3.7"
-              className={justCompleted ? "animate-check-draw" : ""}
-            />
-          </svg>
-        </button>
-        <span
-          className={`text-[12px] leading-snug flex-1 line-clamp-3 cursor-pointer hover:text-accent-orange transition-colors ${
-            task.status === "done"
-              ? "text-fg-faded line-through"
-              : "text-fg"
-          }`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenDetail(task);
-          }}
-        >
-          {task.title}
-        </span>
-      </div>
-
-      {/* Project name + duration */}
-      <div className="flex items-center gap-1.5 mt-0.5 ml-[19px]">
-        {project && (
-          <span
-            className="text-[10px] text-fg-faded truncate max-w-[100px] cursor-pointer hover:text-accent-orange"
-            onClick={(e) => {
-              e.stopPropagation();
-              onNavigateProject(project.id);
-            }}
-          >
-            {project.name}
-          </span>
-        )}
-        {task.estimated_minutes != null && task.estimated_minutes > 0 && (
-          <span className="text-[10px] text-fg-faded">
-            {task.estimated_minutes}m
-          </span>
-        )}
-      </div>
+      <span
+        className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-[5px]"
+        style={{ backgroundColor: project?.color ?? "var(--text-faded)" }}
+      />
+      <span
+        className={`text-[10.5px] leading-tight flex-1 line-clamp-3 break-words ${
+          isDone ? "text-fg-faded line-through" : "text-fg-secondary"
+        }`}
+      >
+        {task.title}
+      </span>
     </div>
   );
 }
@@ -346,85 +303,193 @@ function DayColumn({
   tasks,
   projectMap,
   isToday,
-  onToggle,
-  onQuickAdd,
-  onNavigateProject,
+  onCreateForDate,
   onOpenDetail,
-  projects,
 }: {
   date: string;
   tasks: Task[];
   projectMap: Map<number, Project>;
   isToday: boolean;
-  onToggle: (task: Task) => void;
-  onQuickAdd: (date: string, title: string, projectId: number | null) => void;
-  onNavigateProject: (id: number) => void;
+  onCreateForDate: (date: string) => void;
   onOpenDetail: (task: Task) => void;
-  projects: Project[];
 }) {
-  const [quickAddTitle, setQuickAddTitle] = useState("");
-  const [quickAddProjectId, setQuickAddProjectId] = useState<number | null>(null);
   const { isOver, setNodeRef: setDropRef } = useDroppable({
     id: `day-${date}`,
     data: { date },
   });
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const title = quickAddTitle.trim();
-    if (!title) return;
-    onQuickAdd(date, title, quickAddProjectId);
-    setQuickAddTitle("");
-  }
-
   return (
     <div ref={setDropRef} className="flex flex-col min-w-0">
       {/* Column body */}
       <div
-        className={`border-r border-line-hairline last:border-r-0 p-1.5 flex flex-col gap-[6px] flex-1 transition-colors duration-150 ${
+        className={`border-r border-line-hairline last:border-r-0 p-1.5 flex flex-col gap-[3px] flex-1 transition-colors duration-150 ${
           isOver ? "bg-accent-orange/[0.08]" : isToday ? "bg-accent-orange/[0.02]" : ""
         }`}
       >
         {tasks.map((task) => (
-          <CalendarTaskChip
+          <CalendarTaskPill
             key={task.id}
             task={task}
             project={projectMap.get(task.project_id ?? -1)}
-            onToggle={onToggle}
-            onNavigateProject={onNavigateProject}
             onOpenDetail={onOpenDetail}
           />
         ))}
 
-        {/* Quick add */}
-        <form onSubmit={handleSubmit} className="mt-auto">
-          <input
-            type="text"
-            value={quickAddTitle}
-            onChange={(e) => setQuickAddTitle(e.target.value)}
-            maxLength={MAX_TITLE_LENGTH}
-            placeholder="+ Add"
-            className="text-[11px] text-fg-faded cursor-pointer px-1 py-1 rounded hover:bg-overlay-hover hover:text-fg-muted block w-full bg-transparent border-none outline-none placeholder:text-fg-faded"
-          />
-          {quickAddTitle.trim() && (
-            <select
-              value={quickAddProjectId ?? ""}
-              onChange={(e) =>
-                setQuickAddProjectId(
-                  e.target.value === "" ? null : Number(e.target.value)
-                )
-              }
-              className="text-[10px] text-fg-muted bg-transparent border border-line-soft rounded px-1 py-0.5 mt-0.5 w-full outline-none cursor-pointer"
-            >
-              <option value="">No project</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+        {/* Add — opens the task detail overlay for a fresh task scheduled to
+            this day. Dashed-outline treatment is the design system's "drop /
+            add new here" affordance. */}
+        <button
+          type="button"
+          onClick={() => onCreateForDate(date)}
+          className="mt-auto w-full flex items-center justify-center gap-1 py-1.5 rounded-md border border-dashed border-line-hairline text-[11px] text-fg-faded hover:text-fg-secondary hover:border-line-soft hover:bg-overlay-hover cursor-pointer transition-colors"
+        >
+          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+            <path d="M5 1.5v7" />
+            <path d="M1.5 5h7" />
+          </svg>
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Day modal — full task list for a single day ────────────────────────────
+
+function DayTasksModal({
+  date,
+  tasks,
+  projectMap,
+  onClose,
+  onToggle,
+  onOpenDetail,
+}: {
+  date: string;
+  tasks: Task[];
+  projectMap: Map<number, Project>;
+  onClose: () => void;
+  onToggle: (task: Task) => void;
+  onOpenDetail: (task: Task) => void;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const d = new Date(date + "T00:00:00");
+  const heading = d.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+  const totalMinutes = tasks.reduce((s, t) => s + (t.estimated_minutes ?? 0), 0);
+
+  return (
+    <div
+      className="fixed inset-0 z-40 bg-black/30 flex items-center justify-center p-6"
+      onClick={onClose}
+    >
+      <div
+        className="bg-base rounded-xl w-full max-w-[520px] max-h-[80vh] flex flex-col overflow-hidden"
+        style={{ boxShadow: "var(--shadow-overlay)", border: "1px solid var(--border-soft)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-line-soft">
+          <div>
+            <h2 className="text-[16px] font-medium text-fg">{heading}</h2>
+            <div className="text-[11px] text-fg-faded mt-0.5">
+              {tasks.length} {tasks.length === 1 ? "task" : "tasks"}
+              {totalMinutes > 0 && (
+                <>
+                  {" · "}
+                  <span className="tabular-nums">{totalMinutes}m planned</span>
+                </>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-faded hover:text-fg hover:bg-overlay-hover cursor-pointer"
+            title="Close"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-3 py-3">
+          {tasks.length === 0 ? (
+            <p className="text-[12px] text-fg-faded text-center py-8">No tasks scheduled</p>
+          ) : (
+            <div className="space-y-1">
+              {tasks.map((task) => {
+                const project = projectMap.get(task.project_id ?? -1);
+                const isDone = task.status === "done";
+                return (
+                  <div
+                    key={task.id}
+                    onClick={() => onOpenDetail(task)}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-overlay-hover cursor-pointer"
+                  >
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggle(task);
+                      }}
+                      title={isDone ? "Mark as not done" : "Mark complete"}
+                      className={`w-[18px] h-[18px] rounded-full border-2 flex-shrink-0 cursor-pointer flex items-center justify-center transition-colors ${
+                        isDone
+                          ? "bg-accent-green border-accent-green hover:bg-accent-green-hover hover:border-accent-green-hover"
+                          : "border-line-strong hover:border-accent-green"
+                      }`}
+                    >
+                      <svg
+                        width="9"
+                        height="9"
+                        viewBox="0 0 12 12"
+                        fill="none"
+                        stroke={isDone ? "var(--text-on-accent)" : "var(--text-faded)"}
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M2.5 6.2l2.5 2.3L9.5 3.7" />
+                      </svg>
+                    </button>
+                    {project && (
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: project.color }}
+                        title={project.name}
+                      />
+                    )}
+                    <span
+                      className={`flex-1 text-[13px] truncate ${
+                        isDone ? "text-fg-faded line-through" : "text-fg"
+                      }`}
+                    >
+                      {task.title}
+                    </span>
+                    {project && (
+                      <span className="text-[11px] text-fg-faded shrink-0 max-w-[120px] truncate">
+                        {project.name}
+                      </span>
+                    )}
+                    {task.estimated_minutes != null && task.estimated_minutes > 0 && (
+                      <span className="text-[11px] text-fg-faded tabular-nums shrink-0">
+                        {task.estimated_minutes}m
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
-        </form>
+        </div>
       </div>
     </div>
   );
@@ -453,6 +518,14 @@ export default function WeeklyPlanner() {
 
   // Task detail overlay
   const [detailTask, setDetailTask] = useState<Task | null>(null);
+
+  // Tasks created via the "+ Add" button on a day column — held until the
+  // overlay closes. If the user closes without naming, we delete the empty
+  // draft so the calendar doesn't fill with blank rows.
+  const draftTaskIds = useRef<Set<number>>(new Set());
+
+  // Day modal — full task list for a single day
+  const [dayModalDate, setDayModalDate] = useState<string | null>(null);
 
   // Carry forward from last week
   const [carryForwardNotes, setCarryForwardNotes] = useState<string | null>(null);
@@ -557,22 +630,41 @@ export default function WeeklyPlanner() {
     }
   }
 
-  async function handleQuickAdd(date: string, title: string, projectId: number | null) {
-    if (title.length > MAX_TITLE_LENGTH) {
-      setError(`Task title must be ${MAX_TITLE_LENGTH} characters or less`);
-      return;
-    }
+  async function handleCreateForDate(date: string) {
     try {
-      await createTask({
-        title,
-        projectId,
+      const id = await createTask({
+        title: "",
+        projectId: null,
         dateScheduled: date,
         estimatedMinutes: null,
       });
-      loadData();
+      draftTaskIds.current.add(id);
+      // Refetch so the overlay receives a fully-formed Task row.
+      const fresh = await getTasksForWeek(selectedWeek, fridayIso);
+      const newTask = fresh.find((t) => t.id === id);
+      setWeekTasks(fresh);
+      if (newTask) setDetailTask(newTask);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to add task");
     }
+  }
+
+  async function handleDetailClose() {
+    const closing = detailTask;
+    setDetailTask(null);
+    if (closing && draftTaskIds.current.has(closing.id)) {
+      draftTaskIds.current.delete(closing.id);
+      try {
+        const fresh = await getTasksForWeek(selectedWeek, fridayIso);
+        const updated = fresh.find((t) => t.id === closing.id);
+        if (updated && !updated.title.trim()) {
+          await deleteTask(closing.id);
+        }
+      } catch {
+        // best effort — leave the row if the cleanup query fails
+      }
+    }
+    loadData();
   }
 
 
@@ -656,7 +748,11 @@ export default function WeeklyPlanner() {
   }[] = [];
 
   for (const p of activeProjects) {
-    const tasks = allProjectTasks.filter((t) => t.project_id === p.id);
+    // Hide completed tasks from the expanded project list — weekly planning is
+    // about deciding what's still ahead, not reviewing what's done.
+    const tasks = allProjectTasks.filter(
+      (t) => t.project_id === p.id && t.status !== "done"
+    );
     projectGroups.push({
       project: { id: p.id, name: p.name, color: p.color },
       tasks,
@@ -689,13 +785,13 @@ export default function WeeklyPlanner() {
   // ── Render ────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-full bg-base overflow-hidden">
+    <div className="relative flex flex-col h-full bg-base overflow-hidden">
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
       {pendingMove && (
         <div
-          className="flex items-center gap-3 px-7 py-2 bg-banner text-[12px] flex-shrink-0"
-          style={{ color: "var(--text-banner)" }}
+          className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 px-4 py-2 rounded-full bg-banner text-[12px] max-w-[480px] min-w-[280px]"
+          style={{ color: "var(--text-banner)", boxShadow: "var(--shadow-card)" }}
         >
           <span className="flex-1 truncate">
             Moved &ldquo;{pendingMove.taskTitle}&rdquo;
@@ -703,9 +799,8 @@ export default function WeeklyPlanner() {
           </span>
           <button
             onClick={undoMove}
-            className="text-accent-orange-soft-fg font-medium cursor-pointer transition-colors"
-            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-banner)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = ""; }}
+            className="font-semibold cursor-pointer transition-opacity flex-shrink-0 underline underline-offset-[3px] hover:opacity-80"
+            style={{ color: "var(--text-banner)" }}
           >
             Undo
           </button>
@@ -758,65 +853,17 @@ export default function WeeklyPlanner() {
         </div>
       </div>
 
-      {/* ── Body: calendar (main) + right rail (projects + notes) ─────── */}
+      {/* ── Body: left rail (projects + notes) + calendar (main) ─────── */}
       <DndContext
         sensors={dndSensors}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
       <div className="flex flex-1 min-h-0">
-        {/* ── Main: Calendar ────────────────────────────────────────────── */}
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-          {/* Calendar header */}
-          <div className="grid grid-cols-5 border-b border-line-soft flex-shrink-0">
-            {weekDates.map((date, i) => {
-              const dayNum = new Date(date + "T00:00:00").getDate();
-              const isToday = date === todayStr;
-              return (
-                <div
-                  key={date}
-                  className="px-2.5 pt-3 pb-3 text-center border-r border-line-hairline last:border-r-0"
-                >
-                  <div className="text-[11px] font-medium tracking-[0.06em] text-fg-secondary mb-1">
-                    {DAY_NAMES[i]}
-                  </div>
-                  {isToday ? (
-                    <div className="w-[30px] h-[30px] rounded-full bg-accent-orange text-fg-on-accent flex items-center justify-center text-[16px] font-medium mx-auto leading-none">
-                      {dayNum}
-                    </div>
-                  ) : (
-                    <div className="text-[17px] font-medium text-fg leading-none">
-                      {dayNum}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Calendar body */}
-          <div className="grid grid-cols-5 flex-1 overflow-y-auto items-stretch">
-            {weekDates.map((date) => (
-              <DayColumn
-                key={date}
-                date={date}
-                tasks={tasksByDate.get(date) ?? []}
-                projectMap={projectMap}
-                isToday={date === todayStr}
-                onToggle={toggleTask}
-                onQuickAdd={handleQuickAdd}
-                onNavigateProject={navigateToProject}
-                onOpenDetail={setDetailTask}
-                projects={projects}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* ── Right rail: projects + weekly notes ────────────────────────── */}
+        {/* ── Left rail: projects + weekly notes ────────────────────────── */}
         <div
           className="w-[300px] flex-shrink-0 flex flex-col overflow-hidden"
-          style={{ borderLeft: "1px solid var(--border-medium)" }}
+          style={{ borderRight: "1px solid var(--border-medium)" }}
         >
           {/* Top: scrollable — carry forward + projects */}
           <div className="flex-1 overflow-y-auto px-5 py-5 min-h-0">
@@ -859,6 +906,7 @@ export default function WeeklyPlanner() {
                     tasks={group.tasks}
                     weekDates={weekDates}
                     onToggleTask={toggleTask}
+                    onOpenDetail={setDetailTask}
                     onNavigateProject={navigateToProject}
                   />
                 ))}
@@ -875,6 +923,7 @@ export default function WeeklyPlanner() {
                           task={task}
                           weekDates={weekDates}
                           onToggleTask={toggleTask}
+                          onOpenDetail={setDetailTask}
                           isLast={i === unassignedTasks.length - 1}
                         />
                       ))}
@@ -898,6 +947,53 @@ export default function WeeklyPlanner() {
             />
           </div>
         </div>
+
+        {/* ── Main: Calendar ────────────────────────────────────────────── */}
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          {/* Calendar header */}
+          <div className="grid grid-cols-5 border-b border-line-soft flex-shrink-0">
+            {weekDates.map((date, i) => {
+              const dayNum = new Date(date + "T00:00:00").getDate();
+              const isToday = date === todayStr;
+              return (
+                <button
+                  key={date}
+                  onClick={() => setDayModalDate(date)}
+                  className="px-2.5 pt-3 pb-3 text-center border-r border-line-hairline last:border-r-0 cursor-pointer hover:bg-overlay-hover transition-colors"
+                  title="View tasks for this day"
+                >
+                  <div className="text-[11px] font-medium tracking-[0.06em] text-fg-secondary mb-1">
+                    {DAY_NAMES[i]}
+                  </div>
+                  {isToday ? (
+                    <div className="w-[30px] h-[30px] rounded-full bg-accent-orange text-fg-on-accent flex items-center justify-center text-[16px] font-medium mx-auto leading-none">
+                      {dayNum}
+                    </div>
+                  ) : (
+                    <div className="text-[17px] font-medium text-fg leading-none">
+                      {dayNum}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Calendar body */}
+          <div className="grid grid-cols-5 flex-1 overflow-y-auto items-stretch">
+            {weekDates.map((date) => (
+              <DayColumn
+                key={date}
+                date={date}
+                tasks={tasksByDate.get(date) ?? []}
+                projectMap={projectMap}
+                isToday={date === todayStr}
+                onCreateForDate={handleCreateForDate}
+                onOpenDetail={setDetailTask}
+              />
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Drag overlay — floating task chip while dragging */}
@@ -916,10 +1012,26 @@ export default function WeeklyPlanner() {
           key={detailTask.id}
           task={detailTask}
           projects={projects}
-          onClose={() => { setDetailTask(null); loadData(); }}
+          autoFocusTitle={draftTaskIds.current.has(detailTask.id)}
+          onClose={handleDetailClose}
           onSave={(updates) => updateTask(updates).then(() => loadData()).catch(() => {})}
           onToggle={(t) => { toggleTask(t).catch(() => {}); }}
           onSetWorkedMinutes={(id, mins) => setManualWorkedMinutes(id, mins).then(() => loadData()).catch(() => {})}
+        />
+      )}
+
+      {/* Day modal — shows tasks scheduled for a single day */}
+      {dayModalDate && (
+        <DayTasksModal
+          date={dayModalDate}
+          tasks={tasksByDate.get(dayModalDate) ?? []}
+          projectMap={projectMap}
+          onClose={() => setDayModalDate(null)}
+          onToggle={toggleTask}
+          onOpenDetail={(t) => {
+            setDayModalDate(null);
+            setDetailTask(t);
+          }}
         />
       )}
     </div>

@@ -1,11 +1,14 @@
 import { type ReactNode, useState } from "react";
 import { useAppStore } from "../stores/appStore";
+import DisclosureCaret from "./DisclosureCaret";
 import type { Page } from "../types";
 
 interface NavItem {
   page: Page;
   label: string;
   icon: ReactNode;
+  /** CSS color or var() — used as the icon chip's background. */
+  tint: string;
 }
 
 const iconSize = 15;
@@ -84,11 +87,11 @@ function FocusIcon() {
 }
 
 const planningItems: NavItem[] = [
-  { page: "focus_landing", label: "Focus", icon: <FocusIcon /> },
-  { page: "daily", label: "Daily Plan", icon: <DailyPlanIcon /> },
-  { page: "daily_shutdown", label: "Daily Shutdown", icon: <DailyShutdownIcon /> },
-  { page: "weekly", label: "Weekly Plan", icon: <WeeklyPlanIcon /> },
-  { page: "shutdown", label: "Weekly Shutdown", icon: <ShutdownIcon /> },
+  { page: "daily", label: "Daily Plan", icon: <DailyPlanIcon />, tint: "var(--nav-tint-daily)" },
+  { page: "daily_shutdown", label: "Daily Shutdown", icon: <DailyShutdownIcon />, tint: "var(--nav-tint-daily)" },
+  { page: "weekly", label: "Weekly Plan", icon: <WeeklyPlanIcon />, tint: "var(--nav-tint-weekly)" },
+  { page: "shutdown", label: "Weekly Shutdown", icon: <ShutdownIcon />, tint: "var(--nav-tint-weekly)" },
+  { page: "projects", label: "Objectives", icon: <ProjectsIcon />, tint: "var(--nav-tint-objectives)" },
 ];
 
 function SettingsIcon() {
@@ -101,9 +104,8 @@ function SettingsIcon() {
 }
 
 const manageItems: NavItem[] = [
-  { page: "projects", label: "Projects", icon: <ProjectsIcon /> },
-  { page: "dashboard", label: "Dashboard", icon: <DashboardIcon /> },
-  { page: "settings", label: "Settings", icon: <SettingsIcon /> },
+  { page: "dashboard", label: "Dashboard", icon: <DashboardIcon />, tint: "var(--nav-tint-settings)" },
+  { page: "settings", label: "Settings", icon: <SettingsIcon />, tint: "var(--nav-tint-settings)" },
 ];
 
 function NavSection({
@@ -122,19 +124,28 @@ function NavSection({
       <div className="px-4 pt-4 pb-1.5 uppercase text-fg-faded [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
         {label}
       </div>
-      {items.map(({ page, label: itemLabel, icon }) => {
+      {items.map(({ page, label: itemLabel, icon, tint }) => {
         const isActive = activePage === page;
         return (
           <button
             key={page}
             onClick={() => onSelect(page)}
-            className={`w-full flex items-center gap-2.5 px-4 py-2 cursor-pointer transition-colors ${
+            className={`w-full flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors ${
               isActive
                 ? "bg-accent-blue-soft text-accent-blue-soft-fg"
                 : "text-fg-secondary hover:bg-overlay-hover hover:text-fg"
             } [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)]`}
           >
-            {icon}
+            {/* w-8 slot matches the 32px logo above so icon centers and the
+                label run on the same vertical line as the wordmark. */}
+            <span className="w-8 flex items-center justify-center shrink-0">
+              <span
+                className="w-7 h-7 rounded-full flex items-center justify-center"
+                style={{ backgroundColor: tint }}
+              >
+                {icon}
+              </span>
+            </span>
             {itemLabel}
           </button>
         );
@@ -150,7 +161,7 @@ const SHORTCUTS = [
   { keys: "⌘ 2", desc: "Daily Shutdown" },
   { keys: "⌘ 3", desc: "Weekly Plan" },
   { keys: "⌘ 4", desc: "Weekly Shutdown" },
-  { keys: "⌘ 5", desc: "Projects" },
+  { keys: "⌘ 5", desc: "Objectives" },
   { keys: "⌘ 6", desc: "Dashboard" },
   { keys: "⌘ N", desc: "New task" },
   { keys: "Space", desc: "Pause / resume (focus)" },
@@ -242,20 +253,70 @@ export default function Sidebar() {
   const activePage =
     currentPage === "project_detail" ? "projects" : currentPage === "focus" ? "focus_landing" : currentPage as Page;
 
+  // Focus screen: collapse the sidebar to a logo-only rail so nav items
+  // don't compete with the current task. The rail itself stays so the user
+  // has a sense of place; Esc returns them to the daily plan via the
+  // FocusLanding keyboard handler. Removing this `if` block reverts to the
+  // full sidebar.
+  if (currentPage === "focus_landing") {
+    return (
+      <aside className="w-[64px] shrink-0 h-screen bg-sidebar border-r border-line-hairline flex flex-col items-center pt-4">
+        <button
+          onClick={() => setPage("daily")}
+          className="cursor-pointer opacity-80 hover:opacity-100 transition-opacity"
+          title="Back to Daily Plan"
+        >
+          <VerseDayLogo />
+        </button>
+      </aside>
+    );
+  }
+
   return (
     <aside className="w-[200px] shrink-0 h-screen bg-sidebar border-r border-line-hairline flex flex-col pt-4">
       <div className="px-4 pb-5 flex items-center gap-3 text-fg-faded">
         <VerseDayLogo />
         <span className="text-[20px] font-semibold text-accent-blue tracking-tight font-display">VerseDay</span>
       </div>
-      <nav className="flex-1">
+      <nav className="flex-1 flex flex-col min-h-0">
+        {/* Focus — standalone, above Planning */}
+        <button
+          onClick={() => setPage("focus_landing")}
+          className={`w-full flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors ${
+            activePage === "focus_landing"
+              ? "bg-accent-blue-soft text-accent-blue-soft-fg"
+              : "text-fg-secondary hover:bg-overlay-hover hover:text-fg"
+          } [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)]`}
+        >
+          <span className="w-8 flex items-center justify-center shrink-0">
+            <span
+              className="w-7 h-7 rounded-full flex items-center justify-center"
+              style={{ backgroundColor: "var(--nav-tint-focus)" }}
+            >
+              <FocusIcon />
+            </span>
+          </span>
+          Focus
+        </button>
         <NavSection label="Planning" items={planningItems} activePage={activePage} onSelect={setPage} />
-        <div className="h-px bg-line-hairline mx-4 my-1" />
+        <div className="flex-1" />
         <NavSection label="Manage" items={manageItems} activePage={activePage} onSelect={setPage} />
       </nav>
 
-      {/* Shortcut glossary */}
+      {/* Shortcut glossary — list expands upward; the toggle row stays put */}
       <div className="border-t border-line-hairline">
+        {showShortcuts && (
+          <div className="px-4 pt-3 pb-1 space-y-1">
+            {SHORTCUTS.map((s) => (
+              <div key={s.keys} className="flex items-center justify-between">
+                <span className="text-[10px] text-fg-secondary">{s.desc}</span>
+                <kbd className="text-[9px] text-fg-faded bg-overlay-hover px-1.5 py-0.5 rounded font-mono">
+                  {s.keys}
+                </kbd>
+              </div>
+            ))}
+          </div>
+        )}
         <button
           onClick={() => setShowShortcuts(!showShortcuts)}
           className="w-full flex items-center gap-1.5 px-4 py-2.5 text-[11px] text-fg-faded cursor-pointer hover:text-fg-muted transition-colors"
@@ -267,25 +328,10 @@ export default function Sidebar() {
             <line x1="3.5" y1="8" x2="8.5" y2="8" />
           </svg>
           Shortcuts
-          <span
-            className="ml-auto text-[18px] leading-none transition-transform duration-150"
-            style={{ transform: showShortcuts ? "rotate(90deg)" : "rotate(0deg)" }}
-          >
-            ▸
+          <span className="ml-auto text-accent-orange-soft-fg/70 flex items-center">
+            <DisclosureCaret expanded={showShortcuts} rotateExpanded={-90} />
           </span>
         </button>
-        {showShortcuts && (
-          <div className="px-4 pb-3 space-y-1">
-            {SHORTCUTS.map((s) => (
-              <div key={s.keys} className="flex items-center justify-between">
-                <span className="text-[10px] text-fg-secondary">{s.desc}</span>
-                <kbd className="text-[9px] text-fg-faded bg-overlay-hover px-1.5 py-0.5 rounded font-mono">
-                  {s.keys}
-                </kbd>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </aside>
   );

@@ -3,18 +3,13 @@ import { useAppStore } from "../stores/appStore";
 import {
   getWeeklyShutdown,
   upsertWeeklyShutdown,
-  getTasksForWeek,
+  getTasksCompletedInWeek,
   getProjects,
-  getPlannedMinutesPerDay,
   getWorkedMinutesForWeek,
   getWorkedMinutesForTaskIds,
-  updateTaskDateScheduled,
-  addWeeklyPlanProject,
-  updateTask,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import SunsetOverlay from "../components/SunsetOverlay";
-import TaskDetailOverlay from "../components/TaskDetailOverlay";
 import SummaryOverlay from "../components/SummaryOverlay";
 import MoodSelector from "../components/MoodSelector";
 import { formatHoursMinutes } from "../utils/format";
@@ -57,6 +52,17 @@ function getFridayIso(mondayIso: string): string {
   return d.toISOString().split("T")[0];
 }
 
+function getWeekdayDates(mondayIso: string): string[] {
+  const dates: string[] = [];
+  const d = new Date(mondayIso + "T00:00:00");
+  for (let i = 0; i < 5; i++) {
+    const dd = new Date(d);
+    dd.setDate(d.getDate() + i);
+    dates.push(dd.toISOString().split("T")[0]);
+  }
+  return dates;
+}
+
 function formatWeekHeader(mondayIso: string): string {
   const d = new Date(mondayIso + "T00:00:00");
   return `Week of ${d.toLocaleDateString("en-US", {
@@ -66,22 +72,20 @@ function formatWeekHeader(mondayIso: string): string {
   })}`;
 }
 
+function formatDayHeading(iso: string): string {
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+}
+
 function getMondayOfWeek(date: Date = new Date()): string {
   const d = new Date(date);
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
   return d.toISOString().split("T")[0];
-}
-
-function getNextMonday(mondayIso: string): string {
-  const d = new Date(mondayIso + "T00:00:00");
-  d.setDate(d.getDate() + 7);
-  return d.toISOString().split("T")[0];
-}
-
-function formatMinutesToHours(minutes: number): string {
-  return (Math.round(minutes / 6) / 10).toFixed(1).replace(/\.0$/, "");
 }
 
 // One-time cleanup of old checklist localStorage keys
@@ -107,7 +111,7 @@ function cleanupOldChecklistKeys() {
 export default function WeeklyShutdown() {
   const { selectedWeek, setSelectedWeek } = useAppStore();
 
-  const [weekTasks, setWeekTasks] = useState<Task[]>([]);
+  const [completedThisWeek, setCompletedThisWeek] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [mood, setMood] = useState<string | null>(null);
   const [reflectionFields, setReflectionFields] = useState<WeeklyReflectionFields>({
@@ -117,24 +121,11 @@ export default function WeeklyShutdown() {
   });
   const [incompleteItemsText, setIncompleteItemsText] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [carriedIds, setCarriedIds] = useState<Set<number>>(new Set());
-  const [carriedTasks, setCarriedTasks] = useState<
-    { task: Task; originalDate: string | null }[]
-  >([]);
   const [showSunset, setShowSunset] = useState(false);
-  const [detailTask, setDetailTask] = useState<Task | null>(null);
-  const [isWeekShutdown, setIsWeekShutdown] = useState(false);
-  const [isShutdownMode, setIsShutdownMode] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
   const [workedPerTask, setWorkedPerTask] = useState<Map<number, number>>(new Map());
-
-  // This week stats
-  const [workedByDay, setWorkedByDay] = useState<Map<string, number>>(
-    new Map()
-  );
-  const [plannedByDay, setPlannedByDay] = useState<Map<string, number>>(
-    new Map()
-  );
+  const [totalWorkedMinutes, setTotalWorkedMinutes] = useState(0);
+  const [step, setStep] = useState<1 | 2>(1);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedWeekRef = useRef(selectedWeek);
@@ -143,8 +134,7 @@ export default function WeeklyShutdown() {
 
   const fridayIso = getFridayIso(selectedWeek);
   const todayMonday = getMondayOfWeek();
-  const isThisWeek = selectedWeek === todayMonday;
-  const nextMonday = getNextMonday(selectedWeek);
+  const weekDates = getWeekdayDates(selectedWeek);
 
   const projectMap = new Map(projects.map((p) => [p.id, p]));
 
@@ -156,43 +146,47 @@ export default function WeeklyShutdown() {
     }
   }, []);
 
+  // Shutdown is always for the current week — if the user got here while
+  // browsing a different week (e.g., on the weekly plan), snap to this
+  // week on mount. Mirrors the daily shutdown's behavior.
+  useEffect(() => {
+    if (selectedWeek !== todayMonday) setSelectedWeek(todayMonday);
+    // intentionally only on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Reset to step 1 whenever the week changes
+  useEffect(() => {
+    setStep(1);
+  }, [selectedWeek]);
+
   // ── Data loading ──────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
     try {
-      const [sd, wt, p, wbd, pbd] = await Promise.all([
+      const [sd, completed, p, wbd] = await Promise.all([
         getWeeklyShutdown(selectedWeek),
-        getTasksForWeek(selectedWeek, fridayIso),
+        getTasksCompletedInWeek(selectedWeek, fridayIso),
         getProjects(),
         getWorkedMinutesForWeek(selectedWeek, fridayIso),
-        getPlannedMinutesPerDay(selectedWeek, fridayIso),
       ]);
-
-      setWeekTasks(wt);
+      setCompletedThisWeek(completed);
       setProjects(p);
-      setWorkedByDay(wbd);
-      setPlannedByDay(pbd);
       setMood(sd?.mood ?? null);
       setReflectionFields(parseWeeklyReflection(sd?.reflections ?? ""));
       setIncompleteItemsText(sd?.incomplete_items ?? "");
-      setCarriedIds(new Set());
-      setCarriedTasks([]);
-      setIsWeekShutdown(
-        localStorage.getItem(WEEKLY_SHUTDOWN_PREFIX + selectedWeek) === "true"
+      setTotalWorkedMinutes(
+        Array.from(wbd.values()).reduce((s, m) => s + m, 0)
       );
-      // Per-task worked minutes for summary
-      const taskIds = wt.map((t) => t.id);
-      if (taskIds.length > 0) {
-        const wpt = await getWorkedMinutesForTaskIds(taskIds);
+      if (completed.length > 0) {
+        const wpt = await getWorkedMinutesForTaskIds(completed.map((t) => t.id));
         setWorkedPerTask(wpt);
       } else {
         setWorkedPerTask(new Map());
       }
       setError(null);
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "Failed to load shutdown data"
-      );
+      setError(e instanceof Error ? e.message : "Failed to load shutdown data");
     }
   }, [selectedWeek, fridayIso]);
 
@@ -202,7 +196,11 @@ export default function WeeklyShutdown() {
 
   // ── Debounced auto-save ───────────────────────────────────────────────
 
-  function debouncedSave(newMood: string | null, newFields: WeeklyReflectionFields, newIncomplete: string) {
+  function debouncedSave(
+    newMood: string | null,
+    newFields: WeeklyReflectionFields,
+    newIncomplete: string
+  ) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
@@ -230,7 +228,10 @@ export default function WeeklyShutdown() {
     debouncedSave(value, reflectionFields, incompleteItemsText);
   }
 
-  function handleReflectionFieldChange(key: keyof WeeklyReflectionFields, value: string) {
+  function handleReflectionFieldChange(
+    key: keyof WeeklyReflectionFields,
+    value: string
+  ) {
     const next = { ...reflectionFields, [key]: value };
     setReflectionFields(next);
     debouncedSave(mood, next, incompleteItemsText);
@@ -243,72 +244,7 @@ export default function WeeklyShutdown() {
 
   // ── Actions ───────────────────────────────────────────────────────────
 
-  async function carryForward(task: Task) {
-    try {
-      const originalDate = task.date_scheduled;
-      await updateTaskDateScheduled(task.id, nextMonday);
-      setCarriedIds((prev) => new Set(prev).add(task.id));
-      setCarriedTasks((prev) => [...prev, { task, originalDate }]);
-
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to carry forward");
-    }
-  }
-
-  async function carryProjectForward(
-    projectId: number | null,
-    tasks: Task[]
-  ) {
-    const toCarry = tasks.filter((t) => !carriedIds.has(t.id));
-    try {
-      // Pin project to next week (if it's a real project)
-      if (projectId != null) {
-        await addWeeklyPlanProject(nextMonday, projectId);
-      }
-      // Move incomplete tasks
-      if (toCarry.length > 0) {
-        await Promise.all(
-          toCarry.map((t) => updateTaskDateScheduled(t.id, nextMonday))
-        );
-        setCarriedIds(
-          (prev) => new Set([...prev, ...toCarry.map((t) => t.id)])
-        );
-        setCarriedTasks((prev) => [
-          ...prev,
-          ...toCarry.map((t) => ({
-            task: t,
-            originalDate: t.date_scheduled,
-          })),
-        ]);
-      }
-
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to carry forward");
-    }
-  }
-
-  async function undoCarry(taskId: number) {
-    const entry = carriedTasks.find((ct) => ct.task.id === taskId);
-    if (!entry) return;
-    try {
-      await updateTaskDateScheduled(taskId, entry.originalDate);
-      setCarriedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(taskId);
-        return next;
-      });
-      setCarriedTasks((prev) => prev.filter((ct) => ct.task.id !== taskId));
-
-      loadData();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to undo");
-    }
-  }
-
   async function completeWeeklyShutdown() {
-    // Flush debounce
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
@@ -326,57 +262,21 @@ export default function WeeklyShutdown() {
       return;
     }
     localStorage.setItem(WEEKLY_SHUTDOWN_PREFIX + selectedWeek, "true");
-    setIsWeekShutdown(true);
     setShowSunset(true);
   }
 
-  function changeWeek(offset: number) {
-    const d = new Date(selectedWeek + "T00:00:00");
-    d.setDate(d.getDate() + offset * 7);
-    setSelectedWeek(d.toISOString().split("T")[0]);
+  // ── Derived ───────────────────────────────────────────────────────────
+
+  // Group completed tasks by the day they were checked off (completed_at),
+  // falling back to date_scheduled for legacy rows that have no timestamp.
+  const tasksByDay = new Map<string, Task[]>();
+  for (const date of weekDates) tasksByDay.set(date, []);
+  for (const t of completedThisWeek) {
+    const stamp = (t.completed_at ?? t.date_scheduled ?? "").slice(0, 10);
+    if (tasksByDay.has(stamp)) {
+      tasksByDay.get(stamp)!.push(t);
+    }
   }
-
-  // ── Derived data ──────────────────────────────────────────────────────
-
-  const completedTasks = weekTasks.filter((t) => t.status === "done");
-  const incompleteTasks = weekTasks.filter((t) => t.status !== "done");
-
-  const totalPlannedMinutes = Array.from(plannedByDay.values()).reduce(
-    (s, m) => s + m,
-    0
-  );
-  const totalWorkedMinutes = Array.from(workedByDay.values()).reduce(
-    (s, m) => s + m,
-    0
-  );
-  const progressPercent =
-    weekTasks.length > 0
-      ? Math.round((completedTasks.length / weekTasks.length) * 100)
-      : 0;
-
-  // Group incomplete tasks by project
-  const projectGroups: { project: Project | null; tasks: Task[] }[] = [];
-  const incompleteByProject = new Map<number | null, Task[]>();
-  for (const task of incompleteTasks) {
-    const key = task.project_id;
-    const existing = incompleteByProject.get(key) ?? [];
-    existing.push(task);
-    incompleteByProject.set(key, existing);
-  }
-
-  // Sort by project name, exclude tasks without a project
-  const projectIds = Array.from(incompleteByProject.keys())
-    .filter((id): id is number => id !== null)
-    .sort((a, b) =>
-      (projectMap.get(a)?.name ?? "").localeCompare(projectMap.get(b)?.name ?? "")
-    );
-
-  for (const pid of projectIds) {
-    const tasks = incompleteByProject.get(pid) ?? [];
-    const project = projectMap.get(pid) ?? null;
-    projectGroups.push({ project, tasks });
-  }
-
 
   // ── Render ────────────────────────────────────────────────────────────
 
@@ -384,77 +284,131 @@ export default function WeeklyShutdown() {
     <div className="flex flex-col h-full shutdown-page overflow-hidden">
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
-      {/* ── Header — transparent, gradient shows through ──────────────── */}
-      <div className="px-6 py-4 flex-shrink-0" style={{ borderBottom: "0.5px solid var(--border-hairline)" }}>
-        <div className="flex items-center justify-between mb-1">
-          <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-accent-green-deep">
-            Weekly shutdown
-          </span>
-          {!isThisWeek && (
-            <button
-              onClick={() => setSelectedWeek(todayMonday)}
-              className="text-[11px] text-accent-green-deep hover:text-accent-green-bright cursor-pointer"
-            >
-              This week
-            </button>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => changeWeek(-1)}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M10 4l-4 4 4 4" />
-            </svg>
-          </button>
-          <h2 className="text-[14px] font-medium text-fg">
-            {formatWeekHeader(selectedWeek)}
-          </h2>
-          <button
-            onClick={() => changeWeek(1)}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M6 4l4 4-4 4" />
-            </svg>
-          </button>
-        </div>
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <div
+        className="px-6 py-4 flex-shrink-0"
+        style={{ borderBottom: "0.5px solid var(--border-hairline)" }}
+      >
+        <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-accent-pink-bright block mb-1">
+          Weekly shutdown
+        </span>
+        <h2 className="text-[14px] font-medium text-fg">
+          {formatWeekHeader(selectedWeek)}
+        </h2>
       </div>
 
-      {/* Undo banner */}
-      {carriedTasks.length > 0 && (
-        <div className="px-6 py-2 bg-banner flex-shrink-0" style={{ color: "var(--text-banner)" }}>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[12px] opacity-70">
-              Moved to next week
-            </span>
-            <div className="flex gap-1.5 flex-wrap flex-1">
-              {carriedTasks.map((ct) => (
-                <button
-                  key={ct.task.id}
-                  onClick={() => undoCarry(ct.task.id)}
-                  className="text-[11px] text-accent-green-deep cursor-pointer transition-colors"
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-banner)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = ""; }}
-                >
-                  Undo &ldquo;{ct.task.title.slice(0, 20)}
-                  {ct.task.title.length > 20 ? "..." : ""}&rdquo;
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Body — two columns ──────────────────────────────────────── */}
+      {/* ── Body — two-step flow ────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-[860px] mx-auto px-6 py-5">
-          <div className="flex gap-3">
-            {/* ── Left column: mood + reflection + carry forward ─── */}
-            <div className="flex-1">
-              {/* Mood selector */}
-              <section className="mb-6">
+        <div className="max-w-[760px] mx-auto px-6 py-5 space-y-6">
+          {/* Step indicator */}
+          <div className="flex items-center gap-2 text-[11px] text-fg-faded">
+            {step === 2 ? (
+              <button
+                onClick={() => setStep(1)}
+                className="cursor-pointer hover:text-fg-secondary transition-colors"
+              >
+                Review
+              </button>
+            ) : (
+              <span className="text-fg-secondary font-medium">Review</span>
+            )}
+            <span>→</span>
+            <span className={step === 2 ? "text-fg-secondary font-medium" : ""}>
+              Reflect
+            </span>
+          </div>
+
+          {step === 1 && (
+            <>
+              {/* Top stat banner — only when there's worked time worth showing */}
+              {totalWorkedMinutes > 0 && (
+                <div className="rounded-lg px-4 py-3 bg-elevated/40" style={{ border: "0.5px solid var(--border-hairline)" }}>
+                  <div className="flex items-baseline gap-3">
+                    <span className="text-[20px] font-medium text-accent-pink-bright tabular-nums leading-none">
+                      {formatHoursMinutes(totalWorkedMinutes)}
+                    </span>
+                    <span className="text-[12px] text-fg-secondary leading-none">
+                      worked
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Per-day wins */}
+              <div className="space-y-5">
+                {weekDates.map((date) => {
+                  const dayTasks = tasksByDay.get(date) ?? [];
+                  return (
+                    <section key={date}>
+                      <h3 className="text-[13px] font-medium text-fg-secondary mb-2">
+                        {formatDayHeading(date)}
+                      </h3>
+                      {dayTasks.length === 0 ? (
+                        <p className="text-[12px] text-fg-disabled px-2.5">
+                          Nothing this day
+                        </p>
+                      ) : (
+                        <div className="space-y-1">
+                          {dayTasks.map((task) => {
+                            const project =
+                              task.project_id != null
+                                ? projectMap.get(task.project_id)
+                                : null;
+                            const worked = workedPerTask.get(task.id) ?? 0;
+                            return (
+                              <div
+                                key={task.id}
+                                className="px-2.5 py-[6px] rounded-md border border-line-soft bg-elevated/60 flex items-center gap-2.5 transition-colors hover:bg-overlay-hover"
+                              >
+                                <svg
+                                  width="13"
+                                  height="13"
+                                  viewBox="0 0 16 16"
+                                  fill="none"
+                                  stroke="var(--accent-pink)"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  className="flex-shrink-0"
+                                >
+                                  <path d="M3 8.5l3.5 3.5 6.5-7" />
+                                </svg>
+                                {project && (
+                                  <span
+                                    className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                                    style={{ backgroundColor: project.color }}
+                                    title={project.name}
+                                  />
+                                )}
+                                <span className="flex-1 text-[12px] text-fg-faded line-through truncate">
+                                  {task.title}
+                                </span>
+                                {project && (
+                                  <span className="text-[10px] text-fg-faded shrink-0 max-w-[120px] truncate">
+                                    {project.name}
+                                  </span>
+                                )}
+                                {worked > 0 && (
+                                  <span className="text-[10px] text-fg-faded tabular-nums shrink-0">
+                                    {worked}m
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              {/* Mood */}
+              <section>
                 <h3 className="text-[13px] font-medium text-fg-secondary mb-2">
                   How was your week?
                 </h3>
@@ -473,11 +427,12 @@ export default function WeeklyShutdown() {
                   </label>
                   <textarea
                     value={reflectionFields.wentWell}
-                    onChange={(e) => handleReflectionFieldChange("wentWell", e.target.value)}
+                    onChange={(e) =>
+                      handleReflectionFieldChange("wentWell", e.target.value)
+                    }
                     placeholder="Projects completed, wins achieved, moments that felt good..."
                     rows={2}
-                    className="w-full bg-elevated rounded-lg px-3.5 py-2.5 text-[13px] text-fg-secondary resize-y leading-relaxed focus:outline-none focus:border-accent-green-bright placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded"
-                    style={{ border: "0.5px solid var(--border-hairline)" }}
+                    className="w-full bg-elevated/60 rounded-md px-3 py-2 text-[13px] text-fg-secondary resize-none leading-relaxed border border-transparent focus:outline-none focus:border-accent-pink-bright placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded transition-colors"
                   />
                 </div>
                 <div>
@@ -486,11 +441,12 @@ export default function WeeklyShutdown() {
                   </label>
                   <textarea
                     value={reflectionFields.couldBeBetter}
-                    onChange={(e) => handleReflectionFieldChange("couldBeBetter", e.target.value)}
+                    onChange={(e) =>
+                      handleReflectionFieldChange("couldBeBetter", e.target.value)
+                    }
                     placeholder="Bottlenecks, missteps, things you'd approach differently..."
                     rows={2}
-                    className="w-full bg-elevated rounded-lg px-3.5 py-2.5 text-[13px] text-fg-secondary resize-y leading-relaxed focus:outline-none focus:border-accent-green-bright placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded"
-                    style={{ border: "0.5px solid var(--border-hairline)" }}
+                    className="w-full bg-elevated/60 rounded-md px-3 py-2 text-[13px] text-fg-secondary resize-none leading-relaxed border border-transparent focus:outline-none focus:border-accent-pink-bright placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded transition-colors"
                   />
                 </div>
                 <div>
@@ -499,17 +455,18 @@ export default function WeeklyShutdown() {
                   </label>
                   <textarea
                     value={reflectionFields.nextWeekPriority}
-                    onChange={(e) => handleReflectionFieldChange("nextWeekPriority", e.target.value)}
+                    onChange={(e) =>
+                      handleReflectionFieldChange("nextWeekPriority", e.target.value)
+                    }
                     placeholder="The one or two things that matter most, your main focus..."
                     rows={2}
-                    className="w-full bg-elevated rounded-lg px-3.5 py-2.5 text-[13px] text-fg-secondary resize-y leading-relaxed focus:outline-none focus:border-accent-green-bright placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded"
-                    style={{ border: "0.5px solid var(--border-hairline)" }}
+                    className="w-full bg-elevated/60 rounded-md px-3 py-2 text-[13px] text-fg-secondary resize-none leading-relaxed border border-transparent focus:outline-none focus:border-accent-pink-bright placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded transition-colors"
                   />
                 </div>
               </section>
 
               {/* Carry forward */}
-              <section className="mt-6">
+              <section>
                 <h3 className="text-[13px] font-medium text-fg-secondary mb-1.5">
                   Carry forward
                 </h3>
@@ -517,67 +474,73 @@ export default function WeeklyShutdown() {
                   value={incompleteItemsText}
                   onChange={(e) => handleIncompleteTextChange(e.target.value)}
                   placeholder="Loose ends, things to remember for next week..."
-                  className="w-full bg-elevated rounded-lg px-3.5 py-2.5 text-[13px] text-fg-secondary resize-y min-h-[72px] leading-relaxed focus:outline-none focus:border-accent-green-bright placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded"
-                  style={{ border: "0.5px solid var(--border-hairline)" }}
+                  rows={3}
+                  className="w-full bg-elevated/60 rounded-md px-3 py-2 text-[13px] text-fg-secondary resize-none leading-relaxed border border-transparent focus:outline-none focus:border-accent-pink-bright placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded transition-colors"
                 />
               </section>
 
-            </div>
+              {/* Recap nudge — sits just above the footer */}
+              <section className="pt-2">
+                <button
+                  onClick={() => setShowSummary(true)}
+                  className="text-[12px] text-accent-pink-bright hover:text-accent-pink cursor-pointer transition-colors"
+                >
+                  Want a recap of the week? Generate one →
+                </button>
+              </section>
 
-            {/* ── Right column: time summary ────────────────────── */}
-            <div className="w-[180px] flex-shrink-0">
-              <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-2">
-                Time
-              </h3>
-              <div className="bg-elevated/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid var(--border-soft)" }}>
-                {totalWorkedMinutes === 0 && totalPlannedMinutes === 0 ? (
-                  <p className="text-[13px] text-fg-faded">No time tracked this week</p>
-                ) : (
-                  <>
-                    <div className="text-[18px] font-medium text-accent-green-deep leading-none">
-                      {formatHoursMinutes(totalWorkedMinutes)}
-                    </div>
-                    <div className="text-[11px] text-fg-faded mt-1">
-                      of {formatHoursMinutes(totalPlannedMinutes)} planned
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
+              {/* Read-only worked-time line — mirrors daily's bottom strip */}
+              {totalWorkedMinutes > 0 && (
+                <section className="pt-1">
+                  <div className="text-[11px] text-fg-faded">
+                    <span className="tabular-nums">
+                      {formatHoursMinutes(totalWorkedMinutes)} worked
+                    </span>
+                  </div>
+                </section>
+              )}
+            </>
+          )}
         </div>
       </div>
 
-      {/* ── Footer — shutdown button ────────────────────────────────── */}
+      {/* ── Footer ──────────────────────────────────────────────────── */}
       <div className="px-6 py-4 flex-shrink-0">
-        <div className="max-w-[860px] mx-auto flex gap-2">
-          <button
-            onClick={() => setShowSummary(true)}
-            className="px-4 py-2.5 rounded-lg border border-accent-green-deep text-accent-green-deep text-[13px] font-medium cursor-pointer hover:bg-accent-green-soft transition-colors"
-          >
-            Generate summary
-          </button>
-          <button
-            onClick={completeWeeklyShutdown}
-            className="flex-1 py-2.5 rounded-lg bg-accent-green-bright text-fg-on-accent text-[13px] font-medium cursor-pointer hover:bg-accent-green-bright-hover transition-colors"
-          >
-            Save & shutdown
-          </button>
+        <div className="max-w-[760px] mx-auto flex items-center gap-2">
+          {step === 1 ? (
+            <button
+              onClick={() => setStep(2)}
+              className="flex-1 py-2.5 rounded-lg border border-accent-pink-bright/60 text-accent-pink-bright text-[13px] font-medium cursor-pointer hover:border-accent-pink hover:bg-accent-pink-soft transition-colors flex items-center justify-center gap-1.5"
+            >
+              <svg width="14" height="12" viewBox="0 0 14 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7 11 C2 7.5 1 4.5 3 2.5 C4.5 1 6.5 2 7 3.5 C7.5 2 9.5 1 11 2.5 C13 4.5 12 7.5 7 11 Z" />
+              </svg>
+              Reflect
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={completeWeeklyShutdown}
+                className="flex-1 py-2.5 rounded-lg border border-accent-pink-bright/60 text-accent-pink-bright text-[13px] font-medium cursor-pointer hover:border-accent-pink hover:bg-accent-pink-soft transition-colors flex items-center justify-center gap-1.5"
+              >
+                <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1.5 4 Q7 9 12.5 4" />
+                  <path d="M3 6.5 l-0.5 1.5" />
+                  <path d="M7 7.5 l0 1.5" />
+                  <path d="M11 6.5 l0.5 1.5" />
+                </svg>
+                Shutdown
+              </button>
+              <button
+                onClick={() => setShowSummary(true)}
+                className="px-5 py-2.5 rounded-lg border border-line-soft text-fg-secondary text-[13px] font-medium cursor-pointer hover:bg-overlay-hover transition-colors"
+              >
+                Summary
+              </button>
+            </>
+          )}
         </div>
       </div>
-
-      {/* Task detail overlay */}
-      {detailTask && (
-        <TaskDetailOverlay
-          key={detailTask.id}
-          task={detailTask}
-          projects={projects}
-          onClose={() => { setDetailTask(null); loadData(); }}
-          onSave={(updates) => updateTask(updates).then(() => loadData()).catch(() => {})}
-          onToggle={undefined}
-          onDelete={undefined}
-        />
-      )}
 
       {/* Sunset overlay */}
       {showSunset && <SunsetOverlay onDismiss={() => setShowSunset(false)} />}

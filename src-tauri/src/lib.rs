@@ -209,6 +209,16 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 13,
+            description: "track when a task was completed (for weekly shutdown wins-by-day)",
+            sql: "
+                ALTER TABLE tasks ADD COLUMN completed_at TEXT;
+                UPDATE tasks SET completed_at = date_scheduled
+                  WHERE status = 'done' AND completed_at IS NULL AND date_scheduled IS NOT NULL;
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

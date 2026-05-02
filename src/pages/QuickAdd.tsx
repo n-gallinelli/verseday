@@ -48,6 +48,12 @@ export default function QuickAdd() {
     setTimeout(() => titleRef.current?.focus(), 80);
   }, []);
 
+  // Ignore the brief blur that fires while the window is being shown +
+  // focused — without this, the window flickers (show → transient blur →
+  // dismiss → hide). Only blurs that arrive after the window has been
+  // steadily focused for ~250ms count as a real user dismiss.
+  const lastFocusedAt = useRef<number>(0);
+
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     const appWindow = getCurrentWebviewWindow();
@@ -55,10 +61,13 @@ export default function QuickAdd() {
     (async () => {
       unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
         if (focused) {
+          lastFocusedAt.current = Date.now();
           resetFields();
           loadProjects();
           focusTitle();
         } else {
+          const sinceFocus = Date.now() - lastFocusedAt.current;
+          if (sinceFocus < 250) return;
           invoke("dismiss_quick_add");
         }
       });

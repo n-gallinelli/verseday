@@ -3,19 +3,20 @@ import { useAppStore } from "../stores/appStore";
 import {
   getTasksForDate,
   getDailyPlan,
-  getTotalWorkedMinutes,
-  getTotalPlannedMinutes,
   getWorkedMinutesForTaskIds,
   updateTaskDateScheduled,
   upsertDailyShutdown,
   getProjects,
   toggleTaskHighlight,
+  updateTask,
+  updateTaskStatus,
+  setManualWorkedMinutes,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import SunsetOverlay from "../components/SunsetOverlay";
 import SummaryOverlay from "../components/SummaryOverlay";
 import MoodSelector from "../components/MoodSelector";
-import { formatHoursMinutes } from "../utils/format";
+import TaskDetailOverlay from "../components/TaskDetailOverlay";
 import type { Task, Project } from "../types";
 
 const SHUTDOWN_KEY_PREFIX = "daily-shutdown-";
@@ -53,8 +54,6 @@ export default function DailyShutdown() {
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [plannedMinutes, setPlannedMinutes] = useState(0);
-  const [workedMinutes, setWorkedMinutes] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const [mood, setMood] = useState<string | null>(null);
@@ -70,6 +69,7 @@ export default function DailyShutdown() {
   const [workedPerTask, setWorkedPerTask] = useState<Map<number, number>>(new Map());
   const [showSummary, setShowSummary] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
+  const [detailTask, setDetailTask] = useState<Task | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedDateRef = useRef(selectedDate);
@@ -79,17 +79,13 @@ export default function DailyShutdown() {
 
   const loadData = useCallback(async () => {
     try {
-      const [t, dp, pm, wm, p] = await Promise.all([
+      const [t, dp, p] = await Promise.all([
         getTasksForDate(selectedDate),
         getDailyPlan(selectedDate),
-        getTotalPlannedMinutes(selectedDate),
-        getTotalWorkedMinutes(selectedDate),
         getProjects(false),
       ]);
       setTasks(t);
       setProjects(p);
-      setPlannedMinutes(pm);
-      setWorkedMinutes(wm);
       setMood(dp?.mood ?? null);
       setReflectionFields(parseReflection(dp?.reflection ?? ""));
       setIsShutdown(
@@ -328,14 +324,18 @@ export default function DailyShutdown() {
                       return (
                         <div
                           key={task.id}
-                          className="px-2.5 py-[6px] rounded-md border border-line-soft bg-elevated/60 flex items-center gap-2.5 transition-colors hover:bg-overlay-hover"
+                          onClick={() => setDetailTask(task)}
+                          className="px-2.5 py-[6px] rounded-md border border-line-soft bg-elevated/60 flex items-center gap-2.5 transition-colors hover:bg-overlay-hover cursor-pointer"
                         >
                           <button
-                            onClick={() => handleToggleHighlight(task.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleHighlight(task.id);
+                            }}
                             className="flex-shrink-0 cursor-pointer"
                             title={isHighlight ? "Remove highlight" : "Mark as highlight"}
                           >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill={isHighlight ? "var(--accent-warning)" : "none"} stroke={isHighlight ? "var(--accent-warning)" : "var(--text-disabled)"} strokeWidth="2">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill={isHighlight ? "var(--accent-highlight)" : "none"} stroke={isHighlight ? "var(--accent-highlight)" : "var(--text-disabled)"} strokeWidth="2">
                               <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                             </svg>
                           </button>
@@ -386,7 +386,8 @@ export default function DailyShutdown() {
                       return (
                         <div
                           key={task.id}
-                          className="group/row px-2.5 py-[6px] rounded-md border border-line-soft bg-elevated/60 flex items-center gap-2.5 transition-colors hover:bg-overlay-hover"
+                          onClick={() => setDetailTask(task)}
+                          className="group/row px-2.5 py-[6px] rounded-md border border-line-soft bg-elevated/60 flex items-center gap-2.5 transition-colors hover:bg-overlay-hover cursor-pointer"
                         >
                           {task.priority === "high" && (
                             <span className="w-[14px] h-[14px] rounded-full border-2 border-accent-danger flex-shrink-0" title="High priority" />
@@ -409,7 +410,10 @@ export default function DailyShutdown() {
                             <span className="text-[10px] text-accent-green flex-shrink-0">Moved →</span>
                           ) : (
                             <button
-                              onClick={() => carryTaskToTomorrow(task.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                carryTaskToTomorrow(task.id);
+                              }}
                               className="text-[10px] text-accent-blue-soft-fg hover:text-accent-blue cursor-pointer flex-shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity"
                               title="Move to tomorrow"
                             >
@@ -421,17 +425,10 @@ export default function DailyShutdown() {
                     })}
                   </div>
                 ) : (
-                  <p className="text-[12px] text-fg-disabled px-2.5">Everything done!</p>
+                  <p className="text-[12px] text-fg-disabled">The path is clear.</p>
                 )}
               </section>
 
-              {/* Time tracked — small footer summary */}
-              {(workedMinutes > 0 || plannedMinutes > 0) && (
-                <p className="text-[11px] text-fg-faded">
-                  {formatHoursMinutes(workedMinutes)} worked
-                  {plannedMinutes > 0 && ` of ${formatHoursMinutes(plannedMinutes)} planned`}
-                </p>
-              )}
             </>
           )}
 
@@ -479,7 +476,7 @@ export default function DailyShutdown() {
                         .filter((t) => highlightIds.has(t.id))
                         .map((task) => (
                           <div key={task.id} className="flex items-center gap-2">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--accent-warning)" stroke="var(--accent-warning)" strokeWidth="2" className="flex-shrink-0">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--accent-highlight)" stroke="var(--accent-highlight)" strokeWidth="2" className="flex-shrink-0">
                               <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                             </svg>
                             <span className="text-[13px] text-fg font-medium truncate flex-1">{task.title}</span>
@@ -540,6 +537,25 @@ export default function DailyShutdown() {
           type="daily"
           anchorDate={selectedDate}
           onClose={() => setShowSummary(false)}
+        />
+      )}
+
+      {/* Task detail overlay — opened by clicking any row in step 1. */}
+      {detailTask && (
+        <TaskDetailOverlay
+          key={detailTask.id}
+          task={detailTask}
+          projects={projects}
+          onClose={() => { setDetailTask(null); loadData(); }}
+          onSave={(updates) => updateTask(updates).then(() => loadData()).catch(() => {})}
+          onToggle={(t) => {
+            updateTaskStatus(t.id, t.status === "done" ? "todo" : "done")
+              .then(() => loadData())
+              .catch(() => {});
+          }}
+          onSetWorkedMinutes={(id, mins) =>
+            setManualWorkedMinutes(id, mins).then(() => loadData()).catch(() => {})
+          }
         />
       )}
     </div>

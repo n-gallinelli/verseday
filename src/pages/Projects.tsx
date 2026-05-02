@@ -27,10 +27,12 @@ import {
   deleteTask,
   archiveProject,
   completeProject,
+  searchTasksByTitle,
   PRESET_COLORS,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import TaskDetailOverlay from "../components/TaskDetailOverlay";
+import DisclosureCaret from "../components/DisclosureCaret";
 import type { Project, Task } from "../types";
 
 type FilterMode = "all" | "active" | "completed";
@@ -87,6 +89,7 @@ export default function Projects() {
   const [detailTask, setDetailTask] = useState<Task | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [matchingTasks, setMatchingTasks] = useState<Task[]>([]);
   const [archivedUndo, setArchivedUndo] = useState<{ id: number; name: string } | null>(null);
   const archiveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -111,6 +114,22 @@ export default function Projects() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Search tasks alongside projects. Lightly debounced so each keystroke
+  // doesn't hit SQLite. Empty query clears the result list.
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setMatchingTasks([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      searchTasksByTitle(q)
+        .then(setMatchingTasks)
+        .catch(() => setMatchingTasks([]));
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   async function handleCreate(name: string, color: string) {
     try {
@@ -236,7 +255,7 @@ export default function Projects() {
 
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-6 py-[18px] border-b border-line-soft flex-shrink-0">
-        <h2 className="text-[18px] font-medium text-fg font-display">Projects</h2>
+        <h2 className="text-[18px] font-medium text-fg font-display">Objectives</h2>
         <div className="flex items-center gap-3">
           {/* Search */}
           <div className="relative">
@@ -288,25 +307,32 @@ export default function Projects() {
         >
           <div className="flex-1 overflow-y-auto px-6 pb-6">
             <div className="flex flex-col gap-[6px]">
-              {filteredProjects.length === 0 ? (
+              {searchQuery && filteredProjects.length === 0 && matchingTasks.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <p className="text-[14px] text-fg-faded">
+                    No matches for &ldquo;{searchQuery}&rdquo;
+                  </p>
+                </div>
+              ) : !searchQuery && filteredProjects.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
                   <p className="text-[14px] text-fg-faded mb-1">
-                    {searchQuery
-                      ? `No projects matching "${searchQuery}"`
-                      : filter === "all"
-                        ? "Start your first project"
-                        : `No ${filter} projects`}
+                    {filter === "all" ? "Start your first objective" : `No ${filter} objectives`}
                   </p>
-                  {filter === "all" && !searchQuery && (
+                  {filter === "all" && (
                     <p className="text-[12px] text-fg-faded">
                       Give your work a home. Type a name below to begin.
                     </p>
                   )}
                 </div>
               ) : (
-                filteredProjects.map((project) => {
+                <>
+                  {searchQuery && filteredProjects.length > 0 && (
+                    <span className="uppercase text-fg-faded mt-1 mb-1 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
+                      Objectives
+                    </span>
+                  )}
+                  {filteredProjects.map((project) => {
                   const stats = statsMap.get(project.id) ?? { total: 0, done: 0, lastDate: null };
-                  const openCount = stats.total - stats.done;
                   const isCompleted = !!project.completed;
                   const dueDate = project.target_date;
                   const isExpanded = expandedProjectIds.has(project.id);
@@ -326,40 +352,40 @@ export default function Projects() {
                             className="group/row px-4 py-[14px] cursor-pointer hover:bg-overlay-hover relative"
                           >
                             <div className="flex items-center gap-2.5">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  {/* Project color dot */}
-                                  {!isCompleted && (
-                                    <div
-                                      className="w-[8px] h-[8px] rounded-full shrink-0"
-                                      style={{ backgroundColor: project.color }}
-                                    />
-                                  )}
-                                  {/* Completed checkmark */}
-                                  {isCompleted && (
-                                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" className="shrink-0">
-                                      <path d="M3 8.5l3.5 3.5 6.5-7" />
-                                    </svg>
-                                  )}
-                                  <span className={`block truncate [font-size:var(--font-size-primary)] [font-weight:var(--font-weight-primary)] ${
-                                    isCompleted ? "text-fg-muted line-through" : "text-fg"
-                                  }`}>
-                                    {project.name}
-                                  </span>
-                                </div>
-                                {dueDate && !isCompleted && (
-                                  <span className={`text-[11px] ${getDueDateColor(dueDate)}`}>
-                                    Due {formatDate(dueDate)}
-                                  </span>
+                              <div className="flex-1 min-w-0 flex items-center gap-2">
+                                {/* Project color dot */}
+                                {!isCompleted && (
+                                  <div
+                                    className="w-[8px] h-[8px] rounded-full shrink-0"
+                                    style={{ backgroundColor: project.color }}
+                                  />
                                 )}
-                                {isCompleted && dueDate && (
-                                  <span className="text-[11px] text-fg-faded">
-                                    Completed {formatDate(dueDate)}
-                                  </span>
+                                {/* Completed checkmark */}
+                                {isCompleted && (
+                                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" className="shrink-0">
+                                    <path d="M3 8.5l3.5 3.5 6.5-7" />
+                                  </svg>
                                 )}
+                                <span className={`truncate [font-size:var(--font-size-primary)] [font-weight:var(--font-weight-primary)] ${
+                                  isCompleted ? "text-fg-muted line-through" : "text-fg"
+                                }`}>
+                                  {project.name}
+                                </span>
                               </div>
 
-                              {/* Task count chip — also toggles expand */}
+                              {/* Due/Completed date — inline so rows stay one-line */}
+                              {dueDate && !isCompleted && (
+                                <span className={`text-[11px] flex-shrink-0 ${getDueDateColor(dueDate)}`}>
+                                  Due {formatDate(dueDate)}
+                                </span>
+                              )}
+                              {isCompleted && dueDate && (
+                                <span className="text-[11px] text-fg-faded flex-shrink-0">
+                                  Completed {formatDate(dueDate)}
+                                </span>
+                              )}
+
+                              {/* Open tasks toggle */}
                               {stats.total > 0 && !isCompleted && (
                                 <button
                                   onClick={(e) => {
@@ -372,8 +398,8 @@ export default function Projects() {
                                       : "bg-overlay-hover text-fg-faded hover:bg-overlay-pressed"
                                   }`}
                                 >
-                                  <span>{openCount} open</span>
-                                  <span className="text-[9px]">{isExpanded ? "▾" : "▸"}</span>
+                                  <span>Open tasks</span>
+                                  <DisclosureCaret expanded={isExpanded} size={9} />
                                 </button>
                               )}
 
@@ -478,10 +504,65 @@ export default function Projects() {
                       </div>
                     </SortableProjectRow>
                   );
-                })
+                })}
+
+                  {/* ── Task search results ────────────────────────────── */}
+                  {searchQuery && matchingTasks.length > 0 && (
+                    <>
+                      <span className="uppercase text-fg-faded mt-3 mb-1 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
+                        Tasks
+                      </span>
+                      {matchingTasks.map((task) => {
+                        const taskProject = task.project_id != null
+                          ? projects.find((p) => p.id === task.project_id) ?? null
+                          : null;
+                        const dateLabel = task.date_scheduled
+                          ? new Date(task.date_scheduled + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                          : null;
+                        const isDone = task.status === "done";
+                        return (
+                          <button
+                            key={task.id}
+                            onClick={() => setDetailTask(task)}
+                            className="bg-elevated rounded-[10px] px-4 py-[12px] flex items-center gap-2.5 text-left cursor-pointer hover:bg-overlay-hover transition-colors"
+                            style={{ border: "0.5px solid var(--border-hairline)" }}
+                          >
+                            <svg
+                              width="13" height="13" viewBox="0 0 16 16" fill="none"
+                              stroke={isDone ? "var(--accent-green)" : "var(--text-disabled)"}
+                              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                              className="shrink-0"
+                            >
+                              <path d="M3 8.5l3.5 3.5 6.5-7" />
+                            </svg>
+                            {taskProject && (
+                              <span
+                                className="w-[8px] h-[8px] rounded-full shrink-0"
+                                style={{ backgroundColor: taskProject.color }}
+                                title={taskProject.name}
+                              />
+                            )}
+                            <span className={`flex-1 truncate text-[13px] ${isDone ? "text-fg-faded line-through" : "text-fg"}`}>
+                              {task.title}
+                            </span>
+                            {taskProject && (
+                              <span className="text-[11px] text-fg-faded shrink-0 max-w-[160px] truncate">
+                                {taskProject.name}
+                              </span>
+                            )}
+                            {dateLabel && (
+                              <span className="text-[11px] text-fg-faded shrink-0">{dateLabel}</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </>
+                  )}
+                </>
               )}
 
-              {/* ── Inline create row ─────────────────────────────────────── */}
+              {/* ── Inline create row — hidden while searching ──────────── */}
+              {!searchQuery && (
               <div
                 className="flex items-center gap-2.5 bg-elevated rounded-[10px] px-4 py-[12px] overflow-hidden"
                 style={{ border: "0.5px solid var(--border-hairline)" }}
@@ -501,7 +582,7 @@ export default function Projects() {
                       inlineInputRef.current?.blur();
                     }
                   }}
-                  placeholder="New project..."
+                  placeholder="New objective..."
                   maxLength={100}
                   className="flex-1 text-[13px] text-fg placeholder:text-fg-disabled bg-transparent outline-none"
                 />
@@ -514,6 +595,7 @@ export default function Projects() {
                   </button>
                 )}
               </div>
+              )}
             </div>
           </div>
         </SortableContext>

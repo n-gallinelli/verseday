@@ -47,7 +47,10 @@ function TrashButton({ onDelete }: { onDelete: () => void }) {
 
   return (
     <button
-      onClick={handleClick}
+      onClick={(e) => {
+        e.stopPropagation();
+        handleClick();
+      }}
       className={`w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors ${
         armed
           ? "text-accent-destructive bg-accent-destructive/10"
@@ -157,26 +160,28 @@ export default function TaskCard({
     <div
       ref={setNodeRef}
       style={style}
-      className={`px-3 py-[6px] rounded-md border transition-colors duration-150 ease-out group/row ${
-        isHigh
-          ? "bg-accent-orange-soft border-accent-orange/15 hover:bg-accent-orange-soft-hover"
-          : "bg-elevated/60 border-line-soft hover:bg-overlay-hover"
+      {...attributes}
+      {...listeners}
+      className={`relative px-4 py-4 rounded-lg border transition-colors duration-150 ease-out group/row touch-none ${
+        isDragging ? "cursor-grabbing" : ""
+      } ${
+        task.status === "done"
+          ? "bg-[var(--accent-green-muted-bg)] border-accent-green/15 hover:bg-[var(--accent-green-muted-bg)]"
+          : isHigh
+            ? "bg-accent-orange-soft border-accent-orange/15 hover:bg-accent-orange-soft-hover"
+            : "bg-elevated/60 border-line-soft hover:bg-overlay-hover"
       }`}
     >
-      <div className="flex items-center gap-3">
-        {/* Drag handle */}
-        <div
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing text-fg-faded shrink-0 select-none"
-          title="Drag to reorder"
-        >
-          ⠿
-        </div>
-
+      <div
+        className="flex items-center gap-3 cursor-default"
+        onClick={() => onOpenDetail?.(task)}
+      >
         {/* Checkbox */}
         <button
-          onClick={() => onToggle(task)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle(task);
+          }}
           title={task.status === "done" ? "Mark as not done" : "Mark complete"}
           className={`w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
             task.status === "done"
@@ -195,47 +200,29 @@ export default function TaskCard({
             strokeLinejoin="round"
           >
             <path
-              d="M2.5 6.2l2.5 2.3L9.5 3.7"
+              d="M3 6.5l2.2 2.2L9 3.3"
               className={justCompleted ? "animate-check-draw" : ""}
             />
           </svg>
         </button>
 
-        {/* Project color dot */}
-        {showProject && project && (
-          <div
-            className="w-2.5 h-2.5 rounded-full shrink-0"
-            style={{ backgroundColor: project.color }}
-            title={project.name}
-          />
-        )}
-
-        {/* Title — clickable to open detail overlay */}
+        {/* Title — row click opens detail. One-line clamp keeps every card
+            the same height regardless of title length. */}
         <span
-          className={`flex-1 text-fg [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)] ${task.status === "done" ? "line-through !text-fg-faded" : ""} ${onOpenDetail ? "cursor-pointer hover:text-accent-blue transition-colors" : ""}`}
-          onClick={() => onOpenDetail?.(task)}
+          className={`flex-1 min-w-0 truncate text-fg [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)] ${task.status === "done" ? "line-through !text-fg-faded" : ""}`}
         >
           {task.title}
         </span>
 
-        {/* Project / Actions — fixed-width swap slot.
-            At rest: project name (truncated, right-aligned within the slot)
-            On row hover: actions (play + trash) absolute-positioned over the
-            slot. Reserved width keeps project columns aligned across rows
-            regardless of name length or whether actions render. */}
-        <div className="relative w-[180px] shrink-0 flex items-center justify-end h-[22px]">
-          {showProject && project && (
-            <span
-              className="text-fg-faded [font-size:var(--font-size-meta)] [font-weight:var(--font-weight-meta)] [opacity:var(--opacity-meta)] truncate group-hover/row:opacity-0 transition-opacity duration-150"
-              title={project.name}
-            >
-              {project.name}
-            </span>
-          )}
+        {/* Actions slot — appears on row hover (play + trash). */}
+        <div className="relative w-[60px] shrink-0 flex items-center justify-end h-[22px]">
           <div className="absolute inset-0 flex items-center justify-end gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150 pointer-events-none group-hover/row:pointer-events-auto">
             {onStart && task.status !== "done" && (
               <button
-                onClick={() => onStart(task)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStart(task);
+                }}
                 className="w-6 h-6 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
                 title="Start focus"
               >
@@ -258,8 +245,8 @@ export default function TaskCard({
             if (!hasAny) return null;
             const overBudget = est > 0 && worked > est;
             return (
-              <span className="flex items-center gap-0.5">
-                <span className={overBudget ? "text-accent-danger font-medium" : "text-accent-blue-soft-fg font-medium"}>
+              <span className="inline-flex items-center gap-0.5 px-2 py-[2px] rounded-full bg-overlay-hover">
+                <span className={overBudget ? "text-accent-danger font-medium" : "text-fg-faded"}>
                   {worked > 0 ? `${worked}m` : "0m"}
                 </span>
                 <span className="text-fg-disabled">/</span>
@@ -272,9 +259,33 @@ export default function TaskCard({
         </div>
       </div>
 
+      {/* Project marker — a thin colored bar pinned to the right edge of
+          the card. Hovering swells it into a pill that grows leftward
+          with the project name. Sits on the card's right padding strip
+          so it doesn't crowd the title or actions. */}
+      {showProject && project && (
+        <div className="absolute right-0 top-0 bottom-0 w-[14px] group/proj">
+          <div
+            className="absolute right-0 top-1.5 bottom-1.5 w-[3px] rounded-l-full transition-opacity duration-150 group-hover/proj:opacity-0"
+            style={{ backgroundColor: project.color }}
+          />
+          <div
+            className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-elevated border border-line-soft opacity-0 pointer-events-none group-hover/proj:opacity-100 transition-opacity duration-150 z-20 whitespace-nowrap"
+            style={{ boxShadow: "var(--shadow-card)" }}
+          >
+            <span className="text-[11px] text-fg-secondary leading-none">{project.name}</span>
+            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: project.color }} />
+          </div>
+        </div>
+      )}
+
       {/* Expanded area: notes + links */}
       {expandedNotes && (
-        <div className="mt-2 space-y-2">
+        <div
+          className="mt-2 space-y-2"
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
           {/* Editable notes */}
           <RichTextEditor
             value={notes}

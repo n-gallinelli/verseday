@@ -68,7 +68,7 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
               className="w-2 h-2 rounded-full flex-shrink-0 mt-[6px]"
               style={{ backgroundColor: selected.color }}
             />
-            <span className="flex-1 min-w-0 text-[13px] font-normal text-fg-secondary leading-[1.4] line-clamp-2">
+            <span className="flex-1 min-w-0 text-[13px] font-normal text-fg-secondary leading-[1.4] line-clamp-3">
               {selected.name}
             </span>
           </>

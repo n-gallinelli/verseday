@@ -29,6 +29,7 @@ export interface Task {
   original_date: string | null;
   rollover_count: number;
   is_highlight: number;
+  completed_at: string | null;
   created_at: string;
 }
 

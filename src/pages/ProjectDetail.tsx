@@ -213,7 +213,7 @@ function SortableTaskRow({
         </button>
 
         {/* Metadata row — date picker + estimate, below title */}
-        <div className="flex items-center gap-3 mt-1.5 text-[12px] text-fg-muted">
+        <div className="flex items-center gap-2 mt-1.5 text-[11px] text-fg-muted">
           <CalendarPicker
             value={task.date_scheduled ?? ""}
             onChange={(date) => onSetDate(task.id, date)}
@@ -241,7 +241,7 @@ function SortableTaskRow({
               onFocus={(e) => e.currentTarget.select()}
               placeholder="0m"
               title="Click to edit time worked"
-              className="bg-input-hover border border-transparent hover:bg-overlay-pressed focus:bg-elevated focus:border-accent-blue rounded-md px-3 text-[12px] text-fg-secondary placeholder:text-fg-muted tabular-nums w-[76px] h-[28px] leading-none outline-none cursor-text transition-colors"
+              className="bg-input-hover border border-transparent hover:bg-overlay-pressed focus:bg-elevated focus:border-accent-blue rounded-md px-2.5 text-[11px] text-fg-secondary placeholder:text-fg-muted tabular-nums w-[60px] h-[24px] leading-none outline-none cursor-text transition-colors"
             />
             <span className="text-fg-muted">/</span>
             <select
@@ -250,7 +250,7 @@ function SortableTaskRow({
                 const v = e.target.value;
                 onSetEstimate(task.id, v ? parseInt(v) : null);
               }}
-              className="bg-input-hover hover:bg-overlay-pressed rounded-md px-3 text-[12px] text-fg-secondary cursor-pointer outline-none h-[28px] leading-none transition-colors"
+              className="bg-input-hover hover:bg-overlay-pressed rounded-md px-2.5 text-[11px] text-fg-secondary cursor-pointer outline-none h-[24px] leading-none transition-colors"
               title="Estimated time"
             >
               <option value="">— est</option>
@@ -272,9 +272,12 @@ function SortableTaskRow({
         {task.status !== "done" && (
           <button
             onClick={() => onStart(task)}
-            className="text-[11px] text-accent-blue-soft-fg border border-accent-blue/20 bg-accent-blue/[0.06] px-1.5 py-0.5 rounded-[5px] cursor-pointer hover:bg-accent-blue/[0.12]"
+            className="w-6 h-6 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
+            title="Start focus"
           >
-            Start
+            <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
+              <path d="M0 0v10l8-5z" />
+            </svg>
           </button>
         )}
         <button
@@ -318,6 +321,10 @@ export default function ProjectDetail() {
   const [newTaskEstimate, setNewTaskEstimate] = useState("");
   const [newTaskHighPriority, setNewTaskHighPriority] = useState(false);
   const [newTaskDate, setNewTaskDate] = useState("");
+
+  // Quick-add modal — opened by clicking a day column in the "This week" grid;
+  // pre-fills date_scheduled to the clicked day.
+  const [quickAddDate, setQuickAddDate] = useState<string | null>(null);
 
   // Task editing
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
@@ -486,6 +493,43 @@ export default function ProjectDetail() {
     goBack();
   }
 
+  // The modal is dismissed by clicking outside (handled in App.tsx) — that
+  // path doesn't go through handleClose, so any debounced project edit
+  // would be lost on unmount. Flush on teardown via a ref to the latest
+  // closure so we always read the current edit state.
+  const flushRef = useRef(flushProjectSave);
+  flushRef.current = flushProjectSave;
+  useEffect(() => {
+    return () => {
+      flushRef.current();
+    };
+  }, []);
+
+  // Esc closes the modal. If the user is mid-edit in any input/textarea,
+  // first Esc blurs that field; a second Esc then closes — same pattern
+  // as the daily shutdown.
+  const closeRef = useRef(handleClose);
+  closeRef.current = handleClose;
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      const el = document.activeElement;
+      const isInput =
+        el &&
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          (el as HTMLElement).isContentEditable);
+      if (isInput) {
+        (el as HTMLElement).blur();
+        return;
+      }
+      e.preventDefault();
+      closeRef.current();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   async function handleDeleteProject() {
     if (!selectedProjectId) return;
     try {
@@ -577,6 +621,35 @@ export default function ProjectDetail() {
       setNewTaskEstimate("");
       setNewTaskHighPriority(false);
       setNewTaskDate("");
+      setError(null);
+      refreshTasks();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to add task");
+    }
+  }
+
+  async function handleQuickAddForDate(date: string, rawTitle: string) {
+    let title = rawTitle.trim();
+    if (!title) return;
+    if (title.length > MAX_TITLE_LENGTH) {
+      setError(`Title must be ${MAX_TITLE_LENGTH} characters or less`);
+      return;
+    }
+    let est: number | null = null;
+    const parsed = parseTimeFromTitle(title);
+    if (parsed.minutes != null) {
+      title = parsed.cleanTitle;
+      est = parsed.minutes;
+    }
+    try {
+      await createTask({
+        title,
+        projectId: selectedProjectId,
+        dateScheduled: date,
+        estimatedMinutes: est,
+        priority: "medium",
+      });
+      setQuickAddDate(null);
       setError(null);
       refreshTasks();
     } catch (e) {
@@ -812,20 +885,22 @@ export default function ProjectDetail() {
 
             <button
               onClick={handleCompleteToggle}
-              className={`text-[12px] cursor-pointer px-2.5 py-1 rounded-md border flex-shrink-0 ${
+              className={`text-[12px] font-medium cursor-pointer px-2.5 py-1 rounded-md border flex-shrink-0 transition-colors ${
                 project.completed
-                  ? "bg-accent-green border-accent-green text-fg-on-accent"
-                  : "bg-accent-blue border-accent-blue text-fg-on-accent hover:bg-accent-blue-hover"
+                  ? "border-accent-green/50 text-accent-green-deep hover:border-accent-green hover:bg-accent-green-soft"
+                  : "border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft"
               }`}
             >
               {project.completed ? "✓ Completed" : "Mark Complete"}
             </button>
             <button
-              onClick={handleClose}
-              className="text-fg-faded hover:text-fg-secondary cursor-pointer text-[16px] flex-shrink-0 w-7 h-7 flex items-center justify-center"
-              title="Close"
+              onClick={() => setConfirmDeleteProject(true)}
+              title="Delete objective"
+              className="text-fg-faded hover:text-accent-destructive hover:bg-accent-destructive/[0.08] cursor-pointer flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md transition-colors"
             >
-              ✕
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />
+              </svg>
             </button>
           </div>
         </div>
@@ -861,7 +936,7 @@ export default function ProjectDetail() {
               />
               <button
                 type="submit"
-                className="bg-accent-blue text-fg-on-accent border-none rounded-lg px-3.5 py-1.5 text-[12px] font-medium cursor-pointer hover:bg-accent-blue-hover"
+                className="border border-accent-blue/50 text-accent-blue-soft-fg rounded-lg px-3.5 py-1.5 text-[12px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors"
               >
                 Add
               </button>
@@ -946,13 +1021,13 @@ export default function ProjectDetail() {
                         <div className="flex gap-2">
                           <button
                             onClick={saveTaskEdit}
-                            className="bg-accent-blue text-fg-on-accent rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-accent-blue-hover"
+                            className="border border-accent-blue/50 text-accent-blue-soft-fg rounded-md px-3 py-1.5 text-[12px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors"
                           >
                             Save
                           </button>
                           <button
                             onClick={() => setEditingTaskId(null)}
-                            className="bg-overlay-hover text-fg-muted rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-overlay-pressed"
+                            className="border border-line-soft text-fg-muted rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-overlay-hover transition-colors"
                           >
                             Cancel
                           </button>
@@ -980,7 +1055,7 @@ export default function ProjectDetail() {
                         </span>
                         <button
                           onClick={() => handleDeleteTask(task.id)}
-                          className="bg-accent-destructive text-fg-on-accent rounded-md px-3 py-1 text-[11px] cursor-pointer hover:bg-accent-destructive-hover"
+                          className="border border-accent-destructive/50 text-accent-destructive rounded-md px-3 py-1 text-[11px] font-medium cursor-pointer hover:border-accent-destructive hover:bg-accent-destructive/[0.08] transition-colors"
                         >
                           Delete
                         </button>
@@ -1085,7 +1160,12 @@ export default function ProjectDetail() {
                   const dayTasks = tasks.filter((t) => t.date_scheduled === date);
                   const hasTasks = dayTasks.length > 0;
                   return (
-                    <div key={date} className="min-w-0">
+                    <div
+                      key={date}
+                      onClick={() => setQuickAddDate(date)}
+                      title={`Add task for ${DAY_NAMES[i]}`}
+                      className="min-w-0 cursor-pointer rounded-md p-1 -m-1 hover:bg-overlay-hover transition-colors"
+                    >
                       <div
                         className="text-[10px] font-medium uppercase tracking-[0.05em] text-center pb-1.5 mb-2 border-b transition-colors"
                         style={{
@@ -1102,7 +1182,10 @@ export default function ProjectDetail() {
                           {dayTasks.map((task) => (
                             <button
                               key={task.id}
-                              onClick={() => setDetailTask(task)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDetailTask(task);
+                              }}
                               title={task.title}
                               className={`block w-full text-left text-[11px] hover:text-fg cursor-pointer truncate leading-snug ${
                                 task.status === "done"
@@ -1128,14 +1211,14 @@ export default function ProjectDetail() {
           <span className="text-[10px] text-fg-disabled flex-1">
             Auto-saved
           </span>
-          {confirmDeleteProject ? (
+          {confirmDeleteProject && (
             <div className="flex items-center gap-2">
               <span className="text-[12px] text-accent-destructive">
-                Delete project &amp; all tasks?
+                Delete objective &amp; all tasks?
               </span>
               <button
                 onClick={handleDeleteProject}
-                className="bg-accent-destructive text-fg-on-accent text-[11px] font-medium rounded-md px-2.5 py-1 cursor-pointer hover:bg-accent-destructive-hover"
+                className="border border-accent-destructive/50 text-accent-destructive text-[11px] font-medium rounded-md px-2.5 py-1 cursor-pointer hover:border-accent-destructive hover:bg-accent-destructive/[0.08] transition-colors"
               >
                 Delete
               </button>
@@ -1146,16 +1229,6 @@ export default function ProjectDetail() {
                 Cancel
               </button>
             </div>
-          ) : (
-            <button
-              onClick={() => setConfirmDeleteProject(true)}
-              title="Delete project"
-              className="text-accent-destructive/60 hover:text-accent-destructive cursor-pointer p-2 rounded-md hover:bg-accent-destructive/[0.08] transition-colors"
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />
-              </svg>
-            </button>
           )}
         </div>
 
@@ -1172,6 +1245,101 @@ export default function ProjectDetail() {
           onStartFocus={(t) => { handleStartFocus(t); setDetailTask(null); }}
         />
       )}
+
+      {/* Quick-add modal — pops up when a "This week" day cell is clicked */}
+      {quickAddDate && (
+        <DayQuickAddModal
+          date={quickAddDate}
+          onClose={() => setQuickAddDate(null)}
+          onSubmit={(title) => handleQuickAddForDate(quickAddDate, title)}
+        />
+      )}
+    </div>
+  );
+}
+
+function DayQuickAddModal({
+  date,
+  onClose,
+  onSubmit,
+}: {
+  date: string;
+  onClose: () => void;
+  onSubmit: (title: string) => void;
+}) {
+  const [title, setTitle] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const d = new Date(date + "T00:00:00");
+  const heading = d.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    onSubmit(trimmed);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-6"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-base rounded-xl w-full max-w-[420px] overflow-hidden"
+        style={{
+          boxShadow: "var(--shadow-overlay)",
+          border: "1px solid var(--border-soft)",
+        }}
+      >
+        <div className="px-5 pt-4 pb-3 border-b border-line-soft">
+          <div className="text-[11px] uppercase tracking-[0.06em] text-fg-faded mb-0.5">
+            Add task for
+          </div>
+          <h2 className="text-[15px] font-medium text-fg">{heading}</h2>
+        </div>
+        <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3">
+          <input
+            ref={inputRef}
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="What needs to get done?"
+            maxLength={MAX_TITLE_LENGTH}
+            className="w-full bg-elevated border border-line-hairline rounded-md px-3 py-2 text-[13px] text-fg placeholder:text-fg-disabled outline-none focus:border-accent-blue"
+          />
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-[12px] text-fg-secondary hover:text-fg cursor-pointer px-2 py-1"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!title.trim()}
+              className="text-[12px] font-medium border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer rounded-md px-3 py-1.5 transition-colors"
+            >
+              Add task
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

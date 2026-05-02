@@ -345,11 +345,6 @@ export default function DailyShutdown() {
                               <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                             </svg>
                           </button>
-                          <span className="w-[14px] h-[14px] rounded-full bg-accent-green flex items-center justify-center flex-shrink-0">
-                            <svg width="7" height="7" viewBox="0 0 8 8" fill="none" stroke="var(--text-on-accent)" strokeWidth="1.6" strokeLinecap="round">
-                              <path d="M1.5 4l2 2 3-3" />
-                            </svg>
-                          </span>
                           {project && (
                             <span
                               className="w-1.5 h-1.5 rounded-full flex-shrink-0"
@@ -399,7 +394,9 @@ export default function DailyShutdown() {
                           key={task.id}
                           className="group/row px-2.5 py-[6px] rounded-md border border-line-soft bg-elevated/60 flex items-center gap-2.5 transition-colors hover:bg-overlay-hover"
                         >
-                          <span className={`w-[14px] h-[14px] rounded-full border-2 flex-shrink-0 ${task.priority === "high" ? "border-accent-danger" : "border-line-strong"}`} />
+                          {task.priority === "high" && (
+                            <span className="w-[14px] h-[14px] rounded-full border-2 border-accent-danger flex-shrink-0" title="High priority" />
+                          )}
                           {project && (
                             <span
                               className="w-1.5 h-1.5 rounded-full flex-shrink-0"

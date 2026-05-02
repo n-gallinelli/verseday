@@ -218,52 +218,57 @@ export default function TaskCard({
           {task.title}
         </span>
 
-        {/* Meta — project name; fades out on row hover so the actions
-            slot to its right reads as the replacement affordance */}
-        {showProject && project && (
-          <span
-            className="text-fg-faded [font-size:var(--font-size-meta)] [font-weight:var(--font-weight-meta)] [opacity:var(--opacity-meta)] truncate max-w-[160px] group-hover/row:opacity-0 transition-opacity duration-150"
-            title={project.name}
-          >
-            {project.name}
-          </span>
-        )}
-        {/* Time: worked / estimated — always show both */}
-        {(() => {
-          const worked = workedMinutes ?? 0;
-          const est = task.estimated_minutes ?? 0;
-          const hasAny = worked > 0 || est > 0;
-          if (!hasAny) return null;
-          const overBudget = est > 0 && worked > est;
-          return (
-            <span className="text-[11px] tabular-nums flex items-center gap-0.5 shrink-0">
-              <span className={overBudget ? "text-accent-danger font-medium" : "text-accent-blue-soft-fg font-medium"}>
-                {worked > 0 ? `${worked}m` : "0m"}
-              </span>
-              <span className="text-fg-disabled">/</span>
-              <span className="text-fg-faded">
-                {est > 0 ? `${est}m` : "—"}
-              </span>
-            </span>
-          );
-        })()}
-
-        {/* Actions — play centered, delete far right */}
-        <div className="flex items-center gap-2 shrink-0">
-          {onStart && task.status !== "done" && (
-            <button
-              onClick={() => onStart(task)}
-              className="w-6 h-6 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)] opacity-0 group-hover/row:opacity-100"
-              title="Start focus"
+        {/* Project / Actions — fixed-width swap slot.
+            At rest: project name (truncated, right-aligned within the slot)
+            On row hover: actions (play + trash) absolute-positioned over the
+            slot. Reserved width keeps project columns aligned across rows
+            regardless of name length or whether actions render. */}
+        <div className="relative w-[180px] shrink-0 flex items-center justify-end h-[22px]">
+          {showProject && project && (
+            <span
+              className="text-fg-faded [font-size:var(--font-size-meta)] [font-weight:var(--font-weight-meta)] [opacity:var(--opacity-meta)] truncate group-hover/row:opacity-0 transition-opacity duration-150"
+              title={project.name}
             >
-              <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
-                <path d="M0 0v10l8-5z" />
-              </svg>
-            </button>
+              {project.name}
+            </span>
           )}
-          <div className="opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
+          <div className="absolute inset-0 flex items-center justify-end gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150 pointer-events-none group-hover/row:pointer-events-auto">
+            {onStart && task.status !== "done" && (
+              <button
+                onClick={() => onStart(task)}
+                className="w-6 h-6 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
+                title="Start focus"
+              >
+                <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
+                  <path d="M0 0v10l8-5z" />
+                </svg>
+              </button>
+            )}
             <TrashButton onDelete={() => onDelete(task.id)} />
           </div>
+        </div>
+
+        {/* Time slot — fixed width so worked/estimated columns align across
+            rows even when a task has no time tracked. */}
+        <div className="w-[78px] shrink-0 flex justify-end text-[11px] tabular-nums">
+          {(() => {
+            const worked = workedMinutes ?? 0;
+            const est = task.estimated_minutes ?? 0;
+            const hasAny = worked > 0 || est > 0;
+            if (!hasAny) return null;
+            const overBudget = est > 0 && worked > est;
+            return (
+              <span className="flex items-center gap-0.5">
+                <span className={overBudget ? "text-accent-danger font-medium" : "text-accent-blue-soft-fg font-medium"}>
+                  {worked > 0 ? `${worked}m` : "0m"}
+                </span>
+                <span className="text-fg-disabled">/</span>
+                <span className="text-fg-faded">
+                  {est > 0 ? `${est}m` : "—"}
+                </span>
+              </span>
+            );
+          })()}
         </div>
       </div>
 

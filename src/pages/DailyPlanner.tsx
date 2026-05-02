@@ -196,14 +196,16 @@ export default function DailyPlanner() {
   }, [selectedDate]);
 
   // Consume pendingDetailTask handed off from another page (e.g. Escape from
-  // FocusMode) — open the detail overlay for that task and clear the pending
-  // slot so a re-mount doesn't reopen it.
+  // FocusMode / FocusLanding) — open the detail overlay for that task. Don't
+  // clear pendingDetailTask here: App.tsx remounts this page when pageKey
+  // increments after the page transition, so the first instance would clear
+  // the slot before the second instance ever reads it. The slot gets cleared
+  // when the overlay actually closes (see onClose handler below).
   useEffect(() => {
     if (pendingDetailTask) {
       setDetailTask(pendingDetailTask);
-      setPendingDetailTask(null);
     }
-  }, [pendingDetailTask, setPendingDetailTask]);
+  }, [pendingDetailTask]);
 
   async function handleAddTask(e: React.FormEvent) {
     e.preventDefault();
@@ -1037,11 +1039,11 @@ export default function DailyPlanner() {
           key={detailTask.id}
           task={detailTask}
           projects={projects}
-          onClose={() => setDetailTask(null)}
+          onClose={() => { setDetailTask(null); setPendingDetailTask(null); }}
           onSave={(updates) => handleDetailSave(updates)}
           onToggle={(t) => { toggleTask(t).catch(() => {}); }}
-          onDelete={(id) => { setConfirmDeleteId(id); setDetailTask(null); }}
-          onStartFocus={(t) => { handleStartFocus(t); setDetailTask(null); }}
+          onDelete={(id) => { setConfirmDeleteId(id); setDetailTask(null); setPendingDetailTask(null); }}
+          onStartFocus={(t) => { handleStartFocus(t); setDetailTask(null); setPendingDetailTask(null); }}
           workedMinutes={workedMap.get(detailTask.id) ?? 0}
           onSetWorkedMinutes={(id, mins) => setManualWorkedMinutes(id, mins).then(() => loadData()).catch(() => {})}
         />

@@ -447,17 +447,17 @@ export default function DailyShutdown() {
       </div>
 
       {/* ── Footer ──────────────────────────────────────────────────── */}
-      <div className="px-6 py-3 flex-shrink-0">
-        <div className="max-w-[860px] mx-auto flex items-center justify-between gap-2">
+      <div className="px-6 py-4 flex-shrink-0">
+        <div className="max-w-[860px] mx-auto flex items-center gap-2">
           <button
             onClick={completeShutdown}
-            className="px-3.5 py-1.5 rounded-md bg-accent-blue text-fg-on-accent text-[12px] font-medium cursor-pointer hover:bg-accent-blue-hover transition-colors"
+            className="flex-1 py-2.5 rounded-lg bg-accent-blue text-fg-on-accent text-[13px] font-medium cursor-pointer hover:bg-accent-blue-hover transition-colors"
           >
             Shutdown
           </button>
           <button
             onClick={() => setShowSummary(true)}
-            className="px-3.5 py-1.5 rounded-md border border-line-soft text-fg-secondary text-[12px] font-medium cursor-pointer hover:bg-overlay-hover transition-colors"
+            className="px-5 py-2.5 rounded-lg border border-line-soft text-fg-secondary text-[13px] font-medium cursor-pointer hover:bg-overlay-hover transition-colors"
           >
             Summary
           </button>

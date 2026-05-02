@@ -1,19 +1,104 @@
 @import "tailwindcss";
 
-:root {
-  --color-primary: #7B9ED9;
-  --color-primary-hover: #6889c4;
-  --color-primary-light: #9bb5e3;
-  --color-danger: #d95f5f;
-  --color-success: #6A9E7F;
-  --color-warning: #c9923a;
-  --color-bg: #f5f4f0;
-  --color-surface: #ffffff;
-  --color-surface-hover: #f0eeea;
-  --color-border: rgba(0, 0, 0, 0.08);
-  --color-text: #2c2a35;
-  --color-text-muted: rgba(0, 0, 0, 0.4);
+/* ───────────────────────────────────────────────────────────────────────────
+   Theme tokens — see /docs/dark-mode-tokens.md for the full contract.
+   Light values live on :root. Dark overrides ride on prefers-color-scheme.
+   Component code consumes these via Tailwind utilities (registered below in
+   @theme inline) or directly via var(--…) for SVG attrs and inline styles.
+   ─────────────────────────────────────────────────────────────────────── */
 
+:root {
+  color-scheme: light dark;
+
+  /* — Surfaces — */
+  --bg-base: #f5f4f0;
+  --bg-elevated: #ffffff;
+  --bg-rail: #FAFAF7;
+  --bg-sunken: #f0eeea;
+  --bg-input: rgba(0, 0, 0, 0.03);
+  --bg-input-hover: rgba(0, 0, 0, 0.06);
+  --bg-tag-soft: rgba(0, 0, 0, 0.04);
+
+  /* — Text — */
+  --text-primary: #2c2a35;
+  --text-secondary: rgba(0, 0, 0, 0.55);
+  --text-muted: rgba(0, 0, 0, 0.40);
+  --text-faded: rgba(0, 0, 0, 0.25);
+  --text-disabled: rgba(0, 0, 0, 0.15);
+  --text-on-accent: #ffffff;
+
+  /* — Borders & dividers — */
+  --border-hairline: rgba(0, 0, 0, 0.06);
+  --border-soft: rgba(0, 0, 0, 0.08);
+  --border-medium: rgba(0, 0, 0, 0.12);
+  --border-strong: rgba(0, 0, 0, 0.20);
+  --divider: rgba(0, 0, 0, 0.04);
+
+  /* — Overlays — */
+  --overlay-scrim: rgba(0, 0, 0, 0.30);
+  --overlay-hover: rgba(0, 0, 0, 0.04);
+  --overlay-pressed: rgba(0, 0, 0, 0.08);
+  --shadow-card: 0 2px 10px -2px rgba(0, 0, 0, 0.07);
+  --shadow-modal: 0 8px 40px rgba(0, 0, 0, 0.10), 0 2px 8px rgba(0, 0, 0, 0.06);
+
+  /* — Brand accents — */
+  --accent-blue: #7B9ED9;
+  --accent-blue-hover: #6889c4;
+  --accent-blue-soft-bg: #EEF3FB;
+  --accent-blue-soft-text: #3D6FCC;
+
+  --accent-green: #6A9E7F;
+  --accent-green-hover: #5a8a6e;
+  --accent-green-bright: #5DCAA5;
+  --accent-green-deep: #0F6E56;
+  --accent-green-glow: rgba(106, 158, 127, 0.22);
+
+  --accent-orange: #e0873e;
+  --accent-orange-hover: #cc7633;
+  --accent-orange-soft-bg: #FFF8F0;
+  --accent-orange-soft-bg-hover: #FFF4E8;
+
+  --accent-danger: #d95f5f;
+
+  /* — Calendar — */
+  --calendar-selected-bg: #6B84A3;
+  --calendar-today-ring: #6B84A3;
+  --calendar-day-hover: #F0F0ED;
+
+  /* — Mood tints — */
+  --mood-tint-shutdown: #5DCAA5;
+  --mood-tint-daily: #7B9ED9;
+
+  /* — Focus mode — */
+  --focus-ambient-from: #f0eeea;
+  --focus-ambient-to: #e8e4dc;
+  --focus-ring-track: rgba(0, 0, 0, 0.05);
+  --focus-ring-progress: #4a9e6e;
+  --focus-glow-base: #7B9ED9;
+  --focus-glow-break: #4a9e6e;
+  --focus-pip-bg: #f5f4f0;
+  --focus-pip-border: rgba(0, 0, 0, 0.08);
+
+  /* — Scrollbar — */
+  --scrollbar-thumb: rgba(0, 0, 0, 0.10);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.15);
+
+  /* — Legacy aliases — kept so existing `var(--color-…)` references still
+     resolve until the migration sweep replaces them. — */
+  --color-primary: var(--accent-blue);
+  --color-primary-hover: var(--accent-blue-hover);
+  --color-primary-light: #9bb5e3;
+  --color-danger: var(--accent-danger);
+  --color-success: var(--accent-green);
+  --color-warning: #c9923a;
+  --color-bg: var(--bg-base);
+  --color-surface: var(--bg-elevated);
+  --color-surface-hover: var(--bg-sunken);
+  --color-border: var(--border-soft);
+  --color-text: var(--text-primary);
+  --color-text-muted: var(--text-muted);
+
+  /* — Typography (unchanged) — */
   --font-weight-primary: 500;
   --font-weight-label: 500;
   --font-weight-body: 400;
@@ -28,10 +113,147 @@
   --opacity-meta: 0.5;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* — Surfaces — */
+    --bg-base: #16161a;
+    --bg-elevated: #1f1f24;
+    --bg-rail: #1b1b20;
+    --bg-sunken: #121215;
+    --bg-input: rgba(255, 255, 255, 0.04);
+    --bg-input-hover: rgba(255, 255, 255, 0.07);
+    --bg-tag-soft: rgba(255, 255, 255, 0.05);
+
+    /* — Text — */
+    --text-primary: #e8e6e0;
+    --text-secondary: rgba(232, 230, 224, 0.70);
+    --text-muted: rgba(232, 230, 224, 0.50);
+    --text-faded: rgba(232, 230, 224, 0.35);
+    --text-disabled: rgba(232, 230, 224, 0.18);
+    --text-on-accent: #0f0f12;
+
+    /* — Borders & dividers — */
+    --border-hairline: rgba(255, 255, 255, 0.07);
+    --border-soft: rgba(255, 255, 255, 0.09);
+    --border-medium: rgba(255, 255, 255, 0.14);
+    --border-strong: rgba(255, 255, 255, 0.24);
+    --divider: rgba(255, 255, 255, 0.06);
+
+    /* — Overlays — */
+    --overlay-scrim: rgba(0, 0, 0, 0.55);
+    --overlay-hover: rgba(255, 255, 255, 0.05);
+    --overlay-pressed: rgba(255, 255, 255, 0.09);
+    --shadow-card: 0 4px 14px -2px rgba(0, 0, 0, 0.50);
+    --shadow-modal: 0 12px 48px rgba(0, 0, 0, 0.60), 0 4px 16px rgba(0, 0, 0, 0.40);
+
+    /* — Brand accents — hand-tuned, not programmatic darken — */
+    --accent-blue: #7396cc;
+    --accent-blue-hover: #5f86bc;
+    --accent-blue-soft-bg: rgba(115, 150, 204, 0.16);
+    --accent-blue-soft-text: #9bb8e3;
+
+    --accent-green: #6fa088;
+    --accent-green-hover: #5e8c75;
+    --accent-green-bright: #55b598;
+    --accent-green-deep: #3aa386;
+    --accent-green-glow: rgba(111, 160, 136, 0.28);
+
+    --accent-orange: #d68647;
+    --accent-orange-hover: #c47840;
+    --accent-orange-soft-bg: rgba(214, 134, 71, 0.10);
+    --accent-orange-soft-bg-hover: rgba(214, 134, 71, 0.14);
+
+    --accent-danger: #e07474;
+
+    /* — Calendar — */
+    --calendar-selected-bg: #6e8aa9;
+    --calendar-today-ring: #88a5c4;
+    --calendar-day-hover: rgba(255, 255, 255, 0.06);
+
+    /* — Mood tints — */
+    --mood-tint-shutdown: #55b598;
+    --mood-tint-daily: #7396cc;
+
+    /* — Focus mode — */
+    --focus-ambient-from: #1a1c22;
+    --focus-ambient-to: #0f1014;
+    --focus-ring-track: rgba(255, 255, 255, 0.06);
+    --focus-ring-progress: #52a981;
+    --focus-glow-base: #7396cc;
+    --focus-glow-break: #52a981;
+    --focus-pip-bg: #1f1f24;
+    --focus-pip-border: rgba(255, 255, 255, 0.10);
+
+    /* — Scrollbar — */
+    --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.20);
+
+    /* — Legacy aliases automatically follow because they reference the
+       semantic tokens above. No need to redeclare here. — */
+    --color-primary-light: #8aa6cc;
+    --color-warning: #d6a35a;
+  }
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   Tailwind v4 — register semantic tokens as utility classes.
+   Component code writes: bg-base, bg-elevated, text-fg, text-fg-muted,
+   border-line-soft, bg-accent-blue, etc.
+   ─────────────────────────────────────────────────────────────────────── */
+
+@theme inline {
+  /* Surfaces */
+  --color-base: var(--bg-base);
+  --color-elevated: var(--bg-elevated);
+  --color-rail: var(--bg-rail);
+  --color-sunken: var(--bg-sunken);
+  --color-input: var(--bg-input);
+  --color-input-hover: var(--bg-input-hover);
+  --color-tag-soft: var(--bg-tag-soft);
+
+  /* Text */
+  --color-fg: var(--text-primary);
+  --color-fg-secondary: var(--text-secondary);
+  --color-fg-muted: var(--text-muted);
+  --color-fg-faded: var(--text-faded);
+  --color-fg-disabled: var(--text-disabled);
+  --color-fg-on-accent: var(--text-on-accent);
+
+  /* Borders & dividers */
+  --color-line-hairline: var(--border-hairline);
+  --color-line-soft: var(--border-soft);
+  --color-line-medium: var(--border-medium);
+  --color-line-strong: var(--border-strong);
+  --color-divider: var(--divider);
+
+  /* Overlays (used as bg-overlay-*) */
+  --color-overlay-scrim: var(--overlay-scrim);
+  --color-overlay-hover: var(--overlay-hover);
+  --color-overlay-pressed: var(--overlay-pressed);
+
+  /* Accents */
+  --color-accent-blue: var(--accent-blue);
+  --color-accent-blue-hover: var(--accent-blue-hover);
+  --color-accent-blue-soft: var(--accent-blue-soft-bg);
+  --color-accent-blue-soft-fg: var(--accent-blue-soft-text);
+
+  --color-accent-green: var(--accent-green);
+  --color-accent-green-hover: var(--accent-green-hover);
+  --color-accent-green-bright: var(--accent-green-bright);
+  --color-accent-green-deep: var(--accent-green-deep);
+
+  --color-accent-orange: var(--accent-orange);
+  --color-accent-orange-hover: var(--accent-orange-hover);
+  --color-accent-orange-soft: var(--accent-orange-soft-bg);
+  --color-accent-orange-soft-hover: var(--accent-orange-soft-bg-hover);
+
+  --color-accent-danger: var(--accent-danger);
+}
+
 body {
   margin: 0;
-  background-color: var(--color-bg);
-  color: var(--color-text);
+  background-color: var(--bg-base);
+  color: var(--text-primary);
   font-family: 'Figtree Variable', system-ui, sans-serif;
 }
 
@@ -62,12 +284,12 @@ select {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.1);
+  background: var(--scrollbar-thumb);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* ── Shutdown Page Gradient ─────────────────────────────── */
@@ -100,7 +322,7 @@ select {
 }
 
 .tiptap code {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--overlay-pressed);
   border-radius: 3px;
   padding: 0.1em 0.3em;
   font-size: 0.9em;
@@ -108,7 +330,7 @@ select {
 
 .tiptap p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
-  color: rgba(0, 0, 0, 0.2);
+  color: var(--text-faded);
   pointer-events: none;
   float: left;
   height: 0;

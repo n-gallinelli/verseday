@@ -426,6 +426,7 @@ Some color literals are deliberately **not** tokens because they're decorative b
 | File                                  | Lines     | What                                                                                  |
 | ------------------------------------- | --------- | ------------------------------------------------------------------------------------- |
 | `src/components/Sidebar.tsx`          | 165–230   | `VerseDayLogo` SVG — sunrise/ocean gradient stops + four sunset ring segments. Brand mark, fixed regardless of theme. |
+| `src/pages/QuickAdd.tsx`              | 156–188   | Inline copy of the same `VerseDayLogo` SVG (sunrise/ocean/sunset). Same brand-mark exception. If the logo is ever extracted into a shared component, this row collapses with the Sidebar entry. |
 | `src/components/SunsetOverlay.tsx`    | 70–106    | Post-shutdown celebration overlay — peach → pink → indigo sunset gradient + white text and translucent-white "Done" button. The sunset is a literal sunset illustration; "white" on the dark gradient reads identically in both themes. |
 
 If a new decorative illustration is added in the future and should not theme, append a row here in the same commit. Otherwise the M4 grep will flag it.

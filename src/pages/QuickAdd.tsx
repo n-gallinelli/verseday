@@ -145,10 +145,10 @@ export default function QuickAdd() {
     // the project dropdown has room to open upward into the 360px window.
     <div className="w-full h-screen flex items-end justify-center pb-3" style={{ background: "transparent" }}>
       <div
-        className="flex flex-col w-full max-w-[620px] mx-2.5 rounded-xl border border-black/[0.06] overflow-visible"
+        className="flex flex-col w-full max-w-[620px] mx-2.5 rounded-xl border border-line-hairline overflow-visible"
         style={{
-          background: "rgba(239, 237, 232, 0.97)",
-          boxShadow: "0 8px 40px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.06)",
+          background: "color-mix(in srgb, var(--bg-sidebar) 97%, transparent)",
+          boxShadow: "var(--shadow-modal)",
         }}
       >
         {/* Header strip */}
@@ -186,12 +186,12 @@ export default function QuickAdd() {
             <path d="M 15.85,15.46 A 8,8 0 0 1 4.15,15.46" stroke="#A8CFE5" strokeWidth="1.6" strokeLinecap="round" />
             <path d="M 4.54,15.85 A 8,8 0 0 1 4.54,4.15" stroke="#C9B5E0" strokeWidth="1.6" strokeLinecap="round" />
           </svg>
-          <span className="text-[11px] font-semibold text-[#7B9ED9] tracking-tight">VerseDay</span>
-          <span className="text-[10px] text-black/20 ml-auto">&#x2318;&#x21E7;A</span>
+          <span className="text-[11px] font-semibold text-accent-blue tracking-tight">VerseDay</span>
+          <span className="text-[10px] text-fg-disabled ml-auto">&#x2318;&#x21E7;A</span>
         </div>
 
         {/* Divider between header and input */}
-        <div className="h-px bg-black/[0.05] mx-3" />
+        <div className="h-px bg-line-hairline mx-3" />
 
         {/* Input bar */}
         <div
@@ -204,7 +204,7 @@ export default function QuickAdd() {
           height="15"
           viewBox="0 0 15 15"
           fill="none"
-          stroke="rgba(0,0,0,0.18)"
+          stroke="var(--text-disabled)"
           strokeWidth="1.6"
           strokeLinecap="round"
           className="flex-shrink-0"
@@ -221,7 +221,7 @@ export default function QuickAdd() {
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Add a task..."
           autoFocus
-          className="flex-1 min-w-0 text-[14px] text-[#2c2a35] bg-transparent border-none outline-none placeholder-black/25"
+          className="flex-1 min-w-0 text-[14px] text-fg bg-transparent border-none outline-none placeholder:text-fg-faded"
         />
 
         {/* Estimate chips */}
@@ -234,8 +234,8 @@ export default function QuickAdd() {
                 onClick={() => setEstimateMinutes(active ? null : preset.value)}
                 className={`text-[11px] font-medium px-2 py-[3px] rounded-md cursor-pointer border transition-colors ${
                   active
-                    ? "border-[#7B9ED9]/40 bg-[#7B9ED9]/10 text-[#6B84A3]"
-                    : "border-black/[0.06] bg-white/50 text-black/30 hover:text-black/45 hover:bg-white/70"
+                    ? "border-accent-blue/40 bg-accent-blue-soft text-accent-blue"
+                    : "border-line-hairline bg-elevated/50 text-fg-faded hover:text-fg-muted hover:bg-elevated/70"
                 }`}
               >
                 {preset.label}
@@ -245,7 +245,7 @@ export default function QuickAdd() {
         </div>
 
         {/* Divider */}
-        <div className="w-px h-5 bg-black/[0.08] flex-shrink-0" />
+        <div className="w-px h-5 bg-line-soft flex-shrink-0" />
 
         {/* Project picker */}
         <div ref={projectPickerRef} className="relative flex-shrink-0">
@@ -253,8 +253,8 @@ export default function QuickAdd() {
             onClick={() => setShowProjectPicker(!showProjectPicker)}
             className={`flex items-center gap-1.5 text-[12px] px-2.5 py-[5px] rounded-lg border cursor-pointer transition-colors ${
               selectedProject
-                ? "border-black/[0.08] bg-white/70 text-[#2c2a35]"
-                : "border-black/[0.06] bg-white/40 text-black/30 hover:text-black/45"
+                ? "border-line-soft bg-elevated/70 text-fg"
+                : "border-line-hairline bg-elevated/40 text-fg-faded hover:text-fg-muted"
             }`}
             style={{ maxWidth: 150 }}
           >
@@ -285,9 +285,9 @@ export default function QuickAdd() {
           {/* Project dropdown — opens upward */}
           {showProjectPicker && (
             <div
-              className="absolute bottom-full right-0 mb-1.5 min-w-[200px] max-w-[260px] max-h-[260px] overflow-y-auto bg-white/[0.98] rounded-xl border border-black/[0.08] p-1 z-10"
+              className="absolute bottom-full right-0 mb-1.5 min-w-[200px] max-w-[260px] max-h-[260px] overflow-y-auto bg-elevated rounded-xl border border-line-soft p-1 z-10"
               style={{
-                boxShadow: "0 8px 32px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.06)",
+                boxShadow: "var(--shadow-modal)",
               }}
             >
               {/* No project */}
@@ -295,11 +295,11 @@ export default function QuickAdd() {
                 onClick={() => { setProjectId(null); setShowProjectPicker(false); }}
                 className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-[12px] text-left cursor-pointer transition-colors ${
                   projectId === null
-                    ? "bg-[#7B9ED9]/[0.08] font-medium text-black/40"
-                    : "text-black/35 hover:bg-black/[0.03]"
+                    ? "bg-accent-blue-soft font-medium text-fg-muted"
+                    : "text-fg-faded hover:bg-overlay-hover"
                 }`}
               >
-                <span className="w-2 h-2 rounded-full border border-dashed border-black/15 flex-shrink-0" />
+                <span className="w-2 h-2 rounded-full border border-dashed border-line-strong flex-shrink-0" />
                 No project
               </button>
 
@@ -309,8 +309,8 @@ export default function QuickAdd() {
                   onClick={() => { setProjectId(p.id); setShowProjectPicker(false); }}
                   className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-[12px] text-left cursor-pointer transition-colors ${
                     projectId === p.id
-                      ? "bg-[#7B9ED9]/[0.08] font-medium text-[#2c2a35]"
-                      : "text-[#2c2a35] hover:bg-black/[0.03]"
+                      ? "bg-accent-blue-soft font-medium text-fg"
+                      : "text-fg hover:bg-overlay-hover"
                   }`}
                 >
                   <span

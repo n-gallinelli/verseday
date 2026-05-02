@@ -77,7 +77,7 @@ Each ends with **"Ready for Verse review."**
 
 **Known global-CSS breaks to convert during M2 (carried over from M1, by file:line):**
 - ⏳ `src/index.css:272` — native `<select>` caret SVG hardcodes `stroke='%23999'`. Three callsites still use native `<select>` (DailyPlanner inline-edit, WeeklyPlanner quick-add, ProjectDetail edit form). Deferred to M3/M4 — `color-scheme: light dark` on `:root` makes the OS render the form chrome itself, so the custom caret is mostly redundant; revisit during the audit.
-- ⏳ `src/index.css:.shutdown-page` background gradient (raw hex stops `#dde8f0`, `#e8e4dc`, `#ede8e0`). Deferred to M3 (when shutdown screens get themed).
+- ✅ `src/index.css:.shutdown-page` background gradient. Resolved in **M3.2**: tokens `--shutdown-bg-cool` / `--shutdown-bg-neutral` / `--shutdown-bg-warm` defined with hand-tuned dark variants (cool dusk → midnight; neutral → near-black; warm → warm-deep). Token-reuse audit determined the values diverge enough from `--focus-ambient-*` and `--bg-sunken` to justify a dedicated set; rationale documented in `dark-mode-tokens.md` §9.
 - ✅ `@keyframes focusAmbientBg` + reduced-motion fallback. Resolved in **M2.5**: tokens `--focus-ambient-cool` / `--focus-ambient-neutral` / `--focus-ambient-warm` defined with hand-tuned dark variants; keyframe and reduced-motion `background-color` both reference them. The previously-defined-but-unused `--focus-ambient-from/to` tokens were renamed to reflect actual consumption.
 - ✅ `[data-palette="new"]` palette-preview block. Deleted in **M2.5** per its own disposable comment. The `!important` hex-literal selectors no longer matched anything once Daily Plan was tokenized in M2.3a/b.
 

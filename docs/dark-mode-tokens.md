@@ -72,7 +72,8 @@ Hand-tuned for each theme — dark variants are slightly desaturated and warmed 
 | `--accent-blue-soft-text`   | `#3D6FCC`   | `#9bb8e3`   | Text on the soft-bg                                     |
 | `--accent-green`            | `#6A9E7F`   | `#6fa088`   | Completion green — checkbox fill, task-done glow        |
 | `--accent-green-hover`      | `#5a8a6e`   | `#5e8c75`   |                                                         |
-| `--accent-green-bright`     | `#5DCAA5`   | `#55b598`   | Active timer text, mood-positive tint                   |
+| `--accent-green-bright`     | `#5DCAA5`   | `#55b598`   | Active timer text, mood-positive tint, weekly shutdown primary |
+| `--accent-green-bright-hover` | `#4ab893` | `#4ba089`   | Hover for `--accent-green-bright` (e.g. "Save & shutdown") |
 | `--accent-green-deep`       | `#0F6E56`   | `#3aa386`   | "Done today" labels, weekly shutdown chip               |
 | `--accent-green-glow`       | `rgba(106,158,127,0.22)` | `rgba(111,160,136,0.28)` | Top-of-modal completion gradient (peak)        |
 | `--accent-green-soft-bg`    | `#F0F9F5`   | `rgba(111,160,136,0.14)` | Soft-tinted callout banner bg (e.g. weekly carry-forward) |
@@ -99,8 +100,12 @@ Hand-tuned for each theme — dark variants are slightly desaturated and warmed 
 
 | Token                      | Light                  | Dark                   | Usage                                  |
 | -------------------------- | ---------------------- | ---------------------- | -------------------------------------- |
-| `--mood-tint-shutdown`     | `#5DCAA5`              | `#55b598`              | Weekly shutdown mood selector          |
-| `--mood-tint-daily`        | `#7B9ED9`              | `#7396cc`              | Daily shutdown mood selector           |
+| `--mood-tint-shutdown`     | `#5DCAA5`              | `#55b598`              | Weekly shutdown mood selector default tint   |
+| `--mood-tint-daily`        | `#7B9ED9`              | `#7396cc`              | Daily shutdown mood selector default tint    |
+| `--mood-bad`               | `#C0614A`              | `#cf7864`              | Selected-state tint for "Bad" / "Rough" moods (overrides the default tint) |
+| `--mood-okay`              | `#D4A843`              | `#dfb555`              | Selected-state tint for "Okay" mood (overrides the default tint) |
+
+The mood selector uses a **tiered tint strategy**: negative moods (Bad, Rough) share `--mood-bad` so they read as a single "off" register; the neutral mood (Okay) gets its own amber via `--mood-okay`; positive moods (Good, Great) deliberately have **no dedicated token** and fall through to the page-level `tintColor` prop (`--mood-tint-shutdown` for Weekly, `--mood-tint-daily` for Daily) because the page tint already encodes the celebratory palette for that surface. If a future design wants to differentiate Bad from Rough or Good from Great, add explicit tokens then; the current 3-tier collapsing is intentional, not an oversight.
 
 ---
 
@@ -119,6 +124,18 @@ The Focus screen and PiP have their own surfaces because they ride on top of an 
 | `--focus-glow-break`          | `#4a9e6e`                        | `#52a981`                         | Glow layer ring during break                |
 | `--focus-pip-bg`              | `#f5f4f0`                        | `#1f1f24`                         | PiP window background                       |
 | `--focus-pip-border`          | `rgba(0,0,0,0.08)`               | `rgba(255,255,255,0.10)`          | PiP outer border                            |
+
+---
+
+## 9. Shutdown screens (special)
+
+Daily and Weekly Shutdown share a vertical "dusk sky" gradient (`.shutdown-page` in `index.css`) that's distinct from the Focus-mode ambient. Different emotional intent — focus-ambient is a subtle 25-minute temperature drift behind work; shutdown is a saturated end-of-day sky aesthetic for reflection. The two surface palettes were audited for reuse during M3.2 and **intentionally diverged** (cool stop is ~19 hex points bluer; neutral is ~10 hex points warmer; warm is ~6-8 hex points darker). Documented here as parallel to Focus mode.
+
+| Token                         | Light       | Dark        | Usage                                       |
+| ----------------------------- | ----------- | ----------- | ------------------------------------------- |
+| `--shutdown-bg-cool`          | `#dde8f0`   | `#181c24`   | 0% stop of `.shutdown-page` gradient (top, cool blue dusk → deep midnight blue) |
+| `--shutdown-bg-neutral`       | `#e8e4dc`   | `#181614`   | 40% stop (neutral midpoint, warmth begins)  |
+| `--shutdown-bg-warm`          | `#ede8e0`   | `#1c1814`   | 100% stop (warm earth tone at the bottom)   |
 
 ---
 
@@ -167,6 +184,7 @@ A subset of these tokens are exposed to Tailwind v4 in `src/index.css` via `@the
   --color-accent-green: var(--accent-green);
   --color-accent-green-hover: var(--accent-green-hover);
   --color-accent-green-bright: var(--accent-green-bright);
+  --color-accent-green-bright-hover: var(--accent-green-bright-hover);
   --color-accent-green-deep: var(--accent-green-deep);
   --color-accent-green-soft: var(--accent-green-soft-bg);
 
@@ -191,8 +209,10 @@ The following tokens are intentionally consumed directly via `var(--…)` (in CS
 | --------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | Shadows         | `--shadow-card`, `--shadow-modal`                                                                    | `style={{ boxShadow: "var(--shadow-modal)" }}`                          |
 | Calendar        | `--calendar-selected-bg`, `--calendar-today-ring`, `--calendar-day-hover`                            | `style={{ backgroundColor: "var(--calendar-selected-bg)" }}` or in CSS |
-| Mood tints      | `--mood-tint-shutdown`, `--mood-tint-daily`                                                          | `tintColor="var(--mood-tint-shutdown)"` prop / inline style             |
+| Mood tints      | `--mood-tint-shutdown`, `--mood-tint-daily`, `--mood-bad`, `--mood-okay`                              | `tintColor="var(--mood-tint-shutdown)"` prop; `MOOD_COLORS` map in `MoodSelector.tsx` uses `var(--mood-bad)` / `var(--mood-okay)` strings consumed via inline style |
 | Focus mode      | `--focus-ambient-cool/neutral/warm`, `--focus-ring-track`, `--focus-ring-progress`, `--focus-glow-base/break`, `--focus-pip-bg`, `--focus-pip-border` | CSS rules in `index.css` or SVG `stroke="var(--…)"` / `style={{}}`     |
+| Shutdown        | `--shutdown-bg-cool/neutral/warm`                                                                    | `.shutdown-page` linear-gradient stops in `index.css` only             |
+| Banner          | `--bg-banner` (registered via `--color-banner` → `bg-banner` utility), `--text-banner`               | `bg-banner` Tailwind utility for the surface; inline `style={{ color: "var(--text-banner)" }}` for text. See "Banner pattern" section below |
 | Scrollbar       | `--scrollbar-thumb`, `--scrollbar-thumb-hover`                                                       | CSS rules in `index.css` only                                          |
 | Accent glow     | `--accent-green-glow`                                                                                | Inline `style={{ background: "linear-gradient(..., var(--accent-green-glow), ...)" }}` (used in TaskDetailOverlay completion gradient) |
 
@@ -239,6 +259,7 @@ These are the Tailwind utilities that resolve through `@theme inline`. The prefi
 | `text-[#3D6FCC]`                   | `text-accent-blue-soft-fg`         |
 | `bg-[#6A9E7F]`                     | `bg-accent-green`                  |
 | `bg-[#5DCAA5]` / `text-[#5DCAA5]`  | `bg-accent-green-bright` / `text-…`|
+| `hover:bg-[#4ab893]`               | `hover:bg-accent-green-bright-hover`|
 | `text-[#0F6E56]`                   | `text-accent-green-deep`           |
 | `bg-[#e0873e]` / `text-…`          | `bg-accent-orange` / `text-…`      |
 | `bg-[#FFF8F0]`                     | `bg-accent-orange-soft`            |
@@ -294,7 +315,9 @@ When a banner needs to **stand out as a transient notification** — drag-drop u
 
 Earlier iterations tried an "inverted-contrast" trick (`bg-fg` + `text-base`) that auto-flipped the banner colors via the existing fg/bg primary tokens. It was clever but produced a near-white banner in dark mode, which clashed with the rest of the dark UI. The dedicated pair above stays in the dark-mode register while still standing out.
 
-> **⚠ Why the text color is inline-style, not `text-banner`.** Tailwind v4 reserves `text-banner` (and similarly `text-base`, `text-lg`, …) as a candidate font-size utility name. To avoid the same shadowing bug that bit the inverted-contrast pattern, the `--text-banner` token is intentionally **not** registered in `@theme inline` — consume it directly via inline `style={{ color: "var(--text-banner)" }}`.
+> **⚠️ Don't use the `text-banner` Tailwind utility.** Tailwind v4 auto-derives **both** `bg-banner` and `text-banner` from any `--color-*` registration. Our `--color-banner: var(--bg-banner)` line in `@theme inline` therefore generates a `text-banner` class — but it resolves to `--bg-banner` (the dark surface color), **not** to `--text-banner` (the cream text color). Anyone who writes `<span className="text-banner">` expecting the cream text gets charcoal text instead, silently. For banner text, **always** use inline `style={{ color: "var(--text-banner)" }}` as shown in the example above. (`--text-banner` itself is intentionally not registered in `@theme inline` because the Tailwind class name it would produce — `text-text-banner` — clashes with our shorter-prefix convention; even if it were registered cleanly, the `text-banner` collision above would still need this warning.)
+>
+> A future cleanup would rename the Tailwind utility for the banner surface (e.g. `bg-banner-surface`) so the collision is impossible. Out of scope for the current contract — too invasive to retrofit.
 
 | Element type                                  | Pattern                              |
 | --------------------------------------------- | ------------------------------------ |
@@ -324,5 +347,6 @@ Some color literals are deliberately **not** tokens because they're decorative b
 | File                                  | Lines     | What                                                                                  |
 | ------------------------------------- | --------- | ------------------------------------------------------------------------------------- |
 | `src/components/Sidebar.tsx`          | 165–230   | `VerseDayLogo` SVG — sunrise/ocean gradient stops + four sunset ring segments. Brand mark, fixed regardless of theme. |
+| `src/components/SunsetOverlay.tsx`    | 70–106    | Post-shutdown celebration overlay — peach → pink → indigo sunset gradient + white text and translucent-white "Done" button. The sunset is a literal sunset illustration; "white" on the dark gradient reads identically in both themes. |
 
 If a new decorative illustration is added in the future and should not theme, append a row here in the same commit. Otherwise the M4 grep will flag it.

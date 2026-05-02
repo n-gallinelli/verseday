@@ -385,15 +385,15 @@ export default function WeeklyShutdown() {
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
       {/* ── Header — transparent, gradient shows through ──────────────── */}
-      <div className="px-6 py-4 flex-shrink-0" style={{ borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}>
+      <div className="px-6 py-4 flex-shrink-0" style={{ borderBottom: "0.5px solid var(--border-hairline)" }}>
         <div className="flex items-center justify-between mb-1">
-          <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-[#0F6E56]">
+          <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-accent-green-deep">
             Weekly shutdown
           </span>
           {!isThisWeek && (
             <button
               onClick={() => setSelectedWeek(todayMonday)}
-              className="text-[11px] text-[#5DCAA5] hover:text-[#0F6E56] cursor-pointer"
+              className="text-[11px] text-accent-green-bright hover:text-accent-green-deep cursor-pointer"
             >
               This week
             </button>
@@ -402,18 +402,18 @@ export default function WeeklyShutdown() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => changeWeek(-1)}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[#999] cursor-pointer hover:bg-[#f0f0f0] transition-colors duration-150 ease-out"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10 4l-4 4 4 4" />
             </svg>
           </button>
-          <h2 className="text-[14px] font-medium text-[#2c2a35]">
+          <h2 className="text-[14px] font-medium text-fg">
             {formatWeekHeader(selectedWeek)}
           </h2>
           <button
             onClick={() => changeWeek(1)}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[#999] cursor-pointer hover:bg-[#f0f0f0] transition-colors duration-150 ease-out"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M6 4l4 4-4 4" />
@@ -424,9 +424,9 @@ export default function WeeklyShutdown() {
 
       {/* Undo banner */}
       {carriedTasks.length > 0 && (
-        <div className="px-6 py-2 bg-[#2c2a35] flex-shrink-0">
+        <div className="px-6 py-2 bg-banner flex-shrink-0" style={{ color: "var(--text-banner)" }}>
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[12px] text-white/70">
+            <span className="text-[12px] opacity-70">
               Moved to next week
             </span>
             <div className="flex gap-1.5 flex-wrap flex-1">
@@ -434,7 +434,9 @@ export default function WeeklyShutdown() {
                 <button
                   key={ct.task.id}
                   onClick={() => undoCarry(ct.task.id)}
-                  className="text-[11px] text-[#5DCAA5] hover:text-white cursor-pointer"
+                  className="text-[11px] text-accent-green-bright cursor-pointer transition-colors"
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-banner)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = ""; }}
                 >
                   Undo &ldquo;{ct.task.title.slice(0, 20)}
                   {ct.task.title.length > 20 ? "..." : ""}&rdquo;
@@ -453,20 +455,20 @@ export default function WeeklyShutdown() {
             <div className="flex-1">
               {/* Mood selector */}
               <section className="mb-6">
-                <h3 className="text-[13px] font-medium text-black/55 mb-2">
+                <h3 className="text-[13px] font-medium text-fg-secondary mb-2">
                   How was your week?
                 </h3>
                 <MoodSelector
                   value={mood}
                   onChange={handleMoodChange}
-                  tintColor="#5DCAA5"
+                  tintColor="var(--mood-tint-shutdown)"
                 />
               </section>
 
               {/* Reflection — three fields */}
               <section className="space-y-3">
                 <div>
-                  <label className="text-[13px] font-medium text-black/55 mb-1.5 block">
+                  <label className="text-[13px] font-medium text-fg-secondary mb-1.5 block">
                     What went well this week?
                   </label>
                   <textarea
@@ -474,12 +476,12 @@ export default function WeeklyShutdown() {
                     onChange={(e) => handleReflectionFieldChange("wentWell", e.target.value)}
                     placeholder="Projects completed, wins achieved, moments that felt good..."
                     rows={2}
-                    className="w-full bg-white rounded-lg px-3.5 py-2.5 text-[13px] text-black/55 resize-y leading-relaxed focus:outline-none focus:border-[#5DCAA5]/40 placeholder:text-[13px] placeholder:font-normal placeholder:text-[#bbb]"
-                    style={{ border: "0.5px solid rgba(0,0,0,0.06)" }}
+                    className="w-full bg-elevated rounded-lg px-3.5 py-2.5 text-[13px] text-fg-secondary resize-y leading-relaxed focus:outline-none focus:border-accent-green-bright placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded"
+                    style={{ border: "0.5px solid var(--border-hairline)" }}
                   />
                 </div>
                 <div>
-                  <label className="text-[13px] font-medium text-black/55 mb-1.5 block">
+                  <label className="text-[13px] font-medium text-fg-secondary mb-1.5 block">
                     What could have gone better?
                   </label>
                   <textarea
@@ -487,12 +489,12 @@ export default function WeeklyShutdown() {
                     onChange={(e) => handleReflectionFieldChange("couldBeBetter", e.target.value)}
                     placeholder="Bottlenecks, missteps, things you'd approach differently..."
                     rows={2}
-                    className="w-full bg-white rounded-lg px-3.5 py-2.5 text-[13px] text-black/55 resize-y leading-relaxed focus:outline-none focus:border-[#5DCAA5]/40 placeholder:text-[13px] placeholder:font-normal placeholder:text-[#bbb]"
-                    style={{ border: "0.5px solid rgba(0,0,0,0.06)" }}
+                    className="w-full bg-elevated rounded-lg px-3.5 py-2.5 text-[13px] text-fg-secondary resize-y leading-relaxed focus:outline-none focus:border-accent-green-bright placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded"
+                    style={{ border: "0.5px solid var(--border-hairline)" }}
                   />
                 </div>
                 <div>
-                  <label className="text-[13px] font-medium text-black/55 mb-1.5 block">
+                  <label className="text-[13px] font-medium text-fg-secondary mb-1.5 block">
                     What's the priority going into next week?
                   </label>
                   <textarea
@@ -500,23 +502,23 @@ export default function WeeklyShutdown() {
                     onChange={(e) => handleReflectionFieldChange("nextWeekPriority", e.target.value)}
                     placeholder="The one or two things that matter most, your main focus..."
                     rows={2}
-                    className="w-full bg-white rounded-lg px-3.5 py-2.5 text-[13px] text-black/55 resize-y leading-relaxed focus:outline-none focus:border-[#5DCAA5]/40 placeholder:text-[13px] placeholder:font-normal placeholder:text-[#bbb]"
-                    style={{ border: "0.5px solid rgba(0,0,0,0.06)" }}
+                    className="w-full bg-elevated rounded-lg px-3.5 py-2.5 text-[13px] text-fg-secondary resize-y leading-relaxed focus:outline-none focus:border-accent-green-bright placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded"
+                    style={{ border: "0.5px solid var(--border-hairline)" }}
                   />
                 </div>
               </section>
 
               {/* Carry forward */}
               <section className="mt-6">
-                <h3 className="text-[13px] font-medium text-black/55 mb-1.5">
+                <h3 className="text-[13px] font-medium text-fg-secondary mb-1.5">
                   Carry forward
                 </h3>
                 <textarea
                   value={incompleteItemsText}
                   onChange={(e) => handleIncompleteTextChange(e.target.value)}
                   placeholder="Loose ends, things to remember for next week..."
-                  className="w-full bg-white rounded-lg px-3.5 py-2.5 text-[13px] text-black/55 resize-y min-h-[72px] leading-relaxed focus:outline-none focus:border-[#5DCAA5]/40 placeholder:text-[13px] placeholder:font-normal placeholder:text-[#bbb]"
-                  style={{ border: "0.5px solid rgba(0,0,0,0.06)" }}
+                  className="w-full bg-elevated rounded-lg px-3.5 py-2.5 text-[13px] text-fg-secondary resize-y min-h-[72px] leading-relaxed focus:outline-none focus:border-accent-green-bright placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded"
+                  style={{ border: "0.5px solid var(--border-hairline)" }}
                 />
               </section>
 
@@ -524,18 +526,18 @@ export default function WeeklyShutdown() {
 
             {/* ── Right column: time summary ────────────────────── */}
             <div className="w-[180px] flex-shrink-0">
-              <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/30 mb-2">
+              <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-2">
                 Time
               </h3>
-              <div className="bg-white/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid rgba(0,0,0,0.08)" }}>
+              <div className="bg-elevated/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid var(--border-soft)" }}>
                 {totalWorkedMinutes === 0 && totalPlannedMinutes === 0 ? (
-                  <p className="text-[13px] text-black/[0.3]">No time tracked this week</p>
+                  <p className="text-[13px] text-fg-faded">No time tracked this week</p>
                 ) : (
                   <>
-                    <div className="text-[18px] font-medium text-[#5DCAA5] leading-none">
+                    <div className="text-[18px] font-medium text-accent-green-bright leading-none">
                       {formatHoursMinutes(totalWorkedMinutes)}
                     </div>
-                    <div className="text-[11px] text-black/30 mt-1">
+                    <div className="text-[11px] text-fg-faded mt-1">
                       of {formatHoursMinutes(totalPlannedMinutes)} planned
                     </div>
                   </>
@@ -551,13 +553,13 @@ export default function WeeklyShutdown() {
         <div className="max-w-[860px] mx-auto flex gap-2">
           <button
             onClick={() => setShowSummary(true)}
-            className="px-4 py-2.5 rounded-lg border border-[#5DCAA5] text-[#5DCAA5] text-[13px] font-medium cursor-pointer hover:bg-[#E1F5EE] transition-colors"
+            className="px-4 py-2.5 rounded-lg border border-accent-green-bright text-accent-green-bright text-[13px] font-medium cursor-pointer hover:bg-accent-green-soft transition-colors"
           >
             Generate summary
           </button>
           <button
             onClick={completeWeeklyShutdown}
-            className="flex-1 py-2.5 rounded-lg bg-[#5DCAA5] text-white text-[13px] font-medium cursor-pointer hover:bg-[#4ab893] transition-colors"
+            className="flex-1 py-2.5 rounded-lg bg-accent-green-bright text-fg-on-accent text-[13px] font-medium cursor-pointer hover:bg-accent-green-bright-hover transition-colors"
           >
             Save & shutdown
           </button>

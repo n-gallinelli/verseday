@@ -21,6 +21,9 @@
   --bg-tag-soft: rgba(0, 0, 0, 0.04);
   --bg-banner: #2c2a35;
   --text-banner: #f5f4f0;
+  --shutdown-bg-cool: #dde8f0;
+  --shutdown-bg-neutral: #e8e4dc;
+  --shutdown-bg-warm: #ede8e0;
 
   /* — Text — */
   --text-primary: #2c2a35;
@@ -53,6 +56,7 @@
   --accent-green: #6A9E7F;
   --accent-green-hover: #5a8a6e;
   --accent-green-bright: #5DCAA5;
+  --accent-green-bright-hover: #4ab893;
   --accent-green-deep: #0F6E56;
   --accent-green-glow: rgba(106, 158, 127, 0.22);
   --accent-green-soft-bg: #F0F9F5;
@@ -74,6 +78,8 @@
   /* — Mood tints — */
   --mood-tint-shutdown: #5DCAA5;
   --mood-tint-daily: #7B9ED9;
+  --mood-bad: #C0614A;
+  --mood-okay: #D4A843;
 
   /* — Focus mode — */
   --focus-ambient-cool: #f0f2f5;
@@ -133,6 +139,9 @@
     --bg-tag-soft: rgba(255, 255, 255, 0.05);
     --bg-banner: #2a2a30;
     --text-banner: #e8e6e0;
+    --shutdown-bg-cool: #181c24;
+    --shutdown-bg-neutral: #181614;
+    --shutdown-bg-warm: #1c1814;
 
     /* — Text — */
     --text-primary: #e8e6e0;
@@ -165,6 +174,7 @@
     --accent-green: #6fa088;
     --accent-green-hover: #5e8c75;
     --accent-green-bright: #55b598;
+    --accent-green-bright-hover: #4ba089;
     --accent-green-deep: #3aa386;
     --accent-green-glow: rgba(111, 160, 136, 0.28);
     --accent-green-soft-bg: rgba(111, 160, 136, 0.14);
@@ -186,6 +196,8 @@
     /* — Mood tints — */
     --mood-tint-shutdown: #55b598;
     --mood-tint-daily: #7396cc;
+    --mood-bad: #cf7864;
+    --mood-okay: #dfb555;
 
     /* — Focus mode — */
     --focus-ambient-cool: #161921;
@@ -255,6 +267,7 @@
   --color-accent-green: var(--accent-green);
   --color-accent-green-hover: var(--accent-green-hover);
   --color-accent-green-bright: var(--accent-green-bright);
+  --color-accent-green-bright-hover: var(--accent-green-bright-hover);
   --color-accent-green-deep: var(--accent-green-deep);
   --color-accent-green-soft: var(--accent-green-soft-bg);
 
@@ -315,9 +328,9 @@ select {
 .shutdown-page {
   background: linear-gradient(
     to bottom,
-    #dde8f0 0%,
-    #e8e4dc 40%,
-    #ede8e0 100%
+    var(--shutdown-bg-cool) 0%,
+    var(--shutdown-bg-neutral) 40%,
+    var(--shutdown-bg-warm) 100%
   );
 }
 

@@ -14,8 +14,8 @@ const MOODS: { key: string; label: string }[] = [
 
 function MoodIcon({ mood, selected, tint }: { mood: string; selected: boolean; tint: string }) {
   const size = 28;
-  const stroke = selected ? tint : "rgba(0,0,0,0.25)";
-  const fill = selected ? `${tint}15` : "none";
+  const stroke = selected ? tint : "var(--text-faded)";
+  const fill = selected ? `color-mix(in srgb, ${tint} 8%, transparent)` : "none";
   const sw = 1.6;
 
   const common = { width: size, height: size, viewBox: "0 0 28 28", fill: "none" };
@@ -78,12 +78,12 @@ function MoodIcon({ mood, selected, tint }: { mood: string; selected: boolean; t
 }
 
 const MOOD_COLORS: Record<string, string> = {
-  Bad: "#C0614A",
-  Rough: "#C0614A",
-  Okay: "#D4A843",
+  Bad: "var(--mood-bad)",
+  Rough: "var(--mood-bad)",
+  Okay: "var(--mood-okay)",
 };
 
-export default function MoodSelector({ value, onChange, tintColor = "#7B9ED9" }: MoodSelectorProps) {
+export default function MoodSelector({ value, onChange, tintColor = "var(--accent-blue)" }: MoodSelectorProps) {
   return (
     <div className="flex gap-1">
       {MOODS.map((m) => {
@@ -95,14 +95,14 @@ export default function MoodSelector({ value, onChange, tintColor = "#7B9ED9" }:
             onClick={() => onChange(selected ? null : m.key)}
             className="flex-1 flex flex-col items-center gap-1 py-2 rounded-[7px] cursor-pointer transition-colors"
             style={{
-              border: `1.5px solid ${selected ? color : "rgba(0,0,0,0.06)"}`,
-              backgroundColor: selected ? `${color}08` : "white",
+              border: `1.5px solid ${selected ? color : "var(--border-hairline)"}`,
+              backgroundColor: selected ? `color-mix(in srgb, ${color} 3%, transparent)` : "var(--bg-elevated)",
             }}
           >
             <MoodIcon mood={m.key} selected={selected} tint={selected ? color : tintColor} />
             <span
               className="text-[9px]"
-              style={{ color: selected ? color : "rgba(0,0,0,0.25)" }}
+              style={{ color: selected ? color : "var(--text-faded)" }}
             >
               {m.label}
             </span>

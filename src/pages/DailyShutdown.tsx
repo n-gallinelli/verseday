@@ -249,20 +249,20 @@ export default function DailyShutdown() {
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
       {/* ── Header — transparent, gradient shows through ────────────── */}
-      <div className="px-6 py-4 flex-shrink-0" style={{ borderBottom: "0.5px solid rgba(0,0,0,0.06)" }}>
-        <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-[#3D6FCC] block mb-1">
+      <div className="px-6 py-4 flex-shrink-0" style={{ borderBottom: "0.5px solid var(--border-hairline)" }}>
+        <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-accent-blue-soft-fg block mb-1">
           Daily shutdown
         </span>
         <div className="flex items-center gap-2">
           <button
             onClick={() => changeDate(-1)}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[#999] cursor-pointer hover:bg-[#f0f0f0] transition-colors duration-150 ease-out"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10 4l-4 4 4 4" />
             </svg>
           </button>
-          <h2 className="text-[14px] font-medium text-[#2c2a35]">
+          <h2 className="text-[14px] font-medium text-fg">
             {new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", {
               weekday: "long",
               month: "long",
@@ -271,7 +271,7 @@ export default function DailyShutdown() {
           </h2>
           <button
             onClick={() => changeDate(1)}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-[#999] cursor-pointer hover:bg-[#f0f0f0] transition-colors duration-150 ease-out"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M6 4l4 4-4 4" />
@@ -288,13 +288,13 @@ export default function DailyShutdown() {
             <div className="flex-1">
               {/* Mood selector */}
               <section className="mb-6">
-                <h3 className="text-[13px] font-medium text-black/55 mb-2">
+                <h3 className="text-[13px] font-medium text-fg-secondary mb-2">
                   How was your day?
                 </h3>
                 <MoodSelector
                   value={mood}
                   onChange={handleMoodChange}
-                  tintColor="#7B9ED9"
+                  tintColor="var(--mood-tint-daily)"
                 />
               </section>
 
@@ -302,7 +302,7 @@ export default function DailyShutdown() {
               <section className="space-y-3">
                 {REFLECTION_FIELDS.map((field) => (
                   <div key={field.key}>
-                    <label className="text-[13px] font-medium text-black/55 mb-1.5 block">
+                    <label className="text-[13px] font-medium text-fg-secondary mb-1.5 block">
                       {field.label}
                     </label>
                     <textarea
@@ -310,8 +310,8 @@ export default function DailyShutdown() {
                       onChange={(e) => handleReflectionFieldChange(field.key, e.target.value)}
                       placeholder={field.placeholder}
                       rows={2}
-                      className="w-full bg-white rounded-lg px-3.5 py-2.5 text-[13px] text-black/55 resize-y leading-relaxed focus:outline-none focus:border-[#7B9ED9]/40 placeholder:text-[13px] placeholder:font-normal placeholder:text-[#bbb]"
-                      style={{ border: "0.5px solid rgba(0,0,0,0.06)" }}
+                      className="w-full bg-elevated rounded-lg px-3.5 py-2.5 text-[13px] text-fg-secondary resize-y leading-relaxed focus:outline-none focus:border-accent-blue placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded"
+                      style={{ border: "0.5px solid var(--border-hairline)" }}
                     />
                   </div>
                 ))}
@@ -321,16 +321,16 @@ export default function DailyShutdown() {
             {/* ── Right column: info cards (180px) ──────────────── */}
             <div className="w-[180px] flex-shrink-0 space-y-3">
               {/* Time card */}
-              <div className="bg-white/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid rgba(0,0,0,0.08)" }}>
-                <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/25 mb-1">Time</div>
+              <div className="bg-elevated/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid var(--border-soft)" }}>
+                <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1">Time</div>
                 {workedMinutes === 0 && plannedMinutes === 0 ? (
-                  <p className="text-[13px] text-black/[0.3]">No time tracked today</p>
+                  <p className="text-[13px] text-fg-faded">No time tracked today</p>
                 ) : (
                   <>
-                    <div className="text-[18px] font-medium text-[#7B9ED9] leading-none">
+                    <div className="text-[18px] font-medium text-accent-blue leading-none">
                       {formatHoursMinutes(workedMinutes)}
                     </div>
-                    <div className="text-[11px] text-black/30 mt-1">
+                    <div className="text-[11px] text-fg-faded mt-1">
                       of {formatHoursMinutes(plannedMinutes)} planned
                     </div>
                   </>
@@ -338,11 +338,11 @@ export default function DailyShutdown() {
               </div>
 
               {/* Done today card */}
-              <div className="bg-white/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid rgba(0,0,0,0.12)" }}>
+              <div className="bg-elevated/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid var(--border-medium)" }}>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/25">Done today</span>
+                  <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded">Done today</span>
                   {completedTasks.length > 0 && highlightIds.size < 3 && (
-                    <span className="text-[9px] text-black/20">Star highlights</span>
+                    <span className="text-[9px] text-fg-disabled">Star highlights</span>
                   )}
                 </div>
                 {completedTasks.length > 0 ? (
@@ -356,33 +356,33 @@ export default function DailyShutdown() {
                             className="flex-shrink-0 cursor-pointer"
                             title={isHighlight ? "Remove highlight" : highlightIds.size >= 3 ? "Max 3 highlights" : "Mark as highlight"}
                           >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill={isHighlight ? "#e4a945" : "none"} stroke={isHighlight ? "#e4a945" : "rgba(0,0,0,0.15)"} strokeWidth="2">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill={isHighlight ? "var(--accent-warning)" : "none"} stroke={isHighlight ? "var(--accent-warning)" : "var(--text-disabled)"} strokeWidth="2">
                               <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                             </svg>
                           </button>
-                          <span className="w-[11px] h-[11px] rounded-[2px] bg-[#6A9E7F] flex items-center justify-center flex-shrink-0">
-                            <svg width="6" height="6" viewBox="0 0 8 8" fill="none" stroke="white" strokeWidth="1.4" strokeLinecap="round">
+                          <span className="w-[11px] h-[11px] rounded-[2px] bg-accent-green flex items-center justify-center flex-shrink-0">
+                            <svg width="6" height="6" viewBox="0 0 8 8" fill="none" stroke="var(--text-on-accent)" strokeWidth="1.4" strokeLinecap="round">
                               <path d="M1.5 4l2 2 3-3" />
                             </svg>
                           </span>
-                          <span className="text-[13px] text-black/35 line-through truncate">{task.title}</span>
+                          <span className="text-[13px] text-fg-faded line-through truncate">{task.title}</span>
                         </div>
                       );
                     })}
                   </div>
                 ) : (
-                  <p className="text-[13px] text-black/20">No tasks completed</p>
+                  <p className="text-[13px] text-fg-disabled">No tasks completed</p>
                 )}
               </div>
 
               {/* Didn't get to card */}
-              <div className="bg-white/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid rgba(0,0,0,0.12)" }}>
+              <div className="bg-elevated/40 rounded-lg px-3 py-2.5" style={{ border: "1px solid var(--border-medium)" }}>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-black/25">Didn&rsquo;t get to</span>
+                  <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded">Didn&rsquo;t get to</span>
                   {incompleteTasks.filter((t) => !carriedIds.has(t.id)).length > 0 && (
                     <button
                       onClick={carryAllToTomorrow}
-                      className="text-[9px] text-[#7B9ED9] hover:text-[#6889c4] cursor-pointer"
+                      className="text-[9px] text-accent-blue hover:text-accent-blue-hover cursor-pointer"
                     >
                       Move all &rarr;
                     </button>
@@ -395,24 +395,24 @@ export default function DailyShutdown() {
                       return (
                         <div key={task.id} className="flex items-center gap-1.5">
                           {isCarried ? (
-                            <span className="text-[13px] text-black/25 italic truncate flex-1">{task.title}</span>
+                            <span className="text-[13px] text-fg-faded italic truncate flex-1">{task.title}</span>
                           ) : (
                             <button
                               onClick={() => carryTaskToTomorrow(task.id)}
-                              className="text-[13px] text-[#2c2a35] truncate flex-1 text-left cursor-pointer hover:text-[#7B9ED9]"
+                              className="text-[13px] text-fg truncate flex-1 text-left cursor-pointer hover:text-accent-blue"
                             >
                               {task.title}
                             </button>
                           )}
                           {isCarried && (
-                            <span className="text-[9px] text-[#6A9E7F] flex-shrink-0">Moved</span>
+                            <span className="text-[9px] text-accent-green flex-shrink-0">Moved</span>
                           )}
                         </div>
                       );
                     })}
                   </div>
                 ) : (
-                  <p className="text-[13px] text-black/20">Everything done!</p>
+                  <p className="text-[13px] text-fg-disabled">Everything done!</p>
                 )}
               </div>
             </div>
@@ -425,13 +425,13 @@ export default function DailyShutdown() {
         <div className="max-w-[860px] mx-auto flex gap-2">
           <button
             onClick={() => setShowSummary(true)}
-            className="px-4 py-2.5 rounded-lg border border-[#7B9ED9] text-[#7B9ED9] text-[13px] font-medium cursor-pointer hover:bg-[#EEF3FB] transition-colors"
+            className="px-4 py-2.5 rounded-lg border border-accent-blue text-accent-blue text-[13px] font-medium cursor-pointer hover:bg-accent-blue-soft transition-colors"
           >
             Generate summary
           </button>
           <button
             onClick={completeShutdown}
-            className="flex-1 py-2.5 rounded-lg bg-[#7B9ED9] text-white text-[13px] font-medium cursor-pointer hover:bg-[#6889c4] transition-colors"
+            className="flex-1 py-2.5 rounded-lg bg-accent-blue text-fg-on-accent text-[13px] font-medium cursor-pointer hover:bg-accent-blue-hover transition-colors"
           >
             Save & shutdown
           </button>

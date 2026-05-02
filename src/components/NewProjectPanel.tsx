@@ -79,7 +79,7 @@ export default function NewProjectPanel({
             maxLength={MAX_NAME_LENGTH}
             placeholder="e.g. Q2 launch, Website redesign..."
             autoFocus={isOpen}
-            className="w-full bg-base border border-line-medium rounded-lg px-[10px] py-2 text-[13px] text-fg outline-none focus:border-accent-blue/40 focus:bg-elevated placeholder-fg-faded"
+            className="w-full bg-base border border-line-medium rounded-lg px-[10px] py-2 text-[13px] text-fg outline-none focus:border-accent-blue focus:bg-elevated placeholder-fg-faded"
           />
         </div>
 

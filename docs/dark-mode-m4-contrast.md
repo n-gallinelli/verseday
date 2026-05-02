@@ -200,8 +200,8 @@ Non-text shapes the user must perceive: progress-bar fills, focus rings, accent 
 |---|---|---|
 | `PiP inner bar (accent-blue) vs track (overlay-hover ▸ bg-base)` | 4.2:1 ✅ | 3.0:1 |
 | `PiP inner bar (accent-blue) vs track (overlay-hover ▸ bg-elevated)` | 4.6:1 ✅ | 3.0:1 |
-| `accent-blue/40 (focus-ring) on bg-base` | 1.7:1 ❌ | 3.0:1 |
-| `accent-blue/40 (focus-ring) on bg-elevated` | 1.7:1 ❌ | 3.0:1 |
+| `accent-blue (focus-ring) on bg-base` | 4.5:1 ✅ | 3.0:1 |
+| `accent-blue (focus-ring) on bg-elevated` | 5.0:1 ✅ | 3.0:1 |
 | `accent-blue/20 outline on bg-base` | 1.3:1 ❌ | 3.0:1 |
 | `accent-blue/30 outline on bg-base` | 1.5:1 ❌ | 3.0:1 |
 
@@ -382,8 +382,8 @@ Non-text shapes the user must perceive: progress-bar fills, focus rings, accent 
 |---|---|---|
 | `PiP inner bar (accent-blue) vs track (overlay-hover ▸ bg-base)` | 5.3:1 ✅ | 3.0:1 |
 | `PiP inner bar (accent-blue) vs track (overlay-hover ▸ bg-elevated)` | 4.7:1 ✅ | 3.0:1 |
-| `accent-blue/40 (focus-ring) on bg-base` | 2.0:1 ❌ | 3.0:1 |
-| `accent-blue/40 (focus-ring) on bg-elevated` | 2.0:1 ❌ | 3.0:1 |
+| `accent-blue (focus-ring) on bg-base` | 6.0:1 ✅ | 3.0:1 |
+| `accent-blue (focus-ring) on bg-elevated` | 5.4:1 ✅ | 3.0:1 |
 | `accent-blue/20 outline on bg-base` | 1.4:1 ❌ | 3.0:1 |
 | `accent-blue/30 outline on bg-base` | 1.6:1 ❌ | 3.0:1 |
 
@@ -444,8 +444,6 @@ All pairs that fall below the WCAG AA threshold in either mode. Disposition (whi
 | light | Borders / graphical edges | `border-strong on bg-sidebar` | 1.6:1 | 3.0:1 |
 | light | Borders / graphical edges | `border-strong on bg-rail` | 1.6:1 | 3.0:1 |
 | light | Borders / graphical edges | `border-strong on bg-sunken` | 1.6:1 | 3.0:1 |
-| light | Graphical UI shapes | `accent-blue/40 (focus-ring) on bg-base` | 1.7:1 | 3.0:1 |
-| light | Graphical UI shapes | `accent-blue/40 (focus-ring) on bg-elevated` | 1.7:1 | 3.0:1 |
 | light | Graphical UI shapes | `accent-blue/20 outline on bg-base` | 1.3:1 | 3.0:1 |
 | light | Graphical UI shapes | `accent-blue/30 outline on bg-base` | 1.5:1 | 3.0:1 |
 | dark | Body text on surface | `text-muted on bg-base` | 4.5:1 | 4.5:1 |
@@ -483,10 +481,8 @@ All pairs that fall below the WCAG AA threshold in either mode. Disposition (whi
 | dark | Borders / graphical edges | `border-strong on bg-sidebar` | 2.2:1 | 3.0:1 |
 | dark | Borders / graphical edges | `border-strong on bg-rail` | 2.2:1 | 3.0:1 |
 | dark | Borders / graphical edges | `border-strong on bg-sunken` | 2.1:1 | 3.0:1 |
-| dark | Graphical UI shapes | `accent-blue/40 (focus-ring) on bg-base` | 2.0:1 | 3.0:1 |
-| dark | Graphical UI shapes | `accent-blue/40 (focus-ring) on bg-elevated` | 2.0:1 | 3.0:1 |
 | dark | Graphical UI shapes | `accent-blue/20 outline on bg-base` | 1.4:1 | 3.0:1 |
 | dark | Graphical UI shapes | `accent-blue/30 outline on bg-base` | 1.6:1 | 3.0:1 |
 
-_Total failures: 94 across 2 mode(s)._
+_Total failures: 90 across 2 mode(s)._
 

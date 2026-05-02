@@ -151,7 +151,7 @@ export default function DurationPicker({
                   }
                 }}
                 placeholder="Minutes..."
-                className="flex-1 min-w-0 bg-overlay-hover border border-line-soft rounded-md px-2 py-1 text-[11px] text-fg placeholder-fg-faded outline-none focus:border-accent-blue/40"
+                className="flex-1 min-w-0 bg-overlay-hover border border-line-soft rounded-md px-2 py-1 text-[11px] text-fg placeholder-fg-faded outline-none focus:border-accent-blue"
               />
               <button
                 type="button"

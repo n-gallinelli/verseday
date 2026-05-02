@@ -358,11 +358,12 @@ function graphicalUiPairs() {
     // Same on bg-elevated parent (PiP window may sit on elevated surface)
     { name: 'PiP inner bar (accent-blue) vs track (overlay-hover ▸ bg-elevated)',
       stack: ['bg-elevated', 'overlay-hover', 'accent-blue'] },
-    // Focus-ring-ish: accent-blue at 40% alpha on bg-base (inputs use focus:border-accent-blue/40)
-    { name: 'accent-blue/40 (focus-ring) on bg-base',
-      stack: ['bg-base', tok('accent-blue', 0.40)] },
-    { name: 'accent-blue/40 (focus-ring) on bg-elevated',
-      stack: ['bg-elevated', tok('accent-blue', 0.40)] },
+    // Focus-ring: solid --accent-blue (M4.3.4 settled on solid over alpha-tinted
+    // for clearer keyboard-nav affordance; even /80 alpha barely cleared 3:1).
+    { name: 'accent-blue (focus-ring) on bg-base',
+      stack: ['bg-base', 'accent-blue'] },
+    { name: 'accent-blue (focus-ring) on bg-elevated',
+      stack: ['bg-elevated', 'accent-blue'] },
     // Border at 20% / 30% (used as accent ghost outlines on tinted pills)
     { name: 'accent-blue/20 outline on bg-base',
       stack: ['bg-base', tok('accent-blue', 0.20)] },

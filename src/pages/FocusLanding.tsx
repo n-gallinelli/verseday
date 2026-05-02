@@ -114,7 +114,7 @@ export default function FocusLanding() {
         {currentTask && (
           <div className="flex flex-col items-center text-center max-w-[680px]">
             {/* Project label — always reserve space */}
-            <div className="flex items-center gap-1.5 mb-2 h-[18px]">
+            <div className="flex items-center gap-1.5 mb-5 h-[18px]">
               {currentTask.project_id && projectMap.get(currentTask.project_id) && (
                 <>
                   <div
@@ -128,10 +128,14 @@ export default function FocusLanding() {
               )}
             </div>
 
-            {/* Task title — full text, wraps to as many lines as needed */}
-            <h1 className="text-[20px] font-medium text-fg leading-snug mb-6 font-display break-words">
-              {currentTask.title}
-            </h1>
+            {/* Task title — fixed-height box keeps Start button + arrows
+                anchored when navigating between tasks of varying line counts.
+                Content vertically centered within the box; up to ~3 lines fit. */}
+            <div className="min-h-[96px] flex items-center justify-center mb-10">
+              <h1 className="text-[20px] font-medium text-fg leading-snug font-display break-words">
+                {currentTask.title}
+              </h1>
+            </div>
 
             {/* Start button */}
             <Button size="sm" className="flex items-center justify-center gap-2 transition-all duration-200 ease-out hover:shadow-[0_0_0_6px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]" onClick={() => handleStartFocus(currentTask)}>
@@ -143,7 +147,7 @@ export default function FocusLanding() {
 
             {/* Nav arrows */}
             {remainingTasks.length > 1 && (
-              <div className="flex items-center gap-3 mt-4">
+              <div className="flex items-center gap-3 mt-8">
                 <button
                   onClick={() => setSelectedIndex((i) => i - 1)}
                   disabled={selectedIndex === 0}

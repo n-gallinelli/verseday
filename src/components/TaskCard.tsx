@@ -157,10 +157,10 @@ export default function TaskCard({
     <div
       ref={setNodeRef}
       style={style}
-      className={`px-3 py-[7px] rounded-lg border transition-colors duration-150 ease-out group/row ${
+      className={`px-3 py-[6px] rounded-md border transition-colors duration-150 ease-out group/row ${
         isHigh
           ? "bg-accent-orange-soft border-accent-orange/15 hover:bg-accent-orange-soft-hover"
-          : "bg-elevated border-line-soft hover:bg-overlay-hover"
+          : "bg-elevated/60 border-line-soft hover:bg-overlay-hover"
       }`}
     >
       <div className="flex items-center gap-3">

@@ -171,8 +171,8 @@ Day-number text on selected/today tiles. AA threshold 4.5:1.
 
 | Pair | Contrast | WCAG threshold |
 |---|---|---|
-| `text-on-accent on calendar-selected-bg` | 3.9:1 ❌ | 4.5:1 |
-| `calendar-today-ring on bg-elevated` | 3.9:1 ❌ | 4.5:1 |
+| `text-on-accent on calendar-selected-bg` | 4.9:1 ✅ | 4.5:1 |
+| `calendar-today-ring on bg-elevated` | 6.0:1 ✅ | 4.5:1 |
 | `text-primary on calendar-day-hover ▸ bg-elevated` | 12.3:1 ✅ | 4.5:1 |
 
 ### 7. Borders / graphical edges
@@ -464,8 +464,6 @@ All pairs that fall below the WCAG AA threshold in either mode. Disposition (whi
 | light | Accent-text on accent-tint background | `accent-danger on accent-danger/10 ▸ bg-elevated` | 3.2:1 | 4.5:1 |
 | light | Accent-text on accent-tint background | `accent-destructive on accent-destructive/[0.08] ▸ bg-base` | 3.4:1 | 4.5:1 |
 | light | Accent-text on accent-tint background | `accent-destructive on accent-destructive/[0.08] ▸ bg-elevated` | 3.8:1 | 4.5:1 |
-| light | Calendar tile numerals | `text-on-accent on calendar-selected-bg` | 3.9:1 | 4.5:1 |
-| light | Calendar tile numerals | `calendar-today-ring on bg-elevated` | 3.9:1 | 4.5:1 |
 | light | Borders / graphical edges | `border-medium on bg-base` | 1.3:1 | 3.0:1 |
 | light | Borders / graphical edges | `border-medium on bg-elevated` | 1.3:1 | 3.0:1 |
 | light | Borders / graphical edges | `border-medium on bg-sidebar` | 1.3:1 | 3.0:1 |
@@ -522,5 +520,5 @@ All pairs that fall below the WCAG AA threshold in either mode. Disposition (whi
 | dark | Graphical UI shapes | `accent-blue/20 outline on bg-base` | 1.4:1 | 3.0:1 |
 | dark | Graphical UI shapes | `accent-blue/30 outline on bg-base` | 1.6:1 | 3.0:1 |
 
-_Total failures: 128 across 2 mode(s)._
+_Total failures: 126 across 2 mode(s)._
 

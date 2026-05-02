@@ -107,15 +107,24 @@ Accent colors used inline as text on plain surfaces (status messages, links, moo
 | `accent-blue on bg-base` | 2.5:1 ❌ | 4.5:1 |
 | `accent-blue on bg-elevated` | 2.7:1 ❌ | 4.5:1 |
 | `accent-blue on bg-sidebar` | 2.3:1 ❌ | 4.5:1 |
+| `accent-orange-soft-text on bg-base` | 6.3:1 ✅ | 4.5:1 |
+| `accent-orange-soft-text on bg-elevated` | 7.0:1 ✅ | 4.5:1 |
+| `accent-orange-soft-text on bg-sidebar` | 6.0:1 ✅ | 4.5:1 |
+| `accent-orange on bg-base` | 2.5:1 ❌ | 4.5:1 |
+| `accent-orange on bg-elevated` | 2.7:1 ❌ | 4.5:1 |
+| `accent-orange on bg-sidebar` | 2.3:1 ❌ | 4.5:1 |
+| `accent-warning-soft-text on bg-base` | 6.2:1 ✅ | 4.5:1 |
+| `accent-warning-soft-text on bg-elevated` | 6.8:1 ✅ | 4.5:1 |
+| `accent-warning-soft-text on bg-sidebar` | 5.8:1 ✅ | 4.5:1 |
+| `accent-warning on bg-base` | 2.5:1 ❌ | 4.5:1 |
+| `accent-warning on bg-elevated` | 2.7:1 ❌ | 4.5:1 |
+| `accent-warning on bg-sidebar` | 2.3:1 ❌ | 4.5:1 |
 | `accent-danger on bg-base` | 3.3:1 ❌ | 4.5:1 |
 | `accent-danger on bg-elevated` | 3.7:1 ❌ | 4.5:1 |
 | `accent-danger on bg-sidebar` | 3.1:1 ❌ | 4.5:1 |
 | `accent-destructive on bg-base` | 3.8:1 ❌ | 4.5:1 |
 | `accent-destructive on bg-elevated` | 4.2:1 ❌ | 4.5:1 |
 | `accent-destructive on bg-sidebar` | 3.6:1 ❌ | 4.5:1 |
-| `accent-warning on bg-base` | 2.5:1 ❌ | 4.5:1 |
-| `accent-warning on bg-elevated` | 2.7:1 ❌ | 4.5:1 |
-| `accent-warning on bg-sidebar` | 2.3:1 ❌ | 4.5:1 |
 | `accent-green-deep on bg-base` | 5.6:1 ✅ | 4.5:1 |
 | `accent-green-deep on bg-elevated` | 6.2:1 ✅ | 4.5:1 |
 | `accent-green-deep on bg-sidebar` | 5.3:1 ✅ | 4.5:1 |
@@ -280,15 +289,24 @@ Accent colors used inline as text on plain surfaces (status messages, links, moo
 | `accent-blue on bg-base` | 6.0:1 ✅ | 4.5:1 |
 | `accent-blue on bg-elevated` | 5.4:1 ✅ | 4.5:1 |
 | `accent-blue on bg-sidebar` | 5.7:1 ✅ | 4.5:1 |
+| `accent-orange-soft-text on bg-base` | 8.3:1 ✅ | 4.5:1 |
+| `accent-orange-soft-text on bg-elevated` | 7.6:1 ✅ | 4.5:1 |
+| `accent-orange-soft-text on bg-sidebar` | 8.0:1 ✅ | 4.5:1 |
+| `accent-orange on bg-base` | 6.3:1 ✅ | 4.5:1 |
+| `accent-orange on bg-elevated` | 5.8:1 ✅ | 4.5:1 |
+| `accent-orange on bg-sidebar` | 6.1:1 ✅ | 4.5:1 |
+| `accent-warning-soft-text on bg-base` | 10.0:1 ✅ | 4.5:1 |
+| `accent-warning-soft-text on bg-elevated` | 9.1:1 ✅ | 4.5:1 |
+| `accent-warning-soft-text on bg-sidebar` | 9.6:1 ✅ | 4.5:1 |
+| `accent-warning on bg-base` | 7.9:1 ✅ | 4.5:1 |
+| `accent-warning on bg-elevated` | 7.2:1 ✅ | 4.5:1 |
+| `accent-warning on bg-sidebar` | 7.6:1 ✅ | 4.5:1 |
 | `accent-danger on bg-base` | 5.9:1 ✅ | 4.5:1 |
 | `accent-danger on bg-elevated` | 5.4:1 ✅ | 4.5:1 |
 | `accent-danger on bg-sidebar` | 5.7:1 ✅ | 4.5:1 |
 | `accent-destructive on bg-base` | 5.1:1 ✅ | 4.5:1 |
 | `accent-destructive on bg-elevated` | 4.6:1 ✅ | 4.5:1 |
 | `accent-destructive on bg-sidebar` | 4.9:1 ✅ | 4.5:1 |
-| `accent-warning on bg-base` | 7.9:1 ✅ | 4.5:1 |
-| `accent-warning on bg-elevated` | 7.2:1 ✅ | 4.5:1 |
-| `accent-warning on bg-sidebar` | 7.6:1 ✅ | 4.5:1 |
 | `accent-green-deep on bg-base` | 5.8:1 ✅ | 4.5:1 |
 | `accent-green-deep on bg-elevated` | 5.3:1 ✅ | 4.5:1 |
 | `accent-green-deep on bg-sidebar` | 5.6:1 ✅ | 4.5:1 |
@@ -415,15 +433,18 @@ All pairs that fall below the WCAG AA threshold in either mode. Disposition (whi
 | light | Accent-as-text on surface | `accent-blue on bg-base` | 2.5:1 | 4.5:1 |
 | light | Accent-as-text on surface | `accent-blue on bg-elevated` | 2.7:1 | 4.5:1 |
 | light | Accent-as-text on surface | `accent-blue on bg-sidebar` | 2.3:1 | 4.5:1 |
+| light | Accent-as-text on surface | `accent-orange on bg-base` | 2.5:1 | 4.5:1 |
+| light | Accent-as-text on surface | `accent-orange on bg-elevated` | 2.7:1 | 4.5:1 |
+| light | Accent-as-text on surface | `accent-orange on bg-sidebar` | 2.3:1 | 4.5:1 |
+| light | Accent-as-text on surface | `accent-warning on bg-base` | 2.5:1 | 4.5:1 |
+| light | Accent-as-text on surface | `accent-warning on bg-elevated` | 2.7:1 | 4.5:1 |
+| light | Accent-as-text on surface | `accent-warning on bg-sidebar` | 2.3:1 | 4.5:1 |
 | light | Accent-as-text on surface | `accent-danger on bg-base` | 3.3:1 | 4.5:1 |
 | light | Accent-as-text on surface | `accent-danger on bg-elevated` | 3.7:1 | 4.5:1 |
 | light | Accent-as-text on surface | `accent-danger on bg-sidebar` | 3.1:1 | 4.5:1 |
 | light | Accent-as-text on surface | `accent-destructive on bg-base` | 3.8:1 | 4.5:1 |
 | light | Accent-as-text on surface | `accent-destructive on bg-elevated` | 4.2:1 | 4.5:1 |
 | light | Accent-as-text on surface | `accent-destructive on bg-sidebar` | 3.6:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-warning on bg-base` | 2.5:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-warning on bg-elevated` | 2.7:1 | 4.5:1 |
-| light | Accent-as-text on surface | `accent-warning on bg-sidebar` | 2.3:1 | 4.5:1 |
 | light | Accent-as-text on surface | `accent-green-bright on bg-base` | 1.8:1 | 4.5:1 |
 | light | Accent-as-text on surface | `accent-green-bright on bg-elevated` | 2.0:1 | 4.5:1 |
 | light | Accent-as-text on surface | `accent-green-bright on bg-sidebar` | 1.7:1 | 4.5:1 |
@@ -501,5 +522,5 @@ All pairs that fall below the WCAG AA threshold in either mode. Disposition (whi
 | dark | Graphical UI shapes | `accent-blue/20 outline on bg-base` | 1.4:1 | 3.0:1 |
 | dark | Graphical UI shapes | `accent-blue/30 outline on bg-base` | 1.6:1 | 3.0:1 |
 
-_Total failures: 125 across 2 mode(s)._
+_Total failures: 128 across 2 mode(s)._
 

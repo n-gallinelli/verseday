@@ -167,7 +167,7 @@ function DraggableTaskRow({
           {dayAbbrev}
         </span>
       ) : (
-        <span className="text-[10px] bg-accent-orange/[0.08] text-accent-orange px-1.5 py-0.5 rounded">
+        <span className="text-[10px] bg-accent-orange/[0.08] text-accent-orange-soft-fg px-1.5 py-0.5 rounded">
           —
         </span>
       )}
@@ -703,7 +703,7 @@ export default function WeeklyPlanner() {
           </span>
           <button
             onClick={undoMove}
-            className="text-accent-orange font-medium cursor-pointer transition-colors"
+            className="text-accent-orange-soft-fg font-medium cursor-pointer transition-colors"
             onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-banner)"; }}
             onMouseLeave={(e) => { e.currentTarget.style.color = ""; }}
           >
@@ -719,7 +719,7 @@ export default function WeeklyPlanner() {
             {formatWeekHeader(selectedWeek)}
           </h2>
           {isThisWeek && (
-            <span className="text-[11px] bg-accent-orange-soft text-accent-orange px-2 py-0.5 rounded-full flex-shrink-0">
+            <span className="text-[11px] bg-accent-orange-soft text-accent-orange-soft-fg px-2 py-0.5 rounded-full flex-shrink-0">
               This week
             </span>
           )}
@@ -744,7 +744,7 @@ export default function WeeklyPlanner() {
           {!isThisWeek && (
             <button
               onClick={() => setSelectedWeek(getMondayOfWeek())}
-              className="text-[11px] text-accent-orange hover:text-accent-orange-hover cursor-pointer ml-1"
+              className="text-[11px] text-accent-orange-soft-fg hover:text-accent-orange cursor-pointer ml-1"
             >
               Jump to this week
             </button>

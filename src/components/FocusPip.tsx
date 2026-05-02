@@ -231,7 +231,7 @@ export default function FocusPip() {
         <div className="flex items-center gap-2.5">
           <div className="flex-1 min-w-0">
             <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-0.5">Break</div>
-            <div className="text-[20px] font-medium tabular-nums text-accent-green-bright leading-none" style={{ letterSpacing: "-0.5px" }}>
+            <div className="text-[20px] font-medium tabular-nums text-accent-green-deep leading-none" style={{ letterSpacing: "-0.5px" }}>
               {formatCountdown(state.breakRemaining)}
             </div>
           </div>
@@ -264,7 +264,7 @@ export default function FocusPip() {
               {state.taskTitle}
             </div>
             <div className="text-[12px] tabular-nums leading-snug flex items-center gap-1.5">
-              <span className={state.paused ? "text-fg-faded" : "text-accent-green-bright"}>
+              <span className={state.paused ? "text-fg-faded" : "text-accent-green-deep"}>
                 {formatTime(state.elapsed)}
               </span>
               <span className="text-fg-disabled">/</span>

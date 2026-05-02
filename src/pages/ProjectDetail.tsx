@@ -272,7 +272,7 @@ function SortableTaskRow({
         {task.status !== "done" && (
           <button
             onClick={() => onStart(task)}
-            className="text-[11px] text-accent-blue border border-accent-blue/20 bg-accent-blue/[0.06] px-1.5 py-0.5 rounded-[5px] cursor-pointer hover:bg-accent-blue/[0.12]"
+            className="text-[11px] text-accent-blue-soft-fg border border-accent-blue/20 bg-accent-blue/[0.06] px-1.5 py-0.5 rounded-[5px] cursor-pointer hover:bg-accent-blue/[0.12]"
           >
             Start
           </button>
@@ -754,7 +754,7 @@ export default function ProjectDetail() {
             </span>
             <button
               onClick={undoDelete}
-              className="text-accent-blue font-medium cursor-pointer transition-colors"
+              className="text-accent-blue-soft-fg font-medium cursor-pointer transition-colors"
               onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-banner)"; }}
               onMouseLeave={(e) => { e.currentTarget.style.color = ""; }}
             >
@@ -876,7 +876,7 @@ export default function ProjectDetail() {
                 onClick={() => setShowDone(!showDone)}
                 className={`flex items-center gap-1.5 text-[11px] cursor-pointer px-2 py-1 rounded-full border bg-elevated hover:bg-overlay-hover ${
                   showDone
-                    ? "text-accent-blue border-accent-blue/20"
+                    ? "text-accent-blue-soft-fg border-accent-blue/20"
                     : "text-fg-faded border-line-soft"
                 }`}
               >
@@ -974,7 +974,7 @@ export default function ProjectDetail() {
                           <span className="text-accent-destructive">
                             Delete &ldquo;{task.title}&rdquo;?
                           </span>{" "}
-                          <span className="text-accent-warning">
+                          <span className="text-accent-warning-soft-fg">
                             Time entries will also be deleted.
                           </span>
                         </span>

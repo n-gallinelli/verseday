@@ -296,14 +296,14 @@ export default function Dashboard() {
           {formatWeekHeader(selectedWeek)}
         </span>
         {isThisWeek && (
-          <span className="text-[11px] bg-accent-orange-soft text-accent-orange px-2 py-0.5 rounded-full">
+          <span className="text-[11px] bg-accent-orange-soft text-accent-orange-soft-fg px-2 py-0.5 rounded-full">
             This week
           </span>
         )}
         {!isThisWeek && (
           <button
             onClick={() => setSelectedWeek(getMondayOfWeek())}
-            className="text-[11px] text-accent-orange hover:text-accent-orange-hover cursor-pointer"
+            className="text-[11px] text-accent-orange-soft-fg hover:text-accent-orange cursor-pointer"
           >
             This week
           </button>

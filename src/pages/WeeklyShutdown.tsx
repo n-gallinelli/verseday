@@ -393,7 +393,7 @@ export default function WeeklyShutdown() {
           {!isThisWeek && (
             <button
               onClick={() => setSelectedWeek(todayMonday)}
-              className="text-[11px] text-accent-green-bright hover:text-accent-green-deep cursor-pointer"
+              className="text-[11px] text-accent-green-deep hover:text-accent-green-bright cursor-pointer"
             >
               This week
             </button>
@@ -434,7 +434,7 @@ export default function WeeklyShutdown() {
                 <button
                   key={ct.task.id}
                   onClick={() => undoCarry(ct.task.id)}
-                  className="text-[11px] text-accent-green-bright cursor-pointer transition-colors"
+                  className="text-[11px] text-accent-green-deep cursor-pointer transition-colors"
                   onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-banner)"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.color = ""; }}
                 >
@@ -534,7 +534,7 @@ export default function WeeklyShutdown() {
                   <p className="text-[13px] text-fg-faded">No time tracked this week</p>
                 ) : (
                   <>
-                    <div className="text-[18px] font-medium text-accent-green-bright leading-none">
+                    <div className="text-[18px] font-medium text-accent-green-deep leading-none">
                       {formatHoursMinutes(totalWorkedMinutes)}
                     </div>
                     <div className="text-[11px] text-fg-faded mt-1">
@@ -553,7 +553,7 @@ export default function WeeklyShutdown() {
         <div className="max-w-[860px] mx-auto flex gap-2">
           <button
             onClick={() => setShowSummary(true)}
-            className="px-4 py-2.5 rounded-lg border border-accent-green-bright text-accent-green-bright text-[13px] font-medium cursor-pointer hover:bg-accent-green-soft transition-colors"
+            className="px-4 py-2.5 rounded-lg border border-accent-green-deep text-accent-green-deep text-[13px] font-medium cursor-pointer hover:bg-accent-green-soft transition-colors"
           >
             Generate summary
           </button>

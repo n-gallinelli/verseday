@@ -273,7 +273,9 @@ function accentTextOnSurfacePairs() {
   // dark-mode-m4-contrast-disposition.md bucket b4.
   const accents = [
     'accent-blue-soft-text', 'accent-blue',
-    'accent-danger', 'accent-destructive', 'accent-warning',
+    'accent-orange-soft-text', 'accent-orange',
+    'accent-warning-soft-text', 'accent-warning',
+    'accent-danger', 'accent-destructive',
     'accent-green-deep', 'accent-green-bright',
   ];
   const surfs = [['bg-base', 'bg-base'], ['bg-elevated', 'bg-elevated'], ['bg-sidebar', 'bg-sidebar']];

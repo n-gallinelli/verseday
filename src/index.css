@@ -65,8 +65,10 @@
   --accent-orange-hover: #cc7633;
   --accent-orange-soft-bg: #FFF8F0;
   --accent-orange-soft-bg-hover: #FFF4E8;
+  --accent-orange-soft-text: #8a4810;
 
   --accent-warning: #c9923a;
+  --accent-warning-soft-text: #7a5400;
 
   --accent-danger: #d95f5f;
 
@@ -192,8 +194,10 @@
     --accent-orange-hover: #c47840;
     --accent-orange-soft-bg: rgba(214, 134, 71, 0.10);
     --accent-orange-soft-bg-hover: rgba(214, 134, 71, 0.14);
+    --accent-orange-soft-text: #e8a070;
 
     --accent-warning: #d6a35a;
+    --accent-warning-soft-text: #e8b970;
 
     --accent-danger: #e07474;
 
@@ -289,8 +293,10 @@
   --color-accent-orange-hover: var(--accent-orange-hover);
   --color-accent-orange-soft: var(--accent-orange-soft-bg);
   --color-accent-orange-soft-hover: var(--accent-orange-soft-bg-hover);
+  --color-accent-orange-soft-fg: var(--accent-orange-soft-text);
 
   --color-accent-warning: var(--accent-warning);
+  --color-accent-warning-soft-fg: var(--accent-warning-soft-text);
 
   --color-accent-danger: var(--accent-danger);
 

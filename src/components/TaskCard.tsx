@@ -231,7 +231,7 @@ export default function TaskCard({
           const overBudget = est > 0 && worked > est;
           return (
             <span className="text-[11px] tabular-nums flex items-center gap-0.5 shrink-0">
-              <span className={overBudget ? "text-accent-danger font-medium" : "text-accent-blue font-medium"}>
+              <span className={overBudget ? "text-accent-danger font-medium" : "text-accent-blue-soft-fg font-medium"}>
                 {worked > 0 ? `${worked}m` : "0m"}
               </span>
               <span className="text-fg-disabled">/</span>
@@ -290,7 +290,7 @@ export default function TaskCard({
                         href={link.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-accent-blue hover:underline truncate flex-1"
+                        className="text-accent-blue-soft-fg hover:underline truncate flex-1"
                       >
                         {link.label || link.url}
                       </a>
@@ -319,7 +319,7 @@ export default function TaskCard({
               />
               <button
                 type="submit"
-                className="text-[10px] text-accent-blue px-2 py-1 rounded-md border border-accent-blue/20 bg-accent-blue/[0.06] cursor-pointer hover:bg-accent-blue/[0.12]"
+                className="text-[10px] text-accent-blue-soft-fg px-2 py-1 rounded-md border border-accent-blue/20 bg-accent-blue/[0.06] cursor-pointer hover:bg-accent-blue/[0.12]"
               >
                 Add
               </button>

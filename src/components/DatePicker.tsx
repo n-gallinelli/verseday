@@ -167,7 +167,7 @@ export default function DatePicker({
           onSelect(todayStr);
           onClose();
         }}
-        className="w-full mt-2 text-[11px] text-accent-blue cursor-pointer hover:underline text-center py-1"
+        className="w-full mt-2 text-[11px] text-accent-blue-soft-fg cursor-pointer hover:underline text-center py-1"
       >
         Go to today
       </button>

@@ -234,7 +234,7 @@ export default function QuickAdd() {
                 onClick={() => setEstimateMinutes(active ? null : preset.value)}
                 className={`text-[11px] font-medium px-2 py-[3px] rounded-md cursor-pointer border transition-colors ${
                   active
-                    ? "border-accent-blue/40 bg-accent-blue-soft text-accent-blue"
+                    ? "border-accent-blue/40 bg-accent-blue-soft text-accent-blue-soft-fg"
                     : "border-line-hairline bg-elevated/50 text-fg-secondary hover:text-fg hover:bg-elevated/70"
                 }`}
               >

@@ -429,7 +429,7 @@ export default function DailyPlanner() {
               onClick={() => setShowDatePicker(!showDatePicker)}
               className={`text-[11px] leading-none px-2 py-1 rounded-full cursor-pointer ${
                 isToday
-                  ? "bg-accent-blue-soft text-accent-blue"
+                  ? "bg-accent-blue-soft text-accent-blue-soft-fg"
                   : "bg-overlay-hover text-fg-secondary hover:bg-overlay-pressed"
               }`}
             >
@@ -726,7 +726,7 @@ export default function DailyPlanner() {
                           <span className="text-accent-destructive">
                             Delete &ldquo;{task.title}&rdquo;?
                           </span>{" "}
-                          <span className="text-accent-warning">
+                          <span className="text-accent-warning-soft-fg">
                             Time entries will also be deleted.
                           </span>
                         </span>
@@ -783,7 +783,7 @@ export default function DailyPlanner() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setShowSummary(true)}
-                className="text-[11px] text-accent-blue cursor-pointer hover:text-accent-blue-hover transition-colors"
+                className="text-[11px] text-accent-blue-soft-fg cursor-pointer hover:text-accent-blue transition-colors"
               >
                 Summarize plan
               </button>
@@ -969,7 +969,7 @@ export default function DailyPlanner() {
                       className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-overlay-hover transition-colors group"
                     >
                       <span className="text-[11px] text-fg-secondary group-hover:text-fg flex-1 truncate transition-colors">{task.title}</span>
-                      <span className="text-[9px] text-accent-warning/70 tabular-nums">{task.rollover_count}d</span>
+                      <span className="text-[9px] text-accent-warning-soft-fg/70 tabular-nums">{task.rollover_count}d</span>
                     </button>
                   ))
                 )}

@@ -63,7 +63,7 @@ function getDueDateColor(dueDate: string | null): string {
   const due = new Date(dueDate + "T00:00:00");
   const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays < 0) return "text-accent-danger";
-  if (diffDays <= 3) return "text-accent-warning";
+  if (diffDays <= 3) return "text-accent-warning-soft-fg";
   return "text-fg-faded";
 }
 
@@ -225,7 +225,7 @@ export default function Projects() {
               if (archiveTimerRef.current) clearTimeout(archiveTimerRef.current);
               loadData();
             }}
-            className="text-[12px] text-accent-blue cursor-pointer transition-colors"
+            className="text-[12px] text-accent-blue-soft-fg cursor-pointer transition-colors"
             onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-banner)"; }}
             onMouseLeave={(e) => { e.currentTarget.style.color = ""; }}
           >
@@ -508,7 +508,7 @@ export default function Projects() {
                 {inlineCreateName.trim() && (
                   <button
                     onClick={handleInlineCreate}
-                    className="text-[11px] text-accent-blue hover:text-accent-blue-soft-fg cursor-pointer flex-shrink-0"
+                    className="text-[11px] text-accent-blue-soft-fg hover:text-accent-blue cursor-pointer flex-shrink-0"
                   >
                     Create
                   </button>

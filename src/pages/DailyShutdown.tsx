@@ -382,7 +382,7 @@ export default function DailyShutdown() {
                   {incompleteTasks.filter((t) => !carriedIds.has(t.id)).length > 0 && (
                     <button
                       onClick={carryAllToTomorrow}
-                      className="text-[9px] text-accent-blue hover:text-accent-blue-hover cursor-pointer"
+                      className="text-[9px] text-accent-blue-soft-fg hover:text-accent-blue cursor-pointer"
                     >
                       Move all &rarr;
                     </button>
@@ -425,7 +425,7 @@ export default function DailyShutdown() {
         <div className="max-w-[860px] mx-auto flex gap-2">
           <button
             onClick={() => setShowSummary(true)}
-            className="px-4 py-2.5 rounded-lg border border-accent-blue text-accent-blue text-[13px] font-medium cursor-pointer hover:bg-accent-blue-soft transition-colors"
+            className="px-4 py-2.5 rounded-lg border border-accent-blue text-accent-blue-soft-fg text-[13px] font-medium cursor-pointer hover:bg-accent-blue-soft transition-colors"
           >
             Generate summary
           </button>

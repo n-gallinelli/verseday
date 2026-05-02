@@ -130,7 +130,7 @@ function NavSection({
             onClick={() => onSelect(page)}
             className={`w-full flex items-center gap-2.5 px-4 py-2 cursor-pointer transition-colors ${
               isActive
-                ? "bg-accent-blue-soft text-accent-blue"
+                ? "bg-accent-blue-soft text-accent-blue-soft-fg"
                 : "text-fg-secondary hover:bg-overlay-hover hover:text-fg"
             } [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)]`}
           >

@@ -59,10 +59,9 @@ function TrashButton({ onDelete }: { onDelete: () => void }) {
       // Picks up the elevated surface tone instead of the destructive
       // soft-tint so it doesn't read as "armed" — destructive intent only
       // surfaces on hover (text and bg shift to accent-destructive).
-      // Trash is always hover-only on the row, regardless of focus state,
-      // so the opacity + scale transition fires whenever the row leaves
-      // hover — no straight-line clip from the container's overflow.
-      className="w-6 h-6 rounded-full flex items-center justify-center cursor-pointer transition-[colors,opacity,transform] duration-150 text-fg-faded bg-elevated border border-line-soft hover:text-accent-destructive hover:bg-accent-destructive/15 hover:border-accent-destructive/30 opacity-0 scale-90 group-hover/row:opacity-100 group-hover/row:scale-100"
+      // Visibility is controlled by the parent layer's opacity, so this
+      // class only handles colors.
+      className="w-6 h-6 rounded-full flex items-center justify-center cursor-pointer transition-colors duration-150 text-fg-faded bg-elevated border border-line-soft hover:text-accent-destructive hover:bg-accent-destructive/15 hover:border-accent-destructive/30"
       title="Delete"
     >
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
@@ -231,8 +230,9 @@ function TaskCardImpl({
             wrap to a second line; the row's min-h-[2lh] pre-reserves
             space so 1-line cards aren't shorter than 2-line cards.
             Beyond 2 lines, the title cuts off with an ellipsis. flex-1
-            absorbs whatever space the actions container reserves so the
-            clamp width is tight against the actions, no overlap. */}
+            absorbs whatever space the right-area reserves; that width
+            is constant across hover states so the title never reflows
+            on hover. */}
         <span
           className={`flex-1 min-w-0 line-clamp-2 break-words text-fg [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)] ${
             task.status === "done" ? "line-through !text-fg-faded" : ""
@@ -241,112 +241,117 @@ function TaskCardImpl({
           {task.title}
         </span>
 
-        {/* Actions — sit in the flex flow between title and time pill.
-            flex-row-reverse anchors the play/stop button to the
-            container's RIGHT edge (next to the time pill); the trash
-            slides in from the LEFT when the container expands, so the
-            stop button doesn't visually move on hover. Hover feedback
-            on play/stop is just a bg color shift now (no box-shadow
-            halo) so no padding is needed for halo room — buttons sit
-            tight against the time pill. Width states (border-box):
-              not focused, not hover: w-0   (no buttons)
-              not focused, hover:     w-14  (play + trash, 56px)
-              focused, not hover:     w-6   (stop only, 24px)
-              focused, hover:         w-14  (stop + trash, 56px) */}
+        {/* Right area — fixed-width slot at the row's right edge that
+            holds either the time pill (idle) or the action buttons
+            (hover). Both layers are absolute and right-anchored, so the
+            slot's width never changes between states. Title's flex-1
+            sees a constant width and never reflows on hover.
+
+            Slot width:
+              non-focused: 72px (max(static pill ~60px, play+trash 56px))
+              focused:     96px (live pill 64 + gap 8 + stop 24)
+            Width changes only when starting/stopping focus — a one-time
+            reflow tied to a deliberate user action, not hover. */}
         <div
-          className={`overflow-hidden flex flex-row-reverse items-center gap-2 transition-[width] duration-150 ease-out shrink-0 ${
-            isFocused
-              ? "w-6 group-hover/row:w-14"
-              : "w-0 group-hover/row:w-14"
+          className={`relative shrink-0 h-6 ${
+            isFocused ? "w-[96px]" : "w-[72px]"
           }`}
         >
-          {isFocused && onStop ? (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onStop(task);
-              }}
-              className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-[color-mix(in_srgb,var(--accent-blue),black_30%)] cursor-pointer flex items-center justify-center transition-colors duration-150"
-              title="Stop focus"
-            >
-              <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
-                <rect width="8" height="8" rx="1" />
-              </svg>
-            </button>
-          ) : (
-            onStart && task.status !== "done" && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onStart(task);
-                }}
-                // Fade + scale alongside the container's width transition
-                // so the button softens out instead of being sliced by
-                // the overflow-hidden clip. opacity transition matches the
-                // container's 150ms; scale 90→100 adds a subtle "pop in"
-                // on hover and "settle out" on hover-end so the
-                // disappearance reads as motion, not a vertical wipe.
-                className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-[color-mix(in_srgb,var(--accent-blue),black_30%)] cursor-pointer flex items-center justify-center transition-[colors,opacity,transform] duration-150 opacity-0 scale-90 group-hover/row:opacity-100 group-hover/row:scale-100"
-                title="Start focus"
+          {isFocused ? (
+            <>
+              {/* Idle layer (focused): live pill, right-anchored 32px in
+                  to leave room for the always-visible stop button. */}
+              <div
+                className="absolute inset-0 flex items-center justify-end pr-[32px] transition-opacity duration-150 opacity-100 group-hover/row:opacity-0 pointer-events-none"
               >
-                <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
-                  <path d="M0 0v10l8-5z" />
-                </svg>
-              </button>
-            )
+                {(() => {
+                  const totalSec = Math.max(0, Math.floor((liveElapsedMs ?? 0) / 1000));
+                  const m = Math.floor(totalSec / 60);
+                  const s = totalSec % 60;
+                  const text = m > 0 ? `${m}m ${s}s` : `${s}s`;
+                  const est = task.estimated_minutes ?? 0;
+                  const overBudget = est > 0 && m > est;
+                  return (
+                    <span
+                      className={`inline-flex items-center justify-center min-w-[64px] px-2 py-[2px] rounded-full bg-accent-blue-soft text-[11px] tabular-nums ${
+                        overBudget ? "text-accent-danger" : "text-accent-blue-soft-fg"
+                      } font-medium`}
+                    >
+                      {text}
+                    </span>
+                  );
+                })()}
+              </div>
+
+              {/* Hover layer (focused): trash to the left of stop. */}
+              <div className="absolute inset-0 flex items-center justify-end pr-[32px] transition-opacity duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto">
+                <TrashButton onDelete={() => onDelete(task.id)} />
+              </div>
+
+              {/* Stop button — always visible at the right edge. */}
+              {onStop && (
+                <div className="absolute right-0 inset-y-0 flex items-center">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onStop(task);
+                    }}
+                    className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-[color-mix(in_srgb,var(--accent-blue),black_30%)] cursor-pointer flex items-center justify-center transition-colors duration-150"
+                    title="Stop focus"
+                  >
+                    <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+                      <rect width="8" height="8" rx="1" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {/* Idle layer (non-focused): static "Xm / Ym" pill. */}
+              <div className="absolute inset-0 flex items-center justify-end transition-opacity duration-150 opacity-100 group-hover/row:opacity-0 pointer-events-none">
+                {(() => {
+                  const worked = workedMinutes ?? 0;
+                  const est = task.estimated_minutes ?? 0;
+                  const hasAny = worked > 0 || est > 0;
+                  if (!hasAny) return null;
+                  const overBudget = est > 0 && worked > est;
+                  return (
+                    <span className="inline-flex items-center gap-0.5 px-2 py-[2px] rounded-full bg-overlay-hover text-[11px] tabular-nums">
+                      <span className={overBudget ? "text-accent-danger font-medium" : "text-fg-faded"}>
+                        {worked > 0 ? `${worked}m` : "0m"}
+                      </span>
+                      <span className="text-fg-disabled">/</span>
+                      <span className="text-fg-faded">
+                        {est > 0 ? `${est}m` : "—"}
+                      </span>
+                    </span>
+                  );
+                })()}
+              </div>
+
+              {/* Hover layer (non-focused): trash + play, right-aligned.
+                  flex with justify-end + JSX trash-then-play means play
+                  ends up at the right edge, trash to its left. */}
+              <div className="absolute inset-0 flex items-center justify-end gap-2 transition-opacity duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto">
+                <TrashButton onDelete={() => onDelete(task.id)} />
+                {onStart && task.status !== "done" && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onStart(task);
+                    }}
+                    className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-[color-mix(in_srgb,var(--accent-blue),black_30%)] cursor-pointer flex items-center justify-center transition-colors duration-150"
+                    title="Start focus"
+                  >
+                    <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
+                      <path d="M0 0v10l8-5z" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </>
           )}
-          <TrashButton onDelete={() => onDelete(task.id)} />
-        </div>
-
-        {/* Time pill — sits at the row's right edge. No fixed-width slot
-            anymore (was 78px); the title's flex-1 absorbs the freed space
-            so longer titles get more room. Pill is shrink-0 so it always
-            renders fully. */}
-        <div className="shrink-0 text-[11px] tabular-nums">
-          {(() => {
-            // Live mode (focused row): show seconds-precision "Xm Ys".
-            // Estimate is dropped during live so the pill stays narrow.
-            // Static rows show "Xm / Ym".
-            const isLive = liveElapsedMs != null;
-            if (isLive) {
-              const totalSec = Math.max(0, Math.floor(liveElapsedMs / 1000));
-              const m = Math.floor(totalSec / 60);
-              const s = totalSec % 60;
-              const text = m > 0 ? `${m}m ${s}s` : `${s}s`;
-              const est = task.estimated_minutes ?? 0;
-              const overBudget = est > 0 && m > est;
-              return (
-                <span
-                  // min-w + center keeps the pill the same width as the
-                  // counter ticks 9s→10s→…→59s→1m 0s; without it, every
-                  // digit-count change makes the pill jiggle horizontally.
-                  // 64px fits up to "59m 59s" with tabular-nums.
-                  className={`inline-flex items-center justify-center min-w-[64px] px-2 py-[2px] rounded-full bg-accent-blue-soft ${
-                    overBudget ? "text-accent-danger" : "text-accent-blue-soft-fg"
-                  } font-medium`}
-                >
-                  {text}
-                </span>
-              );
-            }
-
-            const worked = workedMinutes ?? 0;
-            const est = task.estimated_minutes ?? 0;
-            const hasAny = worked > 0 || est > 0;
-            if (!hasAny) return null;
-            const overBudget = est > 0 && worked > est;
-            return (
-              <span className="inline-flex items-center gap-0.5 px-2 py-[2px] rounded-full bg-overlay-hover">
-                <span className={overBudget ? "text-accent-danger font-medium" : "text-fg-faded"}>
-                  {worked > 0 ? `${worked}m` : "0m"}
-                </span>
-                <span className="text-fg-disabled">/</span>
-                <span className="text-fg-faded">
-                  {est > 0 ? `${est}m` : "—"}
-                </span>
-              </span>
-            );
-          })()}
         </div>
       </div>
 

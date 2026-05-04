@@ -117,11 +117,9 @@ function TaskCardImpl({
   // row without affecting layout, and so it escapes the row's hover/click
   // groups. Same positioning pattern as DatePicker / ProjectPicker /
   // CalendarPicker: anchor ref + computed fixed coords + scroll/resize
-  // listeners + createPortal. Open delay 350ms (scanning-friendly), close
-  // is instant on mouseleave.
+  // listeners + createPortal. Opens instantly on hover, closes on leave.
   const projAnchorRef = useRef<HTMLDivElement>(null);
   const projTooltipRef = useRef<HTMLDivElement>(null);
-  const projOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [projTooltip, setProjTooltip] = useState<{ top: number; left: number; caretLeft: number } | null>(null);
 
   const measureProjTooltip = useCallback(() => {
@@ -153,18 +151,12 @@ function TaskCardImpl({
   }, []);
 
   function handleProjEnter() {
-    if (projOpenTimerRef.current) clearTimeout(projOpenTimerRef.current);
-    projOpenTimerRef.current = setTimeout(() => {
-      const next = measureProjTooltip();
-      if (next) setProjTooltip(next);
-    }, 350);
+    // Open instantly on hover per user request — no delay.
+    const next = measureProjTooltip();
+    if (next) setProjTooltip(next);
   }
 
   function handleProjLeave() {
-    if (projOpenTimerRef.current) {
-      clearTimeout(projOpenTimerRef.current);
-      projOpenTimerRef.current = null;
-    }
     setProjTooltip(null);
   }
 
@@ -189,12 +181,6 @@ function TaskCardImpl({
     };
   }, [projTooltip !== null, measureProjTooltip]);
 
-  // Pending-timer cleanup on unmount.
-  useEffect(() => {
-    return () => {
-      if (projOpenTimerRef.current) clearTimeout(projOpenTimerRef.current);
-    };
-  }, []);
 
   // Track status transition for one-shot done animation
   const prevStatusRef = useRef(task.status);

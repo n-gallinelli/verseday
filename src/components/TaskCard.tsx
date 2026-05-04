@@ -111,6 +111,10 @@ function TaskCardImpl({
   const [notes, setNotes] = useState(task.notes ?? "");
   const [links, setLinks] = useState<Link[]>([]);
   const [newUrl, setNewUrl] = useState("");
+  // Track project-bar hover specifically so the action layer can fade out
+  // when the project label appears — otherwise the label and the trash/play
+  // buttons overlap in the same right-edge area, both unreadable.
+  const [projHover, setProjHover] = useState(false);
 
   // Track status transition for one-shot done animation
   const prevStatusRef = useRef(task.status);
@@ -283,8 +287,13 @@ function TaskCardImpl({
                 })()}
               </div>
 
-              {/* Hover layer (focused): trash to the left of stop. */}
-              <div className="absolute inset-0 flex items-center justify-end pr-[32px] transition-opacity duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto">
+              {/* Hover layer (focused): trash to the left of stop.
+                  Override to opacity-0 when projHover so the project
+                  label has clear space to render. */}
+              <div
+                className="absolute inset-0 flex items-center justify-end pr-[32px] transition-opacity duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto"
+                style={projHover ? { opacity: 0, pointerEvents: "none" } : undefined}
+              >
                 <TrashButton onDelete={() => onDelete(task.id)} />
               </div>
 
@@ -331,9 +340,12 @@ function TaskCardImpl({
               </div>
 
               {/* Hover layer (non-focused): trash + play, right-aligned.
-                  flex with justify-end + JSX trash-then-play means play
-                  ends up at the right edge, trash to its left. */}
-              <div className="absolute inset-0 flex items-center justify-end gap-2 transition-opacity duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto">
+                  Override to opacity-0 when projHover so the project
+                  label has clear space. */}
+              <div
+                className="absolute inset-0 flex items-center justify-end gap-2 transition-opacity duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto"
+                style={projHover ? { opacity: 0, pointerEvents: "none" } : undefined}
+              >
                 <TrashButton onDelete={() => onDelete(task.id)} />
                 {onStart && task.status !== "done" && (
                   <button
@@ -360,24 +372,37 @@ function TaskCardImpl({
           to the left of it, both in the same color so they read as
           one unit (no floating pill, no separate visual treatment).
           The wrapper is wider than the bar to give the hover target
-          some forgiveness without enlarging the visible bar itself. */}
+          some forgiveness without enlarging the visible bar itself.
+          On hover, projHover state flips so the action layer (trash
+          / play / stop overlay) fades out — otherwise the project
+          name and the action icons stack in the same area unreadable. */}
       {showProject && project && (
-        <div className="absolute right-0 top-0 bottom-0 w-[28px] group/proj">
-          {/* Bar — grows from 5px → 7px wide on hover. Same vertical
-              extent as before (top-1.5 bottom-1.5). */}
+        <div
+          className="absolute right-0 top-0 bottom-0 w-[28px]"
+          onMouseEnter={() => setProjHover(true)}
+          onMouseLeave={() => setProjHover(false)}
+        >
+          {/* Bar — grows from 5px → 7px wide on hover. */}
           <div
-            className="absolute right-0 top-1.5 bottom-1.5 w-[5px] rounded-l-full transition-[width] duration-150 group-hover/proj:w-[7px]"
-            style={{ backgroundColor: project.color }}
+            className="absolute right-0 top-1.5 bottom-1.5 rounded-l-full transition-[width] duration-150"
+            style={{
+              backgroundColor: project.color,
+              width: projHover ? 7 : 5,
+            }}
           />
-          {/* Project name — fades in to the left of the bar, same
-              color as the bar so it reads as the bar's label. No bg,
-              no border, no separate pill chrome. Right-anchored at
-              ~10px so the text's right edge sits just past the
-              expanded bar's left edge. max-w + truncate keeps long
-              names from blowing out the slot. */}
+          {/* Project name — fades in to the left of the bar in the
+              same color so it reads as the bar's label. No bg, no
+              border, no separate chrome. Positioned with enough
+              right offset that its right edge sits just past the
+              expanded bar's left edge; left edge is unconstrained so
+              long names extend leftward into the (now-faded) action
+              area. max-w + truncate caps the worst case. */}
           <span
-            className="absolute top-1/2 -translate-y-1/2 right-[10px] text-[10px] font-medium leading-none max-w-[120px] truncate opacity-0 group-hover/proj:opacity-100 transition-opacity duration-150 pointer-events-none"
-            style={{ color: project.color }}
+            className="absolute top-1/2 -translate-y-1/2 right-[12px] text-[10px] font-medium leading-none max-w-[100px] truncate transition-opacity duration-150 pointer-events-none"
+            style={{
+              color: project.color,
+              opacity: projHover ? 1 : 0,
+            }}
           >
             {project.name}
           </span>

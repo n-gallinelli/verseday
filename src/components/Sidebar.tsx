@@ -303,10 +303,14 @@ export default function Sidebar() {
         <NavSection label="Manage" items={manageItems} activePage={activePage} onSelect={setPage} />
       </nav>
 
-      {/* Shortcut glossary — list expands upward; the toggle row stays put */}
-      <div className="border-t border-line-hairline">
+      {/* Shortcut glossary — toggle row stays in flow; the list itself
+          is an absolute overlay that opens upward (bottom-full anchors
+          its bottom to the toggle row's top), covering whatever sits
+          above (Manage section: Dashboard, Settings) instead of
+          pushing them up. bg-sidebar keeps the overlay opaque. */}
+      <div className="border-t border-line-hairline relative">
         {showShortcuts && (
-          <div className="px-4 pt-3 pb-1 space-y-1">
+          <div className="absolute bottom-full left-0 right-0 bg-sidebar border-t border-line-hairline px-4 pt-3 pb-2 space-y-1">
             {SHORTCUTS.map((s) => (
               <div key={s.keys} className="flex items-center justify-between">
                 <span className="text-[10px] text-fg-secondary">{s.desc}</span>

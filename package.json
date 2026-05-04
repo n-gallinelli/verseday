@@ -9,7 +9,8 @@
     "tauri": "tauri",
     "lint": "eslint src/",
     "format": "prettier --write src/",
-    "audit:contrast": "node scripts/contrast-audit.mjs > docs/dark-mode-m4-contrast.md"
+    "audit:contrast": "node scripts/contrast-audit.mjs > docs/dark-mode-m4-contrast.md",
+    "test:skip-migration": "bash scripts/test-skip-migration.sh"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

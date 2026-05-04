@@ -213,8 +213,14 @@ export async function getUnfinishedRolloverTasks(): Promise<Task[]> {
 
 export async function getTasksForDate(date: string): Promise<Task[]> {
   const db = await getDb();
+  // recurrence IS NULL excludes recurring templates, which can leak into a
+  // day's list when their date_scheduled wasn't NULLed (e.g., a regular task
+  // that was rolled forward and later marked recurring). The instance row
+  // for that day still appears via recurrence_source_id; the template stays
+  // hidden from daily lists. Same filter applies across every "tasks for
+  // this date" surface — see migration v15 doc for the full set.
   return db.select(
-    "SELECT * FROM tasks WHERE date_scheduled = $1 ORDER BY sort_order LIMIT 500",
+    "SELECT * FROM tasks WHERE date_scheduled = $1 AND recurrence IS NULL ORDER BY sort_order LIMIT 500",
     [date]
   );
 }
@@ -386,6 +392,25 @@ export async function updateTaskSortOrders(
 
 export async function deleteTask(id: number): Promise<void> {
   const db = await getDb();
+  // If this row is a recurring instance, record the (template, date) pair
+  // so the next generateRecurringInstances call doesn't recreate it.
+  // Skip-insert happens *before* the DELETE because the two statements are
+  // commutative w.r.t. correctness — if a concurrent generation runs in
+  // between, it'll either still see the live instance (ON CONFLICT swallows)
+  // or already see the skip (NOT EXISTS guard short-circuits). See the v15
+  // doc for the full race walk-through.
+  const taskRows: { recurrence_source_id: number | null; date_scheduled: string | null }[] =
+    await db.select(
+      "SELECT recurrence_source_id, date_scheduled FROM tasks WHERE id = $1",
+      [id]
+    );
+  const t = taskRows[0];
+  if (t && t.recurrence_source_id != null && t.date_scheduled != null) {
+    await db.execute(
+      "INSERT INTO recurring_instance_skips (recurrence_source_id, date_scheduled) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+      [t.recurrence_source_id, t.date_scheduled]
+    );
+  }
   // time_entries have ON DELETE CASCADE, so they'll be cleaned up automatically
   await db.execute("DELETE FROM tasks WHERE id = $1", [id]);
 }
@@ -443,13 +468,13 @@ export async function getCompletedShutdowns(
        dp.date,
        dp.mood,
        dp.reflection,
-       (SELECT COUNT(*) FROM tasks t WHERE t.date_scheduled = dp.date AND t.status = 'done') AS tasks_done,
+       (SELECT COUNT(*) FROM tasks t WHERE t.date_scheduled = dp.date AND t.recurrence IS NULL AND t.status = 'done') AS tasks_done,
        (SELECT COALESCE(SUM(
           (strftime('%s', te.end_time) - strftime('%s', te.start_time)) - COALESCE(te.break_seconds, 0)
         ), 0)
         FROM time_entries te
         JOIN tasks t ON te.task_id = t.id
-        WHERE t.date_scheduled = dp.date AND te.end_time IS NOT NULL) AS worked_seconds
+        WHERE t.date_scheduled = dp.date AND t.recurrence IS NULL AND te.end_time IS NOT NULL) AS worked_seconds
      FROM daily_plans dp
      WHERE dp.mood IS NOT NULL OR (dp.reflection IS NOT NULL AND dp.reflection != '')
      ORDER BY dp.date DESC
@@ -467,7 +492,7 @@ export async function getCompletedShutdowns(
 export async function getCompletedTasksForDate(date: string): Promise<Task[]> {
   const db = await getDb();
   return db.select(
-    `SELECT * FROM tasks WHERE date_scheduled = $1 AND status = 'done' ORDER BY sort_order ASC LIMIT 200`,
+    `SELECT * FROM tasks WHERE date_scheduled = $1 AND recurrence IS NULL AND status = 'done' ORDER BY sort_order ASC LIMIT 200`,
     [date]
   );
 }
@@ -480,7 +505,7 @@ export async function getTimeEntriesForDate(
   return db.select(
     `SELECT te.* FROM time_entries te
      JOIN tasks t ON te.task_id = t.id
-     WHERE t.date_scheduled = $1
+     WHERE t.date_scheduled = $1 AND t.recurrence IS NULL
      ORDER BY te.start_time LIMIT 1000`,
     [date]
   );
@@ -538,7 +563,7 @@ export async function closeOrphanedTimeEntries(): Promise<number> {
 export async function getTotalPlannedMinutes(date: string): Promise<number> {
   const db = await getDb();
   const rows: { total: number }[] = await db.select(
-    "SELECT COALESCE(SUM(estimated_minutes), 0) as total FROM tasks WHERE date_scheduled = $1",
+    "SELECT COALESCE(SUM(estimated_minutes), 0) as total FROM tasks WHERE date_scheduled = $1 AND recurrence IS NULL",
     [date]
   );
   return rows[0]?.total ?? 0;
@@ -553,7 +578,7 @@ export async function getTotalWorkedMinutes(date: string): Promise<number> {
     ), 0) as total
     FROM time_entries te
     JOIN tasks t ON te.task_id = t.id
-    WHERE t.date_scheduled = $1`,
+    WHERE t.date_scheduled = $1 AND t.recurrence IS NULL`,
     [date]
   );
   return rows[0]?.total ?? 0;
@@ -590,7 +615,7 @@ export async function getTasksForWeek(
 ): Promise<Task[]> {
   const db = await getDb();
   return db.select(
-    "SELECT * FROM tasks WHERE date_scheduled >= $1 AND date_scheduled <= $2 ORDER BY date_scheduled, sort_order LIMIT 500",
+    "SELECT * FROM tasks WHERE date_scheduled >= $1 AND date_scheduled <= $2 AND recurrence IS NULL ORDER BY date_scheduled, sort_order LIMIT 500",
     [startDate, endDate]
   );
 }
@@ -622,7 +647,7 @@ export async function getWorkedMinutesForWeek(
     ), 0) as total
     FROM time_entries te
     JOIN tasks t ON te.task_id = t.id
-    WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2
+    WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL
     GROUP BY t.date_scheduled`,
     [startDate, endDate]
   );
@@ -1177,6 +1202,18 @@ export async function generateRecurringInstances(date: string): Promise<void> {
     }
 
     if (!shouldGenerate) continue;
+
+    // Skip-check: if the user explicitly deleted an instance for this
+    // (template, date), respect that intent and don't regenerate. The skip
+    // table is populated by deleteTask() for any row that's a recurring
+    // instance. Without this, deleting today's recurring task would
+    // regenerate it on the very next loadData() call. Idempotent — extra
+    // checks are harmless.
+    const skipped: { recurrence_source_id: number }[] = await db.select(
+      "SELECT recurrence_source_id FROM recurring_instance_skips WHERE recurrence_source_id = $1 AND date_scheduled = $2 LIMIT 1",
+      [tmpl.id, date]
+    );
+    if (skipped.length > 0) continue;
 
     // Check if instance already exists for this date
     const existing: { id: number }[] = await db.select(

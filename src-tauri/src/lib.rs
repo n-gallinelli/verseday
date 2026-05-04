@@ -219,6 +219,29 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 15,
+            description: "track skipped recurring-instance dates so deletes are not regenerated",
+            // Additive only — one new table, no UPDATE/DELETE. Records the
+            // user's intent when they delete a recurring instance so the
+            // next call to generateRecurringInstances respects the skip
+            // instead of re-creating the row. ON DELETE CASCADE keeps the
+            // skip table in sync when the user deletes the template itself.
+            //
+            // NOTE on version gap: v14 lives on fix/recurring-task-duplicates
+            // (the dedup index + cleanup). v15 is independent of v14 per
+            // Verse — they will compose at merge time. If v15 lands first,
+            // v14 slots in between v13 and v15 with a trivial conflict in
+            // this vec.
+            sql: "
+                CREATE TABLE IF NOT EXISTS recurring_instance_skips (
+                    recurrence_source_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    date_scheduled       TEXT NOT NULL,
+                    PRIMARY KEY (recurrence_source_id, date_scheduled)
+                );
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

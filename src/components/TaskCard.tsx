@@ -59,7 +59,10 @@ function TrashButton({ onDelete }: { onDelete: () => void }) {
       // Picks up the elevated surface tone instead of the destructive
       // soft-tint so it doesn't read as "armed" — destructive intent only
       // surfaces on hover (text and bg shift to accent-destructive).
-      className="w-6 h-6 rounded-full flex items-center justify-center cursor-pointer transition-colors text-fg-faded bg-elevated border border-line-soft hover:text-accent-destructive hover:bg-accent-destructive/15 hover:border-accent-destructive/30"
+      // Trash is always hover-only on the row, regardless of focus state,
+      // so the opacity + scale transition fires whenever the row leaves
+      // hover — no straight-line clip from the container's overflow.
+      className="w-6 h-6 rounded-full flex items-center justify-center cursor-pointer transition-[colors,opacity,transform] duration-150 text-fg-faded bg-elevated border border-line-soft hover:text-accent-destructive hover:bg-accent-destructive/15 hover:border-accent-destructive/30 opacity-0 scale-90 group-hover/row:opacity-100 group-hover/row:scale-100"
       title="Delete"
     >
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
@@ -277,7 +280,13 @@ function TaskCardImpl({
                   e.stopPropagation();
                   onStart(task);
                 }}
-                className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-[color-mix(in_srgb,var(--accent-blue),black_30%)] cursor-pointer flex items-center justify-center transition-colors duration-150"
+                // Fade + scale alongside the container's width transition
+                // so the button softens out instead of being sliced by
+                // the overflow-hidden clip. opacity transition matches the
+                // container's 150ms; scale 90→100 adds a subtle "pop in"
+                // on hover and "settle out" on hover-end so the
+                // disappearance reads as motion, not a vertical wipe.
+                className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-[color-mix(in_srgb,var(--accent-blue),black_30%)] cursor-pointer flex items-center justify-center transition-[colors,opacity,transform] duration-150 opacity-0 scale-90 group-hover/row:opacity-100 group-hover/row:scale-100"
                 title="Start focus"
               >
                 <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">

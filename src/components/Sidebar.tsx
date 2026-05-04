@@ -319,14 +319,16 @@ export default function Sidebar() {
         )}
         <button
           onClick={() => setShowShortcuts(!showShortcuts)}
-          className="w-full flex items-center gap-1.5 px-4 py-2.5 text-[11px] text-fg-faded cursor-pointer hover:text-fg-muted transition-colors"
+          className="w-full flex items-center gap-3 px-4 py-2.5 text-[11px] text-fg-faded cursor-pointer hover:text-fg-muted transition-colors"
         >
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
-            <rect x="1" y="3" width="10" height="7" rx="1.5" />
-            <line x1="3.5" y1="6" x2="4.5" y2="6" />
-            <line x1="6" y1="6" x2="7" y2="6" />
-            <line x1="3.5" y1="8" x2="8.5" y2="8" />
-          </svg>
+          <span className="w-8 flex items-center justify-center shrink-0">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+              <rect x="1" y="3" width="10" height="7" rx="1.5" />
+              <line x1="3.5" y1="6" x2="4.5" y2="6" />
+              <line x1="6" y1="6" x2="7" y2="6" />
+              <line x1="3.5" y1="8" x2="8.5" y2="8" />
+            </svg>
+          </span>
           Shortcuts
           <span className="ml-auto text-accent-orange-soft-fg/70 flex items-center">
             <DisclosureCaret expanded={showShortcuts} rotateExpanded={-90} />

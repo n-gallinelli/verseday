@@ -224,27 +224,6 @@ export default function TaskCard({
           {task.title}
         </span>
 
-        {/* Actions slot — appears on row hover (play + trash). */}
-        <div className="relative w-[60px] shrink-0 flex items-center justify-end h-[22px]">
-          <div className="absolute inset-0 flex items-center justify-end gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150 pointer-events-none group-hover/row:pointer-events-auto">
-            {onStart && task.status !== "done" && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onStart(task);
-                }}
-                className="w-6 h-6 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
-                title="Start focus"
-              >
-                <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
-                  <path d="M0 0v10l8-5z" />
-                </svg>
-              </button>
-            )}
-            <TrashButton onDelete={() => onDelete(task.id)} />
-          </div>
-        </div>
-
         {/* Time slot — fixed width so worked/estimated columns align across
             rows even when a task has no time tracked. */}
         <div className="w-[78px] shrink-0 flex justify-end text-[11px] tabular-nums">
@@ -267,6 +246,28 @@ export default function TaskCard({
             );
           })()}
         </div>
+
+        {/* Actions slot — appears on row hover (play + trash), pinned to the
+            right edge so the time pill sits left of them. */}
+        <div className="relative w-[60px] shrink-0 flex items-center justify-end h-[22px]">
+          <div className="absolute inset-0 flex items-center justify-end gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150 pointer-events-none group-hover/row:pointer-events-auto">
+            {onStart && task.status !== "done" && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStart(task);
+                }}
+                className="w-6 h-6 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
+                title="Start focus"
+              >
+                <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
+                  <path d="M0 0v10l8-5z" />
+                </svg>
+              </button>
+            )}
+            <TrashButton onDelete={() => onDelete(task.id)} />
+          </div>
+        </div>
       </div>
 
       {/* Project marker — a thin colored bar pinned to the right edge of
@@ -276,7 +277,7 @@ export default function TaskCard({
       {showProject && project && (
         <div className="absolute right-0 top-0 bottom-0 w-[14px] group/proj">
           <div
-            className="absolute right-0 top-1.5 bottom-1.5 w-[3px] rounded-l-full transition-opacity duration-150 group-hover/proj:opacity-0"
+            className="absolute right-0 top-1.5 bottom-1.5 w-[5px] rounded-l-full transition-opacity duration-150 group-hover/proj:opacity-0"
             style={{ backgroundColor: project.color }}
           />
           <div

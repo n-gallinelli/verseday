@@ -235,18 +235,65 @@ function TaskCardImpl({
         </button>
 
         {/* Title — row click opens detail. One-line clamp keeps every card
-            the same height regardless of title length. The right-padding
-            shifts on hover (and stays applied for the focused row) so the
-            truncation point moves leftward by the icon-overlay's width —
-            text actually cuts off before reaching the floating buttons
-            instead of bleeding under them. */}
+            the same height. flex-1 absorbs whatever space the actions
+            container reserves (collapsed to 0 idle, expanding on hover)
+            so the title truncates with a real ellipsis — no overlap with
+            buttons. */}
         <span
-          className={`flex-1 min-w-0 truncate text-fg [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)] transition-[padding] duration-150 ease-out ${
-            isFocused ? "pr-[64px]" : "group-hover/row:pr-[64px]"
-          } ${task.status === "done" ? "line-through !text-fg-faded" : ""}`}
+          className={`flex-1 min-w-0 truncate text-fg [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)] ${
+            task.status === "done" ? "line-through !text-fg-faded" : ""
+          }`}
         >
           {task.title}
         </span>
+
+        {/* Actions — sit in the flex flow between title and time pill so
+            the title loses real layout space instead of being overlaid.
+            Container width animates to keep the transition smooth. Width
+            states (Verse review notes — closer-to-timer placement, trash
+            hover-only even when focused):
+              not focused, not hover: w-0   (no buttons)
+              not focused, hover:     w-14  (play + trash)
+              focused, not hover:     w-6   (stop only)
+              focused, hover:         w-14  (stop + trash) */}
+        <div
+          className={`overflow-hidden flex items-center gap-2 transition-[width] duration-150 ease-out shrink-0 ${
+            isFocused
+              ? "w-6 group-hover/row:w-14"
+              : "w-0 group-hover/row:w-14"
+          }`}
+        >
+          {isFocused && onStop ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onStop(task);
+              }}
+              className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
+              title="Stop focus"
+            >
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+                <rect width="8" height="8" rx="1" />
+              </svg>
+            </button>
+          ) : (
+            onStart && task.status !== "done" && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStart(task);
+                }}
+                className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
+                title="Start focus"
+              >
+                <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
+                  <path d="M0 0v10l8-5z" />
+                </svg>
+              </button>
+            )
+          )}
+          <TrashButton onDelete={() => onDelete(task.id)} />
+        </div>
 
         {/* Time pill — sits at the row's right edge. No fixed-width slot
             anymore (was 78px); the title's flex-1 absorbs the freed space
@@ -294,57 +341,6 @@ function TaskCardImpl({
             );
           })()}
         </div>
-      </div>
-
-      {/* Actions overlay — absolutely positioned over the row so it floats
-          to the LEFT of the time pill, occluding the right edge of the
-          title text on hover. Each button has its own opaque background so
-          the title beneath stays readable as buttons fade in/out. The
-          focused row keeps the stop button always visible (isFocused);
-          other rows show only on group/row hover. */}
-      <div
-        className={`absolute top-1/2 -translate-y-1/2 flex items-center gap-2 transition-opacity duration-150 ${
-          isFocused
-            ? "opacity-100 pointer-events-auto"
-            : "opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto"
-        }`}
-        style={{
-          // Sits to the left of the time pill. Right offset = card padding
-          // (px-4 = 16px) + estimated pill width (~78px max) + small gap
-          // so the buttons don't touch the pill.
-          right: "calc(16px + 88px)",
-        }}
-      >
-        {isFocused && onStop ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onStop(task);
-            }}
-            className="w-6 h-6 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
-            title="Stop focus"
-          >
-            <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
-              <rect width="8" height="8" rx="1" />
-            </svg>
-          </button>
-        ) : (
-          onStart && task.status !== "done" && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onStart(task);
-              }}
-              className="w-6 h-6 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
-              title="Start focus"
-            >
-              <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
-                <path d="M0 0v10l8-5z" />
-              </svg>
-            </button>
-          )
-        )}
-        <TrashButton onDelete={() => onDelete(task.id)} />
       </div>
 
       {/* Project marker — a thin colored bar pinned to the right edge of

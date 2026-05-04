@@ -4,28 +4,35 @@ export function parseTimeFromTitle(title: string): {
   cleanTitle: string;
   minutes: number | null;
 } {
-  // Match patterns like "20 minutes", "1.5 hours", "45m", "2h", "about 30 min", "~15min"
-  const pattern =
+  // Pattern with explicit unit: "20 minutes", "1.5 hours", "45m", "2h",
+  // "about 30 min", "~15min". Requires a unit so bare numbers in titles like
+  // "Call Alex at 5" don't get treated as estimates.
+  const withUnit =
     /(?:^|\s)(?:about|around|~)?\s*(\d+(?:\.\d+)?)\s*(minutes?|mins?|m|hours?|hrs?|h)\s*$/i;
-  const match = title.match(pattern);
-  if (!match) return { cleanTitle: title, minutes: null };
+  // Pattern with the ~ prefix and a bare number: "~20" → 20 minutes. The ~
+  // makes the user's intent unambiguous, so we default to minutes when no
+  // unit is given.
+  const tildeBare = /(?:^|\s)~(\d+(?:\.\d+)?)\s*$/;
 
-  const num = parseFloat(match[1]);
-  const unit = match[2].toLowerCase();
-  let minutes: number;
-
-  if (unit.startsWith("h")) {
-    minutes = Math.round(num * 60);
-  } else {
-    minutes = Math.round(num);
+  const m1 = title.match(withUnit);
+  if (m1) {
+    const num = parseFloat(m1[1]);
+    const unit = m1[2].toLowerCase();
+    const minutes = unit.startsWith("h") ? Math.round(num * 60) : Math.round(num);
+    if (minutes >= 1 && minutes <= MAX_ESTIMATE_MINUTES) {
+      return { cleanTitle: title.slice(0, m1.index).trim(), minutes };
+    }
   }
 
-  if (minutes < 1 || minutes > MAX_ESTIMATE_MINUTES) {
-    return { cleanTitle: title, minutes: null };
+  const m2 = title.match(tildeBare);
+  if (m2) {
+    const minutes = Math.round(parseFloat(m2[1]));
+    if (minutes >= 1 && minutes <= MAX_ESTIMATE_MINUTES) {
+      return { cleanTitle: title.slice(0, m2.index).trim(), minutes };
+    }
   }
 
-  const cleanTitle = title.slice(0, match.index).trim();
-  return { cleanTitle, minutes };
+  return { cleanTitle: title, minutes: null };
 }
 
 export function formatHoursMinutes(totalMinutes: number): string {

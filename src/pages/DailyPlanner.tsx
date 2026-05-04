@@ -49,7 +49,9 @@ import { formatHoursMinutes, parseTimeFromTitle, getEmptyDayMessage } from "../u
 import type { Task, DailyPlan, Project } from "../types";
 
 
-const MAX_TITLE_LENGTH = 200;
+// Sanity belt only — see TaskDetailOverlay for the same constant. UI no
+// longer gates titles below this; render surfaces truncate.
+const MAX_TITLE_LENGTH = 5000;
 const MAX_ESTIMATE_MINUTES = 480;
 
 // Smart time parsing: extract duration from end of task title.
@@ -97,6 +99,7 @@ export default function DailyPlanner() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [taskInputExpanded, setTaskInputExpanded] = useState(false);
   const taskInputRef = useRef<HTMLFormElement>(null);
+  const newTaskInputRef = useRef<HTMLInputElement>(null);
   const datePickerAnchorRef = useRef<HTMLButtonElement>(null);
 
   // Right panel — expandable projects + unfinished + unscheduled
@@ -158,6 +161,33 @@ export default function DailyPlanner() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Hotkey: press `A` (no modifiers) to expand and focus the add-task
+  // input. Skipped if the user is already typing somewhere (input,
+  // textarea, contenteditable like the daily-notes editor or task-detail
+  // overlay) or if a destructive confirmation row is showing — those
+  // surfaces own the keystroke. Modifier check explicit so Cmd+A
+  // (select-all) and similar combos pass through untouched.
+  useEffect(() => {
+    function isTypingTarget(el: EventTarget | null): boolean {
+      if (!(el instanceof HTMLElement)) return false;
+      const tag = el.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      return el.isContentEditable;
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== "a" && e.key !== "A") return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (isTypingTarget(document.activeElement)) return;
+      if (detailTask || confirmDeleteId !== null || editingId !== null) return;
+      e.preventDefault();
+      setTaskInputExpanded(true);
+      // Focus on the next tick so the input has rendered after expanding.
+      requestAnimationFrame(() => newTaskInputRef.current?.focus());
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [detailTask, confirmDeleteId, editingId]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -699,11 +729,11 @@ export default function DailyPlanner() {
               {/* Row 1: input + add */}
               <div className="flex items-center gap-2.5 mb-2.5">
                 <input
+                  ref={newTaskInputRef}
                   type="text"
                   value={newTaskTitle}
                   onChange={(e) => setNewTaskTitle(e.target.value)}
                   autoFocus
-                  maxLength={MAX_TITLE_LENGTH}
                   placeholder="New task"
                   className="flex-1 bg-transparent border-none outline-none text-[14px] text-fg placeholder:text-fg-faded"
                 />
@@ -785,7 +815,6 @@ export default function DailyPlanner() {
                               type="text"
                               value={editTitle}
                               onChange={(e) => setEditTitle(e.target.value)}
-                              maxLength={MAX_TITLE_LENGTH}
                               autoFocus
                               className="flex-1 bg-transparent border border-line-soft rounded-md px-2.5 py-1.5 text-[13px] text-fg focus:outline-none focus:border-accent-blue"
                             />
@@ -939,8 +968,9 @@ export default function DailyPlanner() {
           column so the notes are always visible regardless of how many
           tasks are scrolled above. Sibling of the scrollable region above,
           not a child, so the scroll area shrinks to fit instead of pushing
-          the notes off-screen. */}
-      <div className="px-7 pt-3 pb-5 border-t border-line-hairline shrink-0">
+          the notes off-screen. No top border / hairline divider — the
+          section reads as a quiet bottom zone, not its own footer chrome. */}
+      <div className="px-7 pt-3 pb-5 shrink-0">
         <div className="max-w-[640px] mx-auto">
           <div className="flex items-center justify-between mb-1.5">
             <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded">

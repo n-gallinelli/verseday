@@ -7,7 +7,11 @@ import RichTextEditor from "./RichTextEditor";
 import SimpleSelect from "./SimpleSelect";
 import type { Task, Project } from "../types";
 
-const MAX_TITLE_LENGTH = 200;
+// Sanity belt only — render surfaces use `truncate`, no UI gates titles
+// below this. Bumped from 200 (an old product opinion) so titles can be as
+// long as the user needs them in the detail overlay; truncate-with-ellipsis
+// keeps lists scannable.
+const MAX_TITLE_LENGTH = 5000;
 const MAX_ESTIMATE_MINUTES = 480;
 
 const ESTIMATE_PRESETS = [
@@ -494,11 +498,15 @@ export default function TaskDetailOverlay({
               debouncedSave({ title: v });
             }}
             onKeyDown={(e) => {
-              // Enter commits the title (blurs the field) — keeps it from
-              // inserting a newline that the onChange would strip a beat later.
+              // Enter (no Shift) commits the title and closes the overlay,
+              // returning the user to the page underneath (typically Daily
+              // Plan). Shift+Enter is reserved if a future change ever
+              // wants line breaks in titles, but onChange currently strips
+              // newlines so it'd no-op today.
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                e.currentTarget.blur();
+                flushSave();
+                onClose();
               }
             }}
             onInput={(e) => {
@@ -508,7 +516,6 @@ export default function TaskDetailOverlay({
             }}
             ref={titleRef}
             rows={1}
-            maxLength={MAX_TITLE_LENGTH}
             placeholder="Untitled task"
             className={`flex-1 min-w-0 text-[24px] font-medium bg-transparent border-none outline-none leading-tight placeholder:text-fg-disabled resize-none overflow-hidden transition-colors duration-150 ease-out ${
               localStatus === "done"

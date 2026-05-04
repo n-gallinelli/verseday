@@ -33,37 +33,18 @@ interface TaskCardProps {
 }
 
 function TrashButton({ onDelete }: { onDelete: () => void }) {
-  const [armed, setArmed] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function handleClick() {
-    if (armed) {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      onDelete();
-    } else {
-      setArmed(true);
-      timerRef.current = setTimeout(() => setArmed(false), 2000);
-    }
-  }
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
+  // One click → onDelete fires (which sets confirmDeleteId in the parent
+  // and renders the inline Delete/Cancel confirmation row). No more "armed"
+  // intermediate state — it was a redundant gate on top of the inline
+  // confirmation, which is the actual destructive prompt.
   return (
     <button
       onClick={(e) => {
         e.stopPropagation();
-        handleClick();
+        onDelete();
       }}
-      className={`w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors ${
-        armed
-          ? "text-accent-destructive bg-accent-destructive/10"
-          : "text-fg-faded hover:text-fg-muted hover:bg-overlay-hover"
-      }`}
-      title={armed ? "Click again to delete" : "Delete"}
+      className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors text-fg-faded hover:text-accent-destructive hover:bg-accent-destructive/10"
+      title="Delete"
     >
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
         <path d="M2 4h12" />
@@ -172,7 +153,11 @@ export default function TaskCard({
       data-task-row-id={task.id}
       {...attributes}
       {...listeners}
-      className={`relative px-4 py-4 rounded-lg border transition-colors duration-150 ease-out group/row touch-none ${
+      onClick={() => onOpenDetail?.(task)}
+      // Inner buttons (checkbox, play, trash) all stopPropagation, so this
+      // outer click handler only fires for clicks on the row's empty space
+      // — verified in TaskCard.tsx during the polish batch.
+      className={`relative px-4 py-4 rounded-lg border transition-colors duration-150 ease-out group/row touch-none cursor-pointer ${
         isDragging ? "cursor-grabbing" : ""
       } ${
         task.status === "done"
@@ -183,8 +168,7 @@ export default function TaskCard({
       }${justArrived ? " animate-task-arrived" : ""}${justAdded ? " animate-task-added" : ""}`}
     >
       <div
-        className="flex items-center gap-3 cursor-default"
-        onClick={() => onOpenDetail?.(task)}
+        className="flex items-center gap-3"
       >
         {/* Checkbox */}
         <button

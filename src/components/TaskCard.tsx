@@ -1,9 +1,4 @@
 import { memo, useState, useEffect, useRef } from "react";
-
-// Dev-only — Verse-required render-count probe for the 1s-cadence
-// correctness gate (see #8 plan). The narrow `as` cast avoids needing a
-// vite/client type reference in tsconfig.
-const IS_DEV = ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) ?? false;
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -96,16 +91,6 @@ function TaskCardImpl({
   isFocused = false,
   onStop,
 }: TaskCardProps) {
-  // Dev render-count probe — required by Verse for the 1s-cadence
-  // correctness gate. Logs once per render with the task id so `npm run
-  // tauri dev`'s console can be inspected during a focus session: the
-  // focused row should log ~once per second, every other row should log 0
-  // additional times after their initial mount. Remove after verification
-  // if performance is otherwise validated.
-  if (IS_DEV) {
-    // eslint-disable-next-line no-console
-    console.debug(`[TaskCard render] id=${task.id} live=${liveElapsedMs ?? "—"}`);
-  }
   const {
     attributes,
     listeners,
@@ -468,26 +453,25 @@ function TaskCardImpl({
  * comparator and bails out.
  */
 function taskCardPropsEqual(prev: TaskCardProps, next: TaskCardProps): boolean {
-  // Per-tick memo invalidation on the focused row: liveElapsedMs changes
-  // every second by design. That's INTENDED — only the focused row should
-  // re-render per tick. Diff suppressed from the dev probe so it doesn't
-  // spam the console; non-tick diffs still log so unexpected memo breaks
-  // (e.g., a parent recreating task or workedMap references) surface.
-  let diff: string | null = null;
-  if (prev.liveElapsedMs !== next.liveElapsedMs) diff = "liveElapsedMs";
-  else if (prev.isFocused !== next.isFocused) diff = "isFocused";
-  else if (prev.task !== next.task) diff = "task";
-  else if (prev.project !== next.project) diff = "project";
-  else if (prev.expandedNotes !== next.expandedNotes) diff = "expandedNotes";
-  else if (prev.showProject !== next.showProject) diff = "showProject";
-  else if (prev.workedMinutes !== next.workedMinutes) diff = "workedMinutes";
-  else if (prev.justArrived !== next.justArrived) diff = "justArrived";
-  else if (prev.justAdded !== next.justAdded) diff = "justAdded";
-  if (diff && diff !== "liveElapsedMs" && IS_DEV) {
-    // eslint-disable-next-line no-console
-    console.debug(`[TaskCard memo break] id=${next.task.id} diff=${diff}`);
-  }
-  return diff === null;
+  // Custom comparator. Function props (onToggle/onEdit/onDelete/...) are
+  // intentionally NOT compared — DailyPlanner passes inline arrow
+  // functions on every render, so reference comparison would always
+  // invalidate the memo. Callbacks are safe to ignore because they read
+  // state via setState callback form or useAppStore.getState() — no
+  // captured-stale-state hazards. The expensive case this guards is the
+  // 1Hz tick from useFocusTick: only the focused row's liveElapsedMs
+  // changes per tick; every other card's data props are referentially
+  // equal across renders and the comparator returns true → memo skip.
+  if (prev.liveElapsedMs !== next.liveElapsedMs) return false;
+  if (prev.isFocused !== next.isFocused) return false;
+  if (prev.task !== next.task) return false;
+  if (prev.project !== next.project) return false;
+  if (prev.expandedNotes !== next.expandedNotes) return false;
+  if (prev.showProject !== next.showProject) return false;
+  if (prev.workedMinutes !== next.workedMinutes) return false;
+  if (prev.justArrived !== next.justArrived) return false;
+  if (prev.justAdded !== next.justAdded) return false;
+  return true;
 }
 
 const TaskCard = memo(TaskCardImpl, taskCardPropsEqual);

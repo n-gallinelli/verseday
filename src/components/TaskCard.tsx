@@ -398,14 +398,14 @@ function TaskCardImpl({
               long names extend leftward into the (now-faded) action
               area. max-w + truncate caps the worst case. */}
           <span
-            // Multi-line: long project names wrap within the 240px
-            // width instead of truncating. text-right aligns wrapped
-            // lines to the bar so the cluster still reads as one
-            // unit. leading-tight keeps multi-line names compact;
-            // they may extend above/below the row's vertical bounds
-            // for very long names but that's preferable to clipping
-            // the name itself.
-            className="absolute top-1/2 -translate-y-1/2 right-[12px] text-[11px] font-medium leading-tight max-w-[240px] text-right whitespace-normal transition-opacity duration-150 pointer-events-none"
+            // Single line, no max-width — label takes its natural
+            // width to show the whole name in one read. Long names
+            // extend leftward into the title area; that overlap is
+            // fine because the action overlay is faded out and the
+            // project color contrasts the title text. Pointer-events
+            // are disabled so the row's click area underneath still
+            // works through the label.
+            className="absolute top-1/2 -translate-y-1/2 right-[12px] text-[11px] font-medium leading-none whitespace-nowrap transition-opacity duration-150 pointer-events-none"
             style={{
               color: project.color,
               opacity: projHover ? 1 : 0,

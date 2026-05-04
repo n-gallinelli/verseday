@@ -251,7 +251,7 @@ function TimeFieldPill({
             <button
               type="button"
               onClick={onReset}
-              className="mt-2 text-[11px] text-fg-faded hover:text-accent-destructive cursor-pointer transition-colors hover:underline"
+              className="block mx-auto mt-2 text-[11px] text-fg-faded hover:text-accent-destructive cursor-pointer transition-colors hover:underline"
             >
               Reset
             </button>

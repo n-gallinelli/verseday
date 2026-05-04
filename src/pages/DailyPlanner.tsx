@@ -187,18 +187,43 @@ export default function DailyPlanner() {
       return el.isContentEditable;
     }
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key !== "a" && e.key !== "A") return;
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       if (isTypingTarget(document.activeElement)) return;
       if (detailTask || confirmDeleteId !== null || editingId !== null) return;
-      e.preventDefault();
-      setTaskInputExpanded(true);
-      // Focus on the next tick so the input has rendered after expanding.
-      requestAnimationFrame(() => newTaskInputRef.current?.focus());
+
+      if (e.key === "a" || e.key === "A") {
+        e.preventDefault();
+        setTaskInputExpanded(true);
+        // Focus on the next tick so the input has rendered after expanding.
+        requestAnimationFrame(() => newTaskInputRef.current?.focus());
+        return;
+      }
+
+      // Space while a task row is hovered → start focus on it AND
+      // navigate to the immersive Focus page. Reads the currently
+      // hovered row from the DOM via :hover (no extra state needed —
+      // the browser already tracks it).
+      if (e.key === " ") {
+        const hovered = document.querySelector<HTMLElement>(
+          "[data-task-row-id]:hover"
+        );
+        if (!hovered) return;
+        const id = parseInt(hovered.dataset.taskRowId ?? "", 10);
+        if (Number.isNaN(id)) return;
+        const target = tasks.find((t) => t.id === id);
+        if (!target || target.status === "done") return;
+        e.preventDefault();
+        handleStartFocus(target);
+        setPage("focus");
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [detailTask, confirmDeleteId, editingId]);
+    // tasks/handleStartFocus/setPage closures are read at call time;
+    // keeping the dep array narrow avoids re-binding the listener on
+    // every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailTask, confirmDeleteId, editingId, tasks]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })

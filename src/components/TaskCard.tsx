@@ -120,33 +120,39 @@ function TaskCardImpl({
   // listeners + createPortal. Opens instantly on hover, closes on leave.
   const projAnchorRef = useRef<HTMLDivElement>(null);
   const projTooltipRef = useRef<HTMLDivElement>(null);
-  const [projTooltip, setProjTooltip] = useState<{ top: number; left: number; caretLeft: number } | null>(null);
+  const [projTooltip, setProjTooltip] = useState<{ top: number; left: number; caretTop: number } | null>(null);
 
   const measureProjTooltip = useCallback(() => {
     const anchor = projAnchorRef.current;
     if (!anchor) return null;
     const rect = anchor.getBoundingClientRect();
-    // Tooltip width measurement: read after first render via ref. Until
-    // measured, fall back to max-width 200 for the centering math; the
-    // recompute on next frame snaps it to actual width.
+    // Tooltip width/height: read after first render via ref. Until
+    // measured, fall back to sensible defaults; the recompute on the
+    // next frame snaps to real values.
     const tooltipEl = projTooltipRef.current;
-    const tooltipWidth = tooltipEl?.offsetWidth ?? 200;
-    const tooltipHeight = tooltipEl?.offsetHeight ?? 36;
-    const swatchCenter = rect.left + rect.width / 2;
-    const naiveLeft = swatchCenter - tooltipWidth / 2;
-    // Clamp so the tooltip doesn't run off the right edge for swatches
-    // near the corner. 8px viewport margin on both sides.
-    const clampedLeft = Math.min(
-      Math.max(naiveLeft, 8),
-      window.innerWidth - tooltipWidth - 8
+    const tooltipWidth = tooltipEl?.offsetWidth ?? 240;
+    const tooltipHeight = tooltipEl?.offsetHeight ?? 48;
+    // Position tooltip to the LEFT of the bar, vertically centered on
+    // the bar's center. This makes it feel like it emerges from the
+    // bar (same row) rather than floating above the row above. 10px
+    // gap between tooltip's right edge and the bar's left edge so the
+    // caret has room to point in.
+    const barCenterY = rect.top + rect.height / 2;
+    const naiveTop = barCenterY - tooltipHeight / 2;
+    const naiveLeft = rect.left - tooltipWidth - 10;
+    // Clamp inside the viewport with 8px margins.
+    const clampedTop = Math.min(
+      Math.max(naiveTop, 8),
+      window.innerHeight - tooltipHeight - 8
     );
+    const clampedLeft = Math.max(naiveLeft, 8);
     return {
-      top: rect.top - tooltipHeight - 8,
+      top: clampedTop,
       left: clampedLeft,
-      // Caret horizontal position relative to the tooltip's left edge —
-      // points down at the swatch's center even if the tooltip itself
-      // got clamped sideways.
-      caretLeft: swatchCenter - clampedLeft,
+      // Caret vertical position relative to the tooltip's top edge —
+      // points right at the bar's center even if the tooltip is
+      // clamped vertically.
+      caretTop: barCenterY - clampedTop,
     };
   }, []);
 
@@ -452,17 +458,18 @@ function TaskCardImpl({
         </div>
       )}
 
-      {/* Project tooltip — portaled to document.body so it floats above
-          the row without affecting layout or clipping by parent overflow.
-          Same styling tokens as DatePicker / ProjectPicker: bg-elevated,
-          0.5px border-soft, var(--shadow-card), animate-scale-in. Caret
-          is a rotated square that points down at the swatch; positioned
-          via caretLeft (relative to the tooltip's left edge) so it
-          tracks the swatch even when the tooltip is clamped sideways. */}
+      {/* Project tooltip — portaled to document.body so it floats next
+          to the bar without affecting layout. Positioned LEFT of the bar
+          and vertically centered on it (emerges from the bar's row, not
+          from above). Two-tier text: project name (medium, primary) on
+          top, optional qualifier (secondary, smaller) below. Caret points
+          right at the bar. Same styling tokens as DatePicker /
+          ProjectPicker: bg-elevated, 0.5px border-soft,
+          var(--shadow-card). */}
       {showProject && project && projTooltip && createPortal(
         <div
           ref={projTooltipRef}
-          className="fixed z-[60] bg-elevated rounded-lg px-3 py-2 max-w-[200px] pointer-events-none"
+          className="fixed z-[60] bg-elevated rounded-lg px-3 py-2 max-w-[260px] pointer-events-none"
           style={{
             top: projTooltip.top,
             left: projTooltip.left,
@@ -470,26 +477,46 @@ function TaskCardImpl({
             boxShadow: "var(--shadow-card)",
           }}
         >
-          <div className="flex items-start gap-1.5">
-            <span
-              className="w-1.5 h-1.5 rounded-full shrink-0 mt-[6px]"
-              style={{ backgroundColor: project.color }}
-            />
-            <span className="text-[12px] text-fg-secondary leading-[1.35] whitespace-normal break-words">
-              {project.name}
-            </span>
-          </div>
-          {/* Caret — 8px rotated square at the bottom edge, pointing
-              down at the swatch. Border on the bottom-right edges (which
-              become top/left after 45° rotation). */}
+          {(() => {
+            // Split on the last " - " (space-dash-space) to separate
+            // primary name from a trailing qualifier (e.g.
+            // "Increased Homepage Above-the-Fold Testing - Q1 FY27 INIT"
+            // → primary = "Increased Homepage Above-the-Fold Testing",
+            //   qualifier = "Q1 FY27 INIT"). If no delimiter, just
+            // render the whole name as the primary line.
+            const sep = project.name.lastIndexOf(" - ");
+            const primary = sep > 0 ? project.name.slice(0, sep) : project.name;
+            const qualifier = sep > 0 ? project.name.slice(sep + 3) : "";
+            return (
+              <div className="flex items-start gap-2">
+                <span
+                  className="w-1.5 h-1.5 rounded-full shrink-0 mt-[6px]"
+                  style={{ backgroundColor: project.color }}
+                />
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium text-fg leading-[1.3] whitespace-normal break-words">
+                    {primary}
+                  </div>
+                  {qualifier && (
+                    <div className="text-[11px] text-fg-faded leading-[1.3] mt-0.5 whitespace-normal break-words">
+                      {qualifier}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+          {/* Caret — 8px rotated square at the right edge pointing right
+              at the bar. After 45° rotation, the top-right edges of the
+              square become the visible top/right of the arrow tip. */}
           <div
             className="absolute w-2 h-2 bg-elevated"
             style={{
-              left: Math.max(8, Math.min(projTooltip.caretLeft, 200 - 16)) - 4,
-              bottom: -5,
+              top: Math.max(8, Math.min(projTooltip.caretTop, (projTooltipRef.current?.offsetHeight ?? 48) - 12)) - 4,
+              right: -5,
               transform: "rotate(45deg)",
+              borderTop: "0.5px solid var(--border-soft)",
               borderRight: "0.5px solid var(--border-soft)",
-              borderBottom: "0.5px solid var(--border-soft)",
             }}
           />
         </div>,

@@ -35,6 +35,7 @@ import {
   PRESET_COLORS,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
+import { errorMessage } from "../utils/errors";
 import TaskDetailOverlay from "../components/TaskDetailOverlay";
 import CalendarPicker from "../components/CalendarPicker";
 import { parseTimeFromTitle } from "../utils/format";
@@ -369,7 +370,7 @@ export default function ProjectDetail() {
         setWorkedMap(new Map());
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load tasks");
+      setError(errorMessage(e, "Failed to load tasks"));
     }
   }, [selectedProjectId, showDone]);
 
@@ -406,7 +407,7 @@ export default function ProjectDetail() {
       }
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load project");
+      setError(errorMessage(e, "Failed to load project"));
     }
   }, [selectedProjectId, showDone]);
 
@@ -448,7 +449,7 @@ export default function ProjectDetail() {
           notes: notes.trim() || null,
         });
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to save project");
+        setError(errorMessage(e, "Failed to save project"));
       }
     }, 600);
   }
@@ -536,7 +537,7 @@ export default function ProjectDetail() {
       await deleteProject(selectedProjectId);
       goBack();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete project");
+      setError(errorMessage(e, "Failed to delete project"));
       setConfirmDeleteProject(false);
     }
   }
@@ -579,7 +580,7 @@ export default function ProjectDetail() {
       await completeProject(project.id, !project.completed);
       loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update project");
+      setError(errorMessage(e, "Failed to update project"));
     }
   }
 
@@ -624,7 +625,7 @@ export default function ProjectDetail() {
       setError(null);
       refreshTasks();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add task");
+      setError(errorMessage(e, "Failed to add task"));
     }
   }
 
@@ -653,7 +654,7 @@ export default function ProjectDetail() {
       setError(null);
       refreshTasks();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add task");
+      setError(errorMessage(e, "Failed to add task"));
     }
   }
 
@@ -662,7 +663,7 @@ export default function ProjectDetail() {
       await updateTaskStatus(task.id, task.status === "done" ? "todo" : "done");
       refreshTasks();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update task");
+      setError(errorMessage(e, "Failed to update task"));
     }
   }
 
@@ -677,7 +678,7 @@ export default function ProjectDetail() {
       const entryId = await startTimeEntry(task.id, "tracked");
       startFocus(task, entryId, "project_detail", priorMs);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to start timer");
+      setError(errorMessage(e, "Failed to start timer"));
     }
   }
 
@@ -727,7 +728,7 @@ export default function ProjectDetail() {
       setError(null);
       refreshTasks();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update task");
+      setError(errorMessage(e, "Failed to update task"));
     }
   }
 
@@ -750,7 +751,7 @@ export default function ProjectDetail() {
       try {
         await deleteTask(id);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to delete task");
+        setError(errorMessage(e, "Failed to delete task"));
       }
       setPendingDelete(null);
     }, 5000);
@@ -779,7 +780,7 @@ export default function ProjectDetail() {
         reordered.map((t, i) => ({ id: t.id, sortOrder: i }))
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to reorder");
+      setError(errorMessage(e, "Failed to reorder"));
       refreshTasks();
     }
   }
@@ -1081,7 +1082,7 @@ export default function ProjectDetail() {
                       onSetDate={(id, date) => {
                         updateTaskDateScheduled(id, date || null)
                           .then(() => refreshTasks())
-                          .catch((e) => setError(e instanceof Error ? e.message : "Failed to set date"));
+                          .catch((e) => setError(errorMessage(e, "Failed to set date")));
                       }}
                       onSetEstimate={(id, minutes) => {
                         const t = tasks.find((x) => x.id === id);
@@ -1096,12 +1097,12 @@ export default function ProjectDetail() {
                           dateScheduled: t.date_scheduled,
                         })
                           .then(() => refreshTasks())
-                          .catch((e) => setError(e instanceof Error ? e.message : "Failed to set estimate"));
+                          .catch((e) => setError(errorMessage(e, "Failed to set estimate")));
                       }}
                       onSetWorked={(id, minutes) => {
                         setManualWorkedMinutes(id, minutes)
                           .then(() => refreshTasks())
-                          .catch((e) => setError(e instanceof Error ? e.message : "Failed to set worked time"));
+                          .catch((e) => setError(errorMessage(e, "Failed to set worked time")));
                       }}
                     />
                   );

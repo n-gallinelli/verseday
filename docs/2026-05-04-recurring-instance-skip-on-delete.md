@@ -235,7 +235,27 @@ and added an explanatory comment block on the migration entry calling
 out that this is a checksum/coexistence concern rather than a logical
 dependency.
 
-## P0 follow-up: surface SQL errors in `loadData()`
+## P0 follow-up: surface SQL errors in `loadData()` ✅ resolved
+
+Resolved on `fix/surface-tauri-string-errors` (merged before #8 of the
+daily-plan polish work, per Verse's "slot it in before the focus-flow
+work" recommendation).
+
+- Added `src/utils/errors.ts` with a single `errorMessage(e, fallback)`
+  utility that prefers `typeof e === "string"` for Tauri-style
+  rejections, then `e.message` for `Error` instances, then `String(e)`
+  for truthy non-string non-Error throws, falling back to the supplied
+  default only for null/undefined/empty cases.
+- Swept every `e instanceof Error ? e.message : "..."` site (43 across
+  8 files) to call the utility instead. Mechanical substitution; no
+  behavior change for cases where the underlying error is already a
+  proper `Error`, but Tauri-string rejections now surface their actual
+  message instead of being replaced with the generic fallback.
+- The catch-block fallback string is preserved in every call site as
+  the second argument — still meaningful when the thrown value carries
+  no useful message.
+
+
 
 Three separate rounds of "Failed to load data" in this session, each
 with no JS-visible console signal — one for the partial-index ON

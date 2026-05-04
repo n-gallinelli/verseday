@@ -26,6 +26,7 @@ import {
   deleteTask,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
+import { errorMessage } from "../utils/errors";
 import TaskDetailOverlay from "../components/TaskDetailOverlay";
 import DisclosureCaret from "../components/DisclosureCaret";
 import type { Task, Project } from "../types";
@@ -583,7 +584,7 @@ export default function WeeklyPlanner() {
 
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load weekly data");
+      setError(errorMessage(e, "Failed to load weekly data"));
     }
   }, [selectedWeek, fridayIso]);
 
@@ -603,7 +604,7 @@ export default function WeeklyPlanner() {
           newNotes.trim() || null
         );
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to save");
+        setError(errorMessage(e, "Failed to save"));
       }
     }, 600);
   }
@@ -626,7 +627,7 @@ export default function WeeklyPlanner() {
       await updateTaskStatus(task.id, task.status === "done" ? "todo" : "done");
       loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update task");
+      setError(errorMessage(e, "Failed to update task"));
     }
   }
 
@@ -645,7 +646,7 @@ export default function WeeklyPlanner() {
       setWeekTasks(fresh);
       if (newTask) setDetailTask(newTask);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add task");
+      setError(errorMessage(e, "Failed to add task"));
     }
   }
 
@@ -718,7 +719,7 @@ export default function WeeklyPlanner() {
         timeoutId,
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to schedule task");
+      setError(errorMessage(e, "Failed to schedule task"));
     }
   }
 
@@ -731,7 +732,7 @@ export default function WeeklyPlanner() {
       await updateTaskDateScheduled(taskId, fromDate);
       loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to undo move");
+      setError(errorMessage(e, "Failed to undo move"));
     }
   }
 

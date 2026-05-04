@@ -300,13 +300,16 @@ export async function createTask(input: CreateTaskInput): Promise<number> {
   const priority = input.priority ?? "medium";
   validatePriority(priority);
   const db = await getDb();
-  // Get next sort_order — scoped to project or date, null-safe
-  const scopeRows: { max_sort: number | null }[] = input.projectId != null
-    ? await db.select("SELECT MAX(sort_order) as max_sort FROM tasks WHERE project_id = $1", [input.projectId])
+  // New tasks land at the top of their scope (project or date). Achieved by
+  // assigning sort_order = min(existing) - 1 so they sort before everything
+  // else without needing to renumber siblings. SQLite INTEGER is 64-bit,
+  // monotonic decrement is fine.
+  const scopeRows: { min_sort: number | null }[] = input.projectId != null
+    ? await db.select("SELECT MIN(sort_order) as min_sort FROM tasks WHERE project_id = $1", [input.projectId])
     : input.dateScheduled != null
-      ? await db.select("SELECT MAX(sort_order) as max_sort FROM tasks WHERE date_scheduled = $1", [input.dateScheduled])
-      : await db.select("SELECT MAX(sort_order) as max_sort FROM tasks");
-  const nextSort = (scopeRows[0]?.max_sort ?? -1) + 1;
+      ? await db.select("SELECT MIN(sort_order) as min_sort FROM tasks WHERE date_scheduled = $1", [input.dateScheduled])
+      : await db.select("SELECT MIN(sort_order) as min_sort FROM tasks");
+  const nextSort = (scopeRows[0]?.min_sort ?? 1) - 1;
   const result = await db.execute(
     "INSERT INTO tasks (title, project_id, date_scheduled, estimated_minutes, priority, notes, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7)",
     [

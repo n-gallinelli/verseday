@@ -628,6 +628,24 @@ select {
   animation: taskArrived 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
+/* Played on a freshly added task row so the user sees it land at the top
+   of the list rather than just appearing. Restrained — fade + tiny scale,
+   no slide so it doesn't fight FLIP shifts on the surrounding rows. */
+@keyframes taskAdded {
+  0% {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-task-added {
+  animation: taskAdded 260ms ease-out both;
+}
+
 @keyframes completionGlow {
   0% { opacity: 0; }
   25% { opacity: 1; }
@@ -666,6 +684,7 @@ select {
   .animate-task-done,
   .animate-check-draw,
   .animate-task-arrived,
+  .animate-task-added,
   .animate-completion-glow,
   .animate-focus-complete-burst,
   .animate-focus-complete-core {

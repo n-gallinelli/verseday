@@ -27,6 +27,9 @@ interface TaskCardProps {
   // task off, used to play the arrival animation. Lifted into the parent
   // because the row remounts when it crosses incomplete→completed groups.
   justArrived?: boolean;
+  // Parent-managed flag: true on the render right after createTask returns,
+  // used to play the entrance animation on a freshly added row.
+  justAdded?: boolean;
 }
 
 function TrashButton({ onDelete }: { onDelete: () => void }) {
@@ -86,6 +89,7 @@ export default function TaskCard({
   showProject = true,
   workedMinutes,
   justArrived = false,
+  justAdded = false,
 }: TaskCardProps) {
   const {
     attributes,
@@ -165,6 +169,7 @@ export default function TaskCard({
     <div
       ref={setNodeRef}
       style={style}
+      data-task-row-id={task.id}
       {...attributes}
       {...listeners}
       className={`relative px-4 py-4 rounded-lg border transition-colors duration-150 ease-out group/row touch-none ${
@@ -175,7 +180,7 @@ export default function TaskCard({
           : isHigh
             ? "bg-accent-orange-soft border-accent-orange/15 hover:bg-accent-orange-soft-hover"
             : "bg-elevated/60 border-line-soft hover:bg-overlay-hover"
-      }${justArrived ? " animate-task-arrived" : ""}`}
+      }${justArrived ? " animate-task-arrived" : ""}${justAdded ? " animate-task-added" : ""}`}
     >
       <div
         className="flex items-center gap-3 cursor-default"

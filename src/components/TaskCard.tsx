@@ -266,12 +266,13 @@ function TaskCardImpl({
       }${justArrived ? " animate-task-arrived" : ""}${justAdded ? " animate-task-added" : ""}`}
     >
       <div
-        // min-h-[2lh] reserves the height of two body-text line-heights so
-        // 1-line and 2-line task titles render rows of the same height —
-        // the title can wrap to 2 lines without the row growing taller
-        // than its 1-line neighbors. Anything past 2 lines clips via
-        // line-clamp-2 below.
-        className="flex items-center gap-3 min-h-[2lh]"
+        // h-[2lh] LOCKS the inner flex's height so content swaps (e.g.
+        // idle ↔ active right-column layout) can't grow it. min-h alone
+        // wasn't enough — switching to fixed height. Title is line-clamp
+        // -2'd to 2 lines max (= exactly 2lh), so it fits without
+        // clipping, and the active state's absolute stack overflows
+        // into the row's py-4 padding instead of pushing the row.
+        className="flex items-center gap-3 h-[2lh]"
       >
         {/* Checkbox */}
         <button

@@ -48,17 +48,25 @@ export default function CalendarPicker({
 
   const todayIso = new Date().toISOString().split("T")[0];
 
-  // Calculate popover position relative to viewport
+  // Calculate popover position relative to viewport. Clamps on both
+  // axes so the calendar (and especially its bottom-stack of "push
+  // back" quick actions) never overflows off-screen — previously the
+  // bottom rows could be clipped when the trigger sat low and there
+  // wasn't quite enough space above to flip the picker.
   const updatePosition = useCallback(() => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
     const calHeight = 340;
+    const calWidth = 290;
     const spaceBelow = window.innerHeight - rect.bottom;
-    const top = spaceBelow < calHeight
+    let top = spaceBelow < calHeight
       ? rect.top - calHeight - 4
       : rect.bottom + 4;
-    // Clamp left so calendar doesn't overflow right edge
-    const left = Math.min(rect.left, window.innerWidth - 290);
+    // Clamp vertically: keep at least 8px from both viewport edges.
+    top = Math.max(8, Math.min(top, window.innerHeight - calHeight - 8));
+    // Clamp horizontally too.
+    let left = Math.min(rect.left, window.innerWidth - calWidth - 8);
+    left = Math.max(8, left);
     setPopoverPos({ top, left });
   }, []);
 

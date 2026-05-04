@@ -42,6 +42,10 @@ interface TaskCardProps {
   // DailyPlanner's inline focus flow.
   isFocused?: boolean;
   onStop?: (task: Task) => void;
+  // Keyboard-selection state: gives the row an accent border so the user
+  // knows which task ↑/↓/Enter/Space act on. Distinct from isFocused
+  // (which is "the timer is running on this task").
+  isSelected?: boolean;
 }
 
 function TrashButton({ onDelete }: { onDelete: () => void }) {
@@ -92,6 +96,7 @@ function TaskCardImpl({
   liveElapsedMs,
   isFocused = false,
   onStop,
+  isSelected = false,
 }: TaskCardProps) {
   const {
     attributes,
@@ -190,6 +195,11 @@ function TaskCardImpl({
           : isHigh
             ? "bg-accent-orange-soft border-accent-orange/15 hover:bg-accent-orange-soft-hover"
             : "bg-elevated/60 border-line-soft hover:bg-overlay-hover"
+      }${
+        // Selected state — overrides border color so the keyboard-focused
+        // row reads distinctly. Keeps existing bg + hover behavior so the
+        // row doesn't look "stuck" in a hover state.
+        isSelected ? " !border-accent-blue/60" : ""
       }${justArrived ? " animate-task-arrived" : ""}${justAdded ? " animate-task-added" : ""}`}
     >
       <div
@@ -519,6 +529,7 @@ function taskCardPropsEqual(prev: TaskCardProps, next: TaskCardProps): boolean {
   // equal across renders and the comparator returns true → memo skip.
   if (prev.liveElapsedMs !== next.liveElapsedMs) return false;
   if (prev.isFocused !== next.isFocused) return false;
+  if (prev.isSelected !== next.isSelected) return false;
   if (prev.task !== next.task) return false;
   if (prev.project !== next.project) return false;
   if (prev.expandedNotes !== next.expandedNotes) return false;

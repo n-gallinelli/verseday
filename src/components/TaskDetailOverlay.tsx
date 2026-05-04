@@ -160,7 +160,7 @@ function TimeFieldPill({
         ref={triggerRef}
         type="button"
         onClick={onToggle}
-        className={`rounded-md cursor-pointer border transition-colors ${
+        className={`rounded-md cursor-pointer border transition-colors w-full ${
           hideLabel ? "flex items-center" : "flex flex-col items-start"
         } ${
           isOpen
@@ -557,12 +557,16 @@ export default function TaskDetailOverlay({
                 onStartFocus(task);
                 onClose();
               }}
-              className="w-8 h-8 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center flex-shrink-0"
+              // Outlined button: triangle + "Start" label. Same visual
+              // language as the daily plan header's "Start focusing"
+              // button, sized for the detail overlay's header.
+              className="rounded-full border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors flex-shrink-0"
               title="Start focus"
             >
-              <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
+              <svg width="9" height="11" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
                 <path d="M0 0v10l8-5z" />
               </svg>
+              <span className="text-[13px] font-medium">Start</span>
             </button>
           )}
           <button
@@ -604,40 +608,52 @@ export default function TaskDetailOverlay({
               />
             </PropertyRow>
 
-            <PropertyRow label="Date">
-              <CalendarPicker
-                value={dateScheduled}
-                onChange={(date) => {
-                  setDateScheduled(date);
-                  debouncedSave({ dateScheduled: date });
-                }}
-                onClear={() => {
-                  setDateScheduled("");
-                  debouncedSave({ dateScheduled: "" });
-                }}
-              />
-            </PropertyRow>
-
-            <PropertyRow label="Due date">
-              <CalendarPicker
-                value={dueDate}
-                onChange={(date) => {
-                  setDueDate(date);
-                  debouncedSave({ dueDate: date });
-                }}
-                onClear={() => {
-                  setDueDate("");
-                  debouncedSave({ dueDate: "" });
-                }}
-              />
-            </PropertyRow>
+            <div>
+              <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1.5">
+                Dates
+              </div>
+              <div className="flex items-stretch gap-1.5">
+                <div className="flex flex-col gap-0.5 flex-1">
+                  <span className="text-[9px] uppercase tracking-[0.07em] text-fg-faded leading-none">
+                    Scheduled
+                  </span>
+                  <CalendarPicker
+                    value={dateScheduled}
+                    onChange={(date) => {
+                      setDateScheduled(date);
+                      debouncedSave({ dateScheduled: date });
+                    }}
+                    onClear={() => {
+                      setDateScheduled("");
+                      debouncedSave({ dateScheduled: "" });
+                    }}
+                  />
+                </div>
+                <div className="flex flex-col gap-0.5 flex-1">
+                  <span className="text-[9px] uppercase tracking-[0.07em] text-fg-faded leading-none">
+                    Due
+                  </span>
+                  <CalendarPicker
+                    value={dueDate}
+                    onChange={(date) => {
+                      setDueDate(date);
+                      debouncedSave({ dueDate: date });
+                    }}
+                    onClear={() => {
+                      setDueDate("");
+                      debouncedSave({ dueDate: "" });
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
 
             <div>
               <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1.5">
                 Time
               </div>
               <div className="flex items-stretch gap-1.5">
-                <div data-time-pill>
+                <div data-time-pill className="flex-1">
                   <TimeFieldPill
                     label="Worked"
                     value={worked}
@@ -669,7 +685,7 @@ export default function TaskDetailOverlay({
                     autoTrackedNote={autoTrackedNote}
                   />
                 </div>
-                <div data-time-pill>
+                <div data-time-pill className="flex-1">
                   <TimeFieldPill
                     label="Estimated"
                     value={estimate}
@@ -739,13 +755,13 @@ export default function TaskDetailOverlay({
                         setTaskRecurrence(task.id, serializeRecurrence({ freq: "weekly", day, interval: recurrenceInterval })).catch(() => {});
                       }}
                       options={[
-                        { value: "0", label: "Sunday" },
                         { value: "1", label: "Monday" },
                         { value: "2", label: "Tuesday" },
                         { value: "3", label: "Wednesday" },
                         { value: "4", label: "Thursday" },
                         { value: "5", label: "Friday" },
                         { value: "6", label: "Saturday" },
+                        { value: "0", label: "Sunday" },
                       ]}
                     />
                   </>

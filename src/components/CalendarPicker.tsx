@@ -150,11 +150,11 @@ export default function CalendarPicker({
     : placeholder;
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative w-full">
       {/* Trigger button + clear slot. Clear is always rendered (invisible when
           no value) so the trigger's right edge stays at a fixed x — adjacent
           fields don't shift when a row gains/loses a date. */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 w-full">
         <button
           ref={triggerRef}
           type="button"
@@ -162,7 +162,7 @@ export default function CalendarPicker({
             if (!open) updatePosition();
             setOpen(!open);
           }}
-          className={`bg-input rounded-md text-[12px] font-medium leading-tight cursor-pointer transition-colors hover:border-line-medium text-center ${
+          className={`bg-input rounded-md text-[12px] font-medium leading-tight cursor-pointer transition-colors hover:border-line-medium text-center flex-1 ${
             value ? "text-fg" : "text-fg-faded"
           }`}
           style={{

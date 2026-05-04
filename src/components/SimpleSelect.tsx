@@ -31,8 +31,17 @@ export default function SimpleSelect({
   const updatePosition = useCallback(() => {
     if (!triggerRef.current) return;
     const r = triggerRef.current.getBoundingClientRect();
-    setPos({ top: r.bottom + 6, left: r.left, width: r.width });
-  }, []);
+    // Clamp the dropdown so its bottom edge never goes off-screen.
+    // Approximates the dropdown's height as `min(320, options × 36 + 16)`
+    // — matches the inner max-h-[320px] cap and 36px per option.
+    const popoverHeight = Math.min(320, options.length * 36 + 16);
+    const spaceBelow = window.innerHeight - r.bottom;
+    let top = spaceBelow < popoverHeight + 8
+      ? r.top - popoverHeight - 6
+      : r.bottom + 6;
+    top = Math.max(8, Math.min(top, window.innerHeight - popoverHeight - 8));
+    setPos({ top, left: r.left, width: r.width });
+  }, [options.length]);
 
   useEffect(() => {
     if (!open) return;

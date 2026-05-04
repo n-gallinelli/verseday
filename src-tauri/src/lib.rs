@@ -219,6 +219,150 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 14,
+            description: "dedupe recurring task instances and add partial unique index",
+            // Cleanup must run before the index — the index would fail to
+            // create against rows that already violate uniqueness. sqlx wraps
+            // each migration in an implicit transaction (sqlx-sqlite
+            // migrate.rs:131), so any failure rolls back the entire body —
+            // do NOT add explicit BEGIN/COMMIT here, that would error.
+            //
+            // Keeper ranking per (recurrence_source_id, date_scheduled) group:
+            //   1. has linked time_entries (preserves logged work)
+            //   2. higher total worked minutes among rows with entries
+            //   3. has non-empty notes
+            //   4. status = 'done'
+            //   5. is_highlight = 1
+            //   6. higher id (newest insert ≈ currently-rendered row)
+            //
+            // time_entries.task_id is reassigned from losers to the keeper
+            // BEFORE deletion (ON DELETE CASCADE on time_entries means
+            // delete-first would discard logged work). See test fixtures in
+            // scripts/test-dedup-migration.sh for the exhaustive case set.
+            //
+            // OPERATIONAL NOTE: this entry is byte-identical to the v14
+            // migration on fix/recurring-task-duplicates. It's included
+            // here so a binary built from THIS branch can run against a
+            // user DB that already has v14 applied — sqlx validates
+            // applied-migration checksums against the source list, so
+            // omitting v14 from a binary that runs against a v14-applied
+            // DB causes "applied migration not found" and the entire
+            // load fails. The body is idempotent — CREATE INDEX IF NOT
+            // EXISTS, and the cleanup CTEs reduce to no-ops when no
+            // duplicates remain — so re-running has no effect. v15 still
+            // has zero LOGICAL dependency on v14 per Verse; this is a
+            // checksum/coexistence concern only.
+            sql: "
+                WITH worked AS (
+                  SELECT te.task_id,
+                         COALESCE(SUM(
+                           CAST((julianday(te.end_time) - julianday(te.start_time)) * 1440 AS INTEGER)
+                         ), 0) AS minutes
+                  FROM time_entries te
+                  WHERE te.end_time IS NOT NULL
+                  GROUP BY te.task_id
+                ),
+                all_entries AS (
+                  SELECT task_id, COUNT(*) AS entry_count
+                  FROM time_entries
+                  GROUP BY task_id
+                ),
+                ranked AS (
+                  SELECT
+                    t.id,
+                    t.recurrence_source_id,
+                    t.date_scheduled,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY t.recurrence_source_id, t.date_scheduled
+                      ORDER BY
+                        CASE WHEN ae.entry_count IS NOT NULL THEN 1 ELSE 0 END DESC,
+                        COALESCE(w.minutes, 0)                                    DESC,
+                        CASE WHEN t.notes IS NOT NULL AND TRIM(t.notes) != '' THEN 1 ELSE 0 END DESC,
+                        CASE WHEN t.status = 'done' THEN 1 ELSE 0 END             DESC,
+                        t.is_highlight                                            DESC,
+                        t.id                                                      DESC
+                    ) AS rn
+                  FROM tasks t
+                  LEFT JOIN all_entries ae ON ae.task_id = t.id
+                  LEFT JOIN worked      w  ON w.task_id  = t.id
+                  WHERE t.recurrence_source_id IS NOT NULL
+                ),
+                keepers AS (
+                  SELECT recurrence_source_id, date_scheduled, id AS keeper_id
+                  FROM ranked WHERE rn = 1
+                ),
+                losers AS (
+                  SELECT r.id AS loser_id, k.keeper_id
+                  FROM ranked r
+                  JOIN keepers k
+                    ON k.recurrence_source_id = r.recurrence_source_id
+                   AND k.date_scheduled       = r.date_scheduled
+                  WHERE r.rn > 1
+                )
+                UPDATE time_entries
+                SET task_id = (SELECT keeper_id FROM losers WHERE losers.loser_id = time_entries.task_id)
+                WHERE task_id IN (SELECT loser_id FROM losers);
+
+                WITH worked AS (
+                  SELECT te.task_id,
+                         COALESCE(SUM(
+                           CAST((julianday(te.end_time) - julianday(te.start_time)) * 1440 AS INTEGER)
+                         ), 0) AS minutes
+                  FROM time_entries te
+                  WHERE te.end_time IS NOT NULL
+                  GROUP BY te.task_id
+                ),
+                all_entries AS (
+                  SELECT task_id, COUNT(*) AS entry_count
+                  FROM time_entries
+                  GROUP BY task_id
+                ),
+                ranked AS (
+                  SELECT
+                    t.id,
+                    t.recurrence_source_id,
+                    t.date_scheduled,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY t.recurrence_source_id, t.date_scheduled
+                      ORDER BY
+                        CASE WHEN ae.entry_count IS NOT NULL THEN 1 ELSE 0 END DESC,
+                        COALESCE(w.minutes, 0)                                    DESC,
+                        CASE WHEN t.notes IS NOT NULL AND TRIM(t.notes) != '' THEN 1 ELSE 0 END DESC,
+                        CASE WHEN t.status = 'done' THEN 1 ELSE 0 END             DESC,
+                        t.is_highlight                                            DESC,
+                        t.id                                                      DESC
+                    ) AS rn
+                  FROM tasks t
+                  LEFT JOIN all_entries ae ON ae.task_id = t.id
+                  LEFT JOIN worked      w  ON w.task_id  = t.id
+                  WHERE t.recurrence_source_id IS NOT NULL
+                )
+                DELETE FROM tasks WHERE id IN (SELECT id FROM ranked WHERE rn > 1);
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_recurrence_per_date
+                  ON tasks(recurrence_source_id, date_scheduled)
+                  WHERE recurrence_source_id IS NOT NULL;
+            ",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 15,
+            description: "track skipped recurring-instance dates so deletes are not regenerated",
+            // Additive only — one new table, no UPDATE/DELETE. Records the
+            // user's intent when they delete a recurring instance so the
+            // next call to generateRecurringInstances respects the skip
+            // instead of re-creating the row. ON DELETE CASCADE keeps the
+            // skip table in sync when the user deletes the template itself.
+            sql: "
+                CREATE TABLE IF NOT EXISTS recurring_instance_skips (
+                    recurrence_source_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    date_scheduled       TEXT NOT NULL,
+                    PRIMARY KEY (recurrence_source_id, date_scheduled)
+                );
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

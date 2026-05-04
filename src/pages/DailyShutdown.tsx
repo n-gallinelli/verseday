@@ -13,6 +13,7 @@ import {
   setManualWorkedMinutes,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
+import { errorMessage } from "../utils/errors";
 import SunsetOverlay from "../components/SunsetOverlay";
 import SummaryOverlay from "../components/SummaryOverlay";
 import MoodSelector from "../components/MoodSelector";
@@ -102,7 +103,7 @@ export default function DailyShutdown() {
       }
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load data");
+      setError(errorMessage(e, "Failed to load data"));
     }
   }, [selectedDate]);
 
@@ -185,7 +186,7 @@ export default function DailyShutdown() {
       await updateTaskDateScheduled(taskId, getTomorrowDate());
       setCarriedIds((prev) => new Set(prev).add(taskId));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to move task");
+      setError(errorMessage(e, "Failed to move task"));
     }
   }
 
@@ -202,7 +203,7 @@ export default function DailyShutdown() {
         (prev) => new Set([...prev, ...toCarry.map((t) => t.id)])
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to move tasks");
+      setError(errorMessage(e, "Failed to move tasks"));
     }
   }
 
@@ -219,7 +220,7 @@ export default function DailyShutdown() {
         serialized || null
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save");
+      setError(errorMessage(e, "Failed to save"));
       return;
     }
     localStorage.setItem(SHUTDOWN_KEY_PREFIX + selectedDate, "true");
@@ -238,7 +239,7 @@ export default function DailyShutdown() {
         return next;
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to toggle highlight");
+      setError(errorMessage(e, "Failed to toggle highlight"));
     }
   }
 

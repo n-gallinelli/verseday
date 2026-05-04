@@ -9,6 +9,7 @@ import {
   getWorkedMinutesForTaskIds,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
+import { errorMessage } from "../utils/errors";
 import SunsetOverlay from "../components/SunsetOverlay";
 import SummaryOverlay from "../components/SummaryOverlay";
 import MoodSelector from "../components/MoodSelector";
@@ -186,7 +187,7 @@ export default function WeeklyShutdown() {
       }
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load shutdown data");
+      setError(errorMessage(e, "Failed to load shutdown data"));
     }
   }, [selectedWeek, fridayIso]);
 
@@ -212,7 +213,7 @@ export default function WeeklyShutdown() {
           newMood
         );
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to save");
+        setError(errorMessage(e, "Failed to save"));
       }
     }, 600);
   }
@@ -258,7 +259,7 @@ export default function WeeklyShutdown() {
         mood
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save");
+      setError(errorMessage(e, "Failed to save"));
       return;
     }
     localStorage.setItem(WEEKLY_SHUTDOWN_PREFIX + selectedWeek, "true");

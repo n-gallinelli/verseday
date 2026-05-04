@@ -11,6 +11,7 @@ import {
   type CompletedShutdown,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
+import { errorMessage } from "../utils/errors";
 import PastShutdownCard from "../components/PastShutdownCard";
 import type { Project, Task } from "../types";
 
@@ -215,7 +216,7 @@ export default function Dashboard() {
       setPastShutdowns(sd);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load dashboard");
+      setError(errorMessage(e, "Failed to load dashboard"));
     }
   }, [selectedWeek, fridayIso]);
 

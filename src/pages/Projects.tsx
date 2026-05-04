@@ -31,6 +31,7 @@ import {
   PRESET_COLORS,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
+import { errorMessage } from "../utils/errors";
 import TaskDetailOverlay from "../components/TaskDetailOverlay";
 import DisclosureCaret from "../components/DisclosureCaret";
 import type { Project, Task } from "../types";
@@ -107,7 +108,7 @@ export default function Projects() {
       setStatsMap(stats);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load projects");
+      setError(errorMessage(e, "Failed to load projects"));
     }
   }, []);
 
@@ -137,7 +138,7 @@ export default function Projects() {
       setError(null);
       loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create project");
+      setError(errorMessage(e, "Failed to create project"));
     }
   }
 
@@ -190,7 +191,7 @@ export default function Projects() {
         reordered.map((p, i) => ({ id: p.id, sortOrder: i }))
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to reorder");
+      setError(errorMessage(e, "Failed to reorder"));
       loadData();
     }
   }

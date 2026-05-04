@@ -46,6 +46,7 @@ import SummaryOverlay from "../components/SummaryOverlay";
 import ProjectPicker from "../components/ProjectPicker";
 import DisclosureCaret from "../components/DisclosureCaret";
 import { formatHoursMinutes, parseTimeFromTitle, getEmptyDayMessage } from "../utils/format";
+import { errorMessage } from "../utils/errors";
 import type { Task, DailyPlan, Project } from "../types";
 
 
@@ -272,7 +273,7 @@ export default function DailyPlanner() {
         initialLoadDone.current = true;
       }, 200);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load data");
+      setError(errorMessage(e, "Failed to load data"));
     }
   }
 
@@ -348,7 +349,7 @@ export default function DailyPlanner() {
         }, 400);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add task");
+      setError(errorMessage(e, "Failed to add task"));
     }
   }
 
@@ -384,7 +385,7 @@ export default function DailyPlanner() {
         }, 700);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update task");
+      setError(errorMessage(e, "Failed to update task"));
     }
   }
 
@@ -400,7 +401,7 @@ export default function DailyPlanner() {
       const entryId = await startTimeEntry(task.id, "tracked");
       startFocus(task, entryId, "daily", priorMs);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to start timer");
+      setError(errorMessage(e, "Failed to start timer"));
     }
   }
 
@@ -450,7 +451,7 @@ export default function DailyPlanner() {
       setError(null);
       loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update task");
+      setError(errorMessage(e, "Failed to update task"));
     }
   }
 
@@ -490,7 +491,7 @@ export default function DailyPlanner() {
         });
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to schedule task");
+      setError(errorMessage(e, "Failed to schedule task"));
     }
   }
 
@@ -509,7 +510,7 @@ export default function DailyPlanner() {
       });
       loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to undo");
+      setError(errorMessage(e, "Failed to undo"));
     }
   }
 
@@ -520,7 +521,7 @@ export default function DailyPlanner() {
       setError(null);
       loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete task");
+      setError(errorMessage(e, "Failed to delete task"));
     }
   }
 
@@ -537,7 +538,7 @@ export default function DailyPlanner() {
         reordered.map((t, i) => ({ id: t.id, sortOrder: i }))
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to reorder tasks");
+      setError(errorMessage(e, "Failed to reorder tasks"));
       loadData();
     }
   }
@@ -561,7 +562,7 @@ export default function DailyPlanner() {
       // daily_plans, refetching tasks on every debounced keystroke would
       // remount task rows mid-typing.
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save notes");
+      setError(errorMessage(e, "Failed to save notes"));
     }
   }
 

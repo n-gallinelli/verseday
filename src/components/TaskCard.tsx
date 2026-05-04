@@ -196,10 +196,11 @@ function TaskCardImpl({
             ? "bg-accent-orange-soft border-accent-orange/15 hover:bg-accent-orange-soft-hover"
             : "bg-elevated/60 border-line-soft hover:bg-overlay-hover"
       }${
-        // Selected state — overrides border color so the keyboard-focused
-        // row reads distinctly. Keeps existing bg + hover behavior so the
-        // row doesn't look "stuck" in a hover state.
-        isSelected ? " !border-accent-blue/60" : ""
+        // Selected state — quiet accent border (was /60, too loud). The
+        // keyboard-focused row reads as "the next gesture lands here"
+        // rather than "this is alarmingly highlighted". Width is still
+        // 1px; only color shifts.
+        isSelected ? " !border-accent-blue/30" : ""
       }${justArrived ? " animate-task-arrived" : ""}${justAdded ? " animate-task-added" : ""}`}
     >
       <div

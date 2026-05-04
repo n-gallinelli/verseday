@@ -249,18 +249,21 @@ function TaskCardImpl({
 
         {/* Actions — sit in the flex flow between title and time pill so
             the title loses real layout space instead of being overlaid.
-            Container width animates to keep the transition smooth. Width
-            states (Verse review notes — closer-to-timer placement, trash
-            hover-only even when focused):
-              not focused, not hover: w-0   (no buttons)
-              not focused, hover:     w-14  (play + trash)
-              focused, not hover:     w-6   (stop only)
-              focused, hover:         w-14  (stop + trash) */}
+            Container width animates to keep the transition smooth.
+            Horizontal padding gives the buttons' hover rings (box-shadow
+            extending 5px outward) room before the container's overflow-
+            hidden clips them — without it, the hover halo gets cut into
+            a non-circle. Width values include the px-[5px] (border-box).
+            States:
+              not focused, not hover: w-0    (no buttons, no padding shows)
+              not focused, hover:     w-[66px] (play + trash + ring room)
+              focused, not hover:     w-[34px] (stop only + ring room)
+              focused, hover:         w-[66px] (stop + trash + ring room) */}
         <div
-          className={`overflow-hidden flex items-center gap-2 transition-[width] duration-150 ease-out shrink-0 ${
+          className={`overflow-hidden flex items-center gap-2 transition-[width,padding] duration-150 ease-out shrink-0 ${
             isFocused
-              ? "w-6 group-hover/row:w-14"
-              : "w-0 group-hover/row:w-14"
+              ? "w-[34px] px-[5px] group-hover/row:w-[66px]"
+              : "w-0 group-hover/row:w-[66px] group-hover/row:px-[5px]"
           }`}
         >
           {isFocused && onStop ? (
@@ -314,7 +317,11 @@ function TaskCardImpl({
               const overBudget = est > 0 && m > est;
               return (
                 <span
-                  className={`inline-flex items-center px-2 py-[2px] rounded-full bg-accent-blue-soft ${
+                  // min-w + center keeps the pill the same width as the
+                  // counter ticks 9s→10s→…→59s→1m 0s; without it, every
+                  // digit-count change makes the pill jiggle horizontally.
+                  // 64px fits up to "59m 59s" with tabular-nums.
+                  className={`inline-flex items-center justify-center min-w-[64px] px-2 py-[2px] rounded-full bg-accent-blue-soft ${
                     overBudget ? "text-accent-danger" : "text-accent-blue-soft-fg"
                   } font-medium`}
                 >

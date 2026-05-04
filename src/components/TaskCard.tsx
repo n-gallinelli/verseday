@@ -398,7 +398,14 @@ function TaskCardImpl({
               long names extend leftward into the (now-faded) action
               area. max-w + truncate caps the worst case. */}
           <span
-            className="absolute top-1/2 -translate-y-1/2 right-[12px] text-[10px] font-medium leading-none max-w-[100px] truncate transition-opacity duration-150 pointer-events-none"
+            // max-w-[240px] gives most realistic project names full
+            // visibility before truncating. The label overlays the
+            // title's right edge — that's OK because (a) the action
+            // overlay is faded out by projHover so there's no icon
+            // collision, and (b) the project color contrasts with the
+            // title text enough to read clearly. truncate handles any
+            // outlier names longer than that.
+            className="absolute top-1/2 -translate-y-1/2 right-[12px] text-[11px] font-medium leading-none max-w-[240px] truncate transition-opacity duration-150 pointer-events-none"
             style={{
               color: project.color,
               opacity: projHover ? 1 : 0,

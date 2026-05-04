@@ -362,7 +362,7 @@ function TaskCardImpl({
                     e.stopPropagation();
                     onStop(task);
                   }}
-                  className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-[color-mix(in_srgb,var(--accent-blue),black_30%)] cursor-pointer flex items-center justify-center transition-colors duration-150"
+                  className="w-6 h-6 shrink-0 rounded-full text-accent-blue hover:bg-overlay-hover cursor-pointer flex items-center justify-center transition-colors duration-150"
                   title="Pause"
                 >
                   <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
@@ -402,7 +402,7 @@ function TaskCardImpl({
                       e.stopPropagation();
                       onStart(task);
                     }}
-                    className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-[color-mix(in_srgb,var(--accent-blue),black_30%)] cursor-pointer flex items-center justify-center transition-colors duration-150"
+                    className="w-6 h-6 shrink-0 rounded-full text-accent-blue hover:bg-overlay-hover cursor-pointer flex items-center justify-center transition-colors duration-150"
                     title="Start focus"
                   >
                     <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">

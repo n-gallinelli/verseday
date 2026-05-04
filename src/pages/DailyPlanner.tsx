@@ -370,6 +370,19 @@ export default function DailyPlanner() {
     const oldPositions = captureRowPositions();
     try {
       await updateTaskStatus(task.id, wasDone ? "todo" : "done");
+      // Unchecking a completed task bumps it to the BOTTOM of the
+      // incomplete list (rather than restoring its prior position),
+      // so the user can see what they just unchecked at a glance.
+      // Find the max sort_order among other incomplete tasks for this
+      // date and set the unchecked task's sort_order one higher.
+      if (wasDone) {
+        const maxOther = tasks
+          .filter((t) => t.status !== "done" && t.id !== task.id)
+          .reduce((max, t) => Math.max(max, t.sort_order), -1);
+        await updateTaskSortOrders([
+          { id: task.id, sortOrder: maxOther + 1 },
+        ]);
+      }
       setError(null);
       // Wait for the refreshed tasks list before flipping the arrival flag.
       // Otherwise the flag fires on a stale render where the row is still in

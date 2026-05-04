@@ -253,7 +253,7 @@ function TimeFieldPill({
               onClick={onReset}
               className="mt-2 w-full text-[11px] text-fg-faded hover:text-accent-destructive cursor-pointer transition-colors py-1 rounded-md hover:bg-accent-destructive/10"
             >
-              Reset to 0
+              Reset
             </button>
           )}
         </div>,
@@ -661,6 +661,11 @@ export default function TaskDetailOverlay({
                     onChange={(val) => {
                       setEstimate(val);
                       debouncedSave({ estimate: val });
+                    }}
+                    onReset={() => {
+                      setEstimate("");
+                      debouncedSave({ estimate: "" });
+                      setOpenPopover(null);
                     }}
                   />
                 </div>

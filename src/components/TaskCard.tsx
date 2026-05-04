@@ -355,23 +355,32 @@ function TaskCardImpl({
         </div>
       </div>
 
-      {/* Project marker — a thin colored bar pinned to the right edge of
-          the card. Hovering swells it into a pill that grows leftward
-          with the project name. Sits on the card's right padding strip
-          so it doesn't crowd the title or actions. */}
+      {/* Project marker — colored bar pinned to the right edge. Hover
+          expands the bar slightly AND fades the project name in just
+          to the left of it, both in the same color so they read as
+          one unit (no floating pill, no separate visual treatment).
+          The wrapper is wider than the bar to give the hover target
+          some forgiveness without enlarging the visible bar itself. */}
       {showProject && project && (
-        <div className="absolute right-0 top-0 bottom-0 w-[14px] group/proj">
+        <div className="absolute right-0 top-0 bottom-0 w-[28px] group/proj">
+          {/* Bar — grows from 5px → 7px wide on hover. Same vertical
+              extent as before (top-1.5 bottom-1.5). */}
           <div
-            className="absolute right-0 top-1.5 bottom-1.5 w-[5px] rounded-l-full transition-opacity duration-150 group-hover/proj:opacity-0"
+            className="absolute right-0 top-1.5 bottom-1.5 w-[5px] rounded-l-full transition-[width] duration-150 group-hover/proj:w-[7px]"
             style={{ backgroundColor: project.color }}
           />
-          <div
-            className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-elevated border border-line-soft opacity-0 pointer-events-none group-hover/proj:opacity-100 transition-opacity duration-150 z-20 whitespace-nowrap"
-            style={{ boxShadow: "var(--shadow-card)" }}
+          {/* Project name — fades in to the left of the bar, same
+              color as the bar so it reads as the bar's label. No bg,
+              no border, no separate pill chrome. Right-anchored at
+              ~10px so the text's right edge sits just past the
+              expanded bar's left edge. max-w + truncate keeps long
+              names from blowing out the slot. */}
+          <span
+            className="absolute top-1/2 -translate-y-1/2 right-[10px] text-[10px] font-medium leading-none max-w-[120px] truncate opacity-0 group-hover/proj:opacity-100 transition-opacity duration-150 pointer-events-none"
+            style={{ color: project.color }}
           >
-            <span className="text-[11px] text-fg-secondary leading-none">{project.name}</span>
-            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: project.color }} />
-          </div>
+            {project.name}
+          </span>
         </div>
       )}
 

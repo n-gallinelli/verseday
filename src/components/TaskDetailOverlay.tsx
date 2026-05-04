@@ -83,6 +83,7 @@ function TimeFieldPill({
   isOpen,
   onToggle,
   onChange,
+  onReset,
   autoTrackedNote,
   hideLabel = false,
 }: {
@@ -92,6 +93,11 @@ function TimeFieldPill({
   isOpen: boolean;
   onToggle: () => void;
   onChange: (value: string) => void;
+  // Optional reset action — when provided AND a value is set, the
+  // popover renders a small "Reset" button below the input that
+  // clears the field. Used for the "Worked" pill to wipe time
+  // entries; not used for "Estimated" (no destructive op there).
+  onReset?: () => void;
   autoTrackedNote?: string;
   hideLabel?: boolean;
 }) {
@@ -232,6 +238,15 @@ function TimeFieldPill({
             <div className="text-[10px] text-fg-faded mt-1.5">
               {autoTrackedNote}
             </div>
+          )}
+          {onReset && hasValue && (
+            <button
+              type="button"
+              onClick={onReset}
+              className="mt-2 w-full text-[11px] text-fg-faded hover:text-accent-destructive cursor-pointer transition-colors py-1 rounded-md hover:bg-accent-destructive/10"
+            >
+              Reset to 0
+            </button>
           )}
         </div>,
         document.body
@@ -610,6 +625,21 @@ export default function TaskDetailOverlay({
                         if (!isNaN(n) && n > 0) onSetWorkedMinutes(task.id, n);
                       }
                     }}
+                    onReset={
+                      onSetWorkedMinutes
+                        ? () => {
+                            // Wipe closed time entries for this task and
+                            // reflect the reset everywhere — DailyPlanner's
+                            // onSetWorkedMinutes prop calls
+                            // setManualWorkedMinutes(id, 0) → deletes
+                            // closed entries → loadData refreshes the
+                            // workedMap so the row's pill shows 0m.
+                            setWorked("");
+                            onSetWorkedMinutes(task.id, 0);
+                            setOpenPopover(null);
+                          }
+                        : undefined
+                    }
                     autoTrackedNote={autoTrackedNote}
                   />
                 </div>

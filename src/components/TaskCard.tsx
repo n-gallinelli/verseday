@@ -235,9 +235,15 @@ function TaskCardImpl({
         </button>
 
         {/* Title — row click opens detail. One-line clamp keeps every card
-            the same height regardless of title length. */}
+            the same height regardless of title length. The right-padding
+            shifts on hover (and stays applied for the focused row) so the
+            truncation point moves leftward by the icon-overlay's width —
+            text actually cuts off before reaching the floating buttons
+            instead of bleeding under them. */}
         <span
-          className={`flex-1 min-w-0 truncate text-fg [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)] ${task.status === "done" ? "line-through !text-fg-faded" : ""}`}
+          className={`flex-1 min-w-0 truncate text-fg [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)] transition-[padding] duration-150 ease-out ${
+            isFocused ? "pr-[64px]" : "group-hover/row:pr-[64px]"
+          } ${task.status === "done" ? "line-through !text-fg-faded" : ""}`}
         >
           {task.title}
         </span>

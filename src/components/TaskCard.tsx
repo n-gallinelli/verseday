@@ -1,4 +1,5 @@
-import { memo, useState, useEffect, useRef } from "react";
+import { memo, useCallback, useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -111,10 +112,89 @@ function TaskCardImpl({
   const [notes, setNotes] = useState(task.notes ?? "");
   const [links, setLinks] = useState<Link[]>([]);
   const [newUrl, setNewUrl] = useState("");
-  // Track project-bar hover specifically so the action layer can fade out
-  // when the project label appears — otherwise the label and the trash/play
-  // buttons overlap in the same right-edge area, both unreadable.
-  const [projHover, setProjHover] = useState(false);
+
+  // Project tooltip — portaled to document.body so it can float above the
+  // row without affecting layout, and so it escapes the row's hover/click
+  // groups. Same positioning pattern as DatePicker / ProjectPicker /
+  // CalendarPicker: anchor ref + computed fixed coords + scroll/resize
+  // listeners + createPortal. Open delay 350ms (scanning-friendly), close
+  // is instant on mouseleave.
+  const projAnchorRef = useRef<HTMLDivElement>(null);
+  const projTooltipRef = useRef<HTMLDivElement>(null);
+  const projOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [projTooltip, setProjTooltip] = useState<{ top: number; left: number; caretLeft: number } | null>(null);
+
+  const measureProjTooltip = useCallback(() => {
+    const anchor = projAnchorRef.current;
+    if (!anchor) return null;
+    const rect = anchor.getBoundingClientRect();
+    // Tooltip width measurement: read after first render via ref. Until
+    // measured, fall back to max-width 200 for the centering math; the
+    // recompute on next frame snaps it to actual width.
+    const tooltipEl = projTooltipRef.current;
+    const tooltipWidth = tooltipEl?.offsetWidth ?? 200;
+    const tooltipHeight = tooltipEl?.offsetHeight ?? 36;
+    const swatchCenter = rect.left + rect.width / 2;
+    const naiveLeft = swatchCenter - tooltipWidth / 2;
+    // Clamp so the tooltip doesn't run off the right edge for swatches
+    // near the corner. 8px viewport margin on both sides.
+    const clampedLeft = Math.min(
+      Math.max(naiveLeft, 8),
+      window.innerWidth - tooltipWidth - 8
+    );
+    return {
+      top: rect.top - tooltipHeight - 8,
+      left: clampedLeft,
+      // Caret horizontal position relative to the tooltip's left edge —
+      // points down at the swatch's center even if the tooltip itself
+      // got clamped sideways.
+      caretLeft: swatchCenter - clampedLeft,
+    };
+  }, []);
+
+  function handleProjEnter() {
+    if (projOpenTimerRef.current) clearTimeout(projOpenTimerRef.current);
+    projOpenTimerRef.current = setTimeout(() => {
+      const next = measureProjTooltip();
+      if (next) setProjTooltip(next);
+    }, 350);
+  }
+
+  function handleProjLeave() {
+    if (projOpenTimerRef.current) {
+      clearTimeout(projOpenTimerRef.current);
+      projOpenTimerRef.current = null;
+    }
+    setProjTooltip(null);
+  }
+
+  // Reposition on scroll/resize while the tooltip is open. Capture-phase
+  // scroll listener catches nested scrollers (the daily-plan task list
+  // scrolls inside its own region). Cleanup tears down on close.
+  useEffect(() => {
+    if (!projTooltip) return;
+    function reposition() {
+      const next = measureProjTooltip();
+      if (next) setProjTooltip(next);
+    }
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    // Re-measure on the next frame too, after the tooltip element has
+    // mounted and its width is real (not the 200px fallback).
+    const raf = requestAnimationFrame(reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+      cancelAnimationFrame(raf);
+    };
+  }, [projTooltip !== null, measureProjTooltip]);
+
+  // Pending-timer cleanup on unmount.
+  useEffect(() => {
+    return () => {
+      if (projOpenTimerRef.current) clearTimeout(projOpenTimerRef.current);
+    };
+  }, []);
 
   // Track status transition for one-shot done animation
   const prevStatusRef = useRef(task.status);
@@ -287,13 +367,8 @@ function TaskCardImpl({
                 })()}
               </div>
 
-              {/* Hover layer (focused): trash to the left of stop.
-                  Override to opacity-0 when projHover so the project
-                  label has clear space to render. */}
-              <div
-                className="absolute inset-0 flex items-center justify-end pr-[32px] transition-opacity duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto"
-                style={projHover ? { opacity: 0, pointerEvents: "none" } : undefined}
-              >
+              {/* Hover layer (focused): trash to the left of stop. */}
+              <div className="absolute inset-0 flex items-center justify-end pr-[32px] transition-opacity duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto">
                 <TrashButton onDelete={() => onDelete(task.id)} />
               </div>
 
@@ -340,12 +415,9 @@ function TaskCardImpl({
               </div>
 
               {/* Hover layer (non-focused): trash + play, right-aligned.
-                  Override to opacity-0 when projHover so the project
-                  label has clear space. */}
-              <div
-                className="absolute inset-0 flex items-center justify-end gap-2 transition-opacity duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto"
-                style={projHover ? { opacity: 0, pointerEvents: "none" } : undefined}
-              >
+                  flex with justify-end + JSX trash-then-play means play
+                  ends up at the right edge, trash to its left. */}
+              <div className="absolute inset-0 flex items-center justify-end gap-2 transition-opacity duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto">
                 <TrashButton onDelete={() => onDelete(task.id)} />
                 {onStart && task.status !== "done" && (
                   <button
@@ -367,53 +439,70 @@ function TaskCardImpl({
         </div>
       </div>
 
-      {/* Project marker — colored bar pinned to the right edge. Hover
-          expands the bar slightly AND fades the project name in just
-          to the left of it, both in the same color so they read as
-          one unit (no floating pill, no separate visual treatment).
-          The wrapper is wider than the bar to give the hover target
-          some forgiveness without enlarging the visible bar itself.
-          On hover, projHover state flips so the action layer (trash
-          / play / stop overlay) fades out — otherwise the project
-          name and the action icons stack in the same area unreadable. */}
+      {/* Project marker — colored bar pinned to the right edge. Hovering
+          opens a portaled tooltip above the bar with the full project
+          name; bar itself grows 5→7px on hover as the affordance signal.
+          The 28px wrapper widens the hover target without enlarging the
+          visible bar. */}
       {showProject && project && (
         <div
+          ref={projAnchorRef}
           className="absolute right-0 top-0 bottom-0 w-[28px]"
-          onMouseEnter={() => setProjHover(true)}
-          onMouseLeave={() => setProjHover(false)}
+          onMouseEnter={handleProjEnter}
+          onMouseLeave={handleProjLeave}
         >
-          {/* Bar — grows from 5px → 7px wide on hover. */}
           <div
             className="absolute right-0 top-1.5 bottom-1.5 rounded-l-full transition-[width] duration-150"
             style={{
               backgroundColor: project.color,
-              width: projHover ? 7 : 5,
+              width: projTooltip ? 7 : 5,
             }}
           />
-          {/* Project name — fades in to the left of the bar in the
-              same color so it reads as the bar's label. No bg, no
-              border, no separate chrome. Positioned with enough
-              right offset that its right edge sits just past the
-              expanded bar's left edge; left edge is unconstrained so
-              long names extend leftward into the (now-faded) action
-              area. max-w + truncate caps the worst case. */}
-          <span
-            // Single line, no max-width — label takes its natural
-            // width to show the whole name in one read. Long names
-            // extend leftward into the title area; that overlap is
-            // fine because the action overlay is faded out and the
-            // project color contrasts the title text. Pointer-events
-            // are disabled so the row's click area underneath still
-            // works through the label.
-            className="absolute top-1/2 -translate-y-1/2 right-[12px] text-[11px] font-medium leading-none whitespace-nowrap transition-opacity duration-150 pointer-events-none"
-            style={{
-              color: project.color,
-              opacity: projHover ? 1 : 0,
-            }}
-          >
-            {project.name}
-          </span>
         </div>
+      )}
+
+      {/* Project tooltip — portaled to document.body so it floats above
+          the row without affecting layout or clipping by parent overflow.
+          Same styling tokens as DatePicker / ProjectPicker: bg-elevated,
+          0.5px border-soft, var(--shadow-card), animate-scale-in. Caret
+          is a rotated square that points down at the swatch; positioned
+          via caretLeft (relative to the tooltip's left edge) so it
+          tracks the swatch even when the tooltip is clamped sideways. */}
+      {showProject && project && projTooltip && createPortal(
+        <div
+          ref={projTooltipRef}
+          className="fixed z-[60] bg-elevated rounded-lg px-3 py-2 max-w-[200px] animate-scale-in pointer-events-none"
+          style={{
+            top: projTooltip.top,
+            left: projTooltip.left,
+            border: "0.5px solid var(--border-soft)",
+            boxShadow: "var(--shadow-card)",
+          }}
+        >
+          <div className="flex items-start gap-1.5">
+            <span
+              className="w-1.5 h-1.5 rounded-full shrink-0 mt-[6px]"
+              style={{ backgroundColor: project.color }}
+            />
+            <span className="text-[12px] text-fg-secondary leading-[1.35] whitespace-normal break-words">
+              {project.name}
+            </span>
+          </div>
+          {/* Caret — 8px rotated square at the bottom edge, pointing
+              down at the swatch. Border on the bottom-right edges (which
+              become top/left after 45° rotation). */}
+          <div
+            className="absolute w-2 h-2 bg-elevated"
+            style={{
+              left: Math.max(8, Math.min(projTooltip.caretLeft, 200 - 16)) - 4,
+              bottom: -5,
+              transform: "rotate(45deg)",
+              borderRight: "0.5px solid var(--border-soft)",
+              borderBottom: "0.5px solid var(--border-soft)",
+            }}
+          />
+        </div>,
+        document.body
       )}
 
       {/* Expanded area: notes + links */}

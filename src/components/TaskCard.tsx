@@ -332,97 +332,110 @@ function TaskCardImpl({
                 always visible — live pill on top, pause button below.
                 The stack itself is the visual signal that this row is
                 running, so no hover is needed to expose the controls. */}
-        <div className="relative shrink-0 w-[104px] flex items-center justify-center self-stretch">
-          {isFocused ? (
-            // Active: stacked, both always visible. Absolutely positioned
-            // and centered via translate so the stack's natural ~54px
-            // height doesn't push the inner flex past min-h-[2lh] —
-            // overflow extends symmetrically into the row's py-4 padding,
-            // where there's plenty of slack. Row height stays the same
-            // as idle rows.
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1.5">
-              {(() => {
-                const totalSec = Math.max(0, Math.floor((liveElapsedMs ?? 0) / 1000));
-                const m = Math.floor(totalSec / 60);
-                const s = totalSec % 60;
-                const workedText = m > 0 ? `${m}m ${s}s` : `${s}s`;
-                const est = task.estimated_minutes ?? 0;
-                const overBudget = est > 0 && m > est;
-                return (
-                  <span
-                    className="inline-flex items-center gap-0.5 justify-center min-w-[100px] px-2 py-[2px] rounded-full bg-accent-blue-soft text-[11px] tabular-nums font-medium"
-                  >
-                    <span className={overBudget ? "text-accent-danger" : "text-accent-blue-soft-fg"}>
-                      {workedText}
-                    </span>
-                    <span className="text-accent-blue-soft-fg/40">/</span>
-                    <span className="text-accent-blue-soft-fg/80">
-                      {est > 0 ? `${est}m` : "—"}
-                    </span>
-                  </span>
-                );
-              })()}
-              {onStop && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onStop(task);
-                  }}
-                  className="w-6 h-6 shrink-0 rounded-full text-accent-blue hover:bg-overlay-hover cursor-pointer flex items-center justify-center transition-colors duration-150"
-                  title="Pause"
+        {/* Right area — fixed-width column. Single persistent subtree:
+            an absolute stack containing a pill slot and a button slot.
+            Only contents flip on isFocused; no DOM swap. The stack
+            overflows symmetrically into the row's py-4 padding when it
+            exceeds the inner flex's h-[2lh], so row height stays
+            invariant (no global growth, no idle-vs-focused difference).
+            See the #zero-pixel-shift plan thread for the full rationale. */}
+        <div className="relative shrink-0 w-[104px] self-stretch">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
+            {/* Pill slot — always rendered with fixed dimensions. */}
+            {(() => {
+              const liveSec = Math.max(0, Math.floor((liveElapsedMs ?? 0) / 1000));
+              const liveM = Math.floor(liveSec / 60);
+              const liveS = liveSec % 60;
+              const liveText = liveM > 0 ? `${liveM}m ${liveS}s` : `${liveS}s`;
+              const est = task.estimated_minutes ?? 0;
+              const worked = workedMinutes ?? 0;
+              const liveOver = est > 0 && liveM > est;
+              const staticOver = est > 0 && worked > est;
+              const idleHasContent = worked > 0 || est > 0;
+              // Visibility:
+              //   focused: visible always
+              //   idle + has time: visible idle, invisible on hover (so the
+              //     Start button reveal isn't competing)
+              //   idle + no time: invisible always (slot still reserves space)
+              const visClass = isFocused
+                ? ""
+                : idleHasContent
+                  ? "group-hover/row:invisible"
+                  : "invisible";
+              const bgClass = isFocused ? "bg-accent-blue-soft" : "bg-overlay-hover";
+              return (
+                <span
+                  className={`inline-flex items-center justify-center gap-0.5 h-[20px] min-w-[100px] px-2 rounded-full text-[11px] tabular-nums ${
+                    isFocused ? "font-medium" : ""
+                  } ${bgClass} ${visClass}`}
                 >
-                  <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
-                    <rect x="1" y="0" width="2" height="8" rx="0.5" />
-                    <rect x="5" y="0" width="2" height="8" rx="0.5" />
-                  </svg>
-                </button>
-              )}
-            </div>
-          ) : (
-            // Idle: single centered element, cross-fade pill ↔ play.
-            <>
-              <div className="absolute inset-0 flex items-center justify-center transition-opacity duration-150 opacity-100 group-hover/row:opacity-0 pointer-events-none">
-                {(() => {
-                  const worked = workedMinutes ?? 0;
-                  const est = task.estimated_minutes ?? 0;
-                  const hasAny = worked > 0 || est > 0;
-                  if (!hasAny) return null;
-                  const overBudget = est > 0 && worked > est;
-                  return (
-                    <span className="inline-flex items-center gap-0.5 px-2 py-[2px] rounded-full bg-overlay-hover text-[11px] tabular-nums">
-                      <span className={overBudget ? "text-accent-danger font-medium" : "text-fg-faded"}>
+                  {isFocused ? (
+                    <>
+                      <span className={liveOver ? "text-accent-danger" : "text-accent-blue-soft-fg"}>
+                        {liveText}
+                      </span>
+                      <span className="text-accent-blue-soft-fg/40">/</span>
+                      <span className="text-accent-blue-soft-fg/80">
+                        {est > 0 ? `${est}m` : "—"}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className={staticOver ? "text-accent-danger font-medium" : "text-fg-faded"}>
                         {worked > 0 ? `${worked}m` : "0m"}
                       </span>
                       <span className="text-fg-disabled">/</span>
                       <span className="text-fg-faded">
                         {est > 0 ? `${est}m` : "—"}
                       </span>
-                    </span>
+                    </>
+                  )}
+                </span>
+              );
+            })()}
+
+            {/* Button slot — fixed-size wrapper (this is what the layout
+                measures). Inner button content swaps idle ↔ focused. */}
+            <div className="h-[24px] w-[72px] flex items-center justify-center">
+              {(() => {
+                if (isFocused && onStop) {
+                  return (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onStop(task);
+                      }}
+                      className="w-6 h-6 shrink-0 rounded-full text-accent-blue hover:bg-overlay-hover cursor-pointer flex items-center justify-center transition-colors duration-150"
+                      title="Pause"
+                    >
+                      <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+                        <rect x="1" y="0" width="2" height="8" rx="0.5" />
+                        <rect x="5" y="0" width="2" height="8" rx="0.5" />
+                      </svg>
+                    </button>
                   );
-                })()}
-              </div>
-              <div className="absolute inset-0 flex items-center justify-center transition-opacity duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto">
-                {onStart && task.status !== "done" && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onStart(task);
-                    }}
-                    // Outlined button: triangle + "Start" label. Mirrors
-                    // the top-right "Start focusing" button's outline
-                    // treatment but more compact for the row context.
-                    className="rounded-full border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft cursor-pointer flex items-center gap-1.5 px-2.5 py-0.5 transition-colors"
-                    title="Start focus"
-                  >
-                    <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
-                      <path d="M0 0v10l8-5z" />
-                    </svg>
-                    <span className="text-[11px] font-medium">Start</span>
-                  </button>
-                )}
-              </div>
-            </>
-          )}
+                }
+                if (!isFocused && onStart && task.status !== "done") {
+                  return (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onStart(task);
+                      }}
+                      className="rounded-full border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft cursor-pointer flex items-center gap-1.5 px-2.5 py-0.5 transition-[colors,opacity] duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto"
+                      title="Start focus"
+                    >
+                      <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
+                        <path d="M0 0v10l8-5z" />
+                      </svg>
+                      <span className="text-[11px] font-medium">Start</span>
+                    </button>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+          </div>
         </div>
       </div>
 

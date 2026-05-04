@@ -198,24 +198,9 @@ export default function DailyPlanner() {
         requestAnimationFrame(() => newTaskInputRef.current?.focus());
         return;
       }
-
-      // Space while a task row is hovered → start focus on it AND
-      // navigate to the immersive Focus page. Reads the currently
-      // hovered row from the DOM via :hover (no extra state needed —
-      // the browser already tracks it).
-      if (e.key === " ") {
-        const hovered = document.querySelector<HTMLElement>(
-          "[data-task-row-id]:hover"
-        );
-        if (!hovered) return;
-        const id = parseInt(hovered.dataset.taskRowId ?? "", 10);
-        if (Number.isNaN(id)) return;
-        const target = tasks.find((t) => t.id === id);
-        if (!target || target.status === "done") return;
-        e.preventDefault();
-        handleStartFocus(target);
-        setPage("focus");
-      }
+      // Space-on-hover-to-start was removed alongside the row's Start
+      // button — starting a timer from the daily plan is no longer a
+      // gesture. Use the focus screen or the task detail overlay.
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);

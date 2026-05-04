@@ -332,16 +332,13 @@ function TaskCardImpl({
                 always visible — live pill on top, pause button below.
                 The stack itself is the visual signal that this row is
                 running, so no hover is needed to expose the controls. */}
-        {/* Right area — fixed-width column. Single persistent subtree:
-            an absolute stack containing a pill slot and a button slot.
-            Only contents flip on isFocused; no DOM swap. The stack
-            overflows symmetrically into the row's py-4 padding when it
-            exceeds the inner flex's h-[2lh], so row height stays
-            invariant (no global growth, no idle-vs-focused difference).
-            See the #zero-pixel-shift plan thread for the full rationale. */}
+        {/* Right area — view-only on the daily plan. Just a centered
+            pill showing time state. Timer controls (start/pause) live
+            on the focus screen and the task detail overlay; daily plan
+            doesn't expose them. Single element → trivially zero shift
+            between idle and focused (only pill content swaps). */}
         <div className="relative shrink-0 w-[104px] self-stretch">
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
-            {/* Pill slot — always rendered with fixed dimensions. */}
+          <div className="absolute inset-0 flex items-center justify-center">
             {(() => {
               const liveSec = Math.max(0, Math.floor((liveElapsedMs ?? 0) / 1000));
               const liveM = Math.floor(liveSec / 60);
@@ -353,15 +350,12 @@ function TaskCardImpl({
               const staticOver = est > 0 && worked > est;
               const idleHasContent = worked > 0 || est > 0;
               // Visibility:
-              //   focused: visible always
-              //   idle + has time: visible idle, invisible on hover (so the
-              //     Start button reveal isn't competing)
-              //   idle + no time: invisible always (slot still reserves space)
-              const visClass = isFocused
-                ? ""
-                : idleHasContent
-                  ? "group-hover/row:invisible"
-                  : "invisible";
+              //   focused: visible always (live counter showing)
+              //   idle + has time: visible
+              //   idle + no time: invisible (slot still reserves space
+              //     so row geometry is identical regardless)
+              const visClass =
+                isFocused || idleHasContent ? "" : "invisible";
               const bgClass = isFocused ? "bg-accent-blue-soft" : "bg-overlay-hover";
               return (
                 <span
@@ -393,48 +387,6 @@ function TaskCardImpl({
                 </span>
               );
             })()}
-
-            {/* Button slot — fixed-size wrapper (this is what the layout
-                measures). Inner button content swaps idle ↔ focused. */}
-            <div className="h-[24px] w-[72px] flex items-center justify-center">
-              {(() => {
-                if (isFocused && onStop) {
-                  return (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onStop(task);
-                      }}
-                      className="w-6 h-6 shrink-0 rounded-full text-accent-blue hover:bg-overlay-hover cursor-pointer flex items-center justify-center transition-colors duration-150"
-                      title="Pause"
-                    >
-                      <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
-                        <rect x="1" y="0" width="2" height="8" rx="0.5" />
-                        <rect x="5" y="0" width="2" height="8" rx="0.5" />
-                      </svg>
-                    </button>
-                  );
-                }
-                if (!isFocused && onStart && task.status !== "done") {
-                  return (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onStart(task);
-                      }}
-                      className="rounded-full border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft cursor-pointer flex items-center gap-1.5 px-2.5 py-0.5 transition-[colors,opacity] duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto"
-                      title="Start focus"
-                    >
-                      <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
-                        <path d="M0 0v10l8-5z" />
-                      </svg>
-                      <span className="text-[11px] font-medium">Start</span>
-                    </button>
-                  );
-                }
-                return null;
-              })()}
-            </div>
           </div>
         </div>
       </div>

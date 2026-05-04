@@ -363,6 +363,17 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 16,
+            description: "add due_date column to tasks (separate from date_scheduled)",
+            // Additive only — nullable column, no destructive ops. due_date
+            // is when the task is *due* (deadline), distinct from
+            // date_scheduled (when the user plans to work on it).
+            sql: "
+                ALTER TABLE tasks ADD COLUMN due_date TEXT;
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

@@ -333,13 +333,32 @@ export interface UpdateTaskInput {
   priority: string;
   notes: string | null;
   dateScheduled: string | null;
+  dueDate?: string | null;
 }
 
 export async function updateTask(input: UpdateTaskInput): Promise<void> {
   validatePriority(input.priority);
   const db = await getDb();
+  // dueDate is optional in the input — when omitted (legacy callers
+  // that don't know about due_date), we issue the same UPDATE minus
+  // that column so we don't accidentally null out an existing value.
+  if (input.dueDate === undefined) {
+    await db.execute(
+      "UPDATE tasks SET title = $1, project_id = $2, estimated_minutes = $3, priority = $4, notes = $5, date_scheduled = $6 WHERE id = $7",
+      [
+        input.title,
+        input.projectId,
+        input.estimatedMinutes,
+        input.priority,
+        input.notes,
+        input.dateScheduled,
+        input.id,
+      ]
+    );
+    return;
+  }
   await db.execute(
-    "UPDATE tasks SET title = $1, project_id = $2, estimated_minutes = $3, priority = $4, notes = $5, date_scheduled = $6 WHERE id = $7",
+    "UPDATE tasks SET title = $1, project_id = $2, estimated_minutes = $3, priority = $4, notes = $5, date_scheduled = $6, due_date = $7 WHERE id = $8",
     [
       input.title,
       input.projectId,
@@ -347,6 +366,7 @@ export async function updateTask(input: UpdateTaskInput): Promise<void> {
       input.priority,
       input.notes,
       input.dateScheduled,
+      input.dueDate,
       input.id,
     ]
   );
@@ -669,6 +689,17 @@ export async function updateTaskDateScheduled(
   await db.execute(
     "UPDATE tasks SET date_scheduled = $1 WHERE id = $2",
     [dateScheduled, id]
+  );
+}
+
+export async function updateTaskDueDate(
+  id: number,
+  dueDate: string | null
+): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "UPDATE tasks SET due_date = $1 WHERE id = $2",
+    [dueDate, id]
   );
 }
 

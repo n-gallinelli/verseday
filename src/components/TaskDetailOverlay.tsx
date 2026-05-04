@@ -45,6 +45,7 @@ interface TaskDetailOverlayProps {
     priority: string;
     notes: string | null;
     dateScheduled: string | null;
+    dueDate: string | null;
   }) => void;
   onToggle?: (task: Task) => void;
   onDelete?: (taskId: number) => void;
@@ -339,6 +340,7 @@ export default function TaskDetailOverlay({
   const [projectId, setProjectId] = useState(task.project_id?.toString() ?? "");
   const [priority, setPriority] = useState(task.priority);
   const [dateScheduled, setDateScheduled] = useState(task.date_scheduled ?? "");
+  const [dueDate, setDueDate] = useState(task.due_date ?? "");
   const [worked, setWorked] = useState(workedMinutes > 0 ? workedMinutes.toString() : "");
   const [dayBreakdown, setDayBreakdown] = useState<{ date: string; minutes: number }[]>([]);
   const [openPopover, setOpenPopover] = useState<"estimate" | "worked" | null>(null);
@@ -378,6 +380,7 @@ export default function TaskDetailOverlay({
     const pr = overrides.priority ?? priority;
     const n = overrides.notes ?? notes;
     const ds = overrides.dateScheduled ?? dateScheduled;
+    const dd = overrides.dueDate ?? dueDate;
 
     const trimmedTitle = t.trim();
     if (!trimmedTitle) return null;
@@ -396,6 +399,7 @@ export default function TaskDetailOverlay({
       priority: pr,
       notes: n.trim() || null,
       dateScheduled: ds || null,
+      dueDate: dd || null,
     };
   }
 
@@ -610,6 +614,20 @@ export default function TaskDetailOverlay({
                 onClear={() => {
                   setDateScheduled("");
                   debouncedSave({ dateScheduled: "" });
+                }}
+              />
+            </PropertyRow>
+
+            <PropertyRow label="Due date">
+              <CalendarPicker
+                value={dueDate}
+                onChange={(date) => {
+                  setDueDate(date);
+                  debouncedSave({ dueDate: date });
+                }}
+                onClear={() => {
+                  setDueDate("");
+                  debouncedSave({ dueDate: "" });
                 }}
               />
             </PropertyRow>

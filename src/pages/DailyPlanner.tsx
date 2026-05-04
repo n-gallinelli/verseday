@@ -133,12 +133,6 @@ export default function DailyPlanner() {
   const [detailTask, setDetailTask] = useState<Task | null>(null);
   const [showSummary, setShowSummary] = useState(false);
 
-  // Selected/focused task for keyboard navigation. Persists across detail
-  // overlay open/close so the user can return to the same row, then arrow-
-  // key to a neighbor. Tracked by id (not index) so it survives reorder
-  // and refresh. Cleared automatically when the underlying task is gone.
-  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
-
   // Shutdown state (for localStorage check only)
   const initialLoadDone = useRef(false);
 
@@ -179,17 +173,12 @@ export default function DailyPlanner() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Keyboard navigation. All gestures share the same gating logic:
-  //   - skipped while the user is typing in an input/textarea/contenteditable
-  //   - skipped while a destructive confirmation row or detail overlay is up
-  //   - modifier keys must NOT be held (Cmd+A select-all, Ctrl+Enter, etc.
-  //     pass through untouched)
-  //
-  // Bindings:
-  //   A          → expand + focus the add-task input
-  //   ↑ / ↓      → move selection through the visible task list
-  //   Enter      → open the detail overlay for the selected task
-  //   Space      → start focus on the selected task (no-op if done)
+  // Hotkey: press `A` (no modifiers) to expand and focus the add-task
+  // input. Skipped if the user is already typing somewhere (input,
+  // textarea, contenteditable like the daily-notes editor or task-detail
+  // overlay) or if a destructive confirmation row is showing — those
+  // surfaces own the keystroke. Modifier check explicit so Cmd+A
+  // (select-all) and similar combos pass through untouched.
   useEffect(() => {
     function isTypingTarget(el: EventTarget | null): boolean {
       if (!(el instanceof HTMLElement)) return false;
@@ -198,81 +187,18 @@ export default function DailyPlanner() {
       return el.isContentEditable;
     }
     function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== "a" && e.key !== "A") return;
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       if (isTypingTarget(document.activeElement)) return;
       if (detailTask || confirmDeleteId !== null || editingId !== null) return;
-
-      if (e.key === "a" || e.key === "A") {
-        e.preventDefault();
-        setTaskInputExpanded(true);
-        requestAnimationFrame(() => newTaskInputRef.current?.focus());
-        return;
-      }
-
-      // Build the ordered list the user actually sees: incomplete first,
-      // completed at the bottom. Same sort renderRow uses below.
-      const ordered = [...tasks].sort((a, b) =>
-        a.status === "done" && b.status !== "done" ? 1
-          : a.status !== "done" && b.status === "done" ? -1
-          : 0
-      );
-
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        if (ordered.length === 0) return;
-        e.preventDefault();
-        const currentIdx = selectedTaskId == null
-          ? -1
-          : ordered.findIndex((t) => t.id === selectedTaskId);
-        const len = ordered.length;
-        const nextIdx =
-          e.key === "ArrowDown"
-            ? currentIdx < 0 ? 0 : (currentIdx + 1) % len
-            : currentIdx < 0 ? len - 1 : (currentIdx - 1 + len) % len;
-        const nextId = ordered[nextIdx].id;
-        setSelectedTaskId(nextId);
-        // Scroll the newly-selected row into view if it's outside the
-        // scroll area. data-task-row-id is already on each card for FLIP.
-        requestAnimationFrame(() => {
-          const el = document.querySelector<HTMLElement>(
-            `[data-task-row-id="${nextId}"]`
-          );
-          el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        });
-        return;
-      }
-
-      if (e.key === "Enter" && selectedTaskId != null) {
-        const task = tasks.find((t) => t.id === selectedTaskId);
-        if (task) {
-          e.preventDefault();
-          setDetailTask(task);
-        }
-        return;
-      }
-
-      if (e.key === " " && selectedTaskId != null) {
-        const task = tasks.find((t) => t.id === selectedTaskId);
-        if (task && task.status !== "done") {
-          e.preventDefault();
-          handleStartFocus(task);
-        }
-        return;
-      }
+      e.preventDefault();
+      setTaskInputExpanded(true);
+      // Focus on the next tick so the input has rendered after expanding.
+      requestAnimationFrame(() => newTaskInputRef.current?.focus());
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-    // handleStartFocus is stable enough for this slice — it reads focus
-    // state from the store at call time, doesn't capture stale closures.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detailTask, confirmDeleteId, editingId, tasks, selectedTaskId]);
-
-  // Clear selection if the underlying task disappeared (deleted, moved
-  // off the day, etc.). Otherwise arrow-key navigation jumps oddly.
-  useEffect(() => {
-    if (selectedTaskId != null && !tasks.some((t) => t.id === selectedTaskId)) {
-      setSelectedTaskId(null);
-    }
-  }, [tasks, selectedTaskId]);
+  }, [detailTask, confirmDeleteId, editingId]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -1079,14 +1005,7 @@ export default function DailyPlanner() {
                         }
                         onStart={handleStartFocus}
                         onStop={handleStopFocus}
-                        // Opening detail also pins selection to this row,
-                        // so when the user closes the overlay the same
-                        // task is keyboard-selected for ↑/↓ navigation.
-                        onOpenDetail={(t) => {
-                          setSelectedTaskId(t.id);
-                          setDetailTask(t);
-                        }}
-                        isSelected={selectedTaskId === task.id}
+                        onOpenDetail={setDetailTask}
                         expandedNotes={expandedId === task.id}
                         workedMinutes={workedMap.get(task.id)}
                         showProject={true}

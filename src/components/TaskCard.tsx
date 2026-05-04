@@ -133,13 +133,14 @@ function TaskCardImpl({
     const tooltipWidth = tooltipEl?.offsetWidth ?? 240;
     const tooltipHeight = tooltipEl?.offsetHeight ?? 48;
     // Position tooltip to the LEFT of the bar, vertically centered on
-    // the bar's center. This makes it feel like it emerges from the
-    // bar (same row) rather than floating above the row above. 10px
-    // gap between tooltip's right edge and the bar's left edge so the
-    // caret has room to point in.
+    // the bar's center. Tooltip's right edge sits at the wrapper's left
+    // edge (no gap) so the tooltip extends leftward across and FULLY
+    // covers the play/pause button area (which sits in the action slot
+    // just left of the bar). Caret bridges the small visual space to
+    // the bar itself.
     const barCenterY = rect.top + rect.height / 2;
     const naiveTop = barCenterY - tooltipHeight / 2;
-    const naiveLeft = rect.left - tooltipWidth - 10;
+    const naiveLeft = rect.left - tooltipWidth;
     // Clamp inside the viewport with 8px margins.
     const clampedTop = Math.min(
       Math.max(naiveTop, 8),

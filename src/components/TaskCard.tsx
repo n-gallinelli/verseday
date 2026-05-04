@@ -324,7 +324,10 @@ function TaskCardImpl({
             reflow tied to a deliberate user action, not hover. */}
         <div
           className={`relative shrink-0 h-6 ${
-            isFocused ? "w-[96px]" : "w-[72px]"
+            // Focused slot widened from 96 → 132 to fit the live pill's
+            // new "Xm Ys / Ym" content (~100px) plus 8px gap + 24px
+            // pause button. Non-focused slot unchanged.
+            isFocused ? "w-[132px]" : "w-[72px]"
           }`}
         >
           {isFocused ? (
@@ -338,27 +341,29 @@ function TaskCardImpl({
                   const totalSec = Math.max(0, Math.floor((liveElapsedMs ?? 0) / 1000));
                   const m = Math.floor(totalSec / 60);
                   const s = totalSec % 60;
-                  const text = m > 0 ? `${m}m ${s}s` : `${s}s`;
+                  const workedText = m > 0 ? `${m}m ${s}s` : `${s}s`;
                   const est = task.estimated_minutes ?? 0;
                   const overBudget = est > 0 && m > est;
                   return (
                     <span
-                      className={`inline-flex items-center justify-center min-w-[64px] px-2 py-[2px] rounded-full bg-accent-blue-soft text-[11px] tabular-nums ${
-                        overBudget ? "text-accent-danger" : "text-accent-blue-soft-fg"
-                      } font-medium`}
+                      className={`inline-flex items-center gap-0.5 justify-center min-w-[100px] px-2 py-[2px] rounded-full bg-accent-blue-soft text-[11px] tabular-nums font-medium`}
                     >
-                      {text}
+                      <span className={overBudget ? "text-accent-danger" : "text-accent-blue-soft-fg"}>
+                        {workedText}
+                      </span>
+                      <span className="text-accent-blue-soft-fg/40">/</span>
+                      <span className="text-accent-blue-soft-fg/80">
+                        {est > 0 ? `${est}m` : "—"}
+                      </span>
                     </span>
                   );
                 })()}
               </div>
 
-              {/* Hover layer (focused): trash to the left of stop. */}
-              <div className="absolute inset-0 flex items-center justify-end pr-[32px] transition-opacity duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto">
-                <TrashButton onDelete={() => onDelete(task.id)} />
-              </div>
-
-              {/* Stop button — always visible at the right edge. */}
+              {/* Pause button — always visible at the right edge. Click
+                  ends the time entry; clicking play again on the same
+                  task resumes from the cumulative worked time, so this
+                  is functionally a pause/resume toggle. */}
               {onStop && (
                 <div className="absolute right-0 inset-y-0 flex items-center">
                   <button
@@ -367,10 +372,11 @@ function TaskCardImpl({
                       onStop(task);
                     }}
                     className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-[color-mix(in_srgb,var(--accent-blue),black_30%)] cursor-pointer flex items-center justify-center transition-colors duration-150"
-                    title="Stop focus"
+                    title="Pause"
                   >
                     <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
-                      <rect width="8" height="8" rx="1" />
+                      <rect x="1" y="0" width="2" height="8" rx="0.5" />
+                      <rect x="5" y="0" width="2" height="8" rx="0.5" />
                     </svg>
                   </button>
                 </div>
@@ -400,11 +406,9 @@ function TaskCardImpl({
                 })()}
               </div>
 
-              {/* Hover layer (non-focused): trash + play, right-aligned.
-                  flex with justify-end + JSX trash-then-play means play
-                  ends up at the right edge, trash to its left. */}
-              <div className="absolute inset-0 flex items-center justify-end gap-2 transition-opacity duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto">
-                <TrashButton onDelete={() => onDelete(task.id)} />
+              {/* Hover layer (non-focused): play only (no trash — task
+                  deletion lives in the detail overlay). Right-aligned. */}
+              <div className="absolute inset-0 flex items-center justify-end transition-opacity duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto">
                 {onStart && task.status !== "done" && (
                   <button
                     onClick={(e) => {

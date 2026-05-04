@@ -215,23 +215,31 @@ function TimeFieldPill({
             value={rawInput}
             onChange={(e) => {
               setRawInput(e.target.value);
-              const total = parseTimeInput(e.target.value);
-              if (total > 0 && total <= MAX_ESTIMATE_MINUTES) {
-                onChange(total.toString());
-              } else if (e.target.value === "") {
+              const raw = e.target.value;
+              if (raw === "") {
                 onChange("");
+                return;
+              }
+              // Try the structured parser first (e.g., "1h 45m" → 105).
+              // If that returns 0 (no h/m suffix found), treat the input
+              // as a bare number of minutes — so "10" commits as 10
+              // minutes without forcing the user to type "10m".
+              let total = parseTimeInput(raw);
+              if (total === 0) total = parseInt(raw, 10);
+              if (!isNaN(total) && total > 0 && total <= MAX_ESTIMATE_MINUTES) {
+                onChange(total.toString());
               }
             }}
             onBlur={(e) => {
               const raw = e.target.value.trim();
               if (!raw) return;
               let total = parseTimeInput(raw);
-              if (total === 0) total = parseInt(raw);
+              if (total === 0) total = parseInt(raw, 10);
               if (!isNaN(total) && total > 0 && total <= MAX_ESTIMATE_MINUTES) {
                 onChange(total.toString());
               }
             }}
-            placeholder="custom (e.g. 1h 30m)"
+            placeholder="e.g. 10 or 1h 30m"
             className="w-full bg-input border border-line-hairline rounded-md px-2.5 py-1.5 text-[12px] text-fg-secondary placeholder:text-fg-disabled outline-none focus:border-accent-blue"
           />
           {autoTrackedNote && (

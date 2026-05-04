@@ -253,21 +253,22 @@ function TaskCardImpl({
           {task.title}
         </span>
 
-        {/* Actions — sit in the flex flow between title and time pill so
-            the title loses real layout space instead of being overlaid.
-            Container width animates to keep the transition smooth.
-            Horizontal padding gives the buttons' hover rings (box-shadow
-            spreading 5px outward, plus subpixel rendering) generous
-            room before the container's overflow-hidden clips them —
-            8px each side leaves a clean ~3px buffer past the halo so
-            no edge of the ring renders cropped. Width values are
-            border-box and include the padding. States:
+        {/* Actions — sit in the flex flow between title and time pill.
+            flex-row-reverse anchors the play/stop button to the
+            container's RIGHT edge (next to the time pill); the trash
+            slides in from the LEFT when the container expands, so the
+            stop button doesn't visually move on hover. JSX order stays
+            stop-first, trash-second; flex-row-reverse swaps display
+            order so visually it reads "trash | stop" left-to-right.
+            8px horizontal padding leaves clear space past the
+            box-shadow hover halo so it renders as a full circle. Width
+            states (border-box, includes padding):
               not focused, not hover: w-0    (no buttons, no padding)
-              not focused, hover:     w-[72px] (play + trash + ring room)
+              not focused, hover:     w-[72px] (play + trash + halo room)
               focused, not hover:     w-10  / 40px (stop only)
-              focused, hover:         w-[72px] (stop + trash) */}
+              focused, hover:         w-[72px] (stop + trash + halo room) */}
         <div
-          className={`overflow-hidden flex items-center gap-2 transition-[width,padding] duration-150 ease-out shrink-0 ${
+          className={`overflow-hidden flex flex-row-reverse items-center gap-2 transition-[width,padding] duration-150 ease-out shrink-0 ${
             isFocused
               ? "w-10 px-2 group-hover/row:w-[72px]"
               : "w-0 group-hover/row:w-[72px] group-hover/row:px-2"

@@ -23,6 +23,10 @@ interface TaskCardProps {
   expandedNotes: boolean;
   showProject?: boolean;
   workedMinutes?: number;
+  // Parent-managed flag: true on the render right after the user checked the
+  // task off, used to play the arrival animation. Lifted into the parent
+  // because the row remounts when it crosses incomplete→completed groups.
+  justArrived?: boolean;
 }
 
 function TrashButton({ onDelete }: { onDelete: () => void }) {
@@ -81,6 +85,7 @@ export default function TaskCard({
   expandedNotes,
   showProject = true,
   workedMinutes,
+  justArrived = false,
 }: TaskCardProps) {
   const {
     attributes,
@@ -170,7 +175,7 @@ export default function TaskCard({
           : isHigh
             ? "bg-accent-orange-soft border-accent-orange/15 hover:bg-accent-orange-soft-hover"
             : "bg-elevated/60 border-line-soft hover:bg-overlay-hover"
-      }${justCompleted ? " animate-task-arrived" : ""}`}
+      }${justArrived ? " animate-task-arrived" : ""}`}
     >
       <div
         className="flex items-center gap-3 cursor-default"

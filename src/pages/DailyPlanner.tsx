@@ -66,6 +66,11 @@ export default function DailyPlanner() {
   const [workedMinutes, setWorkedMinutes] = useState(0);
   const [dailyPlan, setDailyPlan] = useState<DailyPlan | null>(null);
   const [workedMap, setWorkedMap] = useState<Map<number, number>>(new Map());
+  // Tracks tasks that just transitioned to done so we can trigger the
+  // arrival animation. Lives in the parent because the row unmounts when it
+  // moves between the incomplete/completed render groups — a ref inside
+  // TaskCard would reset on remount and the animation would never fire.
+  const [arrivedIds, setArrivedIds] = useState<Set<number>>(new Set());
   const [projectStats, setProjectStats] = useState<Map<number, { total: number; done: number }>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
@@ -262,10 +267,30 @@ export default function DailyPlanner() {
   }
 
   async function toggleTask(task: Task) {
+    const wasDone = task.status === "done";
     try {
-      await updateTaskStatus(task.id, task.status === "done" ? "todo" : "done");
+      await updateTaskStatus(task.id, wasDone ? "todo" : "done");
       setError(null);
-      loadData();
+      // Wait for the refreshed tasks list before flipping the arrival flag.
+      // Otherwise the flag fires on a stale render where the row is still in
+      // the incomplete section, then re-fires when loadData remounts the row
+      // in the completed section — animation plays twice on the wrong state.
+      await loadData();
+      if (!wasDone) {
+        setArrivedIds((prev) => {
+          const next = new Set(prev);
+          next.add(task.id);
+          return next;
+        });
+        setTimeout(() => {
+          setArrivedIds((prev) => {
+            if (!prev.has(task.id)) return prev;
+            const next = new Set(prev);
+            next.delete(task.id);
+            return next;
+          });
+        }, 700);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update task");
     }
@@ -812,6 +837,7 @@ export default function DailyPlanner() {
                         expandedNotes={expandedId === task.id}
                         workedMinutes={workedMap.get(task.id)}
                         showProject={true}
+                        justArrived={arrivedIds.has(task.id)}
                       />
                     );
                   }

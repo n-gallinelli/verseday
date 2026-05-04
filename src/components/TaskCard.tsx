@@ -257,21 +257,19 @@ function TaskCardImpl({
             flex-row-reverse anchors the play/stop button to the
             container's RIGHT edge (next to the time pill); the trash
             slides in from the LEFT when the container expands, so the
-            stop button doesn't visually move on hover. JSX order stays
-            stop-first, trash-second; flex-row-reverse swaps display
-            order so visually it reads "trash | stop" left-to-right.
-            8px horizontal padding leaves clear space past the
-            box-shadow hover halo so it renders as a full circle. Width
-            states (border-box, includes padding):
-              not focused, not hover: w-0    (no buttons, no padding)
-              not focused, hover:     w-[72px] (play + trash + halo room)
-              focused, not hover:     w-10  / 40px (stop only)
-              focused, hover:         w-[72px] (stop + trash + halo room) */}
+            stop button doesn't visually move on hover. Hover feedback
+            on play/stop is just a bg color shift now (no box-shadow
+            halo) so no padding is needed for halo room — buttons sit
+            tight against the time pill. Width states (border-box):
+              not focused, not hover: w-0   (no buttons)
+              not focused, hover:     w-14  (play + trash, 56px)
+              focused, not hover:     w-6   (stop only, 24px)
+              focused, hover:         w-14  (stop + trash, 56px) */}
         <div
-          className={`overflow-hidden flex flex-row-reverse items-center gap-2 transition-[width,padding] duration-150 ease-out shrink-0 ${
+          className={`overflow-hidden flex flex-row-reverse items-center gap-2 transition-[width] duration-150 ease-out shrink-0 ${
             isFocused
-              ? "w-10 px-2 group-hover/row:w-[72px]"
-              : "w-0 group-hover/row:w-[72px] group-hover/row:px-2"
+              ? "w-6 group-hover/row:w-14"
+              : "w-0 group-hover/row:w-14"
           }`}
         >
           {isFocused && onStop ? (
@@ -280,7 +278,7 @@ function TaskCardImpl({
                 e.stopPropagation();
                 onStop(task);
               }}
-              className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
+              className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-colors duration-150"
               title="Stop focus"
             >
               <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
@@ -294,7 +292,7 @@ function TaskCardImpl({
                   e.stopPropagation();
                   onStart(task);
                 }}
-                className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
+                className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-colors duration-150"
                 title="Start focus"
               >
                 <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">

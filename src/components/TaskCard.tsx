@@ -428,12 +428,13 @@ function TaskCardImpl({
       {/* Project marker — colored bar pinned to the right edge. Hovering
           opens a portaled tooltip above the bar with the full project
           name; bar itself grows 5→7px on hover as the affordance signal.
-          The 28px wrapper widens the hover target without enlarging the
-          visible bar. */}
+          The 14px wrapper sits within the card's px-4 right padding, so
+          the hover zone never overlaps the action buttons (play/trash)
+          which live in the content area starting at right-16. */}
       {showProject && project && (
         <div
           ref={projAnchorRef}
-          className="absolute right-0 top-0 bottom-0 w-[28px]"
+          className="absolute right-0 top-0 bottom-0 w-[14px]"
           onMouseEnter={handleProjEnter}
           onMouseLeave={handleProjLeave}
         >

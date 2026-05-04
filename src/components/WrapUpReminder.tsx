@@ -1,48 +1,82 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useAppStore } from "../stores/appStore";
 import Button from "./Button";
 
 const WRAPUP_HOUR = 16;
 const WRAPUP_MINUTE = 30;
-const WRAPUP_KEY_PREFIX = "verseday_wrapup_";
-const AUTO_DISMISS_MS = 60000;
+// Per-day flag — set when the user has already shut down (or has been
+// reminded and started the shutdown flow). Prevents the reminder from
+// re-popping the same evening. Cleaned up after 7 days.
+const COMPLETED_KEY_PREFIX = "verseday_wrapup_";
+// Cross-day snooze timestamp — Date.now() value past which the reminder
+// is allowed to show again. Lives outside the per-day key so a snooze
+// taken at 4:35pm survives a brief app close/reopen.
+const SNOOZE_KEY = "verseday_wrapup_snooze";
 
 function getTodayIso(): string {
   return new Date().toISOString().split("T")[0];
 }
 
-function isWrapUpTime(): boolean {
+// True any time at or after 4:30 PM today — broader than the previous
+// "exactly the 4:30–4:59 window" so a 30-minute snooze actually re-fires
+// at 5:00 PM rather than silently expiring with the hour.
+function isWrapUpOrLater(): boolean {
   const now = new Date();
   const h = now.getHours();
   const m = now.getMinutes();
-  return h === WRAPUP_HOUR && m >= WRAPUP_MINUTE;
+  if (h > WRAPUP_HOUR) return true;
+  if (h === WRAPUP_HOUR && m >= WRAPUP_MINUTE) return true;
+  return false;
 }
 
-function wasShownToday(): boolean {
-  return localStorage.getItem(WRAPUP_KEY_PREFIX + getTodayIso()) === "true";
+function wasCompletedToday(): boolean {
+  return localStorage.getItem(COMPLETED_KEY_PREFIX + getTodayIso()) === "true";
 }
 
-function markShownToday(): void {
-  localStorage.setItem(WRAPUP_KEY_PREFIX + getTodayIso(), "true");
+function markCompletedToday(): void {
+  localStorage.setItem(COMPLETED_KEY_PREFIX + getTodayIso(), "true");
 }
 
-// Clean up keys older than 7 days
+function getSnoozeUntil(): number {
+  const raw = localStorage.getItem(SNOOZE_KEY);
+  const n = raw ? parseInt(raw, 10) : NaN;
+  return isNaN(n) ? 0 : n;
+}
+
+function setSnoozeUntil(ts: number | null): void {
+  if (ts == null) localStorage.removeItem(SNOOZE_KEY);
+  else localStorage.setItem(SNOOZE_KEY, ts.toString());
+}
+
+function shouldShow(): boolean {
+  if (wasCompletedToday()) return false;
+  if (!isWrapUpOrLater()) return false;
+  return Date.now() >= getSnoozeUntil();
+}
+
+// Clean up keys older than 7 days. Catches both the per-day completion
+// flag and any stale snooze timestamp that's well in the past.
 function cleanupStaleKeys(): void {
   try {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 7);
+    const cutoffIso = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 7);
+      return d.toISOString().split("T")[0];
+    })();
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith(WRAPUP_KEY_PREFIX)) {
-        const dateStr = key.slice(WRAPUP_KEY_PREFIX.length);
-        if (dateStr < cutoff.toISOString().split("T")[0]) {
-          keysToRemove.push(key);
-        }
+      if (!key) continue;
+      if (key.startsWith(COMPLETED_KEY_PREFIX) && key !== SNOOZE_KEY) {
+        const dateStr = key.slice(COMPLETED_KEY_PREFIX.length);
+        if (dateStr < cutoffIso) keysToRemove.push(key);
       }
     }
-    for (const key of keysToRemove) {
-      localStorage.removeItem(key);
+    for (const key of keysToRemove) localStorage.removeItem(key);
+    // Drop a snooze timestamp that's already long past.
+    const snooze = getSnoozeUntil();
+    if (snooze > 0 && snooze < Date.now() - 24 * 60 * 60 * 1000) {
+      setSnoozeUntil(null);
     }
   } catch {
     // silent
@@ -52,39 +86,35 @@ function cleanupStaleKeys(): void {
 export default function WrapUpReminder() {
   const [visible, setVisible] = useState(false);
   const setPage = useAppStore((s) => s.setPage);
-  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     cleanupStaleKeys();
-
     function check() {
-      if (!wasShownToday() && isWrapUpTime()) {
-        markShownToday();
-        setVisible(true);
-      }
+      if (shouldShow()) setVisible(true);
     }
-
     check();
     const interval = setInterval(check, 60000);
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-dismiss after 60 seconds
-  useEffect(() => {
-    if (visible) {
-      dismissTimerRef.current = setTimeout(() => setVisible(false), AUTO_DISMISS_MS);
-      return () => {
-        if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
-      };
-    }
-  }, [visible]);
+  function handleStartShutdown() {
+    markCompletedToday();
+    setSnoozeUntil(null);
+    setVisible(false);
+    setPage("daily_shutdown");
+  }
+
+  function handleSnooze(minutes: number) {
+    setSnoozeUntil(Date.now() + minutes * 60 * 1000);
+    setVisible(false);
+  }
 
   if (!visible) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-40 animate-slide-in">
+    <div className="fixed bottom-4 right-4 z-40 animate-slide-up">
       <div
-        className="bg-elevated border border-line-soft rounded-xl shadow-lg px-5 py-4 w-[280px]"
+        className="bg-elevated border border-line-soft rounded-xl shadow-lg px-5 py-4 w-[300px]"
         style={{ borderWidth: "0.5px" }}
       >
         <div className="flex items-center gap-2.5 mb-3">
@@ -98,9 +128,22 @@ export default function WrapUpReminder() {
         <p className="text-[12px] text-fg-muted mb-4">
           Take a few minutes to reflect and plan for tomorrow.
         </p>
-        <div className="flex items-center gap-2">
-          <Button size="sm" className="flex-1" onClick={() => { setVisible(false); setPage("daily_shutdown"); }}>Start shutdown</Button>
-          <Button variant="ghost" size="sm" onClick={() => setVisible(false)}>Later</Button>
+        <Button size="sm" className="w-full" onClick={handleStartShutdown}>
+          Start shutdown
+        </Button>
+        <div className="flex items-center gap-2 mt-2">
+          <button
+            onClick={() => handleSnooze(15)}
+            className="flex-1 text-[12px] text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer transition-colors py-1.5 rounded-md"
+          >
+            Snooze 15m
+          </button>
+          <button
+            onClick={() => handleSnooze(30)}
+            className="flex-1 text-[12px] text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer transition-colors py-1.5 rounded-md"
+          >
+            Snooze 30m
+          </button>
         </div>
       </div>
     </div>

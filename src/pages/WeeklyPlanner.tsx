@@ -891,12 +891,12 @@ export default function WeeklyPlanner() {
             )}
 
             <span className="uppercase text-fg-faded mb-2.5 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
-              Projects
+              Objectives
             </span>
 
             {projectGroups.length === 0 && unassignedTasks.length === 0 ? (
               <p className="text-[12px] text-fg-faded py-4 text-center">
-                No active projects
+                No active objectives
               </p>
             ) : (
               <>

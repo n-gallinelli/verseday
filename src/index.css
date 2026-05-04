@@ -110,7 +110,13 @@
   --accent-destructive: #AC4F38;
   --accent-destructive-hover: #943F2C;
 
-  /* — Chart visualization (data-only; not for action/alert/mood) — */
+  /* — Chart visualization (data-only; not for action/alert/mood) —
+     Planned vs. Worked uses contrasting hues so the comparison reads
+     instantly: cool slate signals "intent / future plan" (passive),
+     warm tan signals "actually done" (grounded, accomplished).
+     `chart-bar-neutral` is kept as an alias for backwards-compat. */
+  --chart-bar-planned: #8aa5c4;
+  --chart-bar-worked: #c49a6c;
   --chart-bar-neutral: #c49a6c;
 
   /* — Calendar — */
@@ -261,6 +267,8 @@
     --accent-destructive-hover: #b35e48;
 
     /* — Chart visualization — */
+    --chart-bar-planned: #7b96b5;
+    --chart-bar-worked: #c8a47d;
     --chart-bar-neutral: #c8a47d;
 
     /* — Calendar — */
@@ -367,6 +375,8 @@
   --color-accent-destructive-hover: var(--accent-destructive-hover);
 
   /* Chart */
+  --color-chart-bar-planned: var(--chart-bar-planned);
+  --color-chart-bar-worked: var(--chart-bar-worked);
   --color-chart-bar-neutral: var(--chart-bar-neutral);
 }
 
@@ -555,6 +565,42 @@ select {
 @media (prefers-reduced-motion: reduce) {
   .timer-circle-ring {
     animation: none;
+  }
+}
+
+/* Slow opacity pulse for the "Focusing..." status dot — calm, not loud.
+   Cycle is 2s with a held high-point so the dot reads "alive" without
+   strobing. Localized to the dot so the surrounding pill stays still. */
+@keyframes focus-dot-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
+.animate-focus-dot {
+  animation: focus-dot-pulse 2s ease-in-out infinite;
+}
+
+/* Cycling ellipsis: 3s loop showing 1 → 2 → 3 dots, then back. The first
+   dot is always visible (no animation); dots 2 and 3 fade in at 33% and
+   66% of the cycle so each "step" lasts ~1s. All three dots stay in the
+   DOM at full alpha-reserved width so the surrounding label doesn't
+   shift as dots appear. */
+@keyframes ellipsis-dot-2 {
+  0%, 32.99% { opacity: 0; }
+  33%, 100%  { opacity: 1; }
+}
+@keyframes ellipsis-dot-3 {
+  0%, 65.99% { opacity: 0; }
+  66%, 100%  { opacity: 1; }
+}
+.animate-ellipsis-2 { animation: ellipsis-dot-2 3s linear infinite; }
+.animate-ellipsis-3 { animation: ellipsis-dot-3 3s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-focus-dot,
+  .animate-ellipsis-2,
+  .animate-ellipsis-3 {
+    animation: none;
+    opacity: 1;
   }
 }
 

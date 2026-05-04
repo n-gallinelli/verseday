@@ -155,14 +155,13 @@ function NavSection({
 }
 
 const SHORTCUTS = [
-  { keys: "F", desc: "Start focus on next task" },
-  { keys: "⌘ 0", desc: "Focus" },
-  { keys: "⌘ 1", desc: "Daily Plan" },
-  { keys: "⌘ 2", desc: "Daily Shutdown" },
-  { keys: "⌘ 3", desc: "Weekly Plan" },
-  { keys: "⌘ 4", desc: "Weekly Shutdown" },
-  { keys: "⌘ 5", desc: "Objectives" },
-  { keys: "⌘ 6", desc: "Dashboard" },
+  { keys: "F", desc: "Focus on hovered task" },
+  { keys: "F", desc: "Focus screen" },
+  { keys: "T", desc: "Daily plan (today)" },
+  { keys: "W", desc: "Weekly planning" },
+  { keys: "O", desc: "Objectives" },
+  { keys: "D", desc: "Dashboard" },
+  { keys: "S", desc: "Settings" },
   { keys: "⌘ N", desc: "New task" },
   { keys: "Space", desc: "Pause / resume (focus)" },
   { keys: "Esc", desc: "Close / blur" },
@@ -312,9 +311,9 @@ export default function Sidebar() {
         {showShortcuts && (
           <div className="absolute bottom-full left-0 right-0 bg-sidebar border-t border-line-hairline px-4 pt-3 pb-2 space-y-1">
             {SHORTCUTS.map((s) => (
-              <div key={s.keys} className="flex items-center justify-between">
+              <div key={`${s.keys}-${s.desc}`} className="flex items-center justify-between">
                 <span className="text-[10px] text-fg-secondary">{s.desc}</span>
-                <kbd className="text-[9px] text-fg-faded bg-overlay-hover px-1.5 py-0.5 rounded font-mono">
+                <kbd className="text-[9px] text-fg-faded bg-overlay-hover px-1.5 py-0.5 rounded font-mono whitespace-nowrap shrink-0">
                   {s.keys}
                 </kbd>
               </div>

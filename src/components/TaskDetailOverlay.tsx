@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { getWorkedMinutesByDate, setTaskRecurrence, parseRecurrence, serializeRecurrence } from "../db/queries";
+import { parseTimeFromTitle } from "../utils/format";
 import CalendarPicker from "./CalendarPicker";
 import ProjectPicker from "./ProjectPicker";
 import RichTextEditor from "./RichTextEditor";
@@ -13,6 +14,13 @@ import type { Task, Project } from "../types";
 // keeps lists scannable.
 const MAX_TITLE_LENGTH = 5000;
 const MAX_ESTIMATE_MINUTES = 480;
+
+// Experiment: render the Time section like the daily plan's task-row
+// time pill (compact "Xm / Ym" with a slash between, no in-pill labels)
+// instead of the labeled side-by-side pills used in the rest of this
+// overlay. Flip to `true` to try it — the alternate layout is kept
+// behind this flag for easy toggling.
+const USE_DAILY_PLAN_TIME_STYLE = false;
 
 const ESTIMATE_PRESETS = [
   { label: "0m", value: "0" },
@@ -156,28 +164,57 @@ function TimeFieldPill({
 
   return (
     <div className="relative" ref={pillRef}>
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={onToggle}
-        className={`rounded-md cursor-pointer border transition-colors w-full ${
-          hideLabel ? "flex items-center" : "flex flex-col items-start"
-        } ${
+      {/* Pill: trigger + × clear affordance share one styled container —
+          mirrors CalendarPicker's pill so the DATES and TIME rows read
+          as a consistent set. × space is reserved when onReset is
+          wired; the × itself fades in only on pill hover (or keyboard
+          focus) so the default state stays clean. */}
+      <div
+        className={`group/pill flex items-stretch w-full rounded-md transition-colors ${
           isOpen
             ? "bg-accent-blue-soft border-accent-blue"
             : "bg-input border-line-hairline hover:border-line-medium"
         }`}
-        style={{ padding: hideLabel ? "5px 12px" : "4px 10px", borderWidth: "0.5px" }}
+        style={{ borderWidth: "0.5px", borderStyle: "solid" }}
       >
-        {!hideLabel && (
-          <span className="text-[9px] uppercase tracking-[0.07em] text-fg-faded leading-none">
-            {label}
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={onToggle}
+          className={`flex-1 min-w-0 cursor-pointer text-left ${
+            hideLabel ? "flex items-center" : "flex flex-col items-start gap-[3px]"
+          }`}
+          style={{ padding: hideLabel ? "4px 4px 4px 12px" : "4px 4px 4px 10px" }}
+        >
+          {!hideLabel && (
+            <span className="text-[9px] uppercase tracking-[0.07em] text-fg-faded leading-none">
+              {label}
+            </span>
+          )}
+          <span className={`text-[12px] font-medium leading-[1.2] truncate ${hasValue ? "text-fg" : "text-fg-disabled"}`}>
+            {displayValue}
           </span>
+        </button>
+        {onReset && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onReset();
+            }}
+            className={`w-7 flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary text-[11px] leading-none transition-opacity ${
+              hasValue
+                ? "opacity-0 pointer-events-none group-hover/pill:opacity-100 group-hover/pill:pointer-events-auto focus:opacity-100 focus:pointer-events-auto"
+                : "opacity-0 pointer-events-none"
+            }`}
+            title={`Clear ${label.toLowerCase()}`}
+            aria-hidden={!hasValue}
+            tabIndex={hasValue ? 0 : -1}
+          >
+            ✕
+          </button>
         )}
-        <span className={`text-[13px] font-medium leading-tight ${hasValue ? "text-fg" : "text-fg-disabled"}`}>
-          {displayValue}
-        </span>
-      </button>
+      </div>
 
       {isOpen && popoverPos && createPortal(
         <div
@@ -353,6 +390,12 @@ export default function TaskDetailOverlay({
   const [recurrenceInterval, setRecurrenceInterval] = useState<number>(parsedRecurrence?.interval ?? 1);
 
   const saveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedFlashRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Footer label state — reflects what's actually happening with saves
+  // instead of a perpetual "Auto-saved" lie. 'pending' while a debounced
+  // save is queued, 'saved' for ~1.5s after a save fires, 'idle' at
+  // steady state.
+  const [saveState, setSaveState] = useState<"idle" | "pending" | "saved">("idle");
   const modalRef = useRef<HTMLDivElement>(null);
 
   // Load per-day breakdown
@@ -405,9 +448,24 @@ export default function TaskDetailOverlay({
 
   function debouncedSave(overrides: Record<string, string> = {}) {
     if (saveRef.current) clearTimeout(saveRef.current);
+    if (savedFlashRef.current) {
+      clearTimeout(savedFlashRef.current);
+      savedFlashRef.current = null;
+    }
+    setSaveState("pending");
     saveRef.current = setTimeout(() => {
+      saveRef.current = null;
       const update = buildUpdate(overrides);
-      if (update) onSave(update);
+      if (update) {
+        onSave(update);
+        setSaveState("saved");
+        savedFlashRef.current = setTimeout(() => {
+          savedFlashRef.current = null;
+          setSaveState("idle");
+        }, 1500);
+      } else {
+        setSaveState("idle");
+      }
     }, 600);
   }
 
@@ -416,13 +474,38 @@ export default function TaskDetailOverlay({
       clearTimeout(saveRef.current);
       saveRef.current = null;
     }
-    const update = buildUpdate();
-    if (update) onSave(update);
+    if (savedFlashRef.current) {
+      clearTimeout(savedFlashRef.current);
+      savedFlashRef.current = null;
+    }
+    // Smart time parsing on commit: a trailing "~10" / "30m" / "1h"
+    // suffix on the title gets stripped and routed into the estimate
+    // field, matching DailyPlanner's add-task behavior. Only fires at
+    // commit (Enter / close / scrim click) — running it in onChange
+    // would clobber mid-typing patterns.
+    const parsed = parseTimeFromTitle(title);
+    const overrides: Record<string, string> = {};
+    if (parsed.minutes != null && parsed.cleanTitle !== title) {
+      overrides.title = parsed.cleanTitle;
+      overrides.estimate = parsed.minutes.toString();
+      setTitle(parsed.cleanTitle);
+      setEstimate(parsed.minutes.toString());
+    }
+    const update = buildUpdate(overrides);
+    if (update) {
+      onSave(update);
+      setSaveState("saved");
+      savedFlashRef.current = setTimeout(() => {
+        savedFlashRef.current = null;
+        setSaveState("idle");
+      }, 1500);
+    }
   }
 
   useEffect(() => {
     return () => {
       if (saveRef.current) clearTimeout(saveRef.current);
+      if (savedFlashRef.current) clearTimeout(savedFlashRef.current);
     };
   }, []);
 
@@ -484,8 +567,11 @@ export default function TaskDetailOverlay({
             }}
           />
         )}
-        {/* Header strip — title hero */}
-        <div className="flex items-center gap-3 px-8 pt-7 pb-6 border-b border-divider">
+        {/* Header strip — title hero. items-center keeps the check circle
+            and Start button vertically centered with the title block on
+            both 1- and 2-line titles. Generous pt-9/pb-8 give the title
+            room to breathe from the modal edge and the divider below. */}
+        <div className="flex items-center gap-3 px-8 pt-9 pb-8 border-b border-divider">
           {onToggle && (
             <button
               onClick={() => {
@@ -494,7 +580,7 @@ export default function TaskDetailOverlay({
                 onToggle(task);
               }}
               title={localStatus === "done" ? "Mark as not done" : "Mark complete"}
-              className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer transition-colors mt-[3px] ${
+              className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
                 localStatus === "done"
                   ? "bg-accent-green border-accent-green hover:bg-accent-green-hover hover:border-accent-green-hover"
                   : "border-line-strong hover:border-accent-green"
@@ -559,8 +645,10 @@ export default function TaskDetailOverlay({
               }}
               // Outlined button: triangle + "Start" label. Same visual
               // language as the daily plan header's "Start focusing"
-              // button, sized for the detail overlay's header.
-              className="rounded-full border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors flex-shrink-0"
+              // button, sized for the detail overlay's header. ml-3 adds
+              // a buffer beyond the row's gap so a long title doesn't
+              // wrap right against the button.
+              className="ml-3 rounded-full border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors flex-shrink-0"
               title="Start focus"
             >
               <svg width="9" height="11" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
@@ -569,12 +657,8 @@ export default function TaskDetailOverlay({
               <span className="text-[13px] font-medium">Start</span>
             </button>
           )}
-          <button
-            onClick={handleClose}
-            className="text-fg-faded hover:text-fg-secondary cursor-pointer text-[16px] flex-shrink-0 w-7 h-7 flex items-center justify-center"
-          >
-            ✕
-          </button>
+          {/* No close button — Esc and outside-click both dismiss the
+              overlay, which is enough. */}
         </div>
 
         {/* Body — split panel */}
@@ -613,11 +697,9 @@ export default function TaskDetailOverlay({
                 Dates
               </div>
               <div className="flex items-stretch gap-1.5">
-                <div className="flex flex-col gap-0.5 flex-1">
-                  <span className="text-[9px] uppercase tracking-[0.07em] text-fg-faded leading-none">
-                    Scheduled
-                  </span>
+                <div className="flex-1">
                   <CalendarPicker
+                    label="Scheduled"
                     value={dateScheduled}
                     onChange={(date) => {
                       setDateScheduled(date);
@@ -629,11 +711,9 @@ export default function TaskDetailOverlay({
                     }}
                   />
                 </div>
-                <div className="flex flex-col gap-0.5 flex-1">
-                  <span className="text-[9px] uppercase tracking-[0.07em] text-fg-faded leading-none">
-                    Due
-                  </span>
+                <div className="flex-1">
                   <CalendarPicker
+                    label="Due"
                     value={dueDate}
                     onChange={(date) => {
                       setDueDate(date);
@@ -652,6 +732,60 @@ export default function TaskDetailOverlay({
               <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1.5">
                 Time
               </div>
+              {USE_DAILY_PLAN_TIME_STYLE ? (
+                // Compact "Xm / Ym" treatment — echoes the daily plan task
+                // row's time pill. Each value is its own clickable pill with
+                // its own popover; the slash between joins them visually.
+                <div className="flex items-center gap-1.5">
+                  <div data-time-pill className="flex-1">
+                    <TimeFieldPill
+                      label="Worked"
+                      hideLabel
+                      value={worked}
+                      presets={WORKED_PRESETS}
+                      isOpen={openPopover === "worked"}
+                      onToggle={() => setOpenPopover(openPopover === "worked" ? null : "worked")}
+                      onChange={(val) => {
+                        setWorked(val);
+                        if (onSetWorkedMinutes && val) {
+                          const n = parseInt(val);
+                          if (!isNaN(n) && n > 0) onSetWorkedMinutes(task.id, n);
+                        }
+                      }}
+                      onReset={
+                        onSetWorkedMinutes
+                          ? () => {
+                              setWorked("");
+                              onSetWorkedMinutes(task.id, 0);
+                              setOpenPopover(null);
+                            }
+                          : undefined
+                      }
+                      autoTrackedNote={autoTrackedNote}
+                    />
+                  </div>
+                  <span className="text-fg-disabled text-[13px] font-medium select-none">/</span>
+                  <div data-time-pill className="flex-1">
+                    <TimeFieldPill
+                      label="Estimated"
+                      hideLabel
+                      value={estimate}
+                      presets={ESTIMATE_PRESETS}
+                      isOpen={openPopover === "estimate"}
+                      onToggle={() => setOpenPopover(openPopover === "estimate" ? null : "estimate")}
+                      onChange={(val) => {
+                        setEstimate(val);
+                        debouncedSave({ estimate: val });
+                      }}
+                      onReset={() => {
+                        setEstimate("");
+                        debouncedSave({ estimate: "" });
+                        setOpenPopover(null);
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : (
               <div className="flex items-stretch gap-1.5">
                 <div data-time-pill className="flex-1">
                   <TimeFieldPill
@@ -704,6 +838,7 @@ export default function TaskDetailOverlay({
                   />
                 </div>
               </div>
+              )}
             </div>
 
             {!isInstance && (
@@ -799,8 +934,20 @@ export default function TaskDetailOverlay({
 
         {/* Footer */}
         <div className="flex items-center gap-2 px-8 py-4 border-t border-line-hairline">
-          <span className="text-[10px] text-fg-disabled flex-1">
-            Auto-saved
+          <span
+            className={`text-[10px] flex-1 transition-colors ${
+              saveState === "pending"
+                ? "text-fg-faded"
+                : saveState === "saved"
+                  ? "text-accent-green"
+                  : "text-fg-disabled"
+            }`}
+          >
+            {saveState === "pending"
+              ? "Saving…"
+              : saveState === "saved"
+                ? "Saved"
+                : "Auto-saved"}
           </span>
           {onDelete && (
             <button

@@ -25,7 +25,7 @@ import {
   startTimeEntry,
   getWorkedMinutesForTask,
 } from "./db/queries";
-import type { Page } from "./types";
+import type { Page, Task } from "./types";
 
 const PAGE_SHORTCUTS: Record<string, Page> = {
   "0": "focus_landing",
@@ -133,79 +133,139 @@ function MainApp() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       const meta = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
 
-      // Cmd+1-5: page navigation
+      // ── Meta-modifier shortcuts ────────────────────────────────────
+      // Cmd+1-6: page navigation (preserved alongside the bare-key set)
       if (meta && !e.shiftKey && PAGE_SHORTCUTS[e.key]) {
         e.preventDefault();
         setPage(PAGE_SHORTCUTS[e.key]);
         return;
       }
 
-      // Cmd+N: focus task input on current page
-      if (meta && e.key === "n") {
+      // Cmd+N: focus task input on current page. Most pages keep their
+      // add-task affordance collapsed by default (button → expanded
+      // input row), so the page-level listener for this event is what
+      // actually opens it. The selector branch is a fallback for any
+      // surface that already has an input on screen.
+      if (meta && !e.shiftKey && key === "n") {
         e.preventDefault();
         const input = document.querySelector<HTMLInputElement>(
           'input[placeholder*="task"], input[placeholder*="Add"]'
         );
-        if (input) input.focus();
+        if (input) {
+          input.focus();
+        } else {
+          window.dispatchEvent(new CustomEvent("verseday:open-task-input"));
+        }
         return;
       }
 
-      // Escape: close overlays/pickers (blur active element)
+      // Cmd+Shift+S: enter shutdown mode (only meaningful on daily plan)
+      if (meta && e.shiftKey && key === "s") {
+        if (useAppStore.getState().currentPage === "daily") {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("verseday:toggle-shutdown-mode"));
+        }
+        return;
+      }
+
+      // Escape: blur the active input/editor
       if (e.key === "Escape" && isInputFocused()) {
         (document.activeElement as HTMLElement)?.blur();
         return;
       }
 
-      // Global shortcuts (only when not typing)
-      if (!isInputFocused()) {
-        // F: start focus on next task today
-        if (e.key === "f" && !meta) {
-          e.preventDefault();
-          if (useAppStore.getState().focus) return; // already in focus
-          (async () => {
-            try {
-              const today = new Date().toISOString().split("T")[0];
-              const tasks = await getTasksForDate(today);
-              const next = tasks.find((t) => t.status !== "done");
-              if (!next) return;
-              const priorMinutes = await getWorkedMinutesForTask(next.id);
-              const priorMs = priorMinutes * 60 * 1000;
-              const entryId = await startTimeEntry(next.id, "tracked");
-              const prevPage = useAppStore.getState().currentPage;
-              startFocus(next, entryId, prevPage, priorMs);
-              // F hotkey is the global "drop everything and focus" gesture
-              // — caller opts into the immersive page.
-              useAppStore.getState().setPage("focus");
-            } catch {
-              // silent
+      // ── Bare single-key shortcuts ──────────────────────────────────
+      // Skip whenever the user is typing or holding any modifier — these
+      // hotkeys are meant for the "navigation hands" state, not editing.
+      if (isInputFocused() || meta || e.shiftKey || e.altKey) return;
+
+      const page = useAppStore.getState().currentPage;
+
+      // Space on focus mode: toggle pause.
+      if (e.key === " " && page === "focus") {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("verseday:toggle-pause"));
+        return;
+      }
+
+      // F on a page with an active focus session: jump back to the
+      // immersive screen instead of starting a new one.
+      if (key === "f" && useAppStore.getState().focus) {
+        e.preventDefault();
+        setPage("focus");
+        return;
+      }
+
+      // F (no active session): start a focus session on the task the
+      // cursor is currently over, or fall back to the first incomplete
+      // task today. Hover detection uses the live `:hover` selector
+      // so it works regardless of whether a `mouseenter` ever fired
+      // (cursor sitting still over a row that re-rendered didn't,
+      // which was the source of the "always picks the top task" bug).
+      if (key === "f") {
+        e.preventDefault();
+        (async () => {
+          try {
+            const today = new Date().toISOString().split("T")[0];
+            const tasks = await getTasksForDate(today);
+            const incomplete = tasks.filter((t) => t.status !== "done");
+            if (incomplete.length === 0) {
+              setPage("focus_landing");
+              return;
             }
-          })();
-          return;
-        }
+            let target: Task | null = null;
+            const hoveredEl = document.querySelector<HTMLElement>(
+              "[data-task-row-id]:hover"
+            );
+            if (hoveredEl) {
+              const id = parseInt(hoveredEl.dataset.taskRowId ?? "", 10);
+              if (!isNaN(id)) {
+                target = incomplete.find((t) => t.id === id) ?? null;
+              }
+            }
+            if (!target) target = incomplete[0];
+            const priorMin = await getWorkedMinutesForTask(target.id);
+            const entryId = await startTimeEntry(target.id, "tracked");
+            const prev = useAppStore.getState().currentPage;
+            startFocus(target, entryId, prev, priorMin * 60 * 1000);
+            useAppStore.getState().setPage("focus");
+          } catch {
+            // silent — fail closed on DB hiccups rather than half-start
+          }
+        })();
+        return;
+      }
 
-        const page = useAppStore.getState().currentPage;
-
-        // Focus Mode: Space to pause/resume
-        if (page === "focus" && e.key === " ") {
+      // Bare-key page nav
+      switch (key) {
+        case "t":
           e.preventDefault();
-          // Dispatch a custom event that FocusMode listens for
-          window.dispatchEvent(new CustomEvent("verseday:toggle-pause"));
+          setPage("daily");
           return;
-        }
-
-        // Daily: Cmd+Shift+S shutdown mode
-        if (page === "daily" && meta && e.key === "s" && e.shiftKey) {
+        case "w":
           e.preventDefault();
-          window.dispatchEvent(new CustomEvent("verseday:toggle-shutdown-mode"));
+          setPage("weekly");
           return;
-        }
+        case "o":
+          e.preventDefault();
+          setPage("projects");
+          return;
+        case "d":
+          e.preventDefault();
+          setPage("dashboard");
+          return;
+        case "s":
+          e.preventDefault();
+          setPage("settings");
+          return;
       }
     }
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [setPage]);
+  }, [setPage, startFocus]);
 
   // Focus mode is a full-screen overlay
   if (currentPage === "focus" && focus) {

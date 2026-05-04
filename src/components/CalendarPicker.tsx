@@ -6,6 +6,11 @@ interface CalendarPickerProps {
   onChange: (date: string) => void;
   onClear?: () => void;
   placeholder?: string;
+  // When provided, renders as a label-inside pill (uppercase label on top,
+  // value below) so date pickers can sit alongside time pills as a
+  // visually consistent set. When omitted, falls back to the legacy
+  // single-line pill (no label).
+  label?: string;
 }
 
 const DAY_NAMES = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -34,6 +39,7 @@ export default function CalendarPicker({
   onChange,
   onClear,
   placeholder = "No date",
+  label,
 }: CalendarPickerProps) {
   const [open, setOpen] = useState(false);
   const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
@@ -151,10 +157,21 @@ export default function CalendarPicker({
 
   return (
     <div ref={containerRef} className="relative w-full">
-      {/* Trigger button + clear slot. Clear is always rendered (invisible when
-          no value) so the trigger's right edge stays at a fixed x — adjacent
-          fields don't shift when a row gains/loses a date. */}
-      <div className="flex items-center gap-1.5 w-full">
+      {/* Pill: outer styled container holds the trigger (left) and a
+          × clear affordance (right). The × wrapper reserves space
+          when onClear is wired so width is constant; the × itself
+          fades in only on pill hover (or when focused via keyboard)
+          so the default state stays clean. Pill matches
+          TimeFieldPill's label-inside style for visual consistency
+          across DATES / TIME sections in the task detail overlay. */}
+      <div
+        className={`group/pill flex items-stretch w-full rounded-md transition-colors ${
+          open
+            ? "bg-input border-accent-blue"
+            : "bg-input border-line-hairline hover:border-line-medium"
+        }`}
+        style={{ borderWidth: "0.5px", borderStyle: "solid" }}
+      >
         <button
           ref={triggerRef}
           type="button"
@@ -162,26 +179,38 @@ export default function CalendarPicker({
             if (!open) updatePosition();
             setOpen(!open);
           }}
-          className={`bg-input rounded-md text-[12px] font-medium leading-tight cursor-pointer transition-colors hover:border-line-medium text-center flex-1 ${
-            value ? "text-fg" : "text-fg-faded"
+          className={`flex-1 min-w-0 cursor-pointer text-left ${
+            label ? "flex flex-col items-start gap-[3px]" : "flex items-center"
           }`}
           style={{
-            padding: "3px 10px",
-            border: "0.5px solid var(--border-hairline)",
-            minWidth: 70,
+            padding: label ? "4px 4px 4px 10px" : "4px 4px 4px 12px",
           }}
         >
-          {displayLabel}
+          {label && (
+            <span className="text-[9px] uppercase tracking-[0.07em] text-fg-faded leading-none">
+              {label}
+            </span>
+          )}
+          <span
+            className={`text-[12px] font-medium leading-[1.2] truncate ${
+              value ? "text-fg" : "text-fg-disabled"
+            }`}
+          >
+            {displayLabel}
+          </span>
         </button>
         {onClear && (
           <button
             type="button"
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               onClear();
               setOpen(false);
             }}
-            className={`w-3.5 text-[11px] text-fg-faded hover:text-fg-secondary cursor-pointer leading-none flex items-center justify-center ${
-              value ? "" : "invisible"
+            className={`w-7 flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary text-[11px] leading-none transition-opacity ${
+              value
+                ? "opacity-0 pointer-events-none group-hover/pill:opacity-100 group-hover/pill:pointer-events-auto focus:opacity-100 focus:pointer-events-auto"
+                : "opacity-0 pointer-events-none"
             }`}
             title="Clear date"
             aria-hidden={!value}

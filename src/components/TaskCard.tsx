@@ -208,6 +208,7 @@ function TaskCardImpl({
     }
   }, [expandedNotes, task.id]);
 
+
   async function saveNotes(valueToSave: string = notes) {
     const trimmed = valueToSave.trim() || null;
     if (trimmed === task.notes) return;
@@ -332,13 +333,16 @@ function TaskCardImpl({
                 always visible — live pill on top, pause button below.
                 The stack itself is the visual signal that this row is
                 running, so no hover is needed to expose the controls. */}
-        {/* Right area — view-only on the daily plan. Just a centered
-            pill showing time state. Timer controls (start/pause) live
-            on the focus screen and the task detail overlay; daily plan
-            doesn't expose them. Single element → trivially zero shift
-            between idle and focused (only pill content swaps). */}
-        <div className="relative shrink-0 w-[104px] self-stretch">
-          <div className="absolute inset-0 flex items-center justify-center">
+        {/* Right area — fixed-width slot (132px) so the title's flex-1
+            sees the same reservation idle vs. focused. Idle: a single
+            centered pill (with worked/est, or invisible if neither).
+            Focused: pill on the left + pause button on the right —
+            daily plan exposes pause but not start (start lives on the
+            focus screen and the detail overlay's Start button). The
+            slot width is constant, so neither hover nor the focus
+            transition reflows the title. */}
+        <div className="relative shrink-0 w-[132px] self-stretch">
+          <div className="absolute inset-0 flex items-center justify-center gap-1.5">
             {(() => {
               const liveSec = Math.max(0, Math.floor((liveElapsedMs ?? 0) / 1000));
               const liveM = Math.floor(liveSec / 60);
@@ -357,9 +361,12 @@ function TaskCardImpl({
               const visClass =
                 isFocused || idleHasContent ? "" : "invisible";
               const bgClass = isFocused ? "bg-accent-blue-soft" : "bg-overlay-hover";
+              // Drop min-w when focused so the pill + pause button fit
+              // together inside the 132px slot.
+              const widthClass = isFocused ? "" : "min-w-[100px]";
               return (
                 <span
-                  className={`inline-flex items-center justify-center gap-0.5 h-[20px] min-w-[100px] px-2 rounded-full text-[11px] tabular-nums ${
+                  className={`inline-flex items-center justify-center gap-0.5 h-[20px] ${widthClass} px-2 rounded-full text-[11px] tabular-nums whitespace-nowrap ${
                     isFocused ? "font-medium" : ""
                   } ${bgClass} ${visClass}`}
                 >
@@ -387,6 +394,21 @@ function TaskCardImpl({
                 </span>
               );
             })()}
+            {isFocused && onStop && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStop(task);
+                }}
+                className="w-6 h-6 rounded-full flex items-center justify-center cursor-pointer transition-colors bg-accent-blue-soft text-accent-blue-soft-fg hover:bg-accent-blue/20"
+                title="Pause focus"
+              >
+                <svg width="9" height="10" viewBox="0 0 9 10" fill="currentColor">
+                  <rect x="0.5" y="1" width="2.5" height="8" rx="0.6" />
+                  <rect x="6" y="1" width="2.5" height="8" rx="0.6" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -203,7 +203,17 @@ export default function DailyPlanner() {
       // gesture. Use the focus screen or the task detail overlay.
     }
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    function onOpenTaskInput() {
+      // Cmd+N from the global keymap dispatches this — surface the
+      // collapsed add-task bar and focus its input on the next frame.
+      setTaskInputExpanded(true);
+      requestAnimationFrame(() => newTaskInputRef.current?.focus());
+    }
+    window.addEventListener("verseday:open-task-input", onOpenTaskInput);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("verseday:open-task-input", onOpenTaskInput);
+    };
     // tasks/handleStartFocus/setPage closures are read at call time;
     // keeping the dep array narrow avoids re-binding the listener on
     // every render.
@@ -750,12 +760,26 @@ export default function DailyPlanner() {
               return (
                 <button
                   onClick={() => setPage("focus")}
-                  className="rounded-lg bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
+                  // Status pill, not primary CTA: softer accent-blue tint
+                  // with an outlined edge so it reads as "currently
+                  // running" instead of "click to start something." A
+                  // slow opacity pulse on the dot (2s cycle, .45 → 1)
+                  // gives a localized recording-light feel without the
+                  // whole pill breathing.
+                  className="rounded-lg bg-accent-blue-soft text-accent-blue-soft-fg border border-accent-blue/40 hover:border-accent-blue hover:bg-accent-blue/15 cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors"
+                  title="Open focus screen"
                 >
-                  <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
-                    <path d="M0 0v10l8-5z" />
-                  </svg>
-                  <span className="text-[13px] font-medium">Focusing...</span>
+                  <span
+                    className="w-2 h-2 rounded-full bg-accent-blue animate-focus-dot"
+                    aria-hidden
+                  />
+                  <span className="text-[13px] font-medium">
+                    Focusing<span aria-hidden>
+                      <span>.</span>
+                      <span className="animate-ellipsis-2">.</span>
+                      <span className="animate-ellipsis-3">.</span>
+                    </span>
+                  </span>
                 </button>
               );
             }
@@ -1101,10 +1125,20 @@ export default function DailyPlanner() {
               Daily notes
             </label>
             <div className="flex items-center gap-3">
+              {/* Both treated as quiet footer utilities — neither is a
+                  primary CTA on this page (the primary actions are
+                  checking off tasks and starting focus). Equal visual
+                  weight so "Shutdown day" doesn't get drowned out by a
+                  bolder "Summarize plan" link. */}
               <button
                 onClick={() => setShowSummary(true)}
-                className="text-[11px] text-accent-blue-soft-fg cursor-pointer hover:text-accent-blue transition-colors"
+                className="flex items-center gap-1 text-[12px] text-fg-faded cursor-pointer hover:text-fg-secondary transition-colors"
               >
+                <svg width="11" height="11" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+                  <line x1="3" y1="4" x2="12" y2="4" />
+                  <line x1="3" y1="7.5" x2="12" y2="7.5" />
+                  <line x1="3" y1="11" x2="9" y2="11" />
+                </svg>
                 Summarize plan
               </button>
               <button

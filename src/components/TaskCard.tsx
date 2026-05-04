@@ -457,7 +457,7 @@ function TaskCardImpl({
       {showProject && project && projTooltip && createPortal(
         <div
           ref={projTooltipRef}
-          className="fixed z-[60] bg-elevated rounded-lg px-3 py-2 max-w-[200px] animate-scale-in pointer-events-none"
+          className="fixed z-[60] bg-elevated rounded-lg px-3 py-2 max-w-[200px] pointer-events-none"
           style={{
             top: projTooltip.top,
             left: projTooltip.left,

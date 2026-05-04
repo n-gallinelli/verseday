@@ -333,8 +333,13 @@ function TaskCardImpl({
                 running, so no hover is needed to expose the controls. */}
         <div className="relative shrink-0 w-[104px] flex items-center justify-center self-stretch">
           {isFocused ? (
-            // Active: stacked, both always visible.
-            <div className="flex flex-col items-center gap-1.5">
+            // Active: stacked, both always visible. Absolutely positioned
+            // and centered via translate so the stack's natural ~54px
+            // height doesn't push the inner flex past min-h-[2lh] —
+            // overflow extends symmetrically into the row's py-4 padding,
+            // where there's plenty of slack. Row height stays the same
+            // as idle rows.
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1.5">
               {(() => {
                 const totalSec = Math.max(0, Math.floor((liveElapsedMs ?? 0) / 1000));
                 const m = Math.floor(totalSec / 60);

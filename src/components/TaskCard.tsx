@@ -43,6 +43,9 @@ interface TaskCardProps {
   // DailyPlanner's inline focus flow.
   isFocused?: boolean;
   onStop?: (task: Task) => void;
+  // Click handler for the project bar — opens the project's detail page.
+  // Wired by DailyPlanner via the store's openProject action.
+  onOpenProject?: (projectId: number) => void;
 }
 
 function TrashButton({ onDelete }: { onDelete: () => void }) {
@@ -93,6 +96,7 @@ function TaskCardImpl({
   liveElapsedMs,
   isFocused = false,
   onStop,
+  onOpenProject,
 }: TaskCardProps) {
   const {
     attributes,
@@ -445,9 +449,17 @@ function TaskCardImpl({
       {showProject && project && (
         <div
           ref={projAnchorRef}
-          className="absolute right-0 top-0 bottom-0 w-[14px]"
+          className={`absolute right-0 top-0 bottom-0 w-[14px] ${
+            onOpenProject ? "cursor-pointer" : ""
+          }`}
           onMouseEnter={handleProjEnter}
           onMouseLeave={handleProjLeave}
+          onClick={(e) => {
+            if (onOpenProject) {
+              e.stopPropagation();
+              onOpenProject(project.id);
+            }
+          }}
         >
           <div
             className="absolute right-0 top-1.5 bottom-1.5 rounded-l-full transition-[width] duration-150"

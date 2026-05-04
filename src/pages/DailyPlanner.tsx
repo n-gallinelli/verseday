@@ -1006,6 +1006,7 @@ export default function DailyPlanner() {
                         onStart={handleStartFocus}
                         onStop={handleStopFocus}
                         onOpenDetail={setDetailTask}
+                        onOpenProject={openProject}
                         expandedNotes={expandedId === task.id}
                         workedMinutes={workedMap.get(task.id)}
                         showProject={true}

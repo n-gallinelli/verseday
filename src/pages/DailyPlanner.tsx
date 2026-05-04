@@ -1396,7 +1396,15 @@ export default function DailyPlanner() {
           onSave={(updates) => handleDetailSave(updates)}
           onToggle={(t) => { toggleTask(t).catch(() => {}); }}
           onDelete={(id) => { setConfirmDeleteId(id); setDetailTask(null); setPendingDetailTask(null); }}
-          onStartFocus={(t) => { handleStartFocus(t); setDetailTask(null); setPendingDetailTask(null); }}
+          onStartFocus={(t) => {
+            handleStartFocus(t);
+            setDetailTask(null);
+            setPendingDetailTask(null);
+            // Detail-overlay's start button is a "go focus on this task"
+            // gesture — navigate to the immersive Focus page rather than
+            // staying inline. Daily Plan's own play button stays inline.
+            setPage("focus");
+          }}
           workedMinutes={workedMap.get(detailTask.id) ?? 0}
           onSetWorkedMinutes={(id, mins) => setManualWorkedMinutes(id, mins).then(() => loadData()).catch(() => {})}
         />

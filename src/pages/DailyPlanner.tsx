@@ -842,6 +842,22 @@ export default function DailyPlanner() {
                   type="text"
                   value={newTaskTitle}
                   onChange={(e) => setNewTaskTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Esc collapses the bar AND resets every field so the
+                    // next open starts blank. Without the reset, a half-
+                    // typed title (and its estimate/project/priority)
+                    // persists across opens, which the user found
+                    // surprising.
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setNewTaskTitle("");
+                      setNewTaskEstimate(null);
+                      setNewTaskProjectId("");
+                      setNewTaskHighPriority(false);
+                      setTaskInputExpanded(false);
+                    }
+                  }}
                   autoFocus
                   placeholder="New task"
                   className="flex-1 bg-transparent border-none outline-none text-[14px] text-fg placeholder:text-fg-faded"

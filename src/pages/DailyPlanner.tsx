@@ -512,15 +512,24 @@ export default function DailyPlanner() {
     }
   }
 
-  async function saveDailyNotes() {
+  async function saveDailyNotes(valueToSave: string = dailyNotes) {
     try {
+      const trimmed = valueToSave.trim();
+      // Strip the empty-paragraph HTML Tiptap leaves behind so the DB still
+      // sees "no notes" (NULL) when the user clears the editor.
+      const isEmpty =
+        trimmed === "" ||
+        trimmed === "<p></p>" ||
+        trimmed === "<p><br></p>";
       await upsertDailyPlan(
         selectedDate,
-        dailyNotes.trim() || null,
+        isEmpty ? null : trimmed,
         hourBudget
       );
       setError(null);
-      loadData();
+      // Intentionally not calling loadData() — notes save is scoped to
+      // daily_plans, refetching tasks on every debounced keystroke would
+      // remount task rows mid-typing.
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save notes");
     }
@@ -949,12 +958,18 @@ export default function DailyPlanner() {
               </button>
             </div>
           </div>
-          <textarea
+          {/* Rich text — bold/italic/bullets via the editor's bubble menu.
+              min-h keeps the empty state visible at ~2 lines; max-h caps at
+              ~3 lines and the inner editor scrolls beyond that, so a long
+              note doesn't push the rest of the page around. */}
+          <RichTextEditor
             value={dailyNotes}
-            onChange={(e) => setDailyNotes(e.target.value)}
-            onBlur={saveDailyNotes}
+            onChange={(html) => {
+              setDailyNotes(html);
+              saveDailyNotes(html);
+            }}
             placeholder="Write notes for today..."
-            className="w-full bg-elevated border border-line-hairline rounded-lg px-3 py-2 text-[13px] text-fg-secondary placeholder:text-fg-disabled resize-none min-h-[72px] leading-relaxed focus:outline-none focus:border-accent-blue"
+            className="w-full bg-elevated border border-line-hairline rounded-lg px-3 py-2 text-[13px] text-fg-secondary min-h-[64px] max-h-[112px] overflow-y-auto leading-relaxed focus-within:border-accent-blue"
           />
         </div>
 

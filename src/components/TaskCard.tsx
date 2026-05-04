@@ -124,7 +124,7 @@ function TaskCardImpl({
   // listeners + createPortal. Opens instantly on hover, closes on leave.
   const projAnchorRef = useRef<HTMLDivElement>(null);
   const projTooltipRef = useRef<HTMLDivElement>(null);
-  const [projTooltip, setProjTooltip] = useState<{ top: number; left: number; caretTop: number } | null>(null);
+  const [projTooltip, setProjTooltip] = useState<{ top: number; left: number } | null>(null);
 
   const measureProjTooltip = useCallback(() => {
     const anchor = projAnchorRef.current;
@@ -154,10 +154,6 @@ function TaskCardImpl({
     return {
       top: clampedTop,
       left: clampedLeft,
-      // Caret vertical position relative to the tooltip's top edge —
-      // points right at the bar's center even if the tooltip is
-      // clamped vertically.
-      caretTop: barCenterY - clampedTop,
     };
   }, []);
 
@@ -322,81 +318,64 @@ function TaskCardImpl({
           {task.title}
         </span>
 
-        {/* Right area — fixed-width slot at the row's right edge that
-            holds either the time pill (idle) or the action buttons
-            (hover). Both layers are absolute and right-anchored, so the
-            slot's width never changes between states. Title's flex-1
-            sees a constant width and never reflows on hover.
+        {/* Right area — FIXED-width column (104px) regardless of state.
+            Title's flex-1 sees the same reservation in idle and active,
+            so the title text never reflows when a timer starts/stops or
+            on hover. Two layouts inside:
 
-            Slot width:
-              non-focused: 72px (max(static pill ~60px, play+trash 56px))
-              focused:     96px (live pill 64 + gap 8 + stop 24)
-            Width changes only when starting/stopping focus — a one-time
-            reflow tied to a deliberate user action, not hover. */}
-        <div
-          className={`relative shrink-0 h-6 ${
-            // Focused slot widened from 96 → 132 to fit the live pill's
-            // new "Xm Ys / Ym" content (~100px) plus 8px gap + 24px
-            // pause button. Non-focused slot unchanged.
-            isFocused ? "w-[132px]" : "w-[72px]"
-          }`}
-        >
+              idle (no timer): single centered element, cross-fade
+                between time pill (default) and play button (hover).
+                Same 1:1 footprint, same vertical center.
+
+              active (timer running): vertical stack, both elements
+                always visible — live pill on top, pause button below.
+                The stack itself is the visual signal that this row is
+                running, so no hover is needed to expose the controls. */}
+        <div className="relative shrink-0 w-[104px] flex items-center justify-center self-stretch">
           {isFocused ? (
-            <>
-              {/* Idle layer (focused): live pill, right-anchored 32px in
-                  to leave room for the always-visible stop button. */}
-              <div
-                className="absolute inset-0 flex items-center justify-end pr-[32px] transition-opacity duration-150 opacity-100 group-hover/row:opacity-0 pointer-events-none"
-              >
-                {(() => {
-                  const totalSec = Math.max(0, Math.floor((liveElapsedMs ?? 0) / 1000));
-                  const m = Math.floor(totalSec / 60);
-                  const s = totalSec % 60;
-                  const workedText = m > 0 ? `${m}m ${s}s` : `${s}s`;
-                  const est = task.estimated_minutes ?? 0;
-                  const overBudget = est > 0 && m > est;
-                  return (
-                    <span
-                      className={`inline-flex items-center gap-0.5 justify-center min-w-[100px] px-2 py-[2px] rounded-full bg-accent-blue-soft text-[11px] tabular-nums font-medium`}
-                    >
-                      <span className={overBudget ? "text-accent-danger" : "text-accent-blue-soft-fg"}>
-                        {workedText}
-                      </span>
-                      <span className="text-accent-blue-soft-fg/40">/</span>
-                      <span className="text-accent-blue-soft-fg/80">
-                        {est > 0 ? `${est}m` : "—"}
-                      </span>
-                    </span>
-                  );
-                })()}
-              </div>
-
-              {/* Pause button — always visible at the right edge. Click
-                  ends the time entry; clicking play again on the same
-                  task resumes from the cumulative worked time, so this
-                  is functionally a pause/resume toggle. */}
-              {onStop && (
-                <div className="absolute right-0 inset-y-0 flex items-center">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onStop(task);
-                    }}
-                    className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-[color-mix(in_srgb,var(--accent-blue),black_30%)] cursor-pointer flex items-center justify-center transition-colors duration-150"
-                    title="Pause"
+            // Active: stacked, both always visible.
+            <div className="flex flex-col items-center gap-1.5">
+              {(() => {
+                const totalSec = Math.max(0, Math.floor((liveElapsedMs ?? 0) / 1000));
+                const m = Math.floor(totalSec / 60);
+                const s = totalSec % 60;
+                const workedText = m > 0 ? `${m}m ${s}s` : `${s}s`;
+                const est = task.estimated_minutes ?? 0;
+                const overBudget = est > 0 && m > est;
+                return (
+                  <span
+                    className="inline-flex items-center gap-0.5 justify-center min-w-[100px] px-2 py-[2px] rounded-full bg-accent-blue-soft text-[11px] tabular-nums font-medium"
                   >
-                    <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
-                      <rect x="1" y="0" width="2" height="8" rx="0.5" />
-                      <rect x="5" y="0" width="2" height="8" rx="0.5" />
-                    </svg>
-                  </button>
-                </div>
+                    <span className={overBudget ? "text-accent-danger" : "text-accent-blue-soft-fg"}>
+                      {workedText}
+                    </span>
+                    <span className="text-accent-blue-soft-fg/40">/</span>
+                    <span className="text-accent-blue-soft-fg/80">
+                      {est > 0 ? `${est}m` : "—"}
+                    </span>
+                  </span>
+                );
+              })()}
+              {onStop && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStop(task);
+                  }}
+                  className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-[color-mix(in_srgb,var(--accent-blue),black_30%)] cursor-pointer flex items-center justify-center transition-colors duration-150"
+                  title="Pause"
+                >
+                  <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+                    <rect x="1" y="0" width="2" height="8" rx="0.5" />
+                    <rect x="5" y="0" width="2" height="8" rx="0.5" />
+                  </svg>
+                </button>
               )}
-            </>
+            </div>
           ) : (
+            // Idle: single centered element, cross-fade pill ↔ play.
             <>
-              {/* Idle layer (non-focused): static "Xm / Ym" pill. */}
-              <div className="absolute inset-0 flex items-center justify-end transition-opacity duration-150 opacity-100 group-hover/row:opacity-0 pointer-events-none">
+              <div className="absolute inset-0 flex items-center justify-center transition-opacity duration-150 opacity-100 group-hover/row:opacity-0 pointer-events-none">
                 {(() => {
                   const worked = workedMinutes ?? 0;
                   const est = task.estimated_minutes ?? 0;
@@ -416,10 +395,7 @@ function TaskCardImpl({
                   );
                 })()}
               </div>
-
-              {/* Hover layer (non-focused): play only (no trash — task
-                  deletion lives in the detail overlay). Right-aligned. */}
-              <div className="absolute inset-0 flex items-center justify-end transition-opacity duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto">
+              <div className="absolute inset-0 flex items-center justify-center transition-opacity duration-150 opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto">
                 {onStart && task.status !== "done" && (
                   <button
                     onClick={(e) => {
@@ -519,19 +495,6 @@ function TaskCardImpl({
               </div>
             );
           })()}
-          {/* Caret — 8px rotated square at the right edge pointing right
-              at the bar. After 45° rotation, the top-right edges of the
-              square become the visible top/right of the arrow tip. */}
-          <div
-            className="absolute w-2 h-2 bg-elevated"
-            style={{
-              top: Math.max(8, Math.min(projTooltip.caretTop, (projTooltipRef.current?.offsetHeight ?? 48) - 12)) - 4,
-              right: -5,
-              transform: "rotate(45deg)",
-              borderTop: "0.5px solid var(--border-soft)",
-              borderRight: "0.5px solid var(--border-soft)",
-            }}
-          />
         </div>,
         document.body
       )}

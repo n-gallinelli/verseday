@@ -400,24 +400,47 @@ export default function DailyPlanner() {
   }
 
   async function handleStartFocus(task: Task) {
-    // If a session is already active on a different task, surface a hint
-    // and bail. Today's UX (verified against the prior implementation):
-    // the click on B is ignored when A is in flight. User has to stop A
-    // first. Documenting here so future "swap" UX work knows where to land.
-    if (useAppStore.getState().focus) {
-      setError("A focus session is already active");
-      return;
-    }
+    const current = useAppStore.getState().focus;
+    // Clicking play on the already-focused task is a no-op.
+    if (current && current.task.id === task.id) return;
     try {
-      // Get accumulated worked time for this task
+      if (current) {
+        // Swap from one focused task to another. Phase 1: close the old
+        // time entry in the DB and optimistically update workedMap so the
+        // old row's pill flips from live → static cleanly with no flash.
+        const finalElapsedMs = (Date.now() - current.startedAt) + current.priorElapsedMs;
+        const finalMinutes = Math.floor(finalElapsedMs / 60000);
+        const oldTaskId = current.task.id;
+        await stopTimeEntry(current.timeEntryId, 0);
+        setWorkedMap((prev) => {
+          const next = new Map(prev);
+          next.set(oldTaskId, finalMinutes);
+          return next;
+        });
+      }
+      // Phase 2: start the new entry.
       const priorMinutes = await getWorkedMinutesForTask(task.id);
       const priorMs = priorMinutes * 60 * 1000;
       const entryId = await startTimeEntry(task.id, "tracked");
-      startFocus(task, entryId, "daily", priorMs);
+      // Phase 3: replace focus state (overwrites any existing focus).
       // Deliberately NOT calling setPage("focus") — DailyPlanner is the
-      // one call site that keeps focus inline (live counter on the row).
+      // one call site that keeps focus inline.
+      startFocus(task, entryId, "daily", priorMs);
+      if (current) {
+        // After a swap, refetch so the swapped-out task's pill picks up
+        // the authoritative worked total from time_entries instead of
+        // the optimistic value.
+        await loadData();
+      }
     } catch (e) {
       setError(errorMessage(e, "Failed to start timer"));
+      // If we closed the old entry but blew up before replacing focus,
+      // the in-memory focus still points to a session whose time entry
+      // is closed in the DB. Clear it so the stale live counter stops.
+      const after = useAppStore.getState().focus;
+      if (current && after && after.timeEntryId === current.timeEntryId) {
+        stopFocus();
+      }
     }
   }
 

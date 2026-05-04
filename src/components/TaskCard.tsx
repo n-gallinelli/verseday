@@ -408,12 +408,16 @@ function TaskCardImpl({
                       e.stopPropagation();
                       onStart(task);
                     }}
-                    className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-[color-mix(in_srgb,var(--accent-blue),black_30%)] cursor-pointer flex items-center justify-center transition-colors duration-150"
+                    // Outlined button: triangle + "Start" label. Mirrors
+                    // the top-right "Start focusing" button's outline
+                    // treatment but more compact for the row context.
+                    className="rounded-full border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft cursor-pointer flex items-center gap-1.5 px-2.5 py-0.5 transition-colors"
                     title="Start focus"
                   >
                     <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
                       <path d="M0 0v10l8-5z" />
                     </svg>
+                    <span className="text-[11px] font-medium">Start</span>
                   </button>
                 )}
               </div>

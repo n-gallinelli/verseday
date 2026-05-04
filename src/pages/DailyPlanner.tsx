@@ -779,7 +779,13 @@ export default function DailyPlanner() {
 
             return (
               <button
-                onClick={() => handleStartFocus(nextTask)}
+                onClick={() => {
+                  handleStartFocus(nextTask);
+                  // Top-right "Start focusing" navigates to the immersive
+                  // Focus page — the row's inline play button is the
+                  // alternative for staying on Daily Plan.
+                  setPage("focus");
+                }}
                 className="rounded-lg border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors"
                 title={`Start focus: ${nextTask.title}`}
               >

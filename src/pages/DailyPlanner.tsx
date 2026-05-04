@@ -73,8 +73,6 @@ export default function DailyPlanner() {
   // The focused task's id (if any), surfaced cleanly so the renderRow
   // closure can compare without indexing into focus.task each time.
   const focusedTaskId = focus?.task.id ?? null;
-  const focusedLiveMinutes =
-    focusElapsedMs != null ? Math.floor(focusElapsedMs / 60000) : null;
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [plannedMinutes, setPlannedMinutes] = useState(0);
@@ -991,9 +989,9 @@ export default function DailyPlanner() {
                         justArrived={arrivedIds.has(task.id)}
                         justAdded={addedIds.has(task.id)}
                         isFocused={focusedTaskId === task.id}
-                        liveWorkedMinutes={
-                          focusedTaskId === task.id && focusedLiveMinutes != null
-                            ? focusedLiveMinutes
+                        liveElapsedMs={
+                          focusedTaskId === task.id && focusElapsedMs != null
+                            ? focusElapsedMs
                             : undefined
                         }
                       />

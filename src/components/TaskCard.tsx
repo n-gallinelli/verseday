@@ -35,12 +35,13 @@ interface TaskCardProps {
   // Parent-managed flag: true on the render right after createTask returns,
   // used to play the entrance animation on a freshly added row.
   justAdded?: boolean;
-  // Live worked minutes for the active focus session — only set on the
-  // focused task's row, undefined elsewhere. When defined, the time pill
-  // shows this value (live, ticks at 1Hz via useFocusTick) instead of the
-  // static workedMinutes prop, with an accent tint to signal "this is the
-  // active row." See useFocusTick + DailyPlanner's handleStartFocus.
-  liveWorkedMinutes?: number;
+  // Live elapsed milliseconds for the active focus session — only set on
+  // the focused task's row, undefined elsewhere. When defined, the time
+  // pill shows seconds-precision live time ("Xm Ys") instead of the
+  // static "Xm / Ym" format, with an accent tint to signal "this is the
+  // active row." Ticks at 1Hz via useFocusTick. See DailyPlanner's
+  // handleStartFocus.
+  liveElapsedMs?: number;
   // Switches the start-focus button into a stop button on the focused row.
   // Click invokes onStop instead of onStart. onStop is only wired by
   // DailyPlanner's inline focus flow.
@@ -87,7 +88,7 @@ function TaskCardImpl({
   workedMinutes,
   justArrived = false,
   justAdded = false,
-  liveWorkedMinutes,
+  liveElapsedMs,
   isFocused = false,
   onStop,
 }: TaskCardProps) {
@@ -99,7 +100,7 @@ function TaskCardImpl({
   // if performance is otherwise validated.
   if (IS_DEV) {
     // eslint-disable-next-line no-console
-    console.debug(`[TaskCard render] id=${task.id} live=${liveWorkedMinutes ?? "—"}`);
+    console.debug(`[TaskCard render] id=${task.id} live=${liveElapsedMs ?? "—"}`);
   }
   const {
     attributes,
@@ -241,35 +242,43 @@ function TaskCardImpl({
             rows even when a task has no time tracked. */}
         <div className="w-[78px] shrink-0 flex justify-end text-[11px] tabular-nums">
           {(() => {
-            // Live value when defined (focused row); falls back to the
-            // static workedMinutes prop otherwise. Same {worked}m / {est}m
-            // shape so the layout doesn't shift between focused and
-            // non-focused — only the worked number updates per tick.
-            const isLive = liveWorkedMinutes != null;
-            const worked = isLive ? liveWorkedMinutes : (workedMinutes ?? 0);
+            // Live mode (focused row): show seconds-precision "Xm Ys".
+            // Estimate is dropped during live — keeping the slash format
+            // would overflow the 78px slot once seconds are visible, and
+            // the user is actively watching the timer so the estimate
+            // isn't the primary signal anyway. Static rows still use the
+            // "Xm / Ym" shape unchanged.
+            const isLive = liveElapsedMs != null;
+            if (isLive) {
+              const totalSec = Math.max(0, Math.floor(liveElapsedMs / 1000));
+              const m = Math.floor(totalSec / 60);
+              const s = totalSec % 60;
+              const text = m > 0 ? `${m}m ${s}s` : `${s}s`;
+              const est = task.estimated_minutes ?? 0;
+              const overBudget = est > 0 && m > est;
+              return (
+                <span
+                  className={`inline-flex items-center px-2 py-[2px] rounded-full bg-accent-blue-soft ${
+                    overBudget ? "text-accent-danger" : "text-accent-blue-soft-fg"
+                  } font-medium`}
+                >
+                  {text}
+                </span>
+              );
+            }
+
+            const worked = workedMinutes ?? 0;
             const est = task.estimated_minutes ?? 0;
-            const hasAny = worked > 0 || est > 0 || isLive;
+            const hasAny = worked > 0 || est > 0;
             if (!hasAny) return null;
             const overBudget = est > 0 && worked > est;
             return (
-              <span
-                className={`inline-flex items-center gap-0.5 px-2 py-[2px] rounded-full ${
-                  isLive ? "bg-accent-blue-soft" : "bg-overlay-hover"
-                }`}
-              >
-                <span
-                  className={
-                    overBudget
-                      ? "text-accent-danger font-medium"
-                      : isLive
-                        ? "text-accent-blue-soft-fg font-medium"
-                        : "text-fg-faded"
-                  }
-                >
+              <span className="inline-flex items-center gap-0.5 px-2 py-[2px] rounded-full bg-overlay-hover">
+                <span className={overBudget ? "text-accent-danger font-medium" : "text-fg-faded"}>
                   {worked > 0 ? `${worked}m` : "0m"}
                 </span>
                 <span className="text-fg-disabled">/</span>
-                <span className={isLive ? "text-accent-blue-soft-fg/70" : "text-fg-faded"}>
+                <span className="text-fg-faded">
                   {est > 0 ? `${est}m` : "—"}
                 </span>
               </span>
@@ -437,17 +446,26 @@ function TaskCardImpl({
  * comparator and bails out.
  */
 function taskCardPropsEqual(prev: TaskCardProps, next: TaskCardProps): boolean {
-  // Fast path: most ticks change only liveWorkedMinutes on the focused row.
-  if (prev.liveWorkedMinutes !== next.liveWorkedMinutes) return false;
-  if (prev.isFocused !== next.isFocused) return false;
-  if (prev.task !== next.task) return false;
-  if (prev.project !== next.project) return false;
-  if (prev.expandedNotes !== next.expandedNotes) return false;
-  if (prev.showProject !== next.showProject) return false;
-  if (prev.workedMinutes !== next.workedMinutes) return false;
-  if (prev.justArrived !== next.justArrived) return false;
-  if (prev.justAdded !== next.justAdded) return false;
-  return true;
+  // Per-tick memo invalidation on the focused row: liveElapsedMs changes
+  // every second by design. That's INTENDED — only the focused row should
+  // re-render per tick. Diff suppressed from the dev probe so it doesn't
+  // spam the console; non-tick diffs still log so unexpected memo breaks
+  // (e.g., a parent recreating task or workedMap references) surface.
+  let diff: string | null = null;
+  if (prev.liveElapsedMs !== next.liveElapsedMs) diff = "liveElapsedMs";
+  else if (prev.isFocused !== next.isFocused) diff = "isFocused";
+  else if (prev.task !== next.task) diff = "task";
+  else if (prev.project !== next.project) diff = "project";
+  else if (prev.expandedNotes !== next.expandedNotes) diff = "expandedNotes";
+  else if (prev.showProject !== next.showProject) diff = "showProject";
+  else if (prev.workedMinutes !== next.workedMinutes) diff = "workedMinutes";
+  else if (prev.justArrived !== next.justArrived) diff = "justArrived";
+  else if (prev.justAdded !== next.justAdded) diff = "justAdded";
+  if (diff && diff !== "liveElapsedMs" && IS_DEV) {
+    // eslint-disable-next-line no-console
+    console.debug(`[TaskCard memo break] id=${next.task.id} diff=${diff}`);
+  }
+  return diff === null;
 }
 
 const TaskCard = memo(TaskCardImpl, taskCardPropsEqual);

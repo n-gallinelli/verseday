@@ -607,6 +607,27 @@ select {
   animation: checkDraw 200ms cubic-bezier(0.65, 0, 0.35, 1) both;
 }
 
+/* Played on the task row the moment it first renders as done. The slide
+   suggests "I arrived from above" and the fading outline ring catches the
+   eye so the user can see where the row landed in the completed section. */
+@keyframes taskArrived {
+  0% {
+    transform: translateY(-6px);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-green) 22%, transparent);
+  }
+  60% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-green) 12%, transparent);
+  }
+  100% {
+    transform: translateY(0);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-green) 0%, transparent);
+  }
+}
+
+.animate-task-arrived {
+  animation: taskArrived 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
 @keyframes completionGlow {
   0% { opacity: 0; }
   25% { opacity: 1; }
@@ -644,6 +665,7 @@ select {
   .animate-slide-up,
   .animate-task-done,
   .animate-check-draw,
+  .animate-task-arrived,
   .animate-completion-glow,
   .animate-focus-complete-burst,
   .animate-focus-complete-core {

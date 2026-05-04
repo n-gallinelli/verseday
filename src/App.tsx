@@ -174,6 +174,9 @@ function MainApp() {
               const entryId = await startTimeEntry(next.id, "tracked");
               const prevPage = useAppStore.getState().currentPage;
               startFocus(next, entryId, prevPage, priorMs);
+              // F hotkey is the global "drop everything and focus" gesture
+              // — caller opts into the immersive page.
+              useAppStore.getState().setPage("focus");
             } catch {
               // silent
             }

@@ -49,6 +49,9 @@ export default function FocusLanding() {
     const priorMs = (await getWorkedMinutesForTask(task.id)) * 60 * 1000;
     const entryId = await startTimeEntry(task.id, "tracked");
     startFocus(task, entryId, "focus_landing", priorMs);
+    // Focus Landing's whole purpose is the immersive view — caller opts
+    // into navigation explicitly.
+    setPage("focus");
   }
 
   // Keyboard: arrow keys for navigation, Space/Enter to start

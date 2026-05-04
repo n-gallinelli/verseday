@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { memo, useState, useEffect, useRef } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -30,6 +30,18 @@ interface TaskCardProps {
   // Parent-managed flag: true on the render right after createTask returns,
   // used to play the entrance animation on a freshly added row.
   justAdded?: boolean;
+  // Live elapsed milliseconds for the active focus session — only set on
+  // the focused task's row, undefined elsewhere. When defined, the time
+  // pill shows seconds-precision live time ("Xm Ys") instead of the
+  // static "Xm / Ym" format, with an accent tint to signal "this is the
+  // active row." Ticks at 1Hz via useFocusTick. See DailyPlanner's
+  // handleStartFocus.
+  liveElapsedMs?: number;
+  // Switches the start-focus button into a stop button on the focused row.
+  // Click invokes onStop instead of onStart. onStop is only wired by
+  // DailyPlanner's inline focus flow.
+  isFocused?: boolean;
+  onStop?: (task: Task) => void;
 }
 
 function TrashButton({ onDelete }: { onDelete: () => void }) {
@@ -43,7 +55,11 @@ function TrashButton({ onDelete }: { onDelete: () => void }) {
         e.stopPropagation();
         onDelete();
       }}
-      className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors text-fg-faded hover:text-accent-destructive hover:bg-accent-destructive/10"
+      // Solid bg so the icon stays readable when overlaid on the title.
+      // Picks up the elevated surface tone instead of the destructive
+      // soft-tint so it doesn't read as "armed" — destructive intent only
+      // surfaces on hover (text and bg shift to accent-destructive).
+      className="w-6 h-6 rounded-full flex items-center justify-center cursor-pointer transition-colors text-fg-faded bg-elevated border border-line-soft hover:text-accent-destructive hover:bg-accent-destructive/15 hover:border-accent-destructive/30"
       title="Delete"
     >
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
@@ -57,7 +73,7 @@ function TrashButton({ onDelete }: { onDelete: () => void }) {
   );
 }
 
-export default function TaskCard({
+function TaskCardImpl({
   task,
   project,
   onToggle,
@@ -71,6 +87,9 @@ export default function TaskCard({
   workedMinutes,
   justArrived = false,
   justAdded = false,
+  liveElapsedMs,
+  isFocused = false,
+  onStop,
 }: TaskCardProps) {
   const {
     attributes,
@@ -168,7 +187,12 @@ export default function TaskCard({
       }${justArrived ? " animate-task-arrived" : ""}${justAdded ? " animate-task-added" : ""}`}
     >
       <div
-        className="flex items-center gap-3"
+        // min-h-[2lh] reserves the height of two body-text line-heights so
+        // 1-line and 2-line task titles render rows of the same height —
+        // the title can wrap to 2 lines without the row growing taller
+        // than its 1-line neighbors. Anything past 2 lines clips via
+        // line-clamp-2 below.
+        className="flex items-center gap-3 min-h-[2lh]"
       >
         {/* Checkbox */}
         <button
@@ -200,18 +224,103 @@ export default function TaskCard({
           </svg>
         </button>
 
-        {/* Title — row click opens detail. One-line clamp keeps every card
-            the same height regardless of title length. */}
+        {/* Title — row click opens detail. line-clamp-2 lets long titles
+            wrap to a second line; the row's min-h-[2lh] pre-reserves
+            space so 1-line cards aren't shorter than 2-line cards.
+            Beyond 2 lines, the title cuts off with an ellipsis. flex-1
+            absorbs whatever space the actions container reserves so the
+            clamp width is tight against the actions, no overlap. */}
         <span
-          className={`flex-1 min-w-0 truncate text-fg [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)] ${task.status === "done" ? "line-through !text-fg-faded" : ""}`}
+          className={`flex-1 min-w-0 line-clamp-2 break-words text-fg [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)] ${
+            task.status === "done" ? "line-through !text-fg-faded" : ""
+          }`}
         >
           {task.title}
         </span>
 
-        {/* Time slot — fixed width so worked/estimated columns align across
-            rows even when a task has no time tracked. */}
-        <div className="w-[78px] shrink-0 flex justify-end text-[11px] tabular-nums">
+        {/* Actions — sit in the flex flow between title and time pill.
+            flex-row-reverse anchors the play/stop button to the
+            container's RIGHT edge (next to the time pill); the trash
+            slides in from the LEFT when the container expands, so the
+            stop button doesn't visually move on hover. Hover feedback
+            on play/stop is just a bg color shift now (no box-shadow
+            halo) so no padding is needed for halo room — buttons sit
+            tight against the time pill. Width states (border-box):
+              not focused, not hover: w-0   (no buttons)
+              not focused, hover:     w-14  (play + trash, 56px)
+              focused, not hover:     w-6   (stop only, 24px)
+              focused, hover:         w-14  (stop + trash, 56px) */}
+        <div
+          className={`overflow-hidden flex flex-row-reverse items-center gap-2 transition-[width] duration-150 ease-out shrink-0 ${
+            isFocused
+              ? "w-6 group-hover/row:w-14"
+              : "w-0 group-hover/row:w-14"
+          }`}
+        >
+          {isFocused && onStop ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onStop(task);
+              }}
+              className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-[color-mix(in_srgb,var(--accent-blue),black_30%)] cursor-pointer flex items-center justify-center transition-colors duration-150"
+              title="Stop focus"
+            >
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+                <rect width="8" height="8" rx="1" />
+              </svg>
+            </button>
+          ) : (
+            onStart && task.status !== "done" && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStart(task);
+                }}
+                className="w-6 h-6 shrink-0 rounded-full bg-accent-blue text-fg-on-accent hover:bg-[color-mix(in_srgb,var(--accent-blue),black_30%)] cursor-pointer flex items-center justify-center transition-colors duration-150"
+                title="Start focus"
+              >
+                <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
+                  <path d="M0 0v10l8-5z" />
+                </svg>
+              </button>
+            )
+          )}
+          <TrashButton onDelete={() => onDelete(task.id)} />
+        </div>
+
+        {/* Time pill — sits at the row's right edge. No fixed-width slot
+            anymore (was 78px); the title's flex-1 absorbs the freed space
+            so longer titles get more room. Pill is shrink-0 so it always
+            renders fully. */}
+        <div className="shrink-0 text-[11px] tabular-nums">
           {(() => {
+            // Live mode (focused row): show seconds-precision "Xm Ys".
+            // Estimate is dropped during live so the pill stays narrow.
+            // Static rows show "Xm / Ym".
+            const isLive = liveElapsedMs != null;
+            if (isLive) {
+              const totalSec = Math.max(0, Math.floor(liveElapsedMs / 1000));
+              const m = Math.floor(totalSec / 60);
+              const s = totalSec % 60;
+              const text = m > 0 ? `${m}m ${s}s` : `${s}s`;
+              const est = task.estimated_minutes ?? 0;
+              const overBudget = est > 0 && m > est;
+              return (
+                <span
+                  // min-w + center keeps the pill the same width as the
+                  // counter ticks 9s→10s→…→59s→1m 0s; without it, every
+                  // digit-count change makes the pill jiggle horizontally.
+                  // 64px fits up to "59m 59s" with tabular-nums.
+                  className={`inline-flex items-center justify-center min-w-[64px] px-2 py-[2px] rounded-full bg-accent-blue-soft ${
+                    overBudget ? "text-accent-danger" : "text-accent-blue-soft-fg"
+                  } font-medium`}
+                >
+                  {text}
+                </span>
+              );
+            }
+
             const worked = workedMinutes ?? 0;
             const est = task.estimated_minutes ?? 0;
             const hasAny = worked > 0 || est > 0;
@@ -229,28 +338,6 @@ export default function TaskCard({
               </span>
             );
           })()}
-        </div>
-
-        {/* Actions slot — appears on row hover (play + trash), pinned to the
-            right edge so the time pill sits left of them. */}
-        <div className="relative w-[60px] shrink-0 flex items-center justify-end h-[22px]">
-          <div className="absolute inset-0 flex items-center justify-end gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150 pointer-events-none group-hover/row:pointer-events-auto">
-            {onStart && task.status !== "done" && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onStart(task);
-                }}
-                className="w-6 h-6 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
-                title="Start focus"
-              >
-                <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
-                  <path d="M0 0v10l8-5z" />
-                </svg>
-              </button>
-            )}
-            <TrashButton onDelete={() => onDelete(task.id)} />
-          </div>
         </div>
       </div>
 
@@ -348,3 +435,44 @@ export default function TaskCard({
     </div>
   );
 }
+
+/**
+ * Custom React.memo comparator. Returns `true` to skip re-render.
+ *
+ * Function props (onToggle/onEdit/onDelete/onToggleNotes/onStart/onStop/
+ * onOpenDetail) are intentionally NOT compared — DailyPlanner passes
+ * inline arrow functions on every render, so reference comparison would
+ * always invalidate the memo. The callbacks are safe to ignore because
+ * they all read state via setState callback form or useAppStore.getState()
+ * — no captured-stale-state hazards. (Approach 2 from the #8 plan.)
+ *
+ * The expensive case this guards against is the 1Hz tick in useFocusTick:
+ * when DailyPlanner re-renders every second, every TaskCard re-evaluates.
+ * With this comparator, only the focused row (whose liveWorkedMinutes
+ * changes per tick) re-renders; every other card returns true from this
+ * comparator and bails out.
+ */
+function taskCardPropsEqual(prev: TaskCardProps, next: TaskCardProps): boolean {
+  // Custom comparator. Function props (onToggle/onEdit/onDelete/...) are
+  // intentionally NOT compared — DailyPlanner passes inline arrow
+  // functions on every render, so reference comparison would always
+  // invalidate the memo. Callbacks are safe to ignore because they read
+  // state via setState callback form or useAppStore.getState() — no
+  // captured-stale-state hazards. The expensive case this guards is the
+  // 1Hz tick from useFocusTick: only the focused row's liveElapsedMs
+  // changes per tick; every other card's data props are referentially
+  // equal across renders and the comparator returns true → memo skip.
+  if (prev.liveElapsedMs !== next.liveElapsedMs) return false;
+  if (prev.isFocused !== next.isFocused) return false;
+  if (prev.task !== next.task) return false;
+  if (prev.project !== next.project) return false;
+  if (prev.expandedNotes !== next.expandedNotes) return false;
+  if (prev.showProject !== next.showProject) return false;
+  if (prev.workedMinutes !== next.workedMinutes) return false;
+  if (prev.justArrived !== next.justArrived) return false;
+  if (prev.justAdded !== next.justAdded) return false;
+  return true;
+}
+
+const TaskCard = memo(TaskCardImpl, taskCardPropsEqual);
+export default TaskCard;

@@ -95,9 +95,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
   startFocus: (task, timeEntryId, previousPage, priorElapsedMs = 0) => {
+    // Sets focus state only — does NOT navigate to the immersive Focus page.
+    // Callers that want the full-screen timer experience follow up with
+    // setPage("focus") themselves (App.tsx F hotkey, ProjectDetail, and
+    // FocusLanding all do). DailyPlanner deliberately does not, so the
+    // user can keep planning while the timer runs in the background with
+    // a live counter on the focused task row.
     const focus = { task, timeEntryId, startedAt: Date.now(), previousPage, priorElapsedMs };
     persistFocus(focus);
-    set({ currentPage: "focus", focus });
+    set({ focus });
   },
   stopFocus: () => {
     const state = get();

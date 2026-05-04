@@ -22,6 +22,7 @@ import {
   updateTaskSortOrders,
   deleteTask,
   startTimeEntry,
+  stopTimeEntry,
   getTotalPlannedMinutes,
   getTotalWorkedMinutes,
   getDailyPlan,
@@ -47,6 +48,7 @@ import ProjectPicker from "../components/ProjectPicker";
 import DisclosureCaret from "../components/DisclosureCaret";
 import { formatHoursMinutes, parseTimeFromTitle, getEmptyDayMessage } from "../utils/format";
 import { errorMessage } from "../utils/errors";
+import { useFocusTick } from "../hooks/useFocusTick";
 import type { Task, DailyPlan, Project } from "../types";
 
 
@@ -62,7 +64,15 @@ const MAX_ESTIMATE_MINUTES = 480;
 
 
 export default function DailyPlanner() {
-  const { selectedDate, setSelectedDate, startFocus, openProject, focus, setPage, pendingDetailTask, setPendingDetailTask } = useAppStore();
+  const { selectedDate, setSelectedDate, startFocus, stopFocus, openProject, focus, setPage, pendingDetailTask, setPendingDetailTask } = useAppStore();
+  // 1Hz tick while focus is active. Returns the elapsed ms or null when no
+  // session. Only the focused row's TaskCard re-renders per tick — every
+  // other card bails out via the custom React.memo comparator that ignores
+  // function-prop identity and only checks data props.
+  const focusElapsedMs = useFocusTick();
+  // The focused task's id (if any), surfaced cleanly so the renderRow
+  // closure can compare without indexing into focus.task each time.
+  const focusedTaskId = focus?.task.id ?? null;
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [plannedMinutes, setPlannedMinutes] = useState(0);
@@ -390,18 +400,78 @@ export default function DailyPlanner() {
   }
 
   async function handleStartFocus(task: Task) {
-    if (useAppStore.getState().focus) {
-      setError("A focus session is already active");
-      return;
-    }
+    const current = useAppStore.getState().focus;
+    // Clicking play on the already-focused task is a no-op.
+    if (current && current.task.id === task.id) return;
     try {
-      // Get accumulated worked time for this task
+      if (current) {
+        // Swap from one focused task to another. Phase 1: close the old
+        // time entry in the DB and optimistically update workedMap so the
+        // old row's pill flips from live → static cleanly with no flash.
+        const finalElapsedMs = (Date.now() - current.startedAt) + current.priorElapsedMs;
+        const finalMinutes = Math.floor(finalElapsedMs / 60000);
+        const oldTaskId = current.task.id;
+        await stopTimeEntry(current.timeEntryId, 0);
+        setWorkedMap((prev) => {
+          const next = new Map(prev);
+          next.set(oldTaskId, finalMinutes);
+          return next;
+        });
+      }
+      // Phase 2: start the new entry.
       const priorMinutes = await getWorkedMinutesForTask(task.id);
       const priorMs = priorMinutes * 60 * 1000;
       const entryId = await startTimeEntry(task.id, "tracked");
+      // Phase 3: replace focus state (overwrites any existing focus).
+      // Deliberately NOT calling setPage("focus") — DailyPlanner is the
+      // one call site that keeps focus inline.
       startFocus(task, entryId, "daily", priorMs);
+      if (current) {
+        // After a swap, refetch so the swapped-out task's pill picks up
+        // the authoritative worked total from time_entries instead of
+        // the optimistic value.
+        await loadData();
+      }
     } catch (e) {
       setError(errorMessage(e, "Failed to start timer"));
+      // If we closed the old entry but blew up before replacing focus,
+      // the in-memory focus still points to a session whose time entry
+      // is closed in the DB. Clear it so the stale live counter stops.
+      const after = useAppStore.getState().focus;
+      if (current && after && after.timeEntryId === current.timeEntryId) {
+        stopFocus();
+      }
+    }
+  }
+
+  // Signature accepts a Task argument to match TaskCard's onStop prop, but
+  // we read the active focus from the store rather than trusting the
+  // passed-in task — the row knows which task it is, but the focus state
+  // is the source of truth for which session is being stopped.
+  async function handleStopFocus(_task: Task) {
+    const f = useAppStore.getState().focus;
+    if (!f) return;
+    // Capture the final elapsed before tearing down the session — this
+    // value seeds the optimistic workedMap update so the time pill flips
+    // from live → static without flashing through 0m or a stale value
+    // while loadData() refetches.
+    const finalElapsedMs = (Date.now() - f.startedAt) + f.priorElapsedMs;
+    const finalMinutes = Math.floor(finalElapsedMs / 60000);
+    const taskId = f.task.id;
+    setWorkedMap((prev) => {
+      const next = new Map(prev);
+      next.set(taskId, finalMinutes);
+      return next;
+    });
+    try {
+      await stopTimeEntry(f.timeEntryId, 0);
+      stopFocus();
+      // Synchronous-feeling refresh: loadData replaces the optimistic
+      // value with the authoritative one from time_entries; should match
+      // within rounding so the user sees no jump.
+      await loadData();
+    } catch (e) {
+      setError(errorMessage(e, "Failed to stop focus"));
     }
   }
 
@@ -934,12 +1004,19 @@ export default function DailyPlanner() {
                           setExpandedId(expandedId === id ? null : id)
                         }
                         onStart={handleStartFocus}
+                        onStop={handleStopFocus}
                         onOpenDetail={setDetailTask}
                         expandedNotes={expandedId === task.id}
                         workedMinutes={workedMap.get(task.id)}
                         showProject={true}
                         justArrived={arrivedIds.has(task.id)}
                         justAdded={addedIds.has(task.id)}
+                        isFocused={focusedTaskId === task.id}
+                        liveElapsedMs={
+                          focusedTaskId === task.id && focusElapsedMs != null
+                            ? focusElapsedMs
+                            : undefined
+                        }
                       />
                     );
                   }

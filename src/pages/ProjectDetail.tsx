@@ -299,7 +299,7 @@ function SortableTaskRow({
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export default function ProjectDetail() {
-  const { selectedProjectId, openProject, startFocus, goBack } = useAppStore();
+  const { selectedProjectId, openProject, startFocus, goBack, setPage } = useAppStore();
   const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [workedMap, setWorkedMap] = useState<Map<number, number>>(new Map());
@@ -677,6 +677,9 @@ export default function ProjectDetail() {
       const priorMs = priorMinutes * 60 * 1000;
       const entryId = await startTimeEntry(task.id, "tracked");
       startFocus(task, entryId, "project_detail", priorMs);
+      // Project detail's play button keeps the immersive flow — the
+      // explicit "stay inline" UX is Daily Plan's only.
+      setPage("focus");
     } catch (e) {
       setError(errorMessage(e, "Failed to start timer"));
     }

@@ -1,4 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { memo, useState, useEffect, useRef } from "react";
+
+// Dev-only — Verse-required render-count probe for the 1s-cadence
+// correctness gate (see #8 plan). The narrow `as` cast avoids needing a
+// vite/client type reference in tsconfig.
+const IS_DEV = ((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV) ?? false;
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
@@ -30,6 +35,17 @@ interface TaskCardProps {
   // Parent-managed flag: true on the render right after createTask returns,
   // used to play the entrance animation on a freshly added row.
   justAdded?: boolean;
+  // Live worked minutes for the active focus session — only set on the
+  // focused task's row, undefined elsewhere. When defined, the time pill
+  // shows this value (live, ticks at 1Hz via useFocusTick) instead of the
+  // static workedMinutes prop, with an accent tint to signal "this is the
+  // active row." See useFocusTick + DailyPlanner's handleStartFocus.
+  liveWorkedMinutes?: number;
+  // Switches the start-focus button into a stop button on the focused row.
+  // Click invokes onStop instead of onStart. onStop is only wired by
+  // DailyPlanner's inline focus flow.
+  isFocused?: boolean;
+  onStop?: (task: Task) => void;
 }
 
 function TrashButton({ onDelete }: { onDelete: () => void }) {
@@ -57,7 +73,7 @@ function TrashButton({ onDelete }: { onDelete: () => void }) {
   );
 }
 
-export default function TaskCard({
+function TaskCardImpl({
   task,
   project,
   onToggle,
@@ -71,7 +87,20 @@ export default function TaskCard({
   workedMinutes,
   justArrived = false,
   justAdded = false,
+  liveWorkedMinutes,
+  isFocused = false,
+  onStop,
 }: TaskCardProps) {
+  // Dev render-count probe — required by Verse for the 1s-cadence
+  // correctness gate. Logs once per render with the task id so `npm run
+  // tauri dev`'s console can be inspected during a focus session: the
+  // focused row should log ~once per second, every other row should log 0
+  // additional times after their initial mount. Remove after verification
+  // if performance is otherwise validated.
+  if (IS_DEV) {
+    // eslint-disable-next-line no-console
+    console.debug(`[TaskCard render] id=${task.id} live=${liveWorkedMinutes ?? "—"}`);
+  }
   const {
     attributes,
     listeners,
@@ -212,18 +241,35 @@ export default function TaskCard({
             rows even when a task has no time tracked. */}
         <div className="w-[78px] shrink-0 flex justify-end text-[11px] tabular-nums">
           {(() => {
-            const worked = workedMinutes ?? 0;
+            // Live value when defined (focused row); falls back to the
+            // static workedMinutes prop otherwise. Same {worked}m / {est}m
+            // shape so the layout doesn't shift between focused and
+            // non-focused — only the worked number updates per tick.
+            const isLive = liveWorkedMinutes != null;
+            const worked = isLive ? liveWorkedMinutes : (workedMinutes ?? 0);
             const est = task.estimated_minutes ?? 0;
-            const hasAny = worked > 0 || est > 0;
+            const hasAny = worked > 0 || est > 0 || isLive;
             if (!hasAny) return null;
             const overBudget = est > 0 && worked > est;
             return (
-              <span className="inline-flex items-center gap-0.5 px-2 py-[2px] rounded-full bg-overlay-hover">
-                <span className={overBudget ? "text-accent-danger font-medium" : "text-fg-faded"}>
+              <span
+                className={`inline-flex items-center gap-0.5 px-2 py-[2px] rounded-full ${
+                  isLive ? "bg-accent-blue-soft" : "bg-overlay-hover"
+                }`}
+              >
+                <span
+                  className={
+                    overBudget
+                      ? "text-accent-danger font-medium"
+                      : isLive
+                        ? "text-accent-blue-soft-fg font-medium"
+                        : "text-fg-faded"
+                  }
+                >
                   {worked > 0 ? `${worked}m` : "0m"}
                 </span>
                 <span className="text-fg-disabled">/</span>
-                <span className="text-fg-faded">
+                <span className={isLive ? "text-accent-blue-soft-fg/70" : "text-fg-faded"}>
                   {est > 0 ? `${est}m` : "—"}
                 </span>
               </span>
@@ -231,23 +277,48 @@ export default function TaskCard({
           })()}
         </div>
 
-        {/* Actions slot — appears on row hover (play + trash), pinned to the
-            right edge so the time pill sits left of them. */}
+        {/* Actions slot — pinned to the right. Trash hides until hover.
+            The start/stop button stays visible whenever a focus session
+            is active *on this row* so the user always has a stop control;
+            on every other row the start button is hover-only like trash. */}
         <div className="relative w-[60px] shrink-0 flex items-center justify-end h-[22px]">
-          <div className="absolute inset-0 flex items-center justify-end gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150 pointer-events-none group-hover/row:pointer-events-auto">
-            {onStart && task.status !== "done" && (
+          <div
+            className={`absolute inset-0 flex items-center justify-end gap-2 transition-opacity duration-150 ${
+              isFocused
+                ? "opacity-100 pointer-events-auto"
+                : "opacity-0 group-hover/row:opacity-100 pointer-events-none group-hover/row:pointer-events-auto"
+            }`}
+          >
+            {isFocused && onStop ? (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  onStart(task);
+                  onStop(task);
                 }}
                 className="w-6 h-6 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
-                title="Start focus"
+                title="Stop focus"
               >
-                <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
-                  <path d="M0 0v10l8-5z" />
+                {/* Square = stop. Same blue background as play; the shape
+                    carries the meaning, no warning hue (Verse review #6). */}
+                <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+                  <rect width="8" height="8" rx="1" />
                 </svg>
               </button>
+            ) : (
+              onStart && task.status !== "done" && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStart(task);
+                  }}
+                  className="w-6 h-6 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
+                  title="Start focus"
+                >
+                  <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
+                    <path d="M0 0v10l8-5z" />
+                  </svg>
+                </button>
+              )
             )}
             <TrashButton onDelete={() => onDelete(task.id)} />
           </div>
@@ -348,3 +419,36 @@ export default function TaskCard({
     </div>
   );
 }
+
+/**
+ * Custom React.memo comparator. Returns `true` to skip re-render.
+ *
+ * Function props (onToggle/onEdit/onDelete/onToggleNotes/onStart/onStop/
+ * onOpenDetail) are intentionally NOT compared — DailyPlanner passes
+ * inline arrow functions on every render, so reference comparison would
+ * always invalidate the memo. The callbacks are safe to ignore because
+ * they all read state via setState callback form or useAppStore.getState()
+ * — no captured-stale-state hazards. (Approach 2 from the #8 plan.)
+ *
+ * The expensive case this guards against is the 1Hz tick in useFocusTick:
+ * when DailyPlanner re-renders every second, every TaskCard re-evaluates.
+ * With this comparator, only the focused row (whose liveWorkedMinutes
+ * changes per tick) re-renders; every other card returns true from this
+ * comparator and bails out.
+ */
+function taskCardPropsEqual(prev: TaskCardProps, next: TaskCardProps): boolean {
+  // Fast path: most ticks change only liveWorkedMinutes on the focused row.
+  if (prev.liveWorkedMinutes !== next.liveWorkedMinutes) return false;
+  if (prev.isFocused !== next.isFocused) return false;
+  if (prev.task !== next.task) return false;
+  if (prev.project !== next.project) return false;
+  if (prev.expandedNotes !== next.expandedNotes) return false;
+  if (prev.showProject !== next.showProject) return false;
+  if (prev.workedMinutes !== next.workedMinutes) return false;
+  if (prev.justArrived !== next.justArrived) return false;
+  if (prev.justAdded !== next.justAdded) return false;
+  return true;
+}
+
+const TaskCard = memo(TaskCardImpl, taskCardPropsEqual);
+export default TaskCard;

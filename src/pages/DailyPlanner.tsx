@@ -71,6 +71,8 @@ export default function DailyPlanner() {
   // moves between the incomplete/completed render groups — a ref inside
   // TaskCard would reset on remount and the animation would never fire.
   const [arrivedIds, setArrivedIds] = useState<Set<number>>(new Set());
+  // Tracks freshly-added tasks so the new row plays its entrance animation.
+  const [addedIds, setAddedIds] = useState<Set<number>>(new Set());
   const [projectStats, setProjectStats] = useState<Map<number, { total: number; done: number }>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
@@ -161,6 +163,41 @@ export default function DailyPlanner() {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
+  // FLIP: snapshot every task row's bounding rect right before a state
+  // change that will reorder the list. The follow-up animateRowShifts call
+  // (in a requestAnimationFrame after loadData lands) compares old vs new
+  // positions per data-task-row-id and runs a transform animation back to
+  // the natural position — so rows visibly slide to their new spot instead
+  // of jumping. skipId opts a row out (e.g., the one being completed plays
+  // its own arrival animation).
+  function captureRowPositions(): Map<number, DOMRect> {
+    const map = new Map<number, DOMRect>();
+    document.querySelectorAll<HTMLElement>("[data-task-row-id]").forEach((el) => {
+      const id = parseInt(el.dataset.taskRowId ?? "", 10);
+      if (!Number.isNaN(id)) map.set(id, el.getBoundingClientRect());
+    });
+    return map;
+  }
+
+  function animateRowShifts(oldPositions: Map<number, DOMRect>, skipId?: number) {
+    document.querySelectorAll<HTMLElement>("[data-task-row-id]").forEach((el) => {
+      const id = parseInt(el.dataset.taskRowId ?? "", 10);
+      if (Number.isNaN(id) || id === skipId) return;
+      const oldRect = oldPositions.get(id);
+      if (!oldRect) return;
+      const newRect = el.getBoundingClientRect();
+      const deltaY = oldRect.top - newRect.top;
+      if (Math.abs(deltaY) < 1) return;
+      el.animate(
+        [
+          { transform: `translateY(${deltaY}px)` },
+          { transform: "translateY(0)" },
+        ],
+        { duration: 260, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }
+      );
+    });
+  }
+
 
   async function loadData() {
     try {
@@ -247,8 +284,11 @@ export default function DailyPlanner() {
       }
     }
 
+    // Snapshot positions before the new row lands so existing rows can FLIP
+    // down to make room rather than jumping.
+    const oldPositions = captureRowPositions();
     try {
-      await createTask({
+      const newId = await createTask({
         title,
         projectId: newTaskProjectId ? parseInt(newTaskProjectId) : null,
         dateScheduled: selectedDate,
@@ -260,7 +300,23 @@ export default function DailyPlanner() {
       setNewTaskProjectId("");
       setNewTaskHighPriority(false);
       setError(null);
-      loadData();
+      await loadData();
+      requestAnimationFrame(() => animateRowShifts(oldPositions));
+      if (newId > 0) {
+        setAddedIds((prev) => {
+          const next = new Set(prev);
+          next.add(newId);
+          return next;
+        });
+        setTimeout(() => {
+          setAddedIds((prev) => {
+            if (!prev.has(newId)) return prev;
+            const next = new Set(prev);
+            next.delete(newId);
+            return next;
+          });
+        }, 400);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to add task");
     }
@@ -268,6 +324,9 @@ export default function DailyPlanner() {
 
   async function toggleTask(task: Task) {
     const wasDone = task.status === "done";
+    // Snapshot positions BEFORE the status flip so FLIP can animate the
+    // shift the surviving incomplete rows experience as they fill the gap.
+    const oldPositions = captureRowPositions();
     try {
       await updateTaskStatus(task.id, wasDone ? "todo" : "done");
       setError(null);
@@ -276,6 +335,9 @@ export default function DailyPlanner() {
       // the incomplete section, then re-fires when loadData remounts the row
       // in the completed section — animation plays twice on the wrong state.
       await loadData();
+      // Run FLIP one frame later so React has committed the new DOM. The
+      // toggled task plays its own arrival animation, so skip it here.
+      requestAnimationFrame(() => animateRowShifts(oldPositions, task.id));
       if (!wasDone) {
         setArrivedIds((prev) => {
           const next = new Set(prev);
@@ -838,6 +900,7 @@ export default function DailyPlanner() {
                         workedMinutes={workedMap.get(task.id)}
                         showProject={true}
                         justArrived={arrivedIds.has(task.id)}
+                        justAdded={addedIds.has(task.id)}
                       />
                     );
                   }

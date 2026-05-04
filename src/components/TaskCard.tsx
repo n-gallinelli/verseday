@@ -202,7 +202,12 @@ function TaskCardImpl({
       }${justArrived ? " animate-task-arrived" : ""}${justAdded ? " animate-task-added" : ""}`}
     >
       <div
-        className="flex items-center gap-3"
+        // min-h-[2lh] reserves the height of two body-text line-heights so
+        // 1-line and 2-line task titles render rows of the same height —
+        // the title can wrap to 2 lines without the row growing taller
+        // than its 1-line neighbors. Anything past 2 lines clips via
+        // line-clamp-2 below.
+        className="flex items-center gap-3 min-h-[2lh]"
       >
         {/* Checkbox */}
         <button
@@ -234,13 +239,14 @@ function TaskCardImpl({
           </svg>
         </button>
 
-        {/* Title — row click opens detail. One-line clamp keeps every card
-            the same height. flex-1 absorbs whatever space the actions
-            container reserves (collapsed to 0 idle, expanding on hover)
-            so the title truncates with a real ellipsis — no overlap with
-            buttons. */}
+        {/* Title — row click opens detail. line-clamp-2 lets long titles
+            wrap to a second line; the row's min-h-[2lh] pre-reserves
+            space so 1-line cards aren't shorter than 2-line cards.
+            Beyond 2 lines, the title cuts off with an ellipsis. flex-1
+            absorbs whatever space the actions container reserves so the
+            clamp width is tight against the actions, no overlap. */}
         <span
-          className={`flex-1 min-w-0 truncate text-fg [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)] ${
+          className={`flex-1 min-w-0 line-clamp-2 break-words text-fg [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)] ${
             task.status === "done" ? "line-through !text-fg-faded" : ""
           }`}
         >
@@ -251,19 +257,20 @@ function TaskCardImpl({
             the title loses real layout space instead of being overlaid.
             Container width animates to keep the transition smooth.
             Horizontal padding gives the buttons' hover rings (box-shadow
-            extending 5px outward) room before the container's overflow-
-            hidden clips them — without it, the hover halo gets cut into
-            a non-circle. Width values include the px-[5px] (border-box).
-            States:
-              not focused, not hover: w-0    (no buttons, no padding shows)
-              not focused, hover:     w-[66px] (play + trash + ring room)
-              focused, not hover:     w-[34px] (stop only + ring room)
-              focused, hover:         w-[66px] (stop + trash + ring room) */}
+            spreading 5px outward, plus subpixel rendering) generous
+            room before the container's overflow-hidden clips them —
+            8px each side leaves a clean ~3px buffer past the halo so
+            no edge of the ring renders cropped. Width values are
+            border-box and include the padding. States:
+              not focused, not hover: w-0    (no buttons, no padding)
+              not focused, hover:     w-[72px] (play + trash + ring room)
+              focused, not hover:     w-10  / 40px (stop only)
+              focused, hover:         w-[72px] (stop + trash) */}
         <div
           className={`overflow-hidden flex items-center gap-2 transition-[width,padding] duration-150 ease-out shrink-0 ${
             isFocused
-              ? "w-[34px] px-[5px] group-hover/row:w-[66px]"
-              : "w-0 group-hover/row:w-[66px] group-hover/row:px-[5px]"
+              ? "w-10 px-2 group-hover/row:w-[72px]"
+              : "w-0 group-hover/row:w-[72px] group-hover/row:px-2"
           }`}
         >
           {isFocused && onStop ? (

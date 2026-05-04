@@ -199,3 +199,61 @@ Wired in as `npm run test:skip-migration`. Must run green before commit
    for that date.
 
 If step 4 fails: stop, do not touch DB, escalate.
+
+## Post-mortem — failure mode 4
+
+The fourth durable lesson from this work, on top of the three captured in
+[2026-05-04-recurring-task-duplicates.md](./2026-05-04-recurring-task-duplicates.md):
+
+**4. sqlx applied-migration validation breaks "logically independent"
+branches at runtime.** The dedup post-mortem established
+"destructive migrations must ship behind an already-deployed backup
+hook." It didn't capture that *any* migration applied on a user's DB
+locks that version into the source list of every future binary,
+regardless of whether new work logically depends on it. Cutting v15
+from main without v14 was correct from a code-review and
+logical-dependency standpoint and exactly what Verse directed; it was
+wrong from a deployment standpoint because the user's DB was already
+past v14. sqlx-sqlite validates each row in `_sqlx_migrations` against
+the source migration list (version + checksum); a missing entry errors
+"applied migration not found" and `Database.load()` rejects, surfacing
+as the silent "Failed to load data" banner.
+
+*Corrective action — encode as a deployment invariant:* when a
+migration version exists in any production user's DB, every subsequent
+binary must include that migration entry **verbatim** (byte-identical
+SQL body so the sqlx checksum matches), even on branches that are
+otherwise independent. This is a deployment invariant, not a branching
+one. Branches still get cut from main per Verse — they just carry
+forward every applied-in-the-wild migration version as part of the
+source list. Generalizes beyond v14 to every future migration.
+
+The fix on this branch (`eb154ad`) cherry-picked v14's body via
+`git show fix/recurring-task-duplicates:src-tauri/src/lib.rs`,
+md5-verified the SQL body matched (`69243cc58960be7e6826b94a56a9d868`),
+and added an explanatory comment block on the migration entry calling
+out that this is a checksum/coexistence concern rather than a logical
+dependency.
+
+## P0 follow-up: surface SQL errors in `loadData()`
+
+Three separate rounds of "Failed to load data" in this session, each
+with no JS-visible console signal — one for the partial-index ON
+CONFLICT mismatch, one for the missing v14 migration entry. The
+catch block in `DailyPlanner.tsx` does:
+
+```js
+catch (e) {
+  setError(e instanceof Error ? e.message : "Failed to load data");
+}
+```
+
+Tauri's SQL plugin rejects with strings, not `Error` instances, so the
+ternary always lands on the fallback string and the actual SQL error
+never reaches the user or the console. Every failure becomes a
+guessing exercise.
+
+Fix is small: change the ternary to `typeof e === "string" ? e : (e
+instanceof Error ? e.message : String(e))` (or equivalent) so the
+underlying error message survives. Verse elevated this to P0 follow-up
+explicitly. Next branch off main after this one merges.

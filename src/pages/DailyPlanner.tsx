@@ -932,8 +932,16 @@ export default function DailyPlanner() {
           </SortableContext>
         </DndContext>
 
-        {/* Daily Notes + Shutdown link — bottom of scroll area */}
-        <div className="mt-auto pt-3">
+        </div>
+      </div>
+
+      {/* Daily Notes + Shutdown link — pinned to the bottom of the main
+          column so the notes are always visible regardless of how many
+          tasks are scrolled above. Sibling of the scrollable region above,
+          not a child, so the scroll area shrinks to fit instead of pushing
+          the notes off-screen. */}
+      <div className="px-7 pt-3 pb-5 border-t border-line-hairline shrink-0">
+        <div className="max-w-[640px] mx-auto">
           <div className="flex items-center justify-between mb-1.5">
             <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded">
               Daily notes
@@ -972,9 +980,8 @@ export default function DailyPlanner() {
             className="w-full bg-elevated border border-line-hairline rounded-lg px-3 py-2 text-[13px] text-fg-secondary min-h-[64px] max-h-[112px] overflow-y-auto leading-relaxed focus-within:border-accent-blue"
           />
         </div>
-
-        </div>
       </div>
+
       </div>
 
       {/* ── Right panel: Projects (collapsible) ─────────────────────── */}

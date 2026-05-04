@@ -150,6 +150,11 @@ export default function FocusMode() {
           decorations: false,
           transparent: true,
           skipTaskbar: true,
+          // Spawn without grabbing focus — the main VerseDay window
+          // should keep keyboard/mouse focus when a session starts.
+          // alwaysOnTop already keeps the pip visible without needing
+          // window focus.
+          focus: false,
           x: 20,
           y: 20,
         });

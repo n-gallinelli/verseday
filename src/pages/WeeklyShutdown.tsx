@@ -338,41 +338,63 @@ export default function WeeklyShutdown() {
               <div className="space-y-5">
                 {weekDates.map((date) => {
                   const dayTasks = tasksByDay.get(date) ?? [];
+                  // Highlights first, then fill with other completed tasks up
+                  // to a 5-task ceiling so the day reads as a curated digest
+                  // rather than a full log.
+                  const highlights = dayTasks.filter((t) => t.is_highlight);
+                  const others = dayTasks.filter((t) => !t.is_highlight);
+                  const visibleTasks = [...highlights, ...others].slice(0, 5);
                   return (
                     <section key={date}>
                       <h3 className="text-[13px] font-medium text-fg-secondary mb-2">
                         {formatDayHeading(date)}
                       </h3>
-                      {dayTasks.length === 0 ? (
+                      {visibleTasks.length === 0 ? (
                         <p className="text-[12px] text-fg-disabled px-2.5">
                           Nothing this day
                         </p>
                       ) : (
                         <div className="space-y-1">
-                          {dayTasks.map((task) => {
+                          {visibleTasks.map((task) => {
                             const project =
                               task.project_id != null
                                 ? projectMap.get(task.project_id)
                                 : null;
                             const worked = workedPerTask.get(task.id) ?? 0;
+                            const isHighlight = !!task.is_highlight;
                             return (
                               <div
                                 key={task.id}
                                 className="px-2.5 py-[6px] rounded-md border border-line-soft bg-elevated/60 flex items-center gap-2.5 transition-colors hover:bg-overlay-hover"
                               >
-                                <svg
-                                  width="13"
-                                  height="13"
-                                  viewBox="0 0 16 16"
-                                  fill="none"
-                                  stroke="var(--accent-pink)"
-                                  strokeWidth="2"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  className="flex-shrink-0"
-                                >
-                                  <path d="M3 8.5l3.5 3.5 6.5-7" />
-                                </svg>
+                                {isHighlight ? (
+                                  <svg
+                                    width="13"
+                                    height="13"
+                                    viewBox="0 0 24 24"
+                                    fill="var(--accent-highlight)"
+                                    stroke="var(--accent-highlight)"
+                                    strokeWidth="2"
+                                    strokeLinejoin="round"
+                                    className="flex-shrink-0"
+                                  >
+                                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                                  </svg>
+                                ) : (
+                                  <svg
+                                    width="13"
+                                    height="13"
+                                    viewBox="0 0 16 16"
+                                    fill="none"
+                                    stroke="var(--accent-pink)"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    className="flex-shrink-0"
+                                  >
+                                    <path d="M3 8.5l3.5 3.5 6.5-7" />
+                                  </svg>
+                                )}
                                 {project && (
                                   <span
                                     className="w-1.5 h-1.5 rounded-full flex-shrink-0"
@@ -380,7 +402,13 @@ export default function WeeklyShutdown() {
                                     title={project.name}
                                   />
                                 )}
-                                <span className="flex-1 text-[12px] text-fg-faded line-through truncate">
+                                <span
+                                  className={`flex-1 text-[12px] truncate ${
+                                    isHighlight
+                                      ? "text-fg font-medium line-through decoration-fg-faded/50"
+                                      : "text-fg-faded line-through"
+                                  }`}
+                                >
                                   {task.title}
                                 </span>
                                 {project && (

@@ -571,7 +571,7 @@ export default function DailyPlanner() {
         {/* Date row with stats right-aligned. Capped to the same column
             width as the task list below so everything stays on a single
             visual axis. */}
-        <div className="flex items-center gap-2.5 max-w-[640px] mx-auto">
+        <div className="flex items-center gap-2.5">
           <button
             onClick={() => changeDate(-1)}
             className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
@@ -658,7 +658,7 @@ export default function DailyPlanner() {
           the page reads as a focused single track instead of a wide grid
           of work. */}
       <div className="flex-1 overflow-y-auto px-7 py-5">
-        <div className="max-w-[640px] mx-auto flex flex-col min-h-full">
+        <div className="max-w-[560px] mx-auto flex flex-col min-h-full">
         {/* Task Input — collapsed bar shows worked / planned for the day on
             the right so adding more work is in dialogue with the time you
             already have on the plate. Over-budget tips the planned figure

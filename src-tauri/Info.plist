@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- User-facing copy for the macOS Calendars permission prompt.
+         Apple shows this verbatim, so be plain about what we do and
+         where the data goes. Plan v3 / Verse-approved wording. -->
+    <key>NSCalendarsUsageDescription</key>
+    <string>VerseDay reads your Calendar.app events to surface them as tasks for the day. Data stays local to this device and is never sent anywhere.</string>
+</dict>
+</plist>

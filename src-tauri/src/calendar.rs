@@ -1,0 +1,385 @@
+//! Calendar integration — macOS only.
+//!
+//! Bridges Apple's EventKit framework into Tauri commands. The
+//! `CalendarSource` trait abstracts the underlying source so a future
+//! swap (e.g. to a different OS or back to AppleScript if Apple ever
+//! fixes its recurrence semantics) is contained to this file.
+//!
+//! See `docs/2026-05-05-calendar-integration-plan.md` (v3) for the
+//! approved design and `docs/m0-calendar-spike.md` for the AppleScript
+//! failure mode that drove the EventKit choice.
+//!
+//! ## Permission flow
+//! `request_permission` invokes `requestFullAccessToEvents`
+//! synchronously by blocking on its completion via `block2::RcBlock` +
+//! a condvar. Tauri 2 dispatches commands on a worker pool, so this
+//! never deadlocks the main thread (G1, plan v3). 30s timeout caps
+//! the wait — generous for "user reads dialog" but bounded for
+//! stuck-prompt edge cases.
+//!
+//! ## Versioning (G3, plan v3)
+//! Pinned to `objc2 0.6` / `objc2-foundation 0.3` /
+//! `objc2-event-kit 0.3` / `block2 0.6`. Bump intentionally and
+//! re-test against a real recurring event when updating.
+
+#![cfg(target_os = "macos")]
+
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::Duration;
+
+use block2::RcBlock;
+use objc2::msg_send;
+use objc2::rc::Retained;
+use objc2::runtime::{AnyClass, AnyObject, Bool};
+use objc2_event_kit::{
+    EKAuthorizationStatus, EKCalendar, EKEntityType, EKEvent, EKEventStatus, EKEventStore,
+};
+use objc2_foundation::{NSArray, NSDate, NSError, NSPredicate, NSString};
+use serde::Serialize;
+
+// ───────────────────────────────────────────────────────────────────
+// Public types
+// ───────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum PermissionStatus {
+    Granted,
+    Denied,
+    Prompt,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct CalendarMeta {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarEvent {
+    /// Per-instance identifier. EventKit's `eventIdentifier` includes
+    /// a recurrence suffix so today's standup ≠ tomorrow's standup.
+    pub external_id: String,
+    pub calendar_id: String,
+    pub calendar_name: String,
+    pub title: String,
+    /// Local-tz `YYYY-MM-DDTHH:MM`.
+    pub start_local: String,
+    pub end_local: Option<String>,
+    pub all_day: bool,
+    /// `"confirmed" | "tentative" | "cancelled" | "none"`.
+    pub status: String,
+}
+
+// ───────────────────────────────────────────────────────────────────
+// CalendarSource trait
+// ───────────────────────────────────────────────────────────────────
+
+pub trait CalendarSource: Send + Sync {
+    fn permission_status(&self) -> PermissionStatus;
+    fn request_permission(&self) -> Result<PermissionStatus, String>;
+    fn calendar_list(&self) -> Result<Vec<CalendarMeta>, String>;
+    fn events_for_date(&self, date_iso: &str) -> Result<Vec<CalendarEvent>, String>;
+}
+
+// ───────────────────────────────────────────────────────────────────
+// EventKitSource — macOS 14+ implementation
+// ───────────────────────────────────────────────────────────────────
+
+pub struct EventKitSource {
+    store: Retained<EKEventStore>,
+}
+
+// Apple documents EKEventStore as thread-safe ("EventKit objects can
+// be created on any thread, and you can use them from any thread").
+// objc2's wrappers are conservatively !Send / !Sync; we opt in here.
+unsafe impl Send for EventKitSource {}
+unsafe impl Sync for EventKitSource {}
+
+impl EventKitSource {
+    pub fn new() -> Self {
+        let store = unsafe { EKEventStore::new() };
+        Self { store }
+    }
+
+    /// G2 mapping (plan v3). `Authorized` is deprecated in favor of
+    /// `FullAccess` on macOS 14+; we don't list it (compiler warns
+    /// since the discriminant is also used by FullAccess).
+    fn map_status(status: EKAuthorizationStatus) -> PermissionStatus {
+        match status {
+            EKAuthorizationStatus::NotDetermined => PermissionStatus::Prompt,
+            EKAuthorizationStatus::FullAccess => PermissionStatus::Granted,
+            // Restricted, Denied, WriteOnly, future unknown → Denied.
+            _ => PermissionStatus::Denied,
+        }
+    }
+}
+
+impl CalendarSource for EventKitSource {
+    fn permission_status(&self) -> PermissionStatus {
+        let status =
+            unsafe { EKEventStore::authorizationStatusForEntityType(EKEntityType::Event) };
+        Self::map_status(status)
+    }
+
+    fn request_permission(&self) -> Result<PermissionStatus, String> {
+        // Pair: Some(true|false) once EventKit's completion fires.
+        let pair: Arc<(Mutex<Option<bool>>, Condvar)> =
+            Arc::new((Mutex::new(None), Condvar::new()));
+        let pair_cb = pair.clone();
+
+        // RcBlock holds a heap-allocated block compatible with
+        // Objective-C completion-handler conventions. The closure args
+        // must match what EventKit calls back with: `BOOL granted` and
+        // `NSError * _Nullable error`. objc2 maps these to `Bool` and
+        // a non-null reference (or absence via `*mut`).
+        let block = RcBlock::new(move |granted: Bool, _err: *mut NSError| {
+            let (lock, cvar) = &*pair_cb;
+            let mut guard = lock.lock().unwrap();
+            *guard = Some(granted.as_bool());
+            cvar.notify_one();
+        });
+
+        // The binding signature takes `*mut Block<...>`. RcBlock
+        // derefs to `Block<...>`; we cast through const to mut here
+        // because EventKit doesn't mutate the block — it just
+        // retains and invokes it.
+        let block_ptr: *mut block2::Block<dyn Fn(Bool, *mut NSError)> =
+            &*block as *const _ as *mut _;
+        unsafe {
+            self.store.requestFullAccessToEventsWithCompletion(block_ptr);
+        }
+
+        let (lock, cvar) = &*pair;
+        let guard = lock
+            .lock()
+            .map_err(|e| format!("lock poisoned: {}", e))?;
+        let (guard, _timeout) = cvar
+            .wait_timeout_while(guard, Duration::from_secs(30), |g| g.is_none())
+            .map_err(|e| format!("wait poisoned: {}", e))?;
+
+        if guard.is_none() {
+            return Err("Permission prompt timed out".to_string());
+        }
+
+        // Re-read via the system source-of-truth API rather than
+        // returning the bool from the closure — the closure's bool is
+        // informative but `authorizationStatus` is what other code
+        // will see.
+        Ok(self.permission_status())
+    }
+
+    fn calendar_list(&self) -> Result<Vec<CalendarMeta>, String> {
+        let calendars: Retained<NSArray<EKCalendar>> =
+            unsafe { self.store.calendarsForEntityType(EKEntityType::Event) };
+
+        let mut out = Vec::with_capacity(calendars.len());
+        for cal in calendars.iter() {
+            let id = unsafe { cal.calendarIdentifier() }.to_string();
+            let name = unsafe { cal.title() }.to_string();
+            out.push(CalendarMeta { id, name });
+        }
+        Ok(out)
+    }
+
+    fn events_for_date(&self, date_iso: &str) -> Result<Vec<CalendarEvent>, String> {
+        // Quick permission gate — if not granted, surface a typed
+        // error so the JS layer can route the user to System Settings
+        // rather than blow up on a NULL predicate result.
+        if self.permission_status() != PermissionStatus::Granted {
+            return Err("permission_not_granted".to_string());
+        }
+
+        let (year, month, day) = parse_date_iso(date_iso)?;
+        let start_ns = nsdate_for_local(year, month, day, 0, 0, 0)?;
+        let end_ns = nsdate_for_local_plus_one_day(&start_ns)?;
+
+        let predicate: Retained<NSPredicate> = unsafe {
+            self.store
+                .predicateForEventsWithStartDate_endDate_calendars(&start_ns, &end_ns, None)
+        };
+        let events: Retained<NSArray<EKEvent>> =
+            unsafe { self.store.eventsMatchingPredicate(&predicate) };
+
+        let mut out = Vec::with_capacity(events.len());
+        for event in events.iter() {
+            // eventIdentifier is the only one of these accessors the
+            // objc2-event-kit binding marks Optional (Apple's header
+            // says it can be nil for unsaved events). Skip the row if
+            // it's missing — better to drop one than fail the sync.
+            let external_id = match unsafe { event.eventIdentifier() } {
+                Some(s) => s.to_string(),
+                None => continue,
+            };
+
+            let (calendar_id, calendar_name) = match unsafe { event.calendar() } {
+                Some(cal) => (
+                    unsafe { cal.calendarIdentifier() }.to_string(),
+                    unsafe { cal.title() }.to_string(),
+                ),
+                None => (String::new(), String::new()),
+            };
+
+            let title = unsafe { event.title() }.to_string();
+
+            let all_day = unsafe { event.isAllDay() };
+
+            let start_date = unsafe { event.startDate() };
+            let start_local = nsdate_to_local_iso_minute(&start_date);
+
+            // endDate is non-Optional in the binding too. For events
+            // with no end (rare; usually only happens for journal-style
+            // entries) Apple returns a sentinel; the formatter still
+            // produces a string. Wrap in Some() for the JS-facing
+            // type.
+            let end_date = unsafe { event.endDate() };
+            let end_local = Some(nsdate_to_local_iso_minute(&end_date));
+
+            let status = match unsafe { event.status() } {
+                EKEventStatus::Confirmed => "confirmed",
+                EKEventStatus::Tentative => "tentative",
+                EKEventStatus::Canceled => "cancelled",
+                _ => "none",
+            }
+            .to_string();
+
+            out.push(CalendarEvent {
+                external_id,
+                calendar_id,
+                calendar_name,
+                title,
+                start_local,
+                end_local,
+                all_day,
+                status,
+            });
+        }
+
+        Ok(out)
+    }
+}
+
+// ───────────────────────────────────────────────────────────────────
+// Date helpers — local-tz NSDate ↔ ISO conversion via NSCalendar.
+// ───────────────────────────────────────────────────────────────────
+
+fn parse_date_iso(s: &str) -> Result<(i32, u32, u32), String> {
+    let parts: Vec<&str> = s.split('-').collect();
+    if parts.len() != 3 {
+        return Err(format!("invalid date_iso: {}", s));
+    }
+    let y: i32 = parts[0]
+        .parse()
+        .map_err(|_| format!("invalid year in date_iso: {}", s))?;
+    let m: u32 = parts[1]
+        .parse()
+        .map_err(|_| format!("invalid month in date_iso: {}", s))?;
+    let d: u32 = parts[2]
+        .parse()
+        .map_err(|_| format!("invalid day in date_iso: {}", s))?;
+    Ok((y, m, d))
+}
+
+fn nsdate_for_local(
+    year: i32,
+    month: u32,
+    day: u32,
+    hour: u32,
+    minute: u32,
+    second: u32,
+) -> Result<Retained<NSDate>, String> {
+    unsafe {
+        let cal_cls = AnyClass::get(c"NSCalendar")
+            .ok_or_else(|| "NSCalendar class not found".to_string())?;
+        let calendar: *mut AnyObject = msg_send![cal_cls, currentCalendar];
+        if calendar.is_null() {
+            return Err("currentCalendar returned nil".to_string());
+        }
+
+        let comp_cls = AnyClass::get(c"NSDateComponents")
+            .ok_or_else(|| "NSDateComponents class not found".to_string())?;
+        let components: *mut AnyObject = msg_send![comp_cls, new];
+        let _: () = msg_send![components, setYear: year as i64];
+        let _: () = msg_send![components, setMonth: month as i64];
+        let _: () = msg_send![components, setDay: day as i64];
+        let _: () = msg_send![components, setHour: hour as i64];
+        let _: () = msg_send![components, setMinute: minute as i64];
+        let _: () = msg_send![components, setSecond: second as i64];
+
+        let date_ptr: *mut NSDate = msg_send![calendar, dateFromComponents: components];
+        let _: () = msg_send![components, release];
+        if date_ptr.is_null() {
+            return Err("dateFromComponents returned nil".to_string());
+        }
+        Retained::retain(date_ptr).ok_or_else(|| "retain failed".to_string())
+    }
+}
+
+fn nsdate_for_local_plus_one_day(start: &NSDate) -> Result<Retained<NSDate>, String> {
+    unsafe {
+        let next_ptr: *mut NSDate =
+            msg_send![start, dateByAddingTimeInterval: 86400.0_f64];
+        Retained::retain(next_ptr).ok_or_else(|| "retain failed".to_string())
+    }
+}
+
+fn nsdate_to_local_iso_minute(date: &NSDate) -> String {
+    unsafe {
+        let formatter_cls = match AnyClass::get(c"NSDateFormatter") {
+            Some(c) => c,
+            None => return String::new(),
+        };
+        let formatter: *mut AnyObject = msg_send![formatter_cls, new];
+        let format = NSString::from_str("yyyy-MM-dd'T'HH:mm");
+        let _: () = msg_send![formatter, setDateFormat: &*format];
+
+        let s_ptr: *mut NSString = msg_send![formatter, stringFromDate: date];
+        let result = if s_ptr.is_null() {
+            String::new()
+        } else if let Some(s) = Retained::retain(s_ptr) {
+            s.to_string()
+        } else {
+            String::new()
+        };
+        let _: () = msg_send![formatter, release];
+        result
+    }
+}
+
+// ───────────────────────────────────────────────────────────────────
+// Tauri commands — only these cross the JS boundary (Verse A5).
+// ───────────────────────────────────────────────────────────────────
+
+pub struct CalendarState {
+    pub source: Box<dyn CalendarSource>,
+}
+
+#[tauri::command]
+pub fn calendar_check_permission(
+    state: tauri::State<'_, CalendarState>,
+) -> PermissionStatus {
+    state.source.permission_status()
+}
+
+#[tauri::command]
+pub fn calendar_request_permission(
+    state: tauri::State<'_, CalendarState>,
+) -> Result<PermissionStatus, String> {
+    state.source.request_permission()
+}
+
+#[tauri::command]
+pub fn calendar_get_calendar_list(
+    state: tauri::State<'_, CalendarState>,
+) -> Result<Vec<CalendarMeta>, String> {
+    state.source.calendar_list()
+}
+
+#[tauri::command]
+pub fn calendar_get_events_for_date(
+    state: tauri::State<'_, CalendarState>,
+    date_iso: String,
+) -> Result<Vec<CalendarEvent>, String> {
+    state.source.events_for_date(&date_iso)
+}

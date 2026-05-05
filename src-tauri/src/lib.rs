@@ -1,4 +1,6 @@
 mod commands;
+#[cfg(target_os = "macos")]
+mod calendar;
 
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -406,6 +408,34 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 18,
+            description: "calendar integration: external_source/id/dismissal_reason on tasks + partial index",
+            // Additive only — three nullable columns + one partial
+            // index. NULL on all three means "task created in-app"
+            // (the existing default for every row pre-v18). The
+            // partial index keeps lookup O(log n_imported) without
+            // bloating row writes for in-app tasks.
+            //
+            // CHECKs use `IS NULL OR x = 'val'` form (SQLite IN
+            // doesn't handle NULL the way you'd want, see Verse v2 B2).
+            // See docs/2026-05-05-calendar-integration-plan.md.
+            sql: "
+                ALTER TABLE tasks ADD COLUMN external_source TEXT
+                  CHECK (external_source IS NULL OR external_source = 'calendar');
+
+                ALTER TABLE tasks ADD COLUMN external_id TEXT;
+
+                ALTER TABLE tasks ADD COLUMN external_dismissal_reason TEXT
+                  CHECK (external_dismissal_reason IS NULL
+                         OR external_dismissal_reason IN ('user', 'cancelled'));
+
+                CREATE INDEX IF NOT EXISTS idx_tasks_external
+                  ON tasks (external_source, external_id)
+                  WHERE external_source IS NOT NULL;
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -418,10 +448,32 @@ pub fn run() {
         .manage(commands::QuickAddState {
             previous_app: std::sync::Mutex::new(String::new()),
         })
+        .manage({
+            #[cfg(target_os = "macos")]
+            {
+                calendar::CalendarState {
+                    source: Box::new(calendar::EventKitSource::new()),
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                // Placeholder for non-macOS — calendar commands return
+                // PermissionStatus::Denied if ever invoked.
+                ()
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::generate_summary,
             commands::capture_previous_app,
             commands::dismiss_quick_add,
+            #[cfg(target_os = "macos")]
+            calendar::calendar_check_permission,
+            #[cfg(target_os = "macos")]
+            calendar::calendar_request_permission,
+            #[cfg(target_os = "macos")]
+            calendar::calendar_get_calendar_list,
+            #[cfg(target_os = "macos")]
+            calendar::calendar_get_events_for_date,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

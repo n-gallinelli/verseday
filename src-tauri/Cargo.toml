@@ -29,5 +29,25 @@ reqwest = { version = "0.12.12", features = ["json", "rustls-tls"], default-feat
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString"] }
+# Foundation now needs NSDate / NSArray / NSPredicate alongside NSString
+# for the EventKit calendar bridge. See src/calendar.rs.
+objc2-foundation = { version = "0.3", features = [
+    "NSString",
+    "NSDate",
+    "NSArray",
+    "NSPredicate",
+    "NSError",
+] }
 objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSRunningApplication"] }
+# G3 (plan v3): pinned to ~0.3 minor line; bump intentionally and
+# re-test the CalendarSource binding when updating. Known-good minor
+# documented in src/calendar.rs.
+objc2-event-kit = { version = "0.3", features = [
+    "EKEventStore",
+    "EKEvent",
+    "EKCalendarItem",
+    "EKCalendar",
+    "EKObject",
+    "EKTypes",
+] }
+block2 = "0.6"

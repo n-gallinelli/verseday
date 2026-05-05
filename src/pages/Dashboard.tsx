@@ -13,25 +13,15 @@ import {
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
 import PastShutdownCard from "../components/PastShutdownCard";
+import { localDateIso, todayString, mondayOfWeek as getMondayOfWeek, weekdayDates as getWeekdayDates } from "../utils/dates";
 import type { Project, Task } from "../types";
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
-function getWeekdayDates(mondayIso: string): string[] {
-  const dates: string[] = [];
-  const d = new Date(mondayIso + "T00:00:00");
-  for (let i = 0; i < 5; i++) {
-    const dd = new Date(d);
-    dd.setDate(d.getDate() + i);
-    dates.push(dd.toISOString().split("T")[0]);
-  }
-  return dates;
-}
-
 function getFridayIso(mondayIso: string): string {
   const d = new Date(mondayIso + "T00:00:00");
   d.setDate(d.getDate() + 4);
-  return d.toISOString().split("T")[0];
+  return localDateIso(d);
 }
 
 function formatWeekHeader(mondayIso: string): string {
@@ -41,14 +31,6 @@ function formatWeekHeader(mondayIso: string): string {
     day: "numeric",
     year: "numeric",
   })}`;
-}
-
-function getMondayOfWeek(date: Date = new Date()): string {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  return d.toISOString().split("T")[0];
 }
 
 function formatMinutesToHours(minutes: number): string {
@@ -227,7 +209,7 @@ export default function Dashboard() {
   function changeWeek(offset: number) {
     const d = new Date(selectedWeek + "T00:00:00");
     d.setDate(d.getDate() + offset * 7);
-    setSelectedWeek(d.toISOString().split("T")[0]);
+    setSelectedWeek(localDateIso(d));
   }
 
   // ── Derived stats ─────────────────────────────────────────────────────
@@ -260,10 +242,10 @@ export default function Dashboard() {
   }
   const recentDates = Array.from(recentByDate.keys()).sort().reverse();
 
-  const todayStr = new Date().toISOString().split("T")[0];
+  const todayStr = todayString();
   const yesterdayDate = new Date();
   yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-  const yesterdayStr = yesterdayDate.toISOString().split("T")[0];
+  const yesterdayStr = localDateIso(yesterdayDate);
 
   function formatDateLabel(date: string): string {
     if (date === todayStr) return "Today";

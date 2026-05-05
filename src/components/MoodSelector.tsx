@@ -2,6 +2,9 @@ interface MoodSelectorProps {
   value: string | null;
   onChange: (value: string | null) => void;
   tintColor?: string;
+  /** Face icon size in px. Default 28. Pass smaller for the daily
+   *  shutdown's quieter mood row. */
+  size?: number;
 }
 
 const MOODS: { key: string; label: string }[] = [
@@ -12,8 +15,7 @@ const MOODS: { key: string; label: string }[] = [
   { key: "Great", label: "Great" },
 ];
 
-function MoodIcon({ mood, selected, tint }: { mood: string; selected: boolean; tint: string }) {
-  const size = 28;
+function MoodIcon({ mood, selected, tint, size = 28 }: { mood: string; selected: boolean; tint: string; size?: number }) {
   const stroke = selected ? tint : "var(--text-faded)";
   const fill = selected ? `color-mix(in srgb, ${tint} 8%, transparent)` : "none";
   const sw = 1.6;
@@ -83,7 +85,7 @@ const MOOD_COLORS: Record<string, string> = {
   Okay: "var(--mood-okay)",
 };
 
-export default function MoodSelector({ value, onChange, tintColor = "var(--accent-blue)" }: MoodSelectorProps) {
+export default function MoodSelector({ value, onChange, tintColor = "var(--accent-blue)", size = 28 }: MoodSelectorProps) {
   return (
     <div className="flex gap-1">
       {MOODS.map((m) => {
@@ -93,21 +95,16 @@ export default function MoodSelector({ value, onChange, tintColor = "var(--accen
           <button
             key={m.key}
             onClick={() => onChange(selected ? null : m.key)}
-            className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-[7px] cursor-pointer transition-colors border-[1.5px] ${
-              selected
-                ? ""
-                : "border-line-hairline bg-elevated hover:border-line-strong"
+            className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-[7px] cursor-pointer transition-colors border-[1.5px] bg-transparent ${
+              selected ? "" : "border-line-hairline hover:border-line-strong"
             }`}
             style={
               selected
-                ? {
-                    borderColor: color,
-                    backgroundColor: `color-mix(in srgb, ${color} 3%, transparent)`,
-                  }
+                ? { borderColor: color }
                 : undefined
             }
           >
-            <MoodIcon mood={m.key} selected={selected} tint={selected ? color : tintColor} />
+            <MoodIcon mood={m.key} selected={selected} tint={selected ? color : tintColor} size={size} />
             <span
               className="text-[9px]"
               style={{ color: selected ? color : "var(--text-faded)" }}

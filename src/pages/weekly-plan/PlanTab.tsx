@@ -1,0 +1,492 @@
+import { useEffect, useState, useCallback, useRef } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import { useAppStore } from "../../stores/appStore";
+import { localDateIso, mondayOfWeek, weekdayDates } from "../../utils/dates";
+import { snapCenterToCursor } from "../../utils/dnd";
+import { PLAN_TASK_DRAG_PREFIX } from "./PlanTaskList";
+import { PLAN_DAY_DROP_PREFIX } from "./PlanDayStrip";
+import {
+  getProjects,
+  getWeeklyPlanProjectStatuses,
+  setWeeklyPlanProjectStatus,
+  clearWeeklyPlanProjectStatus,
+  getWeeklyPlanCommitments,
+  setWeeklyPlanCommitment,
+  clearWeeklyPlanCommitment,
+  getTasksForProject,
+  createTask,
+  updateTask,
+  updateTaskDateScheduled,
+  deleteTask,
+  type WeeklyPlanProjectStatus,
+} from "../../db/queries";
+import type { Project, Task } from "../../types";
+import PlanProjectRail from "./PlanProjectRail";
+import PlanProjectPanel from "./PlanProjectPanel";
+import ErrorBanner from "../../components/ErrorBanner";
+import { errorMessage } from "../../utils/errors";
+
+// Plan tab orchestrator — owns the data + selection state. Children
+// (rail / panel / summary) are presentational.
+function formatWeekLabel(mondayIso: string): string {
+  const d = new Date(mondayIso + "T00:00:00");
+  const friday = new Date(d);
+  friday.setDate(d.getDate() + 4);
+  const monthDay = (date: Date) =>
+    date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return `${monthDay(d)} – ${monthDay(friday)}`;
+}
+
+export default function PlanTab() {
+  const { selectedWeek, setSelectedWeek } = useAppStore();
+  const weekDates = weekdayDates(selectedWeek);
+  const isThisWeek = selectedWeek === mondayOfWeek();
+
+  function changeWeek(offset: number) {
+    const d = new Date(selectedWeek + "T00:00:00");
+    d.setDate(d.getDate() + offset * 7);
+    setSelectedWeek(localDateIso(d));
+  }
+
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [statuses, setStatuses] = useState<
+    Map<number, WeeklyPlanProjectStatus>
+  >(new Map());
+  const [commitments, setCommitments] = useState<
+    Map<number, Map<number, number>>
+  >(new Map());
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // 1–5 keyboard signals forwarded to the day strip (nonce so repeated
+  // presses re-fire even on the same dayOffset).
+  const [toggleSignal, setToggleSignal] = useState<{
+    dayOffset: number;
+    nonce: number;
+  } | null>(null);
+  const nonceRef = useRef(0);
+
+  // Drag state — name shown in the floating overlay while a task is
+  // being dragged onto a day button.
+  const [dragTaskTitle, setDragTaskTitle] = useState<string | null>(null);
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
+
+  const loadData = useCallback(async () => {
+    try {
+      const [allProjects, statusMap, commitMap] = await Promise.all([
+        getProjects(false),
+        getWeeklyPlanProjectStatuses(selectedWeek),
+        getWeeklyPlanCommitments(selectedWeek),
+      ]);
+      // Intentional divergence from ScheduleTab: Plan is forward-looking,
+      // so archived-but-has-tasks projects do NOT surface here. Schedule
+      // includes them because they may carry scheduled tasks that need
+      // to render; Plan asks "what should we commit time to next week,"
+      // and archived projects shouldn't bid for that time.
+      const active = allProjects
+        .filter((p) => !p.archived && !p.completed)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setProjects(active);
+      setStatuses(statusMap);
+      setCommitments(commitMap);
+
+      setSelectedId((current) => {
+        if (current != null && active.some((p) => p.id === current)) {
+          return current;
+        }
+        const firstUnplanned = active.find((p) => !statusMap.has(p.id));
+        return firstUnplanned?.id ?? null;
+      });
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e, "Failed to load weekly plan"));
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedWeek]);
+
+  useEffect(() => {
+    setLoading(true);
+    loadData();
+  }, [loadData]);
+
+  // Load all (non-done) tasks for the currently selected project. The
+  // panel renders unscheduled ones in the task list and the
+  // scheduled-this-week ones as small chips under their day buttons —
+  // partitioning happens at render time below.
+  const reloadTasks = useCallback(async (projectId: number | null) => {
+    if (projectId == null) {
+      setTasks([]);
+      return;
+    }
+    try {
+      const fresh = await getTasksForProject(projectId, false);
+      setTasks(fresh);
+    } catch (e) {
+      setError(errorMessage(e, "Failed to load project tasks"));
+    }
+  }, []);
+
+  useEffect(() => {
+    reloadTasks(selectedId);
+  }, [selectedId, reloadTasks]);
+
+  // Bare 1–5 toggle days when the Plan tab has a project open.
+  // App.tsx uses Cmd+1..6 for page nav and bare T/W/O/D/S/F — bare
+  // digits are free here.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (selectedId == null) return;
+      const el = document.activeElement;
+      const isInput =
+        el &&
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          (el as HTMLElement).isContentEditable);
+      if (isInput) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+
+      const dayOffset = "12345".indexOf(e.key);
+      if (dayOffset === -1) return;
+      e.preventDefault();
+      nonceRef.current += 1;
+      setToggleSignal({ dayOffset, nonce: nonceRef.current });
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedId]);
+
+  function nextUnplannedAfter(
+    currentId: number,
+    nextStatuses: Map<number, WeeklyPlanProjectStatus>
+  ): number | null {
+    const idx = projects.findIndex((p) => p.id === currentId);
+    if (idx === -1) return null;
+    for (let i = 1; i <= projects.length; i++) {
+      const candidate = projects[(idx + i) % projects.length];
+      if (!nextStatuses.has(candidate.id)) return candidate.id;
+    }
+    return null;
+  }
+
+  async function markStatus(id: number, status: WeeklyPlanProjectStatus) {
+    try {
+      await setWeeklyPlanProjectStatus(selectedWeek, id, status);
+      const newStatuses = new Map(statuses);
+      newStatuses.set(id, status);
+      setStatuses(newStatuses);
+      setSelectedId(nextUnplannedAfter(id, newStatuses));
+    } catch (e) {
+      setError(errorMessage(e, "Failed to update project status"));
+    }
+  }
+
+  async function clearStatus(id: number) {
+    try {
+      await clearWeeklyPlanProjectStatus(selectedWeek, id);
+      const newStatuses = new Map(statuses);
+      newStatuses.delete(id);
+      setStatuses(newStatuses);
+    } catch (e) {
+      setError(errorMessage(e, "Failed to update project status"));
+    }
+  }
+
+  async function setCommitment(
+    projectId: number,
+    dayOffset: number,
+    minutes: number
+  ) {
+    try {
+      await setWeeklyPlanCommitment(selectedWeek, projectId, dayOffset, minutes);
+      // Functional update so back-to-back commitment writes (e.g. move
+      // task = decrement source + increment target) don't stomp on each
+      // other via stale-closure baselines.
+      setCommitments((prev) => {
+        const next = new Map(prev);
+        const projMap = new Map(next.get(projectId) ?? new Map());
+        projMap.set(dayOffset, minutes);
+        next.set(projectId, projMap);
+        return next;
+      });
+    } catch (e) {
+      setError(errorMessage(e, "Failed to save commitment"));
+    }
+  }
+
+  async function clearCommitment(projectId: number, dayOffset: number) {
+    try {
+      await clearWeeklyPlanCommitment(selectedWeek, projectId, dayOffset);
+      setCommitments((prev) => {
+        const next = new Map(prev);
+        const projMap = new Map(next.get(projectId) ?? new Map());
+        projMap.delete(dayOffset);
+        if (projMap.size === 0) {
+          next.delete(projectId);
+        } else {
+          next.set(projectId, projMap);
+        }
+        return next;
+      });
+    } catch (e) {
+      setError(errorMessage(e, "Failed to clear commitment"));
+    }
+  }
+
+  async function handleCreateTask(title: string) {
+    if (selectedId == null) return;
+    try {
+      await createTask({
+        title,
+        projectId: selectedId,
+        dateScheduled: null,
+        estimatedMinutes: null,
+      });
+      await reloadTasks(selectedId);
+    } catch (e) {
+      setError(errorMessage(e, "Failed to create task"));
+    }
+  }
+
+  async function handleUpdateTaskTitle(id: number, title: string) {
+    const existing = tasks.find((t) => t.id === id);
+    if (!existing) return;
+    try {
+      await updateTask({
+        id,
+        title,
+        projectId: existing.project_id,
+        estimatedMinutes: existing.estimated_minutes,
+        priority: existing.priority,
+        notes: existing.notes,
+        dateScheduled: existing.date_scheduled,
+        dueDate: existing.due_date,
+      });
+      // Optimistic local update — avoids a full refetch flicker.
+      setTasks((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, title } : t))
+      );
+    } catch (e) {
+      setError(errorMessage(e, "Failed to update task"));
+    }
+  }
+
+  async function handleScheduleTask(taskId: number, dateIso: string) {
+    if (selectedId == null) return;
+    const targetOffset = weekDates.indexOf(dateIso);
+    if (targetOffset === -1) return;
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    if (task.date_scheduled === dateIso) return; // no-op self-drop
+
+    // Source: where the task was (null = unscheduled, otherwise a day
+    // ISO that may or may not be in the current week).
+    const fromDate = task.date_scheduled;
+    const fromOffset =
+      fromDate != null ? weekDates.indexOf(fromDate) : -1;
+
+    try {
+      await updateTaskDateScheduled(taskId, dateIso);
+
+      // Optimistic local update — flip date_scheduled in place. The
+      // render-time partition shifts the task between PlanTaskList
+      // (unscheduled) and the day's chip rail.
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId ? { ...t, date_scheduled: dateIso } : t
+        )
+      );
+
+      // Commitment delta — transfer the task's estimate. Dropping a
+      // 45-min task on Tuesday adds 45 to Tuesday's commitment;
+      // dragging it from Tuesday to Wednesday transfers those 45
+      // minutes (Tue -= 45, Wed += 45). Source decrement only fires
+      // when the source day was a tracked day in this week.
+      const estimate = task.estimated_minutes;
+      if (estimate != null && estimate > 0) {
+        if (fromOffset !== -1) {
+          const projMap = commitments.get(selectedId);
+          const sourceCurrent = projMap?.get(fromOffset) ?? 0;
+          const sourceNext = Math.max(0, sourceCurrent - estimate);
+          if (sourceNext === 0) {
+            await clearCommitment(selectedId, fromOffset);
+          } else {
+            await setCommitment(selectedId, fromOffset, sourceNext);
+          }
+        }
+        const projMap = commitments.get(selectedId);
+        const targetCurrent = projMap?.get(targetOffset) ?? 0;
+        const targetNext = Math.min(1440, targetCurrent + estimate);
+        await setCommitment(selectedId, targetOffset, targetNext);
+      }
+    } catch (e) {
+      setError(errorMessage(e, "Failed to schedule task"));
+    }
+  }
+
+  function handleDragStart(event: DragStartEvent) {
+    const data = event.active.data.current as { taskTitle?: string } | undefined;
+    setDragTaskTitle(data?.taskTitle ?? "Task");
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    setDragTaskTitle(null);
+    const { active, over } = event;
+    if (!over) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    if (!activeId.startsWith(PLAN_TASK_DRAG_PREFIX)) return;
+    if (!overId.startsWith(PLAN_DAY_DROP_PREFIX)) return;
+    const taskId = Number(activeId.slice(PLAN_TASK_DRAG_PREFIX.length));
+    const dateIso = overId.slice(PLAN_DAY_DROP_PREFIX.length);
+    if (Number.isNaN(taskId)) return;
+    handleScheduleTask(taskId, dateIso);
+  }
+
+  async function handleDeleteTask(id: number) {
+    try {
+      await deleteTask(id);
+      setTasks((prev) => prev.filter((t) => t.id !== id));
+    } catch (e) {
+      setError(errorMessage(e, "Failed to delete task"));
+    }
+  }
+
+  const selected = projects.find((p) => p.id === selectedId) ?? null;
+  const selectedStatus =
+    selectedId != null ? statuses.get(selectedId) ?? null : null;
+  const selectedCommitments =
+    selectedId != null
+      ? commitments.get(selectedId) ?? new Map<number, number>()
+      : new Map<number, number>();
+  const allReviewed =
+    !loading &&
+    projects.length > 0 &&
+    projects.every((p) => statuses.has(p.id));
+
+  // Partition the selected project's tasks: anything with date_scheduled
+  // = null goes into the panel's task list (week-level intent);
+  // anything scheduled to a date in this week becomes a chip under the
+  // matching day button. Anything scheduled outside this week is
+  // ignored here — it'll show in the Schedule tab.
+  const unscheduledTasks = tasks.filter((t) => t.date_scheduled === null);
+  const scheduledTasksByDate = new Map<string, Task[]>();
+  for (const date of weekDates) {
+    scheduledTasksByDate.set(date, []);
+  }
+  for (const t of tasks) {
+    if (t.date_scheduled && scheduledTasksByDate.has(t.date_scheduled)) {
+      scheduledTasksByDate.get(t.date_scheduled)!.push(t);
+    }
+  }
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0 plan-ambient-bg">
+      <ErrorBanner error={error} onDismiss={() => setError(null)} />
+
+      {/* Plan-tab week header — quieter than Schedule's hero bar. The
+          Friday banner can advance selectedWeek, so the user always
+          needs a way to see (and undo) where they are. */}
+      <div className="px-7 py-3 flex items-center gap-3 border-b border-line-hairline flex-shrink-0">
+        <button
+          onClick={() => changeWeek(-1)}
+          className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors"
+          title="Previous week"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10 4l-4 4 4 4" />
+          </svg>
+        </button>
+        <button
+          onClick={() => changeWeek(1)}
+          className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors"
+          title="Next week"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 4l4 4-4 4" />
+          </svg>
+        </button>
+        <span className="text-[13px] font-medium text-fg">
+          {formatWeekLabel(selectedWeek)}
+        </span>
+        {isThisWeek ? (
+          <span className="text-[10px] uppercase tracking-[0.06em] text-fg-faded">
+            this week
+          </span>
+        ) : (
+          <button
+            onClick={() => setSelectedWeek(mondayOfWeek())}
+            className="text-[11px] text-accent-orange-soft-fg hover:text-accent-orange cursor-pointer"
+          >
+            Jump to this week
+          </button>
+        )}
+      </div>
+
+      <DndContext
+        sensors={dndSensors}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+      <div className="flex flex-1 min-h-0">
+        <PlanProjectRail
+          projects={projects}
+          statuses={statuses}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          loading={loading}
+        />
+        <PlanProjectPanel
+          project={selected}
+          status={selectedStatus}
+          selectedCommitments={selectedCommitments}
+          allCommitments={commitments}
+          allProjects={projects}
+          allStatuses={statuses}
+          weekDates={weekDates}
+          tasks={unscheduledTasks}
+          scheduledTasksByDate={scheduledTasksByDate}
+          allReviewed={allReviewed}
+          hasProjects={projects.length > 0}
+          loading={loading}
+          toggleSignal={toggleSignal}
+          onSelectProject={setSelectedId}
+          onDeselect={() => setSelectedId(null)}
+          onMarkPlanned={(id) => markStatus(id, "planned")}
+          onMarkSkipped={(id) => markStatus(id, "skipped")}
+          onMarkUnplanned={(id) => clearStatus(id)}
+          onSetCommitment={setCommitment}
+          onClearCommitment={clearCommitment}
+          onCreateTask={handleCreateTask}
+          onUpdateTaskTitle={handleUpdateTaskTitle}
+          onDeleteTask={handleDeleteTask}
+        />
+      </div>
+
+      <DragOverlay dropAnimation={null} modifiers={[snapCenterToCursor]}>
+        {dragTaskTitle && (
+          <div
+            className="bg-elevated border border-accent-blue/40 rounded-md px-3 py-1.5 text-[12px] text-fg max-w-[240px] truncate opacity-95"
+            style={{ boxShadow: "var(--shadow-card)" }}
+          >
+            {dragTaskTitle}
+          </div>
+        )}
+      </DragOverlay>
+      </DndContext>
+    </div>
+  );
+}

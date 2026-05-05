@@ -374,6 +374,38 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 17,
+            description: "weekly planning tab: per-(week,project,day) commitments + per-(week,project) review status",
+            // Additive only — two new tables, no UPDATE/DELETE on existing
+            // data. CHECK constraints enforce Mon–Fri (day_offset 0..4),
+            // valid status enum, and non-negative minutes at the DB layer.
+            // ON DELETE CASCADE keeps both tables in sync when a project is
+            // deleted. See docs/2026-05-05-weekly-planning-plan.md for the
+            // approved plan and Verse review notes.
+            sql: "
+                CREATE TABLE IF NOT EXISTS weekly_plan_commitments (
+                    week_start_date TEXT NOT NULL,
+                    project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    day_offset      INTEGER NOT NULL CHECK (day_offset BETWEEN 0 AND 4),
+                    -- 1440 = 24h cap. The Plan tab's H:MM input format is
+                    -- implicitly sub-day; this CHECK guards against typo /
+                    -- stepper bugs landing absurd values that would later
+                    -- need a v18 migration to re-constrain.
+                    minutes         INTEGER NOT NULL CHECK (minutes >= 0 AND minutes <= 1440),
+                    PRIMARY KEY (week_start_date, project_id, day_offset)
+                );
+
+                CREATE TABLE IF NOT EXISTS weekly_plan_project_status (
+                    week_start_date TEXT NOT NULL,
+                    project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    status          TEXT NOT NULL CHECK (status IN ('planned', 'skipped')),
+                    reviewed_at     TEXT NOT NULL DEFAULT (datetime('now')),
+                    PRIMARY KEY (week_start_date, project_id)
+                );
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

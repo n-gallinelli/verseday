@@ -1,4 +1,5 @@
 import { getDb } from "./database";
+import { todayString } from "../utils/dates";
 import type { Project, Task, DailyPlan, TimeEntry, WeeklyPlan, WeeklyShutdown, Link } from "../types";
 
 export const PRESET_COLORS = [
@@ -382,9 +383,24 @@ export async function updateTaskStatus(
   // so the weekly shutdown's wins-by-day groups by the day the user checked
   // the box (independent of date_scheduled).
   if (status === "done") {
+    // Future-scheduled tasks marked done get snapped to today —
+    // completing it today should make it appear under today's column,
+    // not stay floating in the future. Past/today dates are left alone
+    // (those reflect the planned/actual day correctly already). The
+    // local-date helper imported at the top of this file uses the
+    // user's TZ, matching how date_scheduled is written everywhere
+    // else in the codebase.
     await db.execute(
-      "UPDATE tasks SET status = $1, completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = $2",
-      [status, id]
+      `UPDATE tasks
+       SET status = $1,
+           completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+           date_scheduled = CASE
+             WHEN date_scheduled IS NOT NULL AND date_scheduled > $3
+               THEN $3
+             ELSE date_scheduled
+           END
+       WHERE id = $2`,
+      [status, id, todayString()]
     );
   } else {
     await db.execute(
@@ -679,6 +695,60 @@ export async function getWorkedMinutesForWeek(
     map.set(row.date_scheduled, row.total);
   }
   return map;
+}
+
+// Per-day, per-project worked minutes for a week. Used by the weekly
+// shutdown bar chart to show "where effort went" each day, segmented
+// by objective. Tasks without a project are bucketed under projectId
+// = -1 ("Unassigned"). Same date_scheduled grouping convention as
+// getWorkedMinutesForWeek above.
+export async function getWorkedMinutesPerProjectPerDay(
+  startDate: string,
+  endDate: string
+): Promise<Map<string, Map<number, number>>> {
+  const db = await getDb();
+  const rows: { date_scheduled: string; project_id: number | null; total: number }[] =
+    await db.select(
+      `SELECT t.date_scheduled, t.project_id, COALESCE(SUM(
+        (julianday(COALESCE(te.end_time, datetime('now'))) - julianday(te.start_time)) * 1440
+        - COALESCE(te.break_seconds, 0) / 60.0
+      ), 0) as total
+      FROM time_entries te
+      JOIN tasks t ON te.task_id = t.id
+      WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL
+      GROUP BY t.date_scheduled, t.project_id`,
+      [startDate, endDate]
+    );
+  const out = new Map<string, Map<number, number>>();
+  for (const row of rows) {
+    let inner = out.get(row.date_scheduled);
+    if (!inner) {
+      inner = new Map();
+      out.set(row.date_scheduled, inner);
+    }
+    inner.set(row.project_id ?? -1, row.total);
+  }
+  return out;
+}
+
+// Returns true if the user has started planning the given week —
+// either committed time to any project (weekly_plan_commitments has
+// rows) or marked any project planned/skipped (weekly_plan_project_status
+// has rows). Used by Weekly Shutdown to decide whether to prompt the
+// user to plan next week before completing the shutdown.
+export async function hasWeekBeenPlanned(weekStartDate: string): Promise<boolean> {
+  validateWeekDate(weekStartDate);
+  const db = await getDb();
+  const commitRows: { n: number }[] = await db.select(
+    "SELECT COUNT(*) AS n FROM weekly_plan_commitments WHERE week_start_date = $1",
+    [weekStartDate]
+  );
+  if ((commitRows[0]?.n ?? 0) > 0) return true;
+  const statusRows: { n: number }[] = await db.select(
+    "SELECT COUNT(*) AS n FROM weekly_plan_project_status WHERE week_start_date = $1",
+    [weekStartDate]
+  );
+  return (statusRows[0]?.n ?? 0) > 0;
 }
 
 export async function updateTaskDateScheduled(
@@ -1101,6 +1171,127 @@ export async function getPlannedWeeksForProject(
     [projectId]
   );
   return rows.map((r) => r.week_start_date);
+}
+
+// ── Weekly Planning (Plan tab) ────────────────────────────────────────────────
+// Per-(week, project, day_offset) minimum-time commitments and per-(week,
+// project) review status. See docs/2026-05-05-weekly-planning-plan.md.
+
+export type WeeklyPlanProjectStatus = "planned" | "skipped";
+
+const VALID_PLAN_STATUSES: WeeklyPlanProjectStatus[] = ["planned", "skipped"];
+
+function validateDayOffset(day: number): void {
+  if (!Number.isInteger(day) || day < 0 || day > 4) {
+    throw new Error(`Invalid day_offset: ${day} (must be 0..4)`);
+  }
+}
+
+function validatePlanStatus(status: string): void {
+  if (!VALID_PLAN_STATUSES.includes(status as WeeklyPlanProjectStatus)) {
+    throw new Error(`Invalid plan status: ${status}`);
+  }
+}
+
+export async function getWeeklyPlanCommitments(
+  weekStartDate: string
+): Promise<Map<number, Map<number, number>>> {
+  validateWeekDate(weekStartDate);
+  const db = await getDb();
+  const rows: { project_id: number; day_offset: number; minutes: number }[] =
+    await db.select(
+      "SELECT project_id, day_offset, minutes FROM weekly_plan_commitments WHERE week_start_date = $1",
+      [weekStartDate]
+    );
+  const out = new Map<number, Map<number, number>>();
+  for (const row of rows) {
+    let inner = out.get(row.project_id);
+    if (!inner) {
+      inner = new Map<number, number>();
+      out.set(row.project_id, inner);
+    }
+    inner.set(row.day_offset, row.minutes);
+  }
+  return out;
+}
+
+export async function setWeeklyPlanCommitment(
+  weekStartDate: string,
+  projectId: number,
+  dayOffset: number,
+  minutes: number
+): Promise<void> {
+  validateWeekDate(weekStartDate);
+  validateDayOffset(dayOffset);
+  if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) {
+    throw new Error(`Invalid minutes: ${minutes} (must be 0..1440)`);
+  }
+  const db = await getDb();
+  await db.execute(
+    `INSERT INTO weekly_plan_commitments (week_start_date, project_id, day_offset, minutes)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT(week_start_date, project_id, day_offset) DO UPDATE SET minutes = $4`,
+    [weekStartDate, projectId, dayOffset, minutes]
+  );
+}
+
+export async function clearWeeklyPlanCommitment(
+  weekStartDate: string,
+  projectId: number,
+  dayOffset: number
+): Promise<void> {
+  validateWeekDate(weekStartDate);
+  validateDayOffset(dayOffset);
+  const db = await getDb();
+  await db.execute(
+    "DELETE FROM weekly_plan_commitments WHERE week_start_date = $1 AND project_id = $2 AND day_offset = $3",
+    [weekStartDate, projectId, dayOffset]
+  );
+}
+
+export async function getWeeklyPlanProjectStatuses(
+  weekStartDate: string
+): Promise<Map<number, WeeklyPlanProjectStatus>> {
+  validateWeekDate(weekStartDate);
+  const db = await getDb();
+  const rows: { project_id: number; status: WeeklyPlanProjectStatus }[] =
+    await db.select(
+      "SELECT project_id, status FROM weekly_plan_project_status WHERE week_start_date = $1",
+      [weekStartDate]
+    );
+  const out = new Map<number, WeeklyPlanProjectStatus>();
+  for (const row of rows) {
+    out.set(row.project_id, row.status);
+  }
+  return out;
+}
+
+export async function setWeeklyPlanProjectStatus(
+  weekStartDate: string,
+  projectId: number,
+  status: WeeklyPlanProjectStatus
+): Promise<void> {
+  validateWeekDate(weekStartDate);
+  validatePlanStatus(status);
+  const db = await getDb();
+  await db.execute(
+    `INSERT INTO weekly_plan_project_status (week_start_date, project_id, status, reviewed_at)
+     VALUES ($1, $2, $3, datetime('now'))
+     ON CONFLICT(week_start_date, project_id) DO UPDATE SET status = $3, reviewed_at = datetime('now')`,
+    [weekStartDate, projectId, status]
+  );
+}
+
+export async function clearWeeklyPlanProjectStatus(
+  weekStartDate: string,
+  projectId: number
+): Promise<void> {
+  validateWeekDate(weekStartDate);
+  const db = await getDb();
+  await db.execute(
+    "DELETE FROM weekly_plan_project_status WHERE week_start_date = $1 AND project_id = $2",
+    [weekStartDate, projectId]
+  );
 }
 
 // ── Task Highlights ──────────────────────────────────────────────────────────

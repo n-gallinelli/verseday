@@ -1,12 +1,17 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
   PointerSensor,
+  useDraggable,
+  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
+import { snapCenterToCursor } from "../utils/dnd";
 import {
   SortableContext,
   verticalListSortingStrategy,
@@ -29,6 +34,7 @@ import {
   startTimeEntry,
   completeProject,
   deleteProject,
+  archiveProject,
   getWorkedMinutesForTask,
   getWorkedMinutesForTaskIds,
   setManualWorkedMinutes,
@@ -46,6 +52,16 @@ const MAX_TITLE_LENGTH = 200;
 const MAX_ESTIMATE_MINUTES = 480;
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
+// id prefix for "This week" day-cell droppables. Kept distinct from
+// sortable task ids (which are plain numbers) so handleDragEnd can
+// branch cleanly between schedule-to-day and reorder-within-list.
+const PD_DAY_DROP_PREFIX = "pd-day-";
+// id prefix for tasks rendered inside a day cell (right-rail). They
+// can't share the plain-number sortable id because the same task may
+// also appear in the main task list (left), and dnd-kit requires
+// unique draggable ids.
+const PD_DAY_TASK_PREFIX = "pd-task-";
+
 function getCurrentWeekdayDates(): string[] {
   const today = new Date();
   const day = today.getDay();
@@ -59,6 +75,108 @@ function getCurrentWeekdayDates(): string[] {
     dates.push(d.toISOString().split("T")[0]);
   }
   return dates;
+}
+
+// ─── Color picker — click-to-toggle popover ─────────────────────────────────
+// Replaces the previous group-hover popover, which closed the moment
+// the cursor left the dot's bounding box (the gap to the popover broke
+// the hover chain).
+function ColorPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (color: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapRef} className="relative flex-shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title="Change color"
+        className="w-[14px] h-[14px] rounded-full cursor-pointer ring-2 ring-transparent hover:ring-overlay-pressed transition-all"
+        style={{ backgroundColor: value }}
+      />
+      {open && (
+        <div
+          className="absolute top-full left-0 mt-1 z-20 bg-elevated border border-line-soft rounded-lg p-2 flex gap-1.5 flex-wrap w-[120px]"
+          style={{ boxShadow: "var(--shadow-card)" }}
+        >
+          {PRESET_COLORS.slice(0, 8).map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => {
+                onChange(c);
+                setOpen(false);
+              }}
+              className="w-4 h-4 rounded-full cursor-pointer border"
+              style={{
+                backgroundColor: c,
+                borderColor:
+                  value === c ? "var(--text-primary)" : "transparent",
+              }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Labeled pill — shared chrome with CalendarPicker + TimeFieldPill ──────
+// Wraps a raw input/select so it visually matches the canonical
+// label-inside pill (uppercase label on top, value below). Two tones:
+//   "default" — bg-input, matches CalendarPicker (used for date).
+//   "time"    — bg-tag-soft, slightly lighter so the time pair reads
+//               as a related-but-distinct group from the date pill.
+// Children render on a transparent background so this wrapper supplies
+// all chrome.
+function LabeledInputPill({
+  label,
+  tone = "default",
+  children,
+}: {
+  label: string;
+  tone?: "default" | "time";
+  children: React.ReactNode;
+}) {
+  const bgClass = tone === "time" ? "bg-tag-soft" : "bg-input";
+  return (
+    <label
+      className={`${bgClass} border-line-hairline hover:border-line-medium focus-within:border-accent-blue rounded-md flex flex-col items-start cursor-text transition-colors w-[100px] flex-shrink-0`}
+      style={{
+        borderWidth: "0.5px",
+        borderStyle: "solid",
+        padding: "4px 10px 4px 10px",
+        gap: "3px",
+      }}
+    >
+      <span className="text-[9px] uppercase tracking-[0.07em] text-fg-faded leading-none">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
 }
 
 // ─── Property row (right rail) ──────────────────────────────────────────────
@@ -162,19 +280,14 @@ function SortableTaskRow({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex flex-row items-start gap-3 p-4 bg-elevated border border-line-soft rounded-lg mb-4 hover:border-line-medium group"
+      {...attributes}
+      {...listeners}
+      className="flex flex-row items-start gap-3 p-4 bg-elevated border border-line-soft rounded-lg mb-4 hover:border-line-medium group cursor-grab active:cursor-grabbing"
     >
-      {/* Drag handle */}
-      <span
-        {...attributes}
-        {...listeners}
-        className="text-[12px] text-fg-disabled cursor-grab active:cursor-grabbing select-none flex-shrink-0 mt-[3px]"
-      >
-        ⠿
-      </span>
-
       {/* Checkbox */}
       <button
+        onMouseDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={() => onToggle(task)}
         title={task.status === "done" ? "Mark as not done" : "Mark complete"}
         className={`w-[18px] h-[18px] rounded-full border-2 flex-shrink-0 cursor-pointer flex items-center justify-center mt-[1px] transition-colors ${
@@ -202,94 +315,124 @@ function SortableTaskRow({
 
       {/* Content wrapper — flex:1, min-width:0 prevents text overflow */}
       <div className="flex-1 min-w-0">
-        <button
-          onClick={() => onOpenDetail(task)}
-          className={`text-[13px] font-normal text-left cursor-pointer hover:underline block w-full leading-[1.5] line-clamp-2 ${
-            task.status === "done"
-              ? "text-fg-faded line-through"
-              : "text-fg"
-          }`}
-        >
-          {task.title}
-        </button>
-
-        {/* Metadata row — date picker + estimate, below title */}
-        <div className="flex items-center gap-2 mt-1.5 text-[11px] text-fg-muted">
-          <CalendarPicker
-            value={task.date_scheduled ?? ""}
-            onChange={(date) => onSetDate(task.id, date)}
-            onClear={() => onSetDate(task.id, "")}
-            placeholder="Set date"
-          />
-          <span
-            className="flex items-center gap-1 tabular-nums"
-            title={`Worked ${formatMinutes(workedMinutes)} of ${task.estimated_minutes ? formatMinutes(task.estimated_minutes) : "no"} estimate`}
-          >
-            <input
-              type="text"
-              value={workedInput}
-              onChange={(e) => setWorkedInput(e.target.value)}
-              onBlur={commitWorked}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  e.currentTarget.blur();
-                } else if (e.key === "Escape") {
-                  setWorkedInput(workedMinutes > 0 ? formatMinutes(workedMinutes) : "");
-                  e.currentTarget.blur();
-                }
-              }}
-              onFocus={(e) => e.currentTarget.select()}
-              placeholder="0m"
-              title="Click to edit time worked"
-              className="bg-input-hover border border-transparent hover:bg-overlay-pressed focus:bg-elevated focus:border-accent-blue rounded-md px-2.5 text-[11px] text-fg-secondary placeholder:text-fg-muted tabular-nums w-[60px] h-[24px] leading-none outline-none cursor-text transition-colors"
-            />
-            <span className="text-fg-muted">/</span>
-            <select
-              value={task.estimated_minutes ?? ""}
-              onChange={(e) => {
-                const v = e.target.value;
-                onSetEstimate(task.id, v ? parseInt(v) : null);
-              }}
-              className="bg-input-hover hover:bg-overlay-pressed rounded-md px-2.5 text-[11px] text-fg-secondary cursor-pointer outline-none h-[24px] leading-none transition-colors"
-              title="Estimated time"
-            >
-              <option value="">— est</option>
-              <option value="15">15m</option>
-              <option value="30">30m</option>
-              <option value="45">45m</option>
-              <option value="60">1h</option>
-              <option value="90">1h 30m</option>
-              <option value="120">2h</option>
-              <option value="180">3h</option>
-              <option value="240">4h</option>
-            </select>
-          </span>
-        </div>
-      </div>
-
-      {/* Actions (visible on hover) */}
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-        {task.status !== "done" && (
+        {/* Title row — actions sit here (right-aligned via ml-auto) so
+            they always live at the title's vertical level, never
+            overlapping the metadata pills row below. */}
+        <div className="flex items-start gap-3">
           <button
-            onClick={() => onStart(task)}
-            className="w-6 h-6 rounded-full bg-accent-blue text-fg-on-accent hover:bg-accent-blue-hover cursor-pointer flex items-center justify-center transition-all duration-200 ease-out hover:shadow-[0_0_0_5px_color-mix(in_srgb,var(--accent-blue)_18%,transparent)]"
-            title="Start focus"
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => onOpenDetail(task)}
+            className={`text-[13px] font-normal text-left cursor-pointer hover:underline flex-1 min-w-0 leading-[1.5] line-clamp-2 ${
+              task.status === "done"
+                ? "text-fg-faded line-through"
+                : "text-fg"
+            }`}
           >
-            <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
-              <path d="M0 0v10l8-5z" />
-            </svg>
+            {task.title}
           </button>
-        )}
-        <button
-          onClick={() => onDelete(task.id)}
-          title="Delete task"
-          className="text-fg-faded p-1 rounded-[5px] cursor-pointer hover:text-accent-destructive hover:bg-accent-destructive/[0.08] transition-colors"
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />
-          </svg>
-        </button>
+
+          {/* Actions — visible on row hover. Anchored to title row, not
+              spanning full row height. */}
+          <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+            {task.status !== "done" && (
+              <button
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => onStart(task)}
+                className="flex items-center gap-1.5 rounded-md border border-accent-blue/50 text-accent-blue-soft-fg px-2.5 py-1 text-[11px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors"
+                title="Start focus"
+              >
+                <svg width="7" height="9" viewBox="0 0 8 10" fill="currentColor">
+                  <path d="M0 0v10l8-5z" />
+                </svg>
+                Start
+              </button>
+            )}
+            <button
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => onDelete(task.id)}
+              title="Delete task"
+              className="text-fg-faded p-1 rounded-[5px] cursor-pointer hover:text-accent-destructive hover:bg-accent-destructive/[0.08] transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Metadata row — date | (worked + estimated). All three pills
+            share the canonical chrome but are visually grouped: date
+            stands alone, worked+estimated cluster as a pair (they're
+            naturally a pair), with a wider gap separating the two
+            categories. */}
+        <div className="flex items-center gap-3 mt-2">
+          <div
+            className="w-[110px] flex-shrink-0"
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <CalendarPicker
+              label="Date"
+              value={task.date_scheduled ?? ""}
+              onChange={(date) => onSetDate(task.id, date)}
+              onClear={() => onSetDate(task.id, "")}
+              placeholder="No date"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <LabeledInputPill label="Worked" tone="time">
+              <input
+                type="text"
+                value={workedInput}
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onChange={(e) => setWorkedInput(e.target.value)}
+                onBlur={commitWorked}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    e.currentTarget.blur();
+                  } else if (e.key === "Escape") {
+                    setWorkedInput(workedMinutes > 0 ? formatMinutes(workedMinutes) : "");
+                    e.currentTarget.blur();
+                  }
+                }}
+                onFocus={(e) => e.currentTarget.select()}
+                placeholder="—"
+                title={`Worked ${formatMinutes(workedMinutes)}`}
+                className="bg-transparent border-none outline-none text-[12px] font-medium leading-[1.2] tabular-nums text-fg placeholder:text-fg-disabled w-full cursor-text"
+              />
+            </LabeledInputPill>
+
+            <LabeledInputPill label="Estimated" tone="time">
+              <select
+                value={task.estimated_minutes ?? ""}
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  onSetEstimate(task.id, v ? parseInt(v) : null);
+                }}
+                title="Estimated time"
+                className="bg-transparent border-none outline-none text-[12px] font-medium leading-[1.2] text-fg w-full cursor-pointer appearance-none -ml-0.5"
+              >
+                <option value="">—</option>
+                <option value="15">15m</option>
+                <option value="30">30m</option>
+                <option value="45">45m</option>
+                <option value="60">1h</option>
+                <option value="90">1h 30m</option>
+                <option value="120">2h</option>
+                <option value="180">3h</option>
+                <option value="240">4h</option>
+              </select>
+            </LabeledInputPill>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -337,6 +480,12 @@ export default function ProjectDetail() {
 
   // Task detail overlay
   const [detailTask, setDetailTask] = useState<Task | null>(null);
+
+  // Title shown in the floating drag chip — set on drag start, cleared
+  // on drag end. Drives the DragOverlay so the user has live visual
+  // feedback (chip following the cursor) instead of only seeing the
+  // result on mouseup.
+  const [activeDragTitle, setActiveDragTitle] = useState<string | null>(null);
 
   // UI state
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
@@ -539,6 +688,16 @@ export default function ProjectDetail() {
     } catch (e) {
       setError(errorMessage(e, "Failed to delete project"));
       setConfirmDeleteProject(false);
+    }
+  }
+
+  async function handleArchive() {
+    if (!selectedProjectId) return;
+    try {
+      await archiveProject(selectedProjectId, true);
+      goBack();
+    } catch (e) {
+      setError(errorMessage(e, "Failed to archive objective"));
     }
   }
 
@@ -770,9 +929,47 @@ export default function ProjectDetail() {
     refreshTasks();
   }
 
+  function handleDragStart(event: DragStartEvent) {
+    const activeId = String(event.active.id);
+    const taskId = activeId.startsWith(PD_DAY_TASK_PREFIX)
+      ? Number(activeId.slice(PD_DAY_TASK_PREFIX.length))
+      : Number(activeId);
+    if (Number.isNaN(taskId)) return;
+    const task = tasks.find((t) => t.id === taskId);
+    setActiveDragTitle(task?.title ?? null);
+  }
+
   async function handleDragEnd(event: DragEndEvent) {
+    setActiveDragTitle(null);
     const { active, over } = event;
-    if (!over || active.id === over.id) return;
+    if (!over) return;
+
+    // Drop onto a "This week" day cell → schedule the task to that day.
+    // Source can be the main sortable list (active.id is plain task
+    // number) or a day-cell chip (active.id is "pd-task-{n}").
+    const overId = String(over.id);
+    const activeId = String(active.id);
+    if (overId.startsWith(PD_DAY_DROP_PREFIX)) {
+      const dateIso = overId.slice(PD_DAY_DROP_PREFIX.length);
+      const taskId = activeId.startsWith(PD_DAY_TASK_PREFIX)
+        ? Number(activeId.slice(PD_DAY_TASK_PREFIX.length))
+        : Number(activeId);
+      if (Number.isNaN(taskId)) return;
+      try {
+        await updateTaskDateScheduled(taskId, dateIso);
+        refreshTasks();
+      } catch (e) {
+        setError(errorMessage(e, "Failed to schedule task"));
+      }
+      return;
+    }
+
+    // Day-cell chips can't reorder the main task list — bail before
+    // the sortable lookup below (their ids aren't in `tasks`).
+    if (activeId.startsWith(PD_DAY_TASK_PREFIX)) return;
+
+    // Otherwise: sortable reorder within the task list.
+    if (active.id === over.id) return;
     const oldIndex = tasks.findIndex((t) => t.id === active.id);
     const newIndex = tasks.findIndex((t) => t.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
@@ -817,23 +1014,29 @@ export default function ProjectDetail() {
   const weekDates = getCurrentWeekdayDates();
 
   return (
-    <div className="flex flex-1 overflow-hidden flex-col h-full max-w-[1400px] mx-auto w-full min-h-[700px]">
+    <div className="relative flex flex-1 overflow-hidden flex-col h-full max-w-[1400px] mx-auto w-full">
         <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
-        {/* Undo delete banner */}
+        {/* Undo delete banner — absolute overlay so it doesn't push the
+            modal's content down (which was clipping the bottom day
+            strip). Slides in from the top, auto-dismisses with the
+            existing pendingDelete timeout. */}
         {pendingDelete && (
           <div
-            className="flex items-center gap-3 px-8 py-2 bg-banner text-[12px] flex-shrink-0"
-            style={{ color: "var(--text-banner)" }}
+            className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-4 px-4 py-2 rounded-full text-[12px] max-w-[520px] min-w-[320px] animate-slide-up"
+            style={{
+              background: "var(--bg-banner)",
+              color: "var(--text-banner)",
+              boxShadow: "var(--shadow-card)",
+            }}
           >
-            <span className="flex-1">
+            <span className="flex-1 truncate">
               Deleted &ldquo;{pendingDelete.task.title}&rdquo;
             </span>
             <button
               onClick={undoDelete}
-              className="text-accent-blue-soft-fg font-medium cursor-pointer transition-colors"
-              onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-banner)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = ""; }}
+              className="font-semibold cursor-pointer transition-opacity flex-shrink-0 underline underline-offset-[3px] hover:opacity-80"
+              style={{ color: "var(--text-banner)" }}
             >
               Undo
             </button>
@@ -843,26 +1046,13 @@ export default function ProjectDetail() {
         {/* Header strip — hero title row */}
         <div className="px-8 pt-7 pb-5 border-b border-divider flex-shrink-0">
           <div className="flex items-center gap-3">
-            {/* Color picker */}
-            <div className="relative group flex-shrink-0">
-              <div
-                className="w-[14px] h-[14px] rounded-full cursor-pointer ring-2 ring-transparent hover:ring-overlay-pressed transition-all"
-                style={{ backgroundColor: editColor }}
-              />
-              <div className="absolute top-full left-0 mt-1 z-20 bg-elevated border border-line-soft rounded-lg p-2 hidden group-hover:flex gap-1.5 flex-wrap w-[120px]" style={{ boxShadow: "var(--shadow-card)" }}>
-                {PRESET_COLORS.slice(0, 8).map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => updateField("color", c)}
-                    className="w-4 h-4 rounded-full cursor-pointer border"
-                    style={{
-                      backgroundColor: c,
-                      borderColor: editColor === c ? "var(--text-primary)" : "transparent",
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
+            {/* Color picker — click-to-toggle so the popover survives
+                the cursor's trip across the gap from the dot. Closes
+                on outside click or color selection. */}
+            <ColorPicker
+              value={editColor}
+              onChange={(c) => updateField("color", c)}
+            />
 
             {/* Editable name — 22px hero; shrinks for longer titles */}
             <textarea
@@ -898,6 +1088,17 @@ export default function ProjectDetail() {
               {project.completed ? "✓ Completed" : "Mark Complete"}
             </button>
             <button
+              onClick={handleArchive}
+              title="Archive objective"
+              className="text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="3" width="12" height="3" rx="0.5" />
+                <path d="M3 6v7a1 1 0 001 1h8a1 1 0 001-1V6" />
+                <path d="M6.5 9h3" />
+              </svg>
+            </button>
+            <button
               onClick={() => setConfirmDeleteProject(true)}
               title="Delete objective"
               className="text-fg-faded hover:text-accent-destructive hover:bg-accent-destructive/[0.08] cursor-pointer flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md transition-colors"
@@ -909,18 +1110,26 @@ export default function ProjectDetail() {
           </div>
         </div>
 
-        {/* Body — split panel */}
+        {/* Body — split panel. DndContext wraps both halves so tasks
+            can be dragged from the list (left) onto "This week" day
+            cells (right). */}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
         <div className="flex flex-1 min-h-0">
           {/* Main: Tasks (work surface) */}
           <div className="flex-[1.2] min-w-0 flex flex-col overflow-hidden">
-            {/* Task input row — prominent, right under the header */}
+            {/* Task input row — slim, right under the header. */}
             <form
               onSubmit={handleAddTask}
-              className="flex items-center gap-2 mx-8 mt-7 mb-5 px-3.5 py-3 border border-line-soft rounded-lg bg-elevated flex-shrink-0"
+              className="flex items-center gap-2 mx-8 mt-5 mb-3 px-3 py-1.5 border border-line-soft rounded-md bg-elevated flex-shrink-0"
             >
               <svg
-                width="14"
-                height="14"
+                width="12"
+                height="12"
                 viewBox="0 0 14 14"
                 fill="none"
                 stroke="var(--text-disabled)"
@@ -935,12 +1144,12 @@ export default function ProjectDetail() {
                 value={newTaskTitle}
                 onChange={(e) => setNewTaskTitle(e.target.value)}
                 maxLength={MAX_TITLE_LENGTH}
-                placeholder="Add a task to this project..."
+                placeholder="Add a task to this objective..."
                 className="flex-1 bg-transparent border-none outline-none text-[13px] text-fg placeholder:text-fg-faded"
               />
               <button
                 type="submit"
-                className="border border-accent-blue/50 text-accent-blue-soft-fg rounded-lg px-3.5 py-1.5 text-[12px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors"
+                className="border border-accent-blue/50 text-accent-blue-soft-fg rounded-md px-3 py-0.5 text-[12px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors"
               >
                 Add
               </button>
@@ -964,12 +1173,7 @@ export default function ProjectDetail() {
             </div>
 
             {/* Task list — scrollable region */}
-            <div className="overflow-y-auto px-8 pb-5 flex-1 min-h-[500px]">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
+            <div className="overflow-y-auto px-8 pb-5 flex-1 min-h-0">
             <SortableContext
               items={tasks.map((t) => t.id)}
               strategy={verticalListSortingStrategy}
@@ -1112,7 +1316,6 @@ export default function ProjectDetail() {
                 })
               )}
             </SortableContext>
-          </DndContext>
         </div>
           </div>
 
@@ -1147,68 +1350,57 @@ export default function ProjectDetail() {
               <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-2">
                 Notes
               </div>
+              {/* Borderless work-surface style — matches TaskDetailOverlay's
+                  notes treatment so the eye lands on the writing, not the
+                  chrome. */}
               <RichTextEditor
                 value={editNotes}
                 onChange={(html) => updateField("notes", html)}
                 placeholder="Add notes..."
-                className="w-full bg-elevated border border-line-hairline rounded-md px-3.5 py-3 text-[13px] text-fg-secondary leading-relaxed min-h-[280px] focus-within:border-accent-blue"
+                className="w-full bg-elevated rounded-md px-1 py-1 text-[13px] text-fg-secondary leading-relaxed min-h-[120px]"
               />
             </div>
 
-            <div>
-              <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-3">
+            {/* This week — emphasized as the operational heart of the
+                rail. Real heading typography (not a tiny uppercase
+                label) and a hairline divider above to set it apart
+                from the dates / notes blocks. */}
+            <div className="pt-5 border-t border-line-hairline">
+              <h3 className="text-[15px] font-medium text-fg mb-3 font-display">
                 This week
-              </div>
+              </h3>
               <div className="grid grid-cols-5 gap-2">
-                {weekDates.map((date, i) => {
-                  const dayTasks = tasks.filter((t) => t.date_scheduled === date);
-                  const hasTasks = dayTasks.length > 0;
-                  return (
-                    <div
-                      key={date}
-                      onClick={() => setQuickAddDate(date)}
-                      title={`Add task for ${DAY_NAMES[i]}`}
-                      className="min-w-0 cursor-pointer rounded-md p-1 -m-1 hover:bg-overlay-hover transition-colors"
-                    >
-                      <div
-                        className="text-[10px] font-medium uppercase tracking-[0.05em] text-center pb-1.5 mb-2 border-b transition-colors"
-                        style={{
-                          color: hasTasks ? editColor : "var(--text-muted)",
-                          borderColor: hasTasks ? `color-mix(in srgb, ${editColor} 25%, transparent)` : "var(--border-soft)",
-                        }}
-                      >
-                        {DAY_NAMES[i]}
-                      </div>
-                      {dayTasks.length === 0 ? (
-                        <div className="text-[10px] text-fg-disabled text-center">—</div>
-                      ) : (
-                        <div className="space-y-1">
-                          {dayTasks.map((task) => (
-                            <button
-                              key={task.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDetailTask(task);
-                              }}
-                              title={task.title}
-                              className={`block w-full text-left text-[11px] hover:text-fg cursor-pointer truncate leading-snug ${
-                                task.status === "done"
-                                  ? "text-fg-faded line-through"
-                                  : "text-fg-secondary"
-                              }`}
-                            >
-                              {task.title}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                {weekDates.map((date, i) => (
+                  <PdDayCell
+                    key={date}
+                    date={date}
+                    dayName={DAY_NAMES[i]}
+                    dayTasks={tasks.filter((t) => t.date_scheduled === date)}
+                    accentColor={editColor}
+                    onQuickAdd={() => setQuickAddDate(date)}
+                    onOpenTask={setDetailTask}
+                  />
+                ))}
               </div>
             </div>
           </div>
         </div>
+
+        {/* Floating chip that follows the cursor while dragging — same
+            pattern used in PlanTab. Drop animation disabled so it
+            disappears cleanly on release rather than easing back to
+            the source. */}
+        <DragOverlay dropAnimation={null} modifiers={[snapCenterToCursor]}>
+          {activeDragTitle && (
+            <div
+              className="px-3 py-1.5 rounded-md bg-elevated border border-accent-blue/40 text-[12px] text-fg max-w-[280px] truncate"
+              style={{ boxShadow: "var(--shadow-card)" }}
+            >
+              {activeDragTitle}
+            </div>
+          )}
+        </DragOverlay>
+        </DndContext>
 
         {/* Footer */}
         <div className="flex items-center gap-2 px-8 py-3.5 border-t border-line-hairline flex-shrink-0">
@@ -1258,6 +1450,110 @@ export default function ProjectDetail() {
           onSubmit={(title) => handleQuickAddForDate(quickAddDate, title)}
         />
       )}
+    </div>
+  );
+}
+
+// Droppable day cell in the right-rail "This week" grid. Same visual
+// treatment as before; extracted so we can hook useDroppable cleanly.
+// On hover during a drag, accents the cell's border so the user knows
+// it's a valid drop target.
+function PdDayCell({
+  date,
+  dayName,
+  dayTasks,
+  accentColor,
+  onQuickAdd,
+  onOpenTask,
+}: {
+  date: string;
+  dayName: string;
+  dayTasks: Task[];
+  accentColor: string;
+  onQuickAdd: () => void;
+  onOpenTask: (task: Task) => void;
+}) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: `${PD_DAY_DROP_PREFIX}${date}`,
+    data: { date },
+  });
+  const hasTasks = dayTasks.length > 0;
+
+  return (
+    <div
+      ref={setNodeRef}
+      onClick={onQuickAdd}
+      title={`Add task for ${dayName}`}
+      className={`min-w-0 cursor-pointer rounded-lg p-2 min-h-[88px] flex flex-col transition-colors border ${
+        isOver
+          ? "bg-accent-blue-soft border-accent-blue/40"
+          : hasTasks
+            ? "bg-elevated border-line-hairline hover:border-line-medium"
+            : "bg-transparent border-line-hairline border-dashed hover:bg-overlay-hover hover:border-line-medium"
+      }`}
+    >
+      <div
+        className="text-[11px] font-medium uppercase tracking-[0.06em] text-center pb-1.5 mb-1.5 border-b transition-colors"
+        style={{
+          color: hasTasks ? accentColor : "var(--text-muted)",
+          borderColor: hasTasks
+            ? `color-mix(in srgb, ${accentColor} 25%, transparent)`
+            : "var(--border-soft)",
+        }}
+      >
+        {dayName}
+      </div>
+      {dayTasks.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-[10px] text-fg-disabled">—</div>
+      ) : (
+        <div className="space-y-1 flex-1">
+          {dayTasks.map((task) => (
+            <PdDayTaskChip
+              key={task.id}
+              task={task}
+              onOpenTask={onOpenTask}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Draggable task chip inside a day cell. Uses a prefixed id so it
+// doesn't collide with the main task list's plain-number sortable ids
+// (the same task can appear in both views). Click opens detail; drag
+// (after PointerSensor's 5px activation distance) lets the user move
+// the task to another day's drop target.
+function PdDayTaskChip({
+  task,
+  onOpenTask,
+}: {
+  task: Task;
+  onOpenTask: (task: Task) => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `${PD_DAY_TASK_PREFIX}${task.id}`,
+    data: { taskId: task.id },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpenTask(task);
+      }}
+      title={task.title}
+      className={`block w-full text-left text-[11px] hover:text-fg cursor-grab active:cursor-grabbing truncate leading-snug touch-none ${
+        task.status === "done"
+          ? "text-fg-faded line-through"
+          : "text-fg-secondary"
+      } ${isDragging ? "opacity-30" : ""}`}
+    >
+      {task.title}
     </div>
   );
 }

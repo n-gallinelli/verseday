@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import type { Project } from "../types";
 
 interface ProjectPickerProps {
-  value: string; // project id as string, or "" for No project
+  value: string; // project id as string, or "" for —
   projects: Project[];
   onChange: (value: string) => void;
 }
@@ -73,7 +73,7 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
             </span>
           </>
         ) : (
-          <span className="flex-1 text-[13px] font-normal text-fg-muted">No project</span>
+          <span className="flex-1 text-[13px] font-normal text-fg-muted">—</span>
         )}
         <svg
           width="10"
@@ -111,7 +111,7 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
                 : "hover:bg-overlay-hover text-fg-secondary"
             }`}
           >
-            <span className="flex-1 truncate">No project</span>
+            <span className="flex-1 truncate">—</span>
           </button>
           {projects.map((p) => {
             const isSelected = String(p.id) === value;

@@ -135,6 +135,30 @@ function MainApp() {
       const meta = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
 
+      // ── Arrow-key sidebar toggle: handle (or skip) FIRST so no
+      // downstream logic can intercept arrow keys on focus screens or
+      // inside modals. Arrow keys belong to the focused screen's own
+      // navigation there (FocusLanding cycles tasks; project_detail
+      // is a modal). Inputs are handled by the global isInputFocused
+      // guard below for the rest of the bare keys, but arrow keys on
+      // focus screens must do nothing app-level regardless.
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        const p = useAppStore.getState().currentPage;
+        if (
+          p === "focus" ||
+          p === "focus_landing" ||
+          p === "project_detail"
+        ) {
+          return;
+        }
+        if (isInputFocused() || meta || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        useAppStore
+          .getState()
+          .setSidebarCollapsed(e.key === "ArrowLeft");
+        return;
+      }
+
       // ── Meta-modifier shortcuts ────────────────────────────────────
       // Cmd+1-6: page navigation (preserved alongside the bare-key set)
       if (meta && !e.shiftKey && PAGE_SHORTCUTS[e.key]) {
@@ -182,6 +206,7 @@ function MainApp() {
       if (isInputFocused() || meta || e.shiftKey || e.altKey) return;
 
       const page = useAppStore.getState().currentPage;
+
 
       // Space on focus mode: toggle pause.
       if (e.key === " " && page === "focus") {

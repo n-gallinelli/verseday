@@ -444,14 +444,17 @@ export default function DailyShutdown() {
                   value={mood}
                   onChange={handleMoodChange}
                   tintColor="var(--mood-tint-daily)"
+                  size={22}
                 />
               </section>
 
-              {/* Reflection — three fields */}
-              <section className="space-y-3">
+              {/* Reflection — three fields. Borderless, transparent
+                  background so prompts read as text on the page rather
+                  than as nested cards. Subtle focus indicator only. */}
+              <section className="space-y-5">
                 {REFLECTION_FIELDS.map((field) => (
                   <div key={field.key}>
-                    <label className="text-[13px] font-medium text-fg-secondary mb-1.5 block">
+                    <label className="text-[13px] font-medium text-fg-secondary mb-1 block">
                       {field.label}
                     </label>
                     <textarea
@@ -459,7 +462,7 @@ export default function DailyShutdown() {
                       onChange={(e) => handleReflectionFieldChange(field.key, e.target.value)}
                       placeholder={field.placeholder}
                       rows={2}
-                      className="w-full bg-elevated/60 rounded-md px-3 py-2 text-[13px] text-fg-secondary resize-none leading-relaxed border border-transparent focus:outline-none focus:border-accent-blue placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-faded transition-colors"
+                      className="w-full bg-transparent rounded-none px-0 py-1 text-[13px] text-fg-secondary resize-none leading-relaxed border-0 outline-none placeholder:text-[13px] placeholder:font-normal placeholder:text-fg-disabled focus:placeholder:text-fg-faded transition-colors"
                     />
                   </div>
                 ))}

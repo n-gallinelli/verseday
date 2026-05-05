@@ -2,12 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
 import { getProjects, createTask } from "../db/queries";
+import { todayString } from "../utils/dates";
 import type { Project } from "../types";
-
-function todayString(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 const ESTIMATE_PRESETS = [
   { label: "15m", value: 15 },

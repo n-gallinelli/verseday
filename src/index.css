@@ -138,6 +138,9 @@
   --focus-ambient-cool: #f0f2f5;
   --focus-ambient-neutral: #f5f3ee;
   --focus-ambient-warm: #f5f0e6;
+
+  /* — Plan tab — */
+  --plan-ambient-warm: #f5e6c5;
   --focus-ring-track: rgba(0, 0, 0, 0.05);
   --focus-ring-progress: #4a9e6e;
   --focus-glow-base: #7B9ED9;
@@ -286,6 +289,9 @@
     --focus-ambient-cool: #161921;
     --focus-ambient-neutral: #16161a;
     --focus-ambient-warm: #1c1916;
+
+    /* — Plan tab — */
+    --plan-ambient-warm: #2a2218;
     --focus-ring-track: rgba(255, 255, 255, 0.06);
     --focus-ring-progress: #52a981;
     --focus-glow-base: #7396cc;
@@ -549,12 +555,69 @@ select {
 /* ── Focus Timer Pulse ─────────────────────────────────── */
 
 @keyframes timer-pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.92; }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.88; transform: scale(1.018); }
+}
+
+/* Focus tunnel-in — plays once when FocusMode mounts after the user
+   hits "Start focusing." World rushes outward + content scales up from
+   center. Vignette is a separate overlay layer (see .focus-vignette
+   below) so its z-index can sit above the ambient bg but below the
+   timer/title. */
+@keyframes focus-tunnel-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.88);
+    filter: blur(2px);
+  }
+  60% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.animate-focus-tunnel-in {
+  animation: focus-tunnel-in 500ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* Vignette — a radial gradient overlay that grows in (closes from the
+   edges) during the tunnel-in, then settles to a soft resting darken
+   so the focus screen reads as quieter than the surrounding app. */
+@keyframes focus-vignette-in {
+  0%   { opacity: 0; }
+  60%  { opacity: 1; }
+  100% { opacity: 0.7; }
+}
+
+.focus-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 55%,
+    color-mix(in srgb, var(--bg-base) 40%, #000 0%) 100%
+  );
+  animation: focus-vignette-in 500ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-focus-tunnel-in,
+  .focus-vignette {
+    animation: none;
+  }
+  .focus-vignette {
+    opacity: 0.4;
+  }
 }
 
 .timer-circle-ring {
-  animation: timer-pulse 8s ease-in-out infinite;
+  animation: timer-pulse 4s ease-in-out infinite;
   transform-origin: center;
 }
 
@@ -623,6 +686,35 @@ select {
 
 .animate-fade-in {
   animation: fadeIn 100ms ease-out both;
+}
+
+/* Slower fade for tab/mode switches — the Weekly Planner Schedule↔Plan
+   crossfade uses this to make the transition feel like a mode change,
+   not just a content swap. */
+.animate-tab-fade {
+  animation: fadeIn 200ms ease-out both;
+}
+
+/* Plan tab body — a hint of warm tone over the base surface, so
+   switching from Schedule reads as "different headspace" without going
+   loud. Layered, not opaque, so design tokens still show through. */
+.plan-ambient-bg {
+  background-color: var(--bg-base);
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--plan-ambient-warm) 8%, transparent),
+    color-mix(in srgb, var(--plan-ambient-warm) 4%, transparent)
+  );
+}
+
+@media (prefers-color-scheme: dark) {
+  .plan-ambient-bg {
+    background-image: linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--plan-ambient-warm) 25%, transparent),
+      color-mix(in srgb, var(--plan-ambient-warm) 12%, transparent)
+    );
+  }
 }
 
 .animate-scale-in {

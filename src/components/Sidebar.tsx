@@ -3,6 +3,44 @@ import { useAppStore } from "../stores/appStore";
 import DisclosureCaret from "./DisclosureCaret";
 import type { Page } from "../types";
 
+function VerseDayLogo() {
+  return (
+    <svg width="32" height="32" viewBox="0 0 20 20" fill="none">
+      <defs>
+        <linearGradient id="verseday-sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#E8D4F0" />
+          <stop offset="35%" stopColor="#F8D0DC" />
+          <stop offset="70%" stopColor="#FBC9A4" />
+          <stop offset="100%" stopColor="#FCE5A8" />
+        </linearGradient>
+        <linearGradient id="verseday-ocean" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#A8CFE5" />
+          <stop offset="100%" stopColor="#CFE5F0" />
+        </linearGradient>
+        <radialGradient id="verseday-sunglow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#FFD9A0" stopOpacity={0.9} />
+          <stop offset="60%" stopColor="#FFD9A0" stopOpacity={0.35} />
+          <stop offset="100%" stopColor="#FFD9A0" stopOpacity={0} />
+        </radialGradient>
+        <clipPath id="verseday-clip">
+          <circle cx="10" cy="10" r="5.8" />
+        </clipPath>
+      </defs>
+      <g clipPath="url(#verseday-clip)">
+        <rect x="4" y="4" width="12" height="7.7" fill="url(#verseday-sky)" />
+        <circle cx="10" cy="11.05" r="3.9" fill="url(#verseday-sunglow)" />
+        <circle cx="10" cy="11.05" r="1.1" fill="#FFD9A0" />
+        <rect x="4" y="11.7" width="12" height="4.3" fill="url(#verseday-ocean)" />
+        <rect x="4" y="11.66" width="12" height="0.06" fill="#FFFFFF" fillOpacity={0.45} />
+      </g>
+      <path d="M 4.15,4.54 A 8,8 0 0 1 15.85,4.54" stroke="#E89BB1" strokeWidth="1.92" strokeLinecap="round" />
+      <path d="M 15.46,4.15 A 8,8 0 0 1 15.46,15.85" stroke="#F4B58E" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M 15.85,15.46 A 8,8 0 0 1 4.15,15.46" stroke="#A8CFE5" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M 4.54,15.85 A 8,8 0 0 1 4.54,4.15" stroke="#C9B5E0" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 interface NavItem {
   page: Page;
   label: string;
@@ -86,6 +124,13 @@ function FocusIcon() {
   );
 }
 
+const focusItem: NavItem = {
+  page: "focus_landing",
+  label: "Focus",
+  icon: <FocusIcon />,
+  tint: "var(--nav-tint-focus)",
+};
+
 const planningItems: NavItem[] = [
   { page: "daily", label: "Daily Plan", icon: <DailyPlanIcon />, tint: "var(--nav-tint-daily)" },
   { page: "daily_shutdown", label: "Daily Shutdown", icon: <DailyShutdownIcon />, tint: "var(--nav-tint-daily)" },
@@ -154,6 +199,33 @@ function NavSection({
   );
 }
 
+// Compact icon-only version of a nav item for the collapsed rail.
+function RailIconButton({
+  item,
+  isActive,
+  onSelect,
+}: {
+  item: NavItem;
+  isActive: boolean;
+  onSelect: (page: Page) => void;
+}) {
+  return (
+    <button
+      onClick={() => onSelect(item.page)}
+      title={item.label}
+      aria-label={item.label}
+      className={`w-9 h-9 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
+        isActive
+          ? "ring-2 ring-accent-blue ring-offset-2 ring-offset-sidebar"
+          : "hover:opacity-100 opacity-90"
+      }`}
+      style={{ backgroundColor: item.tint }}
+    >
+      {item.icon}
+    </button>
+  );
+}
+
 const SHORTCUTS = [
   { keys: "F", desc: "Focus on hovered task" },
   { keys: "F", desc: "Focus screen" },
@@ -167,105 +239,82 @@ const SHORTCUTS = [
   { keys: "Esc", desc: "Close / blur" },
 ];
 
-function VerseDayLogo() {
-  return (
-    <svg width="32" height="32" viewBox="0 0 20 20" fill="none">
-      <defs>
-        {/* Pastel sunrise sky gradient */}
-        <linearGradient id="verseday-sky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#E8D4F0" />
-          <stop offset="35%" stopColor="#F8D0DC" />
-          <stop offset="70%" stopColor="#FBC9A4" />
-          <stop offset="100%" stopColor="#FCE5A8" />
-        </linearGradient>
-        {/* Pastel ocean gradient */}
-        <linearGradient id="verseday-ocean" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#A8CFE5" />
-          <stop offset="100%" stopColor="#CFE5F0" />
-        </linearGradient>
-        {/* Soft glow around the sun — same color as the sun disc, fading outward */}
-        <radialGradient id="verseday-sunglow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#FFD9A0" stopOpacity={0.9} />
-          <stop offset="60%" stopColor="#FFD9A0" stopOpacity={0.35} />
-          <stop offset="100%" stopColor="#FFD9A0" stopOpacity={0} />
-        </radialGradient>
-        {/* Clip everything to the inside of the segmented ring */}
-        <clipPath id="verseday-clip">
-          <circle cx="10" cy="10" r="5.8" />
-        </clipPath>
-      </defs>
-
-      {/* Sunrise scene clipped inside the segmented ring */}
-      <g clipPath="url(#verseday-clip)">
-        {/* Sky (above horizon at y=11.7) */}
-        <rect x="4" y="4" width="12" height="7.7" fill="url(#verseday-sky)" />
-        {/* Sun glow halo */}
-        <circle cx="10" cy="11.05" r="3.9" fill="url(#verseday-sunglow)" />
-        {/* Sun disc */}
-        <circle cx="10" cy="11.05" r="1.1" fill="#FFD9A0" />
-        {/* Ocean (covers bottom portion + lower part of sun) */}
-        <rect x="4" y="11.7" width="12" height="4.3" fill="url(#verseday-ocean)" />
-        {/* Subtle horizon highlight */}
-        <rect x="4" y="11.66" width="12" height="0.06" fill="#FFFFFF" fillOpacity={0.45} />
-      </g>
-
-      {/* Four 94° segments overlapping by 4° at each junction; later segments are drawn */}
-      {/* on top so each one's round start cap extends back into the previous segment, */}
-      {/* creating the "fits together" interlock. Colors echo the sunset scene inside. */}
-      {/* Segment 1 — sunset pink, ACCENT (top, -137° → -43°): thicker + deeper */}
-      <path
-        d="M 4.15,4.54 A 8,8 0 0 1 15.85,4.54"
-        stroke="#E89BB1"
-        strokeWidth="1.92"
-        strokeLinecap="round"
-      />
-      {/* Segment 2 — sunset peach (right, -47° → 47°) */}
-      <path
-        d="M 15.46,4.15 A 8,8 0 0 1 15.46,15.85"
-        stroke="#F4B58E"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-      {/* Segment 3 — ocean blue (bottom, 43° → 137°) */}
-      <path
-        d="M 15.85,15.46 A 8,8 0 0 1 4.15,15.46"
-        stroke="#A8CFE5"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-      {/* Segment 4 — sky lavender (left, 133° → 227°) */}
-      <path
-        d="M 4.54,15.85 A 8,8 0 0 1 4.54,4.15"
-        stroke="#C9B5E0"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
 export default function Sidebar() {
-  const { currentPage, setPage } = useAppStore();
+  const {
+    currentPage,
+    setPage,
+    sidebarCollapsed,
+    sidebarFocusExpanded,
+    toggleSidebar,
+  } = useAppStore();
   const [showShortcuts, setShowShortcuts] = useState(false);
 
-  // project_detail highlights the Projects nav item
-  const activePage =
-    currentPage === "project_detail" ? "projects" : currentPage === "focus" ? "focus_landing" : currentPage as Page;
+  // Focus pages still default to collapsed (immersive); the user can
+  // expand via the chevron, which sets the ephemeral focus override.
+  const isFocusScreen =
+    currentPage === "focus_landing" || currentPage === "focus";
+  const collapsed = isFocusScreen ? !sidebarFocusExpanded : sidebarCollapsed;
 
-  // Focus screen: collapse the sidebar to a logo-only rail so nav items
-  // don't compete with the current task. The rail itself stays so the user
-  // has a sense of place; Esc returns them to the daily plan via the
-  // FocusLanding keyboard handler. Removing this `if` block reverts to the
-  // full sidebar.
-  if (currentPage === "focus_landing") {
+  function toggleCollapsed() {
+    toggleSidebar();
+  }
+
+  // project_detail highlights the Projects nav item; focus highlights
+  // the Focus nav item.
+  const activePage =
+    currentPage === "project_detail"
+      ? "projects"
+      : currentPage === "focus"
+        ? "focus_landing"
+        : (currentPage as Page);
+
+  if (collapsed) {
     return (
-      <aside className="w-[64px] shrink-0 h-screen bg-sidebar border-r border-line-hairline flex flex-col items-center pt-4">
+      <aside className="w-[64px] shrink-0 h-screen bg-sidebar border-r border-line-hairline flex flex-col items-center pt-4 pb-3">
         <button
           onClick={() => setPage("daily")}
-          className="cursor-pointer opacity-80 hover:opacity-100 transition-opacity"
-          title="Back to Daily Plan"
+          className="cursor-pointer opacity-90 hover:opacity-100 transition-opacity"
+          title="VerseDay — go to Daily Plan"
         >
           <VerseDayLogo />
+        </button>
+
+        <nav className="flex-1 flex flex-col items-center gap-2 mt-5 min-h-0 overflow-y-auto w-full py-1.5">
+          <RailIconButton
+            item={focusItem}
+            isActive={activePage === focusItem.page}
+            onSelect={setPage}
+          />
+          <RailDivider />
+          {planningItems.map((it) => (
+            <RailIconButton
+              key={it.page}
+              item={it}
+              isActive={activePage === it.page}
+              onSelect={setPage}
+            />
+          ))}
+          <RailDivider />
+          {manageItems.map((it) => (
+            <RailIconButton
+              key={it.page}
+              item={it}
+              isActive={activePage === it.page}
+              onSelect={setPage}
+            />
+          ))}
+        </nav>
+
+        {/* Expand chevron — bottom of the rail */}
+        <button
+          onClick={toggleCollapsed}
+          title="Expand sidebar"
+          aria-label="Expand sidebar"
+          className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover transition-colors mt-2"
+        >
+          <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 4l4 3-4 3" />
+          </svg>
         </button>
       </aside>
     );
@@ -276,6 +325,16 @@ export default function Sidebar() {
       <div className="px-4 pb-5 flex items-center gap-3 text-fg-faded">
         <VerseDayLogo />
         <span className="text-[20px] font-semibold text-accent-blue tracking-tight font-display">VerseDay</span>
+        <button
+          onClick={toggleCollapsed}
+          title="Collapse sidebar"
+          aria-label="Collapse sidebar"
+          className="ml-auto w-6 h-6 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover transition-colors"
+        >
+          <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 4l-4 3 4 3" />
+          </svg>
+        </button>
       </div>
       <nav className="flex-1 flex flex-col min-h-0">
         {/* Focus — standalone, above Planning */}
@@ -340,4 +399,8 @@ export default function Sidebar() {
       </div>
     </aside>
   );
+}
+
+function RailDivider() {
+  return <div className="w-6 h-px bg-line-hairline my-1" />;
 }

@@ -128,6 +128,9 @@ export default function FocusMode() {
 
   // PiP mini window
   const pipRef = useRef<WebviewWindow | null>(null);
+  // Set to true when the user clicks the hide-pip icon. Resets when
+  // FocusMode unmounts, so a new focus session gets a fresh pip.
+  const pipHiddenRef = useRef(false);
 
   useEffect(() => {
     if (!focus) return;
@@ -344,6 +347,14 @@ export default function FocusMode() {
       }
       else if (cmd === "noBreak") handleNoBreakRef.current();
       else if (cmd === "skipBreak") handleSkipBreakRef.current();
+      else if (cmd === "hidePip") {
+        // Close the pip and mark as hidden for the rest of this
+        // focus session. The creation effect won't re-run unless the
+        // user starts a new session, so the pip stays gone.
+        pipHiddenRef.current = true;
+        pipRef.current?.close().catch(() => {});
+        pipRef.current = null;
+      }
     }, 200);
     return () => clearInterval(interval);
   }, [elapsed, SHORT_BREAK_MS, CYCLES_BEFORE_LONG_BREAK]);
@@ -489,7 +500,17 @@ export default function FocusMode() {
   const arcOffset = ARC_CIRCUMFERENCE * (1 - progress);
 
   return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center z-50 focus-ambient-bg">
+    <div className="fixed inset-0 flex flex-col items-center justify-center z-50 focus-ambient-bg overflow-hidden">
+      {/* Tunnel-in vignette — closes in from the edges on mount,
+          settles to a soft darken so the focus screen reads as quieter
+          than the rest of the app. Decoration only. */}
+      <div className="focus-vignette" />
+
+      {/* Tunnel-in scale + fade wrapper. Plays once on mount: the
+          surrounding world rushes outward as the timer and title
+          scale up from center. */}
+      <div className="relative z-[1] w-full h-full flex flex-col items-center justify-center animate-focus-tunnel-in">
+
       {/* Top context bar — project name */}
       {project && (
         <div className="absolute top-6 left-0 right-0 flex items-center justify-center gap-1.5">
@@ -502,7 +523,7 @@ export default function FocusMode() {
       )}
 
       {/* Center content */}
-      <div className="relative text-center max-w-[560px] px-8 flex flex-col items-center mt-4">
+      <div className="relative text-center max-w-[760px] px-8 flex flex-col items-center mt-4">
         {/* Task name — hero */}
         <h1 className="text-[28px] font-semibold text-fg mb-3 leading-snug font-display">
           {focus.task.title}
@@ -719,6 +740,7 @@ export default function FocusMode() {
             </button>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

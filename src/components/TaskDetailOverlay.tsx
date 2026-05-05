@@ -681,7 +681,7 @@ export default function TaskDetailOverlay({
 
           {/* Right: Properties rail */}
           <div className="w-[320px] flex-shrink-0 border-l border-line-hairline bg-rail px-6 py-7 overflow-y-auto space-y-6">
-            <PropertyRow label="Project">
+            <PropertyRow label="Objective">
               <ProjectPicker
                 value={projectId}
                 projects={projects}

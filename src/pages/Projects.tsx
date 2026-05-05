@@ -26,7 +26,6 @@ import {
   updateTaskStatus,
   deleteTask,
   archiveProject,
-  completeProject,
   searchTasksByTitle,
   PRESET_COLORS,
 } from "../db/queries";
@@ -85,10 +84,19 @@ export default function Projects() {
   >(new Map());
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterMode>("active");
+  // View mode is persisted so the user's preference sticks across
+  // sessions. Defaults to "cards" — flip to "list" via the toggle to
+  // get the previous row layout (kept in place for easy revert).
+  const [viewMode, setViewMode] = useState<"list" | "cards">(() => {
+    const stored = localStorage.getItem("verseday_objectives_view");
+    return stored === "list" ? "list" : "cards";
+  });
+  useEffect(() => {
+    localStorage.setItem("verseday_objectives_view", viewMode);
+  }, [viewMode]);
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<number>>(new Set());
   const [projectTasks, setProjectTasks] = useState<Map<number, Task[]>>(new Map());
   const [detailTask, setDetailTask] = useState<Task | null>(null);
-  const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [matchingTasks, setMatchingTasks] = useState<Task[]>([]);
   const [archivedUndo, setArchivedUndo] = useState<{ id: number; name: string } | null>(null);
@@ -229,7 +237,7 @@ export default function Projects() {
   ];
 
   return (
-    <div className="flex flex-col h-full bg-base overflow-hidden relative" onClick={() => setMenuOpenId(null)}>
+    <div className="flex flex-col h-full bg-base overflow-hidden relative">
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
       {/* Undo archive banner */}
@@ -275,7 +283,7 @@ export default function Projects() {
         </div>
       </div>
 
-      {/* ── Filter pills with counts ─────────────────────────────────── */}
+      {/* ── Filter pills with counts + view toggle ──────────────────── */}
       <div className="flex items-center gap-1.5 px-6 py-3 flex-shrink-0">
         {FILTERS.map((f) => (
           <button
@@ -293,6 +301,37 @@ export default function Projects() {
             </span>
           </button>
         ))}
+        <div className="ml-auto flex items-center gap-0.5 rounded-md p-0.5 bg-input border border-line-soft">
+          <button
+            onClick={() => setViewMode("list")}
+            title="List view"
+            aria-label="List view"
+            className={`w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors ${
+              viewMode === "list" ? "bg-elevated text-fg" : "text-fg-faded hover:text-fg-secondary"
+            }`}
+          >
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <line x1="2" y1="4" x2="12" y2="4" />
+              <line x1="2" y1="7" x2="12" y2="7" />
+              <line x1="2" y1="10" x2="12" y2="10" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setViewMode("cards")}
+            title="Card view"
+            aria-label="Card view"
+            className={`w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors ${
+              viewMode === "cards" ? "bg-elevated text-fg" : "text-fg-faded hover:text-fg-secondary"
+            }`}
+          >
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3">
+              <rect x="2" y="2" width="4.5" height="4.5" rx="0.5" />
+              <rect x="7.5" y="2" width="4.5" height="4.5" rx="0.5" />
+              <rect x="2" y="7.5" width="4.5" height="4.5" rx="0.5" />
+              <rect x="7.5" y="7.5" width="4.5" height="4.5" rx="0.5" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* ── Project list ──────────────────────────────────────────────── */}
@@ -332,134 +371,214 @@ export default function Projects() {
                       Objectives
                     </span>
                   )}
-                  {filteredProjects.map((project) => {
+                  {viewMode === "cards" ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                      {filteredProjects.map((project) => {
+                        const stats = statsMap.get(project.id) ?? { total: 0, done: 0, lastDate: null };
+                        const isCompleted = !!project.completed;
+                        const dueDate = project.target_date;
+                        const startDate = project.start_date;
+                        const dueSoonOrPast = (() => {
+                          if (!dueDate || isCompleted) return false;
+                          const now = new Date(); now.setHours(0, 0, 0, 0);
+                          const due = new Date(dueDate + "T00:00:00");
+                          const diffDays = Math.ceil((due.getTime() - now.getTime()) / 86400000);
+                          return diffDays <= 7;
+                        })();
+                        const isOverdue = (() => {
+                          if (!dueDate || isCompleted) return false;
+                          const now = new Date(); now.setHours(0, 0, 0, 0);
+                          return new Date(dueDate + "T00:00:00") < now;
+                        })();
+                        return (
+                          <SortableProjectRow key={project.id} id={project.id}>
+                            <div
+                              onClick={() => openProject(project.id)}
+                              className={`bg-elevated rounded-[12px] overflow-hidden cursor-pointer hover:bg-overlay-hover transition-colors flex flex-col h-full ${
+                                isCompleted ? "opacity-55" : ""
+                              }`}
+                              style={{ border: "0.5px solid var(--border-hairline)" }}
+                            >
+                              {/* Color stripe at top */}
+                              <div
+                                className="h-1 w-full"
+                                style={{ backgroundColor: project.color }}
+                              />
+                              <div className="px-4 py-3 flex flex-col flex-1 gap-2">
+                                <div className="flex items-start gap-2">
+                                  {isCompleted && (
+                                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" className="shrink-0 mt-1">
+                                      <path d="M3 8.5l3.5 3.5 6.5-7" />
+                                    </svg>
+                                  )}
+                                  {/* min-h reserves space for up to 3 lines so
+                                      every card is the same height regardless
+                                      of how long the title is. */}
+                                  <h3 className={`flex-1 text-[14px] font-medium leading-snug line-clamp-3 min-h-[63px] ${
+                                    isCompleted ? "text-fg-muted line-through" : "text-fg"
+                                  }`}>
+                                    {project.name}
+                                  </h3>
+                                </div>
+
+                                <div className="flex items-center flex-wrap gap-2 text-[11px] mt-auto">
+                                  {isCompleted && dueDate ? (
+                                    <span className="text-fg-faded">
+                                      Completed {formatDate(dueDate)}
+                                    </span>
+                                  ) : dueDate ? (
+                                    <>
+                                      {dueSoonOrPast ? (
+                                        <span
+                                          className={`px-2 py-[2px] rounded-full font-medium ${
+                                            isOverdue
+                                              ? "text-accent-destructive bg-accent-destructive/[0.10]"
+                                              : "text-accent-orange-soft-fg bg-accent-orange-soft"
+                                          }`}
+                                        >
+                                          Due {formatDate(dueDate)}
+                                        </span>
+                                      ) : (
+                                        <span className={getDueDateColor(dueDate)}>
+                                          Due {formatDate(dueDate)}
+                                        </span>
+                                      )}
+                                      {startDate && (
+                                        <span className="text-fg-faded">
+                                          {formatDate(startDate)} → {formatDate(dueDate)}
+                                        </span>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <span className="text-fg-faded">No due date</span>
+                                  )}
+                                  {stats.total > 0 && (
+                                    <span className="text-fg-faded tabular-nums">
+                                      · {stats.total} {stats.total === 1 ? "task" : "tasks"}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </SortableProjectRow>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                  filteredProjects.map((project) => {
                   const stats = statsMap.get(project.id) ?? { total: 0, done: 0, lastDate: null };
                   const isCompleted = !!project.completed;
                   const dueDate = project.target_date;
                   const isExpanded = expandedProjectIds.has(project.id);
                   const tasks = projectTasks.get(project.id) ?? [];
 
+                  const startDate = project.start_date;
+                  const dueSoonOrPast = (() => {
+                    if (!dueDate || isCompleted) return false;
+                    const now = new Date(); now.setHours(0, 0, 0, 0);
+                    const due = new Date(dueDate + "T00:00:00");
+                    const diffDays = Math.ceil((due.getTime() - now.getTime()) / 86400000);
+                    return diffDays <= 7;
+                  })();
+                  const isOverdue = (() => {
+                    if (!dueDate || isCompleted) return false;
+                    const now = new Date(); now.setHours(0, 0, 0, 0);
+                    return new Date(dueDate + "T00:00:00") < now;
+                  })();
                   return (
                     <SortableProjectRow key={project.id} id={project.id}>
                       <div
                         className={`bg-elevated rounded-[10px] overflow-hidden ${
                           isCompleted ? "opacity-55" : ""
                         }`}
-                        style={{ border: "0.5px solid var(--border-hairline)" }}
+                        style={{
+                          border: "0.5px solid var(--border-hairline)",
+                          borderLeftWidth: dueSoonOrPast ? "3px" : undefined,
+                          borderLeftColor: dueSoonOrPast ? project.color : undefined,
+                        }}
                       >
                         <div className="flex-1 min-w-0">
                           <div
                             onClick={() => openProject(project.id)}
-                            className="group/row px-4 py-[14px] cursor-pointer hover:bg-overlay-hover relative"
+                            className="group/row px-5 py-4 cursor-pointer hover:bg-overlay-hover relative"
                           >
-                            <div className="flex items-center gap-2.5">
-                              <div className="flex-1 min-w-0 flex items-center gap-2">
-                                {/* Project color dot */}
-                                {!isCompleted && (
-                                  <div
-                                    className="w-[8px] h-[8px] rounded-full shrink-0"
-                                    style={{ backgroundColor: project.color }}
-                                  />
-                                )}
-                                {/* Completed checkmark */}
-                                {isCompleted && (
-                                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" className="shrink-0">
-                                    <path d="M3 8.5l3.5 3.5 6.5-7" />
-                                  </svg>
-                                )}
-                                <span className={`truncate [font-size:var(--font-size-primary)] [font-weight:var(--font-weight-primary)] ${
-                                  isCompleted ? "text-fg-muted line-through" : "text-fg"
-                                }`}>
-                                  {project.name}
-                                </span>
+                            <div className="flex items-start gap-3">
+                              <div className="flex-1 min-w-0">
+                                {/* Title row — color dot + name */}
+                                <div className="flex items-center gap-2.5">
+                                  {!isCompleted && (
+                                    <div
+                                      className="w-[10px] h-[10px] rounded-full shrink-0"
+                                      style={{ backgroundColor: project.color }}
+                                    />
+                                  )}
+                                  {isCompleted && (
+                                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" className="shrink-0">
+                                      <path d="M3 8.5l3.5 3.5 6.5-7" />
+                                    </svg>
+                                  )}
+                                  <span className={`text-[15px] font-medium truncate ${
+                                    isCompleted ? "text-fg-muted line-through" : "text-fg"
+                                  }`}>
+                                    {project.name}
+                                  </span>
+                                </div>
+
+                                {/* Subline — due pill + date range, OR
+                                    "No due date · X tasks" fallback */}
+                                <div className="mt-1 ml-[18px] flex items-center gap-2.5 text-[11px]">
+                                  {isCompleted && dueDate ? (
+                                    <span className="text-fg-faded">
+                                      Completed {formatDate(dueDate)}
+                                    </span>
+                                  ) : dueDate ? (
+                                    <>
+                                      {dueSoonOrPast && (
+                                        <span
+                                          className={`px-2 py-[2px] rounded-full font-medium ${
+                                            isOverdue
+                                              ? "text-accent-destructive bg-accent-destructive/[0.10]"
+                                              : "text-accent-orange-soft-fg bg-accent-orange-soft"
+                                          }`}
+                                        >
+                                          Due {formatDate(dueDate)}
+                                        </span>
+                                      )}
+                                      {!dueSoonOrPast && (
+                                        <span className={getDueDateColor(dueDate)}>
+                                          Due {formatDate(dueDate)}
+                                        </span>
+                                      )}
+                                      {startDate && (
+                                        <span className="text-fg-faded">
+                                          {formatDate(startDate)} → {formatDate(dueDate)}
+                                        </span>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <span className="text-fg-faded">
+                                      No due date{stats.total > 0 ? ` · ${stats.total} ${stats.total === 1 ? "task" : "tasks"}` : ""}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
 
-                              {/* Due/Completed date — inline so rows stay one-line */}
-                              {dueDate && !isCompleted && (
-                                <span className={`text-[11px] flex-shrink-0 ${getDueDateColor(dueDate)}`}>
-                                  Due {formatDate(dueDate)}
-                                </span>
-                              )}
-                              {isCompleted && dueDate && (
-                                <span className="text-[11px] text-fg-faded flex-shrink-0">
-                                  Completed {formatDate(dueDate)}
-                                </span>
-                              )}
-
-                              {/* Open tasks toggle */}
-                              {stats.total > 0 && !isCompleted && (
+                              {/* Open tasks button — outlined; toggles
+                                  inline expansion. */}
+                              {!isCompleted && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     toggleProjectExpand(project.id);
                                   }}
-                                  className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] cursor-pointer transition-colors flex-shrink-0 ${
-                                    isExpanded
-                                      ? "bg-accent-blue-soft text-accent-blue-soft-fg"
-                                      : "bg-overlay-hover text-fg-faded hover:bg-overlay-pressed"
-                                  }`}
+                                  className="flex items-center gap-1.5 rounded-md border border-line-soft px-3 py-1.5 text-[12px] text-fg-secondary cursor-pointer hover:border-line-medium hover:bg-overlay-hover transition-colors flex-shrink-0"
                                 >
                                   <span>Open tasks</span>
                                   <DisclosureCaret expanded={isExpanded} size={9} />
                                 </button>
                               )}
-
-                              {/* Quick-action menu */}
-                              <div className="relative flex-shrink-0">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setMenuOpenId(menuOpenId === project.id ? null : project.id);
-                                  }}
-                                  className={`w-7 h-7 flex items-center justify-center rounded-md text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer transition-opacity ${
-                                    menuOpenId === project.id ? "opacity-100" : "opacity-0 group-hover/row:opacity-100"
-                                  }`}
-                                >
-                                  <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-                                    <circle cx="3" cy="7" r="1.2" />
-                                    <circle cx="7" cy="7" r="1.2" />
-                                    <circle cx="11" cy="7" r="1.2" />
-                                  </svg>
-                                </button>
-                                {menuOpenId === project.id && (
-                                  <div
-                                    className="absolute right-0 top-8 z-20 bg-elevated rounded-lg border border-line-soft py-1 min-w-[140px]"
-                                    style={{ boxShadow: "var(--shadow-card)" }}
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <button
-                                      onClick={() => { setMenuOpenId(null); openProject(project.id); }}
-                                      className="w-full text-left px-3 py-1.5 text-[12px] text-fg hover:bg-overlay-hover cursor-pointer"
-                                    >
-                                      Edit
-                                    </button>
-                                    <button
-                                      onClick={async () => {
-                                        setMenuOpenId(null);
-                                        await completeProject(project.id, !isCompleted);
-                                        loadData();
-                                      }}
-                                      className="w-full text-left px-3 py-1.5 text-[12px] text-fg hover:bg-overlay-hover cursor-pointer"
-                                    >
-                                      {isCompleted ? "Mark active" : "Mark complete"}
-                                    </button>
-                                    <button
-                                      onClick={async () => {
-                                        setMenuOpenId(null);
-                                        await archiveProject(project.id, true);
-                                        setArchivedUndo({ id: project.id, name: project.name });
-                                        if (archiveTimerRef.current) clearTimeout(archiveTimerRef.current);
-                                        archiveTimerRef.current = setTimeout(() => setArchivedUndo(null), 5000);
-                                        loadData();
-                                      }}
-                                      className="w-full text-left px-3 py-1.5 text-[12px] text-accent-destructive hover:bg-overlay-hover cursor-pointer"
-                                    >
-                                      Archive
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
                             </div>
+
                           </div>
 
                           {/* Expanded tasks */}
@@ -505,7 +624,8 @@ export default function Projects() {
                       </div>
                     </SortableProjectRow>
                   );
-                })}
+                })
+                  )}
 
                   {/* ── Task search results ────────────────────────────── */}
                   {searchQuery && matchingTasks.length > 0 && (
@@ -562,45 +682,53 @@ export default function Projects() {
                 </>
               )}
 
-              {/* ── Inline create row — hidden while searching ──────────── */}
-              {!searchQuery && (
-              <div
-                className="flex items-center gap-2.5 bg-elevated rounded-[10px] px-4 py-[12px] overflow-hidden"
-                style={{ border: "0.5px solid var(--border-hairline)" }}
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--text-disabled)" strokeWidth="1.5" strokeLinecap="round" className="shrink-0">
-                  <path d="M7 2v10M2 7h10" />
-                </svg>
-                <input
-                  ref={inlineInputRef}
-                  type="text"
-                  value={inlineCreateName}
-                  onChange={(e) => setInlineCreateName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleInlineCreate();
-                    if (e.key === "Escape") {
-                      setInlineCreateName("");
-                      inlineInputRef.current?.blur();
-                    }
-                  }}
-                  placeholder="New objective..."
-                  maxLength={100}
-                  className="flex-1 text-[13px] text-fg placeholder:text-fg-disabled bg-transparent outline-none"
-                />
-                {inlineCreateName.trim() && (
-                  <button
-                    onClick={handleInlineCreate}
-                    className="text-[11px] text-accent-blue-soft-fg hover:text-accent-blue cursor-pointer flex-shrink-0"
-                  >
-                    Create
-                  </button>
-                )}
-              </div>
-              )}
             </div>
           </div>
         </SortableContext>
       </DndContext>
+
+      {/* ── New objective bar — anchored at the bottom of the page,
+          outside the scroll container so it stays visible regardless
+          of how many objectives are listed. Hidden while searching. */}
+      {!searchQuery && (
+        <div
+          className="px-6 py-3 flex-shrink-0"
+          style={{ borderTop: "0.5px solid var(--border-hairline)" }}
+        >
+          <div
+            className="flex items-center gap-2.5 bg-elevated rounded-[10px] px-4 py-[10px] overflow-hidden"
+            style={{ border: "0.5px solid var(--border-hairline)" }}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--text-disabled)" strokeWidth="1.5" strokeLinecap="round" className="shrink-0">
+              <path d="M7 2v10M2 7h10" />
+            </svg>
+            <input
+              ref={inlineInputRef}
+              type="text"
+              value={inlineCreateName}
+              onChange={(e) => setInlineCreateName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleInlineCreate();
+                if (e.key === "Escape") {
+                  setInlineCreateName("");
+                  inlineInputRef.current?.blur();
+                }
+              }}
+              placeholder="New objective..."
+              maxLength={100}
+              className="flex-1 text-[13px] text-fg placeholder:text-fg-disabled bg-transparent outline-none"
+            />
+            {inlineCreateName.trim() && (
+              <button
+                onClick={handleInlineCreate}
+                className="text-[11px] text-accent-blue-soft-fg hover:text-accent-blue cursor-pointer flex-shrink-0"
+              >
+                Create
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Task detail overlay */}
       {detailTask && (

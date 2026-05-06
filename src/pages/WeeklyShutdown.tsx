@@ -406,10 +406,10 @@ export default function WeeklyShutdown() {
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div
-        className="px-6 py-4 flex-shrink-0"
+        className="px-6 py-5 flex-shrink-0 flex items-center gap-3"
         style={{ borderBottom: "0.5px solid var(--border-hairline)" }}
       >
-        <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-accent-pink-bright block mb-1">
+        <span className="inline-flex items-center [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] bg-accent-pink-soft text-accent-pink-deep px-2.5 py-1 rounded-full">
           Weekly shutdown
         </span>
         <h2 className="text-[14px] font-medium text-fg">

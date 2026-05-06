@@ -270,8 +270,8 @@ export default function DailyShutdown() {
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
       {/* ── Header — transparent, gradient shows through ────────────── */}
-      <div className="px-6 py-5 flex-shrink-0" style={{ borderBottom: "0.5px solid var(--border-hairline)" }}>
-        <span className="[font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-accent-blue-soft-fg block mb-2">
+      <div className="px-6 py-5 flex-shrink-0 flex items-center gap-3" style={{ borderBottom: "0.5px solid var(--border-hairline)" }}>
+        <span className="inline-flex items-center [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] bg-accent-orange-soft text-accent-orange-soft-fg px-2.5 py-1 rounded-full">
           Daily shutdown
         </span>
         <h2 className="text-[14px] font-medium text-fg">

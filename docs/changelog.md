@@ -8,6 +8,21 @@
   the existing 0.5px border + 18px radius for visual containment.
 - Files: `src/components/FocusPip.tsx`
 
+### Break prompt — pip-native + welcoming completion screen
+- **Pip:** the break prompt no longer resizes the pip into a separate-
+  looking window. It fits the same 220×68 footprint with a tiny
+  "Break?" header and three pill buttons: Yes / In 5 / No.
+- **FocusMode:** replaced the small "Pomodoro complete!" card with a
+  full content takeover — VerseDayLogo, "Well done!" headline, task
+  name + duration, coffee-cup accent, and three actions in clear
+  hierarchy (filled primary / outlined / text). Long-break variant
+  reads "Cycle complete!" and promotes the 15-min option.
+- **30-second auto-dismiss:** if the user doesn't engage with the
+  prompt within 30 seconds, FocusMode falls back to "No" (closes the
+  prompt, continues the current work cycle). Prevents the pip + main
+  window from nagging indefinitely.
+- Files: `src/components/FocusPip.tsx`, `src/pages/FocusMode.tsx`
+
 ## Session — 2026-04-06
 
 ### AI-powered summaries + task highlights

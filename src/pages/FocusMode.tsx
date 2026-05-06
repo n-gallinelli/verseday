@@ -10,8 +10,13 @@ import {
   getSetting,
 } from "../db/queries";
 import RichTextEditor from "../components/RichTextEditor";
-import Button from "../components/Button";
+import VerseDayLogo from "../components/VerseDayLogo";
 import type { Project } from "../types";
+
+// If the user doesn't engage with the break prompt within this window,
+// treat it as "No" — close the prompt, continue working. Stops the
+// pip + main-window prompt from nagging indefinitely.
+const PROMPT_AUTO_DISMISS_MS = 30_000;
 
 const CHECKPOINT_INTERVAL_MS = 30_000;
 
@@ -195,6 +200,7 @@ export default function FocusMode() {
     }
     prevPhaseRef.current = phase;
   }, [phase]);
+
   const [, setWorkElapsed] = useState(0); // triggers re-render on work elapsed change
   const [breakRemaining, setBreakRemaining] = useState(0);
   const [breakDuration, setBreakDuration] = useState(0);
@@ -317,6 +323,19 @@ export default function FocusMode() {
   const handleNoBreakRef = useRef<() => void>(() => {});
   const handleSkipBreakRef = useRef<() => void>(() => {});
 
+  // 30-second auto-dismiss for the break prompt. If the user neither
+  // accepts nor snoozes, fall back to "No" — close the prompt and
+  // continue the current work cycle. Calls through the ref so we
+  // don't have to depend on (and re-bind) the handler reference.
+  // Phase change clears the timer, so a manual response cancels it.
+  useEffect(() => {
+    if (phase !== "prompt") return;
+    const t = setTimeout(() => {
+      handleNoBreakRef.current();
+    }, PROMPT_AUTO_DISMISS_MS);
+    return () => clearTimeout(t);
+  }, [phase]);
+
   // Listen for PiP commands
   useEffect(() => {
     const interval = setInterval(() => {
@@ -338,13 +357,6 @@ export default function FocusMode() {
       }
       else if (cmd === "takeBreak") handleTakeBreakRef.current(SHORT_BREAK_MS);
       else if (cmd === "snooze5") handleSnoozeRef.current();
-      else if (cmd === "snooze10") {
-        setPrompt(null);
-        const we = elapsed - totalBreakTimeRef.current;
-        snoozeThresholdRef.current = we + 10 * 60 * 1000;
-        setCompletedPomodoros((c) => Math.max(0, c - 1));
-        setPhase("work");
-      }
       else if (cmd === "noBreak") handleNoBreakRef.current();
       else if (cmd === "skipBreak") handleSkipBreakRef.current();
       else if (cmd === "hidePip") {
@@ -524,71 +536,61 @@ export default function FocusMode() {
 
       {/* Center content */}
       <div className="relative text-center max-w-[760px] px-8 flex flex-col items-center mt-4">
-        {/* Task name — hero */}
-        <h1 className="text-[28px] font-semibold text-fg mb-3 leading-snug font-display">
-          {focus.task.title}
-        </h1>
+        {/* Pomodoro-complete celebration takes over the entire content
+            area when the prompt fires — no modal-over-screen, just the
+            screen *becoming* the celebration. Task title, notes,
+            timer, and controls are all hidden during this phase
+            (they reappear as soon as the user resolves the prompt). */}
+        {isPrompting && prompt ? (
+          <BreakCelebration
+            isLongBreak={prompt.isLongBreak}
+            taskTitle={focus.task.title}
+            workMinutes={Math.round(WORK_DURATION_MS / 60000)}
+            onTakeShort={() => handleTakeBreak(SHORT_BREAK_MS)}
+            onTakeLong={() => handleTakeBreak(LONG_BREAK_MS)}
+            onSnooze={handleSnooze}
+            onNo={handleNoBreak}
+          />
+        ) : (
+          <>
+            {/* Task name — hero */}
+            <h1 className="text-[28px] font-semibold text-fg mb-3 leading-snug font-display">
+              {focus.task.title}
+            </h1>
 
-        {/* Notes editor — always visible */}
-        <RichTextEditor
-          value={notes}
-          onChange={(html) => {
-            setNotes(html);
-            saveNotes(html);
-          }}
-          placeholder="Add notes…"
-          className="w-full min-h-[120px] mb-4 px-4 py-3.5 bg-transparent text-center text-[14px] text-fg leading-relaxed"
-        />
+            {/* Notes editor — always visible */}
+            <RichTextEditor
+              value={notes}
+              onChange={(html) => {
+                setNotes(html);
+                saveNotes(html);
+              }}
+              placeholder="Add notes…"
+              className="w-full min-h-[120px] mb-4 px-4 py-3.5 bg-transparent text-center text-[14px] text-fg leading-relaxed"
+            />
 
-        {/* Completion burst — concentric rings that scale out and fade */}
-        {completionBurst && (
-          <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-[30px] z-10" style={{ width: 240, height: 240 }}>
-            <svg
-              viewBox="0 0 240 240"
-              fill="none"
-              className="absolute inset-0 animate-focus-complete-burst"
-              style={{ transformOrigin: "center" }}
-            >
-              <circle cx="120" cy="120" r="92" stroke="var(--accent-green)" strokeWidth="6" />
-            </svg>
-            <svg
-              viewBox="0 0 240 240"
-              fill="none"
-              className="absolute inset-0 animate-focus-complete-core"
-              style={{ transformOrigin: "center" }}
-            >
-              <circle cx="120" cy="120" r="62" stroke="var(--accent-green)" strokeWidth="3" opacity="0.5" />
-            </svg>
-          </div>
-        )}
-
-        {/* Break prompt */}
-        {isPrompting && prompt && (
-          <div className="mb-8 p-6 rounded-2xl bg-elevated border border-line-soft w-full animate-scale-in" style={{ boxShadow: "var(--shadow-card)" }}>
-            <p className="text-[15px] font-medium text-fg mb-1">
-              Pomodoro complete!
-            </p>
-            <p className="text-[13px] text-fg-muted mb-5">
-              {prompt.isLongBreak
-                ? "You've completed 4 cycles. Time for a longer break?"
-                : "Nice work. Take a break?"}
-            </p>
-            <div className="flex gap-2.5 justify-center">
-              {prompt.isLongBreak ? (
-                <>
-                  <Button onClick={() => handleTakeBreak(LONG_BREAK_MS)}>15 min break</Button>
-                  <Button variant="secondary" onClick={() => handleTakeBreak(SHORT_BREAK_MS)}>5 min</Button>
-                  <Button variant="ghost" onClick={handleNoBreak}>No break</Button>
-                </>
-              ) : (
-                <>
-                  <Button onClick={() => handleTakeBreak(SHORT_BREAK_MS)}>5 min break</Button>
-                  <Button variant="secondary" onClick={handleSnooze}>In 5 min</Button>
-                  <Button variant="ghost" onClick={handleNoBreak}>No</Button>
-                </>
-              )}
-            </div>
-          </div>
+            {/* Completion burst — concentric rings that scale out and fade */}
+            {completionBurst && (
+              <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-[30px] z-10" style={{ width: 240, height: 240 }}>
+                <svg
+                  viewBox="0 0 240 240"
+                  fill="none"
+                  className="absolute inset-0 animate-focus-complete-burst"
+                  style={{ transformOrigin: "center" }}
+                >
+                  <circle cx="120" cy="120" r="92" stroke="var(--accent-green)" strokeWidth="6" />
+                </svg>
+                <svg
+                  viewBox="0 0 240 240"
+                  fill="none"
+                  className="absolute inset-0 animate-focus-complete-core"
+                  style={{ transformOrigin: "center" }}
+                >
+                  <circle cx="120" cy="120" r="62" stroke="var(--accent-green)" strokeWidth="3" opacity="0.5" />
+                </svg>
+              </div>
+            )}
+          </>
         )}
 
         {/* Timer arc */}
@@ -694,28 +696,29 @@ export default function FocusMode() {
           </button>
         )}
 
-        {/* Controls — icon buttons */}
-        {!isOnBreak && (
+        {/* Controls — icon buttons. Hidden during the break prompt
+            so the BreakCelebration takeover *is* the screen, not a
+            card with floating Done/Stop icons under it. The 30s
+            auto-dismiss covers the escape-hatch case. */}
+        {!isOnBreak && !isPrompting && (
           <div className="flex items-center gap-3 mb-6">
             {/* Pause / Resume — secondary */}
-            {!isPrompting && (
-              <button
-                onClick={handlePause}
-                className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover transition-colors"
-                title={paused ? "Resume" : "Pause"}
-              >
-                {paused ? (
-                  <svg width="18" height="18" viewBox="0 0 14 14" fill="var(--accent-blue)">
-                    <path d="M3 1v12l10-6z" />
-                  </svg>
-                ) : (
-                  <svg width="18" height="18" viewBox="0 0 14 14" fill="currentColor">
-                    <rect x="2" y="1" width="3.5" height="12" rx="1" />
-                    <rect x="8.5" y="1" width="3.5" height="12" rx="1" />
-                  </svg>
-                )}
-              </button>
-            )}
+            <button
+              onClick={handlePause}
+              className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover transition-colors"
+              title={paused ? "Resume" : "Pause"}
+            >
+              {paused ? (
+                <svg width="18" height="18" viewBox="0 0 14 14" fill="var(--accent-blue)">
+                  <path d="M3 1v12l10-6z" />
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 14 14" fill="currentColor">
+                  <rect x="2" y="1" width="3.5" height="12" rx="1" />
+                  <rect x="8.5" y="1" width="3.5" height="12" rx="1" />
+                </svg>
+              )}
+            </button>
 
             {/* Mark Done — primary */}
             <button
@@ -743,5 +746,101 @@ export default function FocusMode() {
       </div>
       </div>
     </div>
+  );
+}
+
+// ── BreakCelebration ────────────────────────────────────────────────────────
+// Pomodoro-complete takeover. Replaces the focus content (task title /
+// notes / timer / controls) when phase = "prompt". Logo + warm
+// headline + coffee-cup accent + three actions, hierarchy by weight:
+// primary fill (Yes — take the break), outlined (snooze 5min),
+// text-only (No). Long-break variant promotes the 15min option.
+function BreakCelebration({
+  isLongBreak,
+  taskTitle,
+  workMinutes,
+  onTakeShort,
+  onTakeLong,
+  onSnooze,
+  onNo,
+}: {
+  isLongBreak: boolean;
+  taskTitle: string;
+  workMinutes: number;
+  onTakeShort: () => void;
+  onTakeLong: () => void;
+  onSnooze: () => void;
+  onNo: () => void;
+}) {
+  return (
+    <div className="w-full flex flex-col items-center animate-scale-in">
+      <div className="mb-6">
+        <VerseDayLogo size={84} />
+      </div>
+
+      <h1 className="text-[34px] font-semibold text-fg leading-tight font-display mb-3">
+        {isLongBreak ? "Cycle complete!" : "Well done!"}
+      </h1>
+
+      <p className="text-[15px] text-fg-secondary leading-relaxed max-w-[460px] mb-1 inline-flex items-center gap-2 justify-center">
+        <CoffeeCupIcon />
+        <span>
+          You finished {workMinutes} min on{" "}
+          <span className="text-fg font-medium">{taskTitle}</span>.
+        </span>
+      </p>
+      <p className="text-[14px] text-fg-faded mb-8">
+        {isLongBreak
+          ? "You've completed 4 cycles — time for a longer breather."
+          : "Time for a break?"}
+      </p>
+
+      <div className="flex gap-3 items-center justify-center">
+        <button
+          onClick={isLongBreak ? onTakeLong : onTakeShort}
+          className="px-5 py-2.5 rounded-full text-[14px] font-medium text-white bg-accent-green-deep hover:opacity-90 cursor-pointer transition-opacity"
+        >
+          {isLongBreak ? "15 min break" : "5 min break"}
+        </button>
+        <button
+          onClick={isLongBreak ? onTakeShort : onSnooze}
+          className="px-4 py-2.5 rounded-full text-[14px] text-fg-secondary border border-line-soft hover:border-line-strong hover:bg-overlay-hover cursor-pointer transition-colors"
+        >
+          {isLongBreak ? "5 min instead" : "In 5 min"}
+        </button>
+        <button
+          onClick={onNo}
+          className="px-3 py-2.5 text-[14px] text-fg-faded hover:text-fg-secondary cursor-pointer transition-colors"
+        >
+          No
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CoffeeCupIcon() {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="text-accent-orange-soft-fg flex-shrink-0"
+      aria-hidden="true"
+    >
+      {/* Steam — three little curves rising from the cup */}
+      <path d="M8 2c-.5 1 .5 1.5 0 2.5" opacity="0.8" />
+      <path d="M12 2c-.5 1 .5 1.5 0 2.5" opacity="0.8" />
+      <path d="M16 2c-.5 1 .5 1.5 0 2.5" opacity="0.8" />
+      {/* Cup body */}
+      <path d="M3 8h14v6a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5V8z" />
+      {/* Handle */}
+      <path d="M17 10h2a2.5 2.5 0 0 1 0 5h-2" />
+    </svg>
   );
 }

@@ -2,11 +2,11 @@ import { useEffect, useState, useRef } from "react";
 import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 
-// Window dimensions per phase. The window is resized as state.phase
-// changes so transparent edges never peek around clipped content. The
-// break prompt needs more room than the compact work/break readouts.
+// Single compact size for every phase. Earlier the prompt resized to a
+// taller window — that read as a separate popup hovering near the pip
+// rather than a state of the pip itself, so we collapsed it back into
+// 220×68 and re-laid the prompt content to fit.
 const PIP_SIZE_COMPACT = { width: 220, height: 68 };
-const PIP_SIZE_PROMPT = { width: 320, height: 140 };
 
 const PIP_STATE_KEY = "verseday_pip_state";
 const PIP_CMD_KEY = "verseday_pip_cmd";
@@ -85,12 +85,6 @@ function handlePipMouseDown(e: React.MouseEvent) {
 const ICON_BTN = "w-8 h-8 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg hover:bg-input-hover transition-colors flex-shrink-0";
 const BTN_SECONDARY = "px-2.5 py-1 rounded-[6px] text-[11px] bg-overlay-hover text-fg-muted cursor-pointer hover:bg-overlay-pressed transition-colors";
 
-// Three-peer treatment for the break prompt — all options equally
-// valid, none visually dominant. Hover does the work of indicating
-// hover-state.
-const BREAK_BTN =
-  "flex-1 px-2 py-2 rounded-lg text-[12px] text-fg-secondary border border-line-soft hover:border-line-strong hover:bg-overlay-hover cursor-pointer transition-colors whitespace-nowrap text-center";
-
 const FOCUS_STORAGE_KEY = "verseday_focus";
 const ORPHAN_TIMEOUT_MS = 2000;
 
@@ -109,17 +103,13 @@ export default function FocusPip() {
     document.body.style.margin = "0";
   }, []);
 
-  // Resize the OS window per phase. Compact size for work/break
-  // readouts; the break prompt needs more room for three peer buttons
-  // + heading + footer without clipping. setSize errors are silent —
-  // worst case the next phase change retries, or the user repositions.
+  // Pin the OS window to the compact size on first state load. The
+  // pip used to grow for the prompt phase; that's gone now — every
+  // phase fits the same 220×68 footprint.
   useEffect(() => {
     if (!state) return;
-    const win = getCurrentWebviewWindow();
-    const target =
-      state.phase === "prompt" ? PIP_SIZE_PROMPT : PIP_SIZE_COMPACT;
-    win
-      .setSize(new LogicalSize(target.width, target.height))
+    getCurrentWebviewWindow()
+      .setSize(new LogicalSize(PIP_SIZE_COMPACT.width, PIP_SIZE_COMPACT.height))
       .catch(() => {});
   }, [state?.phase]);
 
@@ -177,12 +167,15 @@ export default function FocusPip() {
     return null;
   }
 
-  // ── BREAK PROMPT ───────────────────────────────────────────────────
+  // ── BREAK PROMPT — compact, fits in 220×68 ─────────────────────────
+  // Layout: tiny "Break?" header on the left, three pill buttons on
+  // the right (Yes / In 5 / No). FocusMode owns a 30s auto-dismiss
+  // timer for this phase, so the user is never trapped in it.
   if (state.phase === "prompt") {
     return (
       <div
         data-tauri-drag-region
-        className="select-none cursor-grab active:cursor-grabbing flex flex-col w-full h-full"
+        className="select-none cursor-grab active:cursor-grabbing flex items-center gap-2 px-3 py-2 w-full h-full"
         style={{
           background: "var(--focus-pip-bg)",
           borderRadius: 18,
@@ -191,22 +184,31 @@ export default function FocusPip() {
         }}
         onMouseDown={handlePipMouseDown}
       >
-        <p className="text-[14px] font-medium text-fg text-center pt-5 pb-3 px-5">
-          Ready for a break?
-        </p>
-        <div className="flex gap-2 px-5">
-          <button onClick={() => sendCommand("takeBreak")} className={BREAK_BTN}>
-            Take a break
+        <span className="text-[12px] font-medium text-fg pl-1 flex-shrink-0">
+          Break?
+        </span>
+        <div className="flex items-center gap-1 flex-1 justify-end">
+          <button
+            onClick={() => sendCommand("takeBreak")}
+            className="px-2.5 py-1 rounded-md text-[11px] font-medium text-white bg-accent-green-deep hover:opacity-90 cursor-pointer transition-opacity"
+            title="Take a break"
+          >
+            Yes
           </button>
-          <button onClick={() => sendCommand("snooze5")} className={BREAK_BTN}>
-            In 5 min
+          <button
+            onClick={() => sendCommand("snooze5")}
+            className="px-2 py-1 rounded-md text-[11px] text-fg-secondary border border-line-soft hover:border-line-strong hover:bg-overlay-hover cursor-pointer transition-colors"
+            title="Remind me in 5 min"
+          >
+            In 5
           </button>
-          <button onClick={() => sendCommand("snooze10")} className={BREAK_BTN}>
-            In 10 min
+          <button
+            onClick={() => sendCommand("noBreak")}
+            className="px-2 py-1 rounded-md text-[11px] text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer transition-colors"
+            title="Keep working"
+          >
+            No
           </button>
-        </div>
-        <div className="text-[10px] text-fg-disabled tabular-nums text-center pt-3 pb-3">
-          {formatTime(state.elapsed)}
         </div>
       </div>
     );

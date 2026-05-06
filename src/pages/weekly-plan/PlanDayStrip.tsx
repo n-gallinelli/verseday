@@ -48,6 +48,9 @@ interface Props {
   onClear: (dayOffset: number) => void;
   /** Allow parent (PlanTab) to forward bare 1–5 shortcuts here. */
   toggleSignal?: { dayOffset: number; nonce: number } | null;
+  /** Click a chip → open task detail overlay. Drag still works thanks
+   *  to the parent DndContext's PointerSensor distance threshold. */
+  onOpenTaskDetail?: (task: Task) => void;
 }
 
 export default function PlanDayStrip({
@@ -58,6 +61,7 @@ export default function PlanDayStrip({
   onSet,
   onClear,
   toggleSignal,
+  onOpenTaskDetail,
 }: Props) {
   // Tracks which day, if any, is showing an inline "clear?" confirm.
   // Click an active day with non-default minutes → confirm; click the
@@ -99,7 +103,7 @@ export default function PlanDayStrip({
   }
 
   return (
-    <div className="flex gap-3 items-start">
+    <div className="flex gap-3 items-stretch h-full">
       {weekDates.map((date, idx) => {
         const minutes = commitments.get(idx) ?? null;
         const active = minutes != null;
@@ -129,6 +133,7 @@ export default function PlanDayStrip({
               }
             }}
             onCancelConfirm={() => setConfirmingClear(null)}
+            onOpenTaskDetail={onOpenTaskDetail}
           />
         );
       })}
@@ -147,6 +152,7 @@ function DayButton({
   onToggle,
   onChangeMinutes,
   onCancelConfirm,
+  onOpenTaskDetail,
 }: {
   label: string;
   date: string;
@@ -158,6 +164,7 @@ function DayButton({
   onToggle: () => void;
   onChangeMinutes: (m: number) => void;
   onCancelConfirm: () => void;
+  onOpenTaskDetail?: (task: Task) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -195,7 +202,16 @@ function DayButton({
   return (
     <div
       ref={setDropRef}
-      className={`flex flex-col items-center gap-1.5 flex-1 rounded-lg transition-colors ${isOver ? "ring-2 ring-accent-blue ring-offset-2 ring-offset-base" : ""}`}
+      className={`flex flex-col items-center gap-1.5 flex-1 h-full min-h-[180px] rounded-lg transition-colors p-1.5 ${
+        isOver ? "ring-2 ring-accent-blue ring-offset-2 ring-offset-base" : ""
+      }`}
+      style={
+        active
+          ? {
+              backgroundColor: `color-mix(in srgb, ${projectColor} 4%, transparent)`,
+            }
+          : undefined
+      }
     >
       <button
         type="button"
@@ -298,9 +314,11 @@ function DayButton({
           allowed to wrap to 2 lines so the user can actually read it
           rather than ellipsizing every long task. Chip color is tinted
           with the project color for continuity with the active
-          day-button background. Each chip is draggable so the user
-          can move tasks between days; the parent's drag handler
-          transfers the commitment minutes accordingly. */}
+          day-button background. Each chip is both draggable (move
+          between days) and clickable (open task detail). The
+          PointerSensor's 5px activation distance disambiguates the
+          two: a clean click fires onClick, a drag past 5px suppresses
+          it. */}
       {tasks.length > 0 && (
         <div className="w-full mt-2 flex flex-col gap-1.5">
           {tasks.map((task) => (
@@ -308,6 +326,7 @@ function DayButton({
               key={task.id}
               task={task}
               projectColor={projectColor}
+              onOpenDetail={onOpenTaskDetail}
             />
           ))}
         </div>
@@ -319,9 +338,11 @@ function DayButton({
 function ScheduledTaskChip({
   task,
   projectColor,
+  onOpenDetail,
 }: {
   task: Task;
   projectColor: string;
+  onOpenDetail?: (task: Task) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `${PLAN_TASK_DRAG_PREFIX}${task.id}`,
@@ -333,8 +354,15 @@ function ScheduledTaskChip({
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      onClick={() => {
+        // PointerSensor distance:5 means a clean click never activated
+        // drag, so this only fires for non-drag interactions. Guarded
+        // by isDragging anyway as belt-and-braces.
+        if (isDragging) return;
+        onOpenDetail?.(task);
+      }}
       title={task.title}
-      className={`w-full text-left flex items-start gap-2 px-2.5 py-2 rounded-md border cursor-grab active:cursor-grabbing touch-none ${isDragging ? "opacity-30" : ""}`}
+      className={`w-full text-left flex items-start gap-2 px-2.5 py-2 rounded-md border cursor-pointer active:cursor-grabbing touch-none ${isDragging ? "opacity-30" : ""}`}
       style={{
         backgroundColor: `color-mix(in srgb, ${projectColor} 10%, var(--bg-elevated))`,
         borderColor: `color-mix(in srgb, ${projectColor} 30%, transparent)`,

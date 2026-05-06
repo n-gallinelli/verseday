@@ -24,11 +24,13 @@ interface Props {
   onMarkPlanned: (id: number) => void;
   onMarkSkipped: (id: number) => void;
   onMarkUnplanned: (id: number) => void;
+  onMarkAllRemaining: () => void;
   onSetCommitment: (projectId: number, dayOffset: number, minutes: number) => void;
   onClearCommitment: (projectId: number, dayOffset: number) => void;
   onCreateTask: (title: string) => Promise<void>;
   onUpdateTaskTitle: (id: number, title: string) => Promise<void>;
   onDeleteTask: (id: number) => Promise<void>;
+  onOpenTaskDetail: (task: Task) => void;
 }
 
 // Right panel of the Plan tab. Header → tasks → day strip → footer
@@ -53,11 +55,13 @@ export default function PlanProjectPanel({
   onMarkPlanned,
   onMarkSkipped,
   onMarkUnplanned,
+  onMarkAllRemaining,
   onSetCommitment,
   onClearCommitment,
   onCreateTask,
   onUpdateTaskTitle,
   onDeleteTask,
+  onOpenTaskDetail,
 }: Props) {
   if (loading) {
     return <CenteredHint>Loading…</CenteredHint>;
@@ -139,11 +143,15 @@ export default function PlanProjectPanel({
         )}
       </header>
 
-      {/* Body — task list (top) + day strip (bottom). Scrolls if both
-          grow tall enough; the day strip stays glued to the top of its
-          section by virtue of being inside the same scroll container. */}
-      <div className="flex-1 overflow-y-auto px-8 pb-6 space-y-7">
-        <div>
+      {/* Body — task list at the top (capped at 40% with its own
+          scrollbar; PlanTaskList has no internal overflow so this is
+          the only scroll container in this region — no nesting), day
+          strip below fills all remaining vertical space so each day
+          column reaches the bottom of the panel. The full-height
+          columns double as generous drop targets for tasks dragged
+          from the list. */}
+      <div className="flex-1 min-h-0 flex flex-col px-8 pb-6">
+        <div className="flex-shrink-0 max-h-[40%] overflow-y-auto pb-5">
           <span className="uppercase text-fg-faded mb-2 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
             Open tasks
           </span>
@@ -155,25 +163,31 @@ export default function PlanProjectPanel({
           />
         </div>
 
-        <div>
-          <span className="uppercase text-fg-faded mb-2 block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
+        <div className="flex-1 min-h-0 flex flex-col">
+          <span className="uppercase text-fg-faded mb-2 block flex-shrink-0 [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]">
             Time per day
           </span>
-          <PlanDayStrip
-            weekDates={weekDates}
-            commitments={selectedCommitments}
-            projectColor={project.color}
-            tasksByDate={scheduledTasksByDate}
-            toggleSignal={toggleSignal}
-            onSet={(dayOffset, minutes) =>
-              onSetCommitment(project.id, dayOffset, minutes)
-            }
-            onClear={(dayOffset) => onClearCommitment(project.id, dayOffset)}
-          />
+          <div className="flex-1 min-h-0">
+            <PlanDayStrip
+              weekDates={weekDates}
+              commitments={selectedCommitments}
+              projectColor={project.color}
+              tasksByDate={scheduledTasksByDate}
+              toggleSignal={toggleSignal}
+              onSet={(dayOffset, minutes) =>
+                onSetCommitment(project.id, dayOffset, minutes)
+              }
+              onClear={(dayOffset) => onClearCommitment(project.id, dayOffset)}
+              onOpenTaskDetail={onOpenTaskDetail}
+            />
+          </div>
         </div>
       </div>
 
-      {/* Footer — Done / Skip */}
+      {/* Footer — Next project (left) / Done planning the week (right).
+          The bulk action sweeps every still-unreviewed project in one
+          click; PlanTab decides planned vs skipped per project based
+          on whether days are committed. */}
       <footer className="px-8 py-5 border-t border-line-soft flex items-center gap-4 flex-shrink-0">
         {status == null ? (
           <>
@@ -182,7 +196,7 @@ export default function PlanProjectPanel({
               disabled={!canMarkDone}
               title={
                 canMarkDone
-                  ? "Mark this project planned"
+                  ? "Mark this project planned and advance"
                   : "Activate at least one day, or use Skip this week"
               }
               className={`px-4 py-1.5 rounded-lg border text-[13px] font-medium transition-colors ${
@@ -191,7 +205,7 @@ export default function PlanProjectPanel({
                   : "border-line-soft text-fg-disabled cursor-not-allowed"
               }`}
             >
-              Done with this project
+              Next project
             </button>
             <button
               onClick={() => onMarkSkipped(project.id)}
@@ -200,10 +214,17 @@ export default function PlanProjectPanel({
               Skip this week
             </button>
             {!canMarkDone && (
-              <span className="text-[11px] text-fg-faded ml-auto">
+              <span className="text-[11px] text-fg-faded">
                 Pick at least one day, or skip.
               </span>
             )}
+            <button
+              onClick={onMarkAllRemaining}
+              title="Mark every remaining project planned (or skipped if no days)"
+              className="ml-auto px-4 py-1.5 rounded-lg border border-accent-pink-bright/50 text-accent-pink-bright text-[13px] font-medium cursor-pointer hover:border-accent-pink-bright hover:bg-accent-pink-soft transition-colors"
+            >
+              Done planning the week
+            </button>
           </>
         ) : (
           <button

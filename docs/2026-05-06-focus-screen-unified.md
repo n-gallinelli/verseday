@@ -143,6 +143,22 @@ Pip creation, pip broadcast, timer tick, checkpoint — all gated on `focus?.mod
 - `useFocusTick`: returns `null` for preview (no `startedAt` to compute against).
 - ProjectDetail `handleStartFocus`: existing truthy check still blocks on either mode.
 
-## What's not done yet
+## M8 — Manual verify
 
-M8 (manual verify in `npm run tauri dev`). Stopping here for Verse review of M7.
+Walked the verify checklist in `npm run tauri dev` after a hard reload to clear HMR-stale state. All paths confirmed working:
+
+- Click Focus icon (no active session) → preview screen with next remaining task, paused, dimmed Stop/Done, active Play.
+- Play → session starts, pulse ring kicks in, controls activate.
+- Stop → returns to previous page, preview cleared.
+- Re-entry → fresh next-task preview.
+- Persistence: active session restores as active across reload; preview restores as preview.
+- Navigate away from focus while in preview → preview cleared on return.
+
+## Done
+
+Branch `feat/focus-screen-unified` ready for whatever happens next (merge / PR / hold). Four commits:
+
+- `e9aba7c` — collapse pre-focus picker into focus screen (M1+M2)
+- `115b555` — ring + dual pulse + title weight (M3+M4)
+- `6ab60f5` — drop work-time progress arc
+- `36729c7` — discriminated-union focus state with preview mode (M7)

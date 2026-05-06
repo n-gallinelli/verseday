@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { getSetting, setSetting } from "../db/queries";
+import CalendarSettings from "../components/settings/CalendarSettings";
 
 const FOCUS_DEFAULTS = {
   focus_work_min: 25,
@@ -145,6 +146,8 @@ export default function Settings() {
               ))}
             </div>
           </section>
+
+          <CalendarSettings />
 
         </div>
       </div>

@@ -151,6 +151,21 @@ impl CalendarSource for EventKitSource {
             self.store.requestFullAccessToEventsWithCompletion(block_ptr);
         }
 
+        // C1 fix (Verse, 2026-05-05): leak the block to eliminate UAF
+        // risk on the timeout path. The completion handler is async —
+        // if the user lets the prompt sit past our 30s condvar timeout,
+        // this function returns Err and the local RcBlock would drop,
+        // decrementing its retain count to zero. Apple's convention is
+        // that frameworks Block_copy completion handlers they store, so
+        // in practice the block survives via EventKit's own retain. But
+        // the binding signature is `*mut Block` (no auto-retain), and
+        // any future binding change or undocumented Apple behavior that
+        // skipped Block_copy would silently regress to a use-after-free
+        // when EventKit eventually invokes the closure. Leak is bounded
+        // memory — one block per session, <1 KB — and trades a trivial
+        // residual for closing the unsafe foot-gun.
+        std::mem::forget(block);
+
         let (lock, cvar) = &*pair;
         let guard = lock
             .lock()

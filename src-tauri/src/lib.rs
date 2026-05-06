@@ -1,6 +1,9 @@
 mod commands;
+// `pub` so the C3 verification example (examples/calendar_recurrence_check.rs)
+// can construct an EventKitSource directly. No JS-facing API is exposed
+// beyond the four `#[tauri::command]` functions registered in `run()`.
 #[cfg(target_os = "macos")]
-mod calendar;
+pub mod calendar;
 
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_sql::{Migration, MigrationKind};

@@ -587,11 +587,8 @@ export default function FocusMode() {
   const totalWorkedMs = workElapsed + priorMs;
   const estimatedMs = (focus.task.estimated_minutes ?? 0) * 60 * 1000;
 
-  // Arc progress: based on worked time vs estimate (0→1), or 0 if no estimate
-  const progress = estimatedMs > 0 ? Math.min(1, totalWorkedMs / estimatedMs) : 0;
   const ARC_RADIUS = 90;
   const ARC_CIRCUMFERENCE = 2 * Math.PI * ARC_RADIUS;
-  const arcOffset = ARC_CIRCUMFERENCE * (1 - progress);
 
   return (
     <div className="fixed inset-0 flex flex-col items-center justify-center z-50 focus-ambient-bg overflow-hidden">
@@ -714,13 +711,12 @@ export default function FocusMode() {
               </>
             )}
 
-            {/* Main ring — track + progress arc.
-                Work phase: progress = totalWorkedMs / estimatedMs, capped
-                at 100%. No-estimate tasks render an empty arc (don't fake
-                a guess — the pulse rings carry the "session is live"
-                signal regardless).
-                Break phase: progress = breakRemaining / breakDuration,
-                same arc render path, different color/source. */}
+            {/* Main ring — static track. The work phase deliberately
+                does not draw progress against the estimate; the user
+                wants the ring to read as a steady frame, not a
+                progress meter. The pulse rings carry the "session is
+                live" signal. Break phase overlays a draining countdown
+                arc on top of this track. */}
             <div className="absolute inset-0">
               <svg
                 viewBox="0 0 220 220"
@@ -736,26 +732,7 @@ export default function FocusMode() {
                   strokeWidth="7"
                   fill="none"
                 />
-                {/* Work progress — fills clockwise as time accumulates
-                    against the estimate. Hidden during break so the
-                    break countdown takes over the same arc slot. */}
-                {!isOnBreak && progress > 0 && (
-                  <circle
-                    cx="110"
-                    cy="110"
-                    r={ARC_RADIUS}
-                    stroke="var(--focus-ring-progress)"
-                    strokeWidth="7"
-                    fill="none"
-                    strokeLinecap="round"
-                    strokeDasharray={ARC_CIRCUMFERENCE}
-                    strokeDashoffset={arcOffset}
-                    transform="rotate(-90 110 110)"
-                    style={{ transition: "stroke-dashoffset 0.3s linear" }}
-                  />
-                )}
-                {/* Break countdown — same arc slot, draining as the
-                    break elapses. */}
+                {/* Break countdown — drains as the break elapses. */}
                 {isOnBreak && (
                   <circle
                     cx="110"

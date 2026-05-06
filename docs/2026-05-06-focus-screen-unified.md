@@ -76,9 +76,7 @@ Combined because M3 (layout) and M4 (pulse) share the same SVG stack — tuning 
 
 **Title.** 28px semibold → 24px medium. The ring + timer numerals are the screen's anchor; the title sits quieter under them. `mb-6` → `mb-5` to bring the notes closer.
 
-**Work-time progress arc.** Previously the colored arc only rendered during break; the work phase showed a static green ring. Brief wanted the arc to fill clockwise as time accumulates, which now happens (`progress = totalWorkedMs / estimatedMs`, capped at 100% via `Math.min`, hidden if no estimate). Same SVG slot as the break countdown — only one of the two ever renders. No-estimate tasks get an empty arc; the pulse rings carry the "session is live" signal regardless of whether the estimate produces visible progress.
-
-Overflow handling: capped at 100%, no color change past the cap. Treating "over the estimate" as a separate visual problem; flagged for later.
+**Work-time progress arc — initially added, then reverted.** First pass added a clockwise-filling progress arc during work (`progress = totalWorkedMs / estimatedMs`, capped at 100%) per the brief. The user reversed this on first sight: the ring should read as a steady frame, not a progress meter. Reverted in a follow-up commit; only the static track + break-countdown arc render now. The pulse rings carry the "session is live" signal on their own. Estimated time still surfaces as the "of 25:00" label below the timer numerals (text only, not visualized on the ring).
 
 **Complete button tint.** Added `bg-accent-green-bright/10` default fill, `bg-accent-green-bright/20` hover. Border kept, size kept (w-12 vs siblings' w-10). The fill gives the button visual weight without making it shouty — it sits between the ghost-style Stop/Pause and a fully-saturated CTA.
 

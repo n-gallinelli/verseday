@@ -353,8 +353,6 @@ function TaskCardImpl({
               const liveText = liveM > 0 ? `${liveM}m ${liveS}s` : `${liveS}s`;
               const est = task.estimated_minutes ?? 0;
               const worked = workedMinutes ?? 0;
-              const liveOver = est > 0 && liveM > est;
-              const staticOver = est > 0 && worked > est;
               const idleHasContent = worked > 0 || est > 0;
               // Visibility:
               //   focused: visible always (live counter showing)
@@ -375,17 +373,17 @@ function TaskCardImpl({
                 >
                   {isFocused ? (
                     <>
-                      <span className={liveOver ? "text-accent-danger" : "text-accent-blue-soft-fg"}>
+                      <span className="text-accent-blue-soft-fg">
                         {liveText}
                       </span>
                       <span className="text-accent-blue-soft-fg/40">/</span>
                       <span className="text-accent-blue-soft-fg/80">
-                        {est > 0 ? formatHoursMinutes(est) : "—"}
+                        {est > 0 ? `${est}m` : "—"}
                       </span>
                     </>
                   ) : (
                     <>
-                      <span className={staticOver ? "text-accent-danger font-medium" : "text-fg-faded"}>
+                      <span className="text-fg-faded">
                         {worked > 0 ? formatHoursMinutes(worked) : "0m"}
                       </span>
                       <span className="text-fg-disabled">/</span>

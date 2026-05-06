@@ -19,6 +19,7 @@ import {
   updateTaskStatus,
   updateTaskDateScheduled,
   getAllTasksForProjectIds,
+  getUnscheduledTasks,
   setManualWorkedMinutes,
   getWeeklyShutdown,
   deleteTask,
@@ -477,6 +478,10 @@ export default function ScheduleTab() {
   const [weekTasks, setWeekTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [allProjectTasks, setAllProjectTasks] = useState<Task[]>([]);
+  // Truly floating tasks: no project AND not yet scheduled to a day.
+  // Drives the "Unassigned" rail. Loaded separately from weekTasks so
+  // anything already placed on the calendar doesn't double-render here.
+  const [unscheduledUnassigned, setUnscheduledUnassigned] = useState<Task[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [activeDragTask, setActiveDragTask] = useState<Task | null>(null);
 
@@ -517,10 +522,12 @@ export default function ScheduleTab() {
 
   const loadData = useCallback(async () => {
     try {
-      const [wt, p] = await Promise.all([
+      const [wt, p, unscheduled] = await Promise.all([
         getTasksForWeek(selectedWeek, fridayIso),
         getProjects(),
+        getUnscheduledTasks(),
       ]);
+      setUnscheduledUnassigned(unscheduled.filter((t) => t.project_id === null));
 
       // Auto-show all active, non-completed projects
       const activeProjects = p.filter((proj) => !proj.archived && !proj.completed);
@@ -691,8 +698,11 @@ export default function ScheduleTab() {
     });
   }
 
-  // Unassigned tasks (no project) — rendered separately
-  const unassignedTasks = weekTasks.filter((t) => t.project_id === null);
+  // Unassigned tasks for the rail — only truly floating ones (no project
+  // AND not scheduled to a day). Tasks already placed on the calendar
+  // render in their day column; surfacing them again here would just
+  // duplicate. Loaded directly from `unscheduledUnassigned` state.
+  const unassignedTasks = unscheduledUnassigned;
 
   // Group week tasks by date for calendar
   const tasksByDate = new Map<string, Task[]>();
@@ -741,8 +751,10 @@ export default function ScheduleTab() {
 
       {/* Schedule-specific utility line — week nav lives in the parent
           WeeklyPlanner header, so all that's left here is the
-          right-aligned planned-hours readout. */}
-      <div className="px-7 pt-3 pb-2 flex-shrink-0 flex items-center justify-end">
+          right-aligned planned-hours readout. The bottom border closes
+          the row visually so the day/rail verticals below land against
+          a horizontal line instead of floating. */}
+      <div className="px-7 pt-3 pb-2 flex-shrink-0 flex items-center justify-end border-b border-line-soft">
         <span className="text-[12px] text-fg-faded">
           Planned{" "}
           <span className="text-fg-secondary tabular-nums">

@@ -26,6 +26,14 @@ function formatTime(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
+  // Once past an hour, switch to "Xh Ym" so a 122-minute counter
+  // reads "2h 2m" instead of "122:00". Sub-hour stays as MM:SS so
+  // the seconds visibly tick — it's a live indicator, not a label.
+  if (minutes >= 60) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  }
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${minutes}:${pad(seconds)}`;
 }

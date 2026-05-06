@@ -1,5 +1,13 @@
 # Changelog
 
+## Session — 2026-05-06
+
+### Focus pip — drop progress bar
+- Removed the bottom progress line (both the elapsed-vs-estimate fill
+  and the no-estimate `pipPulse` sliding bar). The pip now relies on
+  the existing 0.5px border + 18px radius for visual containment.
+- Files: `src/components/FocusPip.tsx`
+
 ## Session — 2026-04-06
 
 ### AI-powered summaries + task highlights

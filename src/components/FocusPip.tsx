@@ -91,48 +91,6 @@ const BTN_SECONDARY = "px-2.5 py-1 rounded-[6px] text-[11px] bg-overlay-hover te
 const BREAK_BTN =
   "flex-1 px-2 py-2 rounded-lg text-[12px] text-fg-secondary border border-line-soft hover:border-line-strong hover:bg-overlay-hover cursor-pointer transition-colors whitespace-nowrap text-center";
 
-function ProgressBar({ elapsed, estimatedMinutes }: { elapsed: number; estimatedMinutes: number | null }) {
-  const elapsedMin = elapsed / 60000;
-
-  if (estimatedMinutes && estimatedMinutes > 0) {
-    // Going over the estimate isn't a failure state — keep the same
-    // calm accent regardless. The bar caps at 100% width when elapsed
-    // ≥ estimate (no separate red/over treatment).
-    const pct = Math.min((elapsedMin / estimatedMinutes) * 100, 100);
-    return (
-      <div className="h-[3px] w-full bg-overlay-hover">
-        <div
-          className="h-full transition-all duration-500"
-          style={{
-            width: `${pct}%`,
-            backgroundColor: "var(--accent-blue)",
-            opacity: 0.45,
-          }}
-        />
-      </div>
-    );
-  }
-
-  // No estimate — slow, faint pulsing bar
-  return (
-    <div className="h-[3px] w-full bg-overlay-hover overflow-hidden">
-      <div
-        className="h-full bg-accent-blue rounded-full"
-        style={{
-          width: "30%",
-          animation: "pipPulse 5s ease-in-out infinite",
-        }}
-      />
-      <style>{`
-        @keyframes pipPulse {
-          0%, 100% { transform: translateX(-100%); opacity: 0.18; }
-          50% { transform: translateX(233%); opacity: 0.32; }
-        }
-      `}</style>
-    </div>
-  );
-}
-
 const FOCUS_STORAGE_KEY = "verseday_focus";
 const ORPHAN_TIMEOUT_MS = 2000;
 
@@ -385,8 +343,6 @@ export default function FocusPip() {
         </div>
       </div>
 
-      {/* Progress bar — flush bottom, no border-radius */}
-      <ProgressBar elapsed={state.elapsed} estimatedMinutes={state.estimatedMinutes} />
     </div>
   );
 }

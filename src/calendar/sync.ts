@@ -13,18 +13,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   getDismissedExternalIds,
-  getSetting,
   upsertCalendarTask,
   setSetting,
 } from "../db/queries";
+import { getEnabled, getExcludedCalendarIds } from "./settings";
 import type { CalendarEvent } from "./types";
 
 // ───────────────────────────────────────────────────────────────────
-// Settings keys
+// Settings keys (M3 owns the readers/writers; sync.ts just stamps
+// `last_synced_at` so keep the constant local).
 // ───────────────────────────────────────────────────────────────────
 
-const SETTING_ENABLED = "calendar.enabled";
-const SETTING_EXCLUDED = "calendar.excluded";
 const SETTING_LAST_SYNCED_AT = "calendar.last_synced_at";
 
 // ───────────────────────────────────────────────────────────────────
@@ -118,8 +117,7 @@ export async function syncCalendarEventsForDate(
   opts: { force?: boolean } = {},
 ): Promise<SyncResult> {
   // 1. Disabled → exit.
-  const enabled = (await getSetting(SETTING_ENABLED)) === "1";
-  if (!enabled) return { created: 0, skipped: 0 };
+  if (!(await getEnabled())) return { created: 0, skipped: 0 };
 
   // 2. TTL guard.
   if (!opts.force && ttlIsFresh(dateIso)) {
@@ -132,7 +130,7 @@ export async function syncCalendarEventsForDate(
   });
 
   // 4. Filter excluded calendars + cancelled events.
-  const excluded = await getExcludedCalendarIds();
+  const excluded: Set<string> = await getExcludedCalendarIds();
   const candidates = events.filter(
     (ev) => !excluded.has(ev.calendarId) && ev.status !== "cancelled",
   );
@@ -163,18 +161,6 @@ export async function syncCalendarEventsForDate(
   await setSetting(SETTING_LAST_SYNCED_AT, new Date().toISOString());
 
   return { created, skipped };
-}
-
-async function getExcludedCalendarIds(): Promise<Set<string>> {
-  const raw = await getSetting(SETTING_EXCLUDED);
-  if (!raw) return new Set();
-  try {
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return new Set();
-    return new Set(arr.filter((x): x is string => typeof x === "string"));
-  } catch {
-    return new Set();
-  }
 }
 
 // ───────────────────────────────────────────────────────────────────

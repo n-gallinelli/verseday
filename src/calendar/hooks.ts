@@ -1,19 +1,22 @@
-// Calendar React hooks (M2 stub, fully wired in M4).
+// Calendar React hooks.
 //
-// `useCalendarSync` will mount on the Daily Plan page in M4. Today
-// (M2) it just exposes the imperative sync surface and a stable
-// callback shape so M4 can drop the hourly tick + mount + date-change
-// triggers in without touching consumers.
-//
-// Per Verse A4 (plan v3): the hourly setInterval is
-// `document.visibilityState`-aware from M4, not deferred — the
-// scaffolding lives here, but actual scheduling is M4's job.
+// `useCalendarSync` exposes the imperative sync surface; M4 will add
+// the visibility-aware hourly tick + mount triggers. `useCalendarPermission`
+// reads EventKit's permission status fresh on every mount (and exposes
+// a refresh + request callback) — never persists to the DB, since
+// permission state lives in System Settings and the user can revoke
+// out-of-band at any time. See Verse Q1 / plan §3.6.
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   syncCalendarEventsForDate,
   type SyncResult,
 } from "./sync";
+import {
+  checkPermission,
+  requestPermission,
+  type PermissionStatus,
+} from "./permissions";
 
 export interface UseCalendarSyncResult {
   /** Force a sync now, bypassing the in-memory TTL. Wired to the
@@ -28,4 +31,40 @@ export function useCalendarSync(): UseCalendarSyncResult {
   }, []);
 
   return { syncNow };
+}
+
+export interface UseCalendarPermissionResult {
+  /** Live status. `null` while the initial check is in flight on
+   *  first mount — consumers should treat that as "loading" and not
+   *  render denied/granted UI yet. */
+  status: PermissionStatus | null;
+  /** Re-read EventKit status. Use this when the user returns to a
+   *  surface where the answer might have changed (Settings mount,
+   *  Sync now click). */
+  refresh: () => Promise<PermissionStatus>;
+  /** Trigger the system prompt (no-op past first time per
+   *  EventKit). Returns the resulting status. */
+  request: () => Promise<PermissionStatus>;
+}
+
+export function useCalendarPermission(): UseCalendarPermissionResult {
+  const [status, setStatus] = useState<PermissionStatus | null>(null);
+
+  const refresh = useCallback(async () => {
+    const next = await checkPermission();
+    setStatus(next);
+    return next;
+  }, []);
+
+  const request = useCallback(async () => {
+    const next = await requestPermission();
+    setStatus(next);
+    return next;
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { status, refresh, request };
 }

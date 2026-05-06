@@ -350,11 +350,13 @@ function TaskCardImpl({
               const liveSec = Math.max(0, Math.floor((liveElapsedMs ?? 0) / 1000));
               const liveM = Math.floor(liveSec / 60);
               const liveS = liveSec % 60;
-              // Once the timer hits 1 minute, switch to the shared
-              // Xh Ym formatter so a 112-minute counter reads "1h 52m"
-              // instead of "112m 16s". Sub-minute, fall back to raw
-              // seconds so the user can still see the timer ticking.
-              const liveText = liveM > 0 ? formatHoursMinutes(liveM) : `${liveS}s`;
+              // Always include seconds so the counter visibly ticks
+              // — daily-plan rows are where the user watches a session
+              // accrue. Past the first minute we still use the shared
+              // Xh Ym formatter for the hours/minutes prefix so a
+              // 112-minute counter reads "1h 52m 16s", not "112m 16s".
+              const liveText =
+                liveM > 0 ? `${formatHoursMinutes(liveM)} ${liveS}s` : `${liveS}s`;
               const est = task.estimated_minutes ?? 0;
               const worked = workedMinutes ?? 0;
               const idleHasContent = worked > 0 || est > 0;

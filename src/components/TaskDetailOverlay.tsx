@@ -4,6 +4,7 @@ import { getWorkedMinutesByDate, setTaskRecurrence, parseRecurrence, serializeRe
 import { parseTimeFromTitle, formatHoursMinutes } from "../utils/format";
 import { useAppStore } from "../stores/appStore";
 import CalendarPicker from "./CalendarPicker";
+import CalendarMetaRail from "./CalendarMetaRail";
 import ProjectPicker from "./ProjectPicker";
 import RichTextEditor from "./RichTextEditor";
 import SimpleSelect from "./SimpleSelect";
@@ -730,7 +731,13 @@ export default function TaskDetailOverlay({
             />
           </div>
 
-          {/* Right: Properties rail */}
+          {/* Right: Properties rail. Calendar-imported tasks get a
+              dedicated read-only panel with event metadata (time,
+              attendees, location, description) instead of the in-app
+              property rows that don't apply to a calendar event. */}
+          {task.external_source === "calendar" ? (
+            <CalendarMetaRail task={task} />
+          ) : (
           <div className="w-[320px] flex-shrink-0 border-l border-line-hairline bg-rail px-6 py-7 overflow-y-auto space-y-6">
             <PropertyRow label="Objective">
               <ProjectPicker
@@ -989,6 +996,7 @@ export default function TaskDetailOverlay({
               </PropertyRow>
             )}
           </div>
+          )}
         </div>
 
         {/* Footer */}

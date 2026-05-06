@@ -35,6 +35,17 @@ export interface Task {
   external_source: string | null;
   external_id: string | null;
   external_dismissal_reason: string | null;
+  // v21: calendar metadata for `external_source = 'calendar'` tasks.
+  // All NULL for in-app tasks; populated by the calendar sync layer.
+  external_notes: string | null;
+  external_location: string | null;
+  external_url: string | null;
+  /** JSON array of `{name, email, status}` objects, or NULL. */
+  external_attendees: string | null;
+  external_organizer_email: string | null;
+  external_calendar_name: string | null;
+  external_start_local: string | null;
+  external_end_local: string | null;
   created_at: string;
 }
 

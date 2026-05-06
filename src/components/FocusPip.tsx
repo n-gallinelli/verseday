@@ -1,14 +1,19 @@
 import { useEffect, useState, useRef } from "react";
 import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize } from "@tauri-apps/api/dpi";
+import { playBreakChime as playCalm } from "../utils/sounds";
 
 // Compact baseline for work/break readouts. The prompt phase grows
 // 20px taller (a small bump, NOT the original 320×140 popup) so the
 // "Break?" header and three pills can sit in two rows without
 // cramping. Width is pinned at 220 across phases so the pip stays
 // pip-shaped.
-const PIP_SIZE_COMPACT = { width: 220, height: 68 };
-const PIP_SIZE_PROMPT = { width: 220, height: 88 };
+const PIP_SIZE_COMPACT = { width: 220, height: 60 };
+const PIP_SIZE_PROMPT = { width: 220, height: 80 };
+
+// Pure-white solid surface — overrides the themed --focus-pip-bg so
+// the pip always reads as a clean tag against any desktop wallpaper.
+const PIP_BG = "#ffffff";
 
 const PIP_STATE_KEY = "verseday_pip_state";
 const PIP_CMD_KEY = "verseday_pip_cmd";
@@ -27,6 +32,16 @@ function formatTime(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   const pad = (n: number) => n.toString().padStart(2, "0");
+  // Hour+ uses "Xh Ym Zs" — the seconds counter stays visible so the
+  // pip reads as a live indicator at every duration. Sub-hour stays
+  // MM:SS for the same reason.
+  if (minutes >= 60) {
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return m === 0
+      ? `${h}h ${pad(seconds)}s`
+      : `${h}h ${m}m ${pad(seconds)}s`;
+  }
   return `${minutes}:${pad(seconds)}`;
 }
 
@@ -40,30 +55,6 @@ function formatCountdown(ms: number): string {
 
 function sendCommand(cmd: string) {
   localStorage.setItem(PIP_CMD_KEY, cmd);
-}
-
-function playCalm() {
-  try {
-    const ctx = new AudioContext();
-    const now = ctx.currentTime;
-    const notes = [261.63, 329.63, 392.0];
-    notes.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, now + i * 0.2);
-      gain.gain.linearRampToValueAtTime(0.2, now + i * 0.2 + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.2 + 0.8);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now + i * 0.2);
-      osc.stop(now + i * 0.2 + 0.8);
-    });
-    setTimeout(() => ctx.close(), 2000);
-  } catch {
-    // silent
-  }
 }
 
 // Icon set for the break-prompt buttons. All three render at 16px,
@@ -144,6 +135,21 @@ function handlePipMouseDown(e: React.MouseEvent) {
 }
 
 const ICON_BTN = "w-8 h-8 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg hover:bg-input-hover transition-colors flex-shrink-0";
+
+/** Per-icon transform for the hover-reveal fan-out. `slot` is the
+ *  distance from the pause button (0 = closest, 3 = farthest). When
+ *  collapsed, each icon is translated rightward by `slot` icon-widths
+ *  so all four icons stack at the pause position. On hover, they
+ *  slide to translateX(0) with a stagger so the closest icon appears
+ *  first — feels like icons unfurling out from behind the pause. */
+const ICON_SLOT_PX = 32;
+function fanOut(slot: number, expanded: boolean): React.CSSProperties {
+  return {
+    transform: expanded ? "translateX(0)" : `translateX(${slot * ICON_SLOT_PX}px)`,
+    transition: "transform 240ms cubic-bezier(0.2, 0.8, 0.3, 1)",
+    transitionDelay: expanded ? `${slot * 30}ms` : "0ms",
+  };
+}
 const BTN_SECONDARY = "px-2.5 py-1 rounded-[6px] text-[11px] bg-overlay-hover text-fg-muted cursor-pointer hover:bg-overlay-pressed transition-colors";
 
 const FOCUS_STORAGE_KEY = "verseday_focus";
@@ -153,6 +159,28 @@ export default function FocusPip() {
   const [state, setState] = useState<PipState | null>(null);
   const [expanded, setExpanded] = useState(false);
   const orphanStartRef = useRef<number | null>(null);
+  // Transient acknowledgment text — shown for ~1.2s after the user
+  // clicks Snooze ("5 more minutes") or No ("Continue working") on
+  // the break prompt, so the click registers visually before the pip
+  // flips back to its work view.
+  const [pendingAck, setPendingAck] = useState<string | null>(null);
+  const ackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function flashAck(message: string, cmd: string) {
+    if (ackTimerRef.current) clearTimeout(ackTimerRef.current);
+    setPendingAck(message);
+    sendCommand(cmd);
+    ackTimerRef.current = setTimeout(() => {
+      setPendingAck(null);
+      ackTimerRef.current = null;
+    }, 1200);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (ackTimerRef.current) clearTimeout(ackTimerRef.current);
+    };
+  }, []);
 
   // Make the pip window's html+body transparent and clip overflow so the
   // rounded pill shows against the desktop instead of a rectangular bg.
@@ -232,6 +260,30 @@ export default function FocusPip() {
     return null;
   }
 
+  // ── ACK — transient feedback after a prompt-button click ──────────
+  // Renders the acknowledgment text on the same pip footprint, calmly
+  // confirming the choice before the underlying state.phase flips to
+  // "work" and the regular task readout returns.
+  if (pendingAck) {
+    return (
+      <div
+        data-tauri-drag-region
+        className="select-none flex items-center justify-center w-full h-full"
+        style={{
+          background: PIP_BG,
+          borderRadius: 18,
+          border: "0.5px solid var(--focus-pip-border)",
+          boxShadow: "var(--shadow-card)",
+        }}
+        onMouseDown={handlePipMouseDown}
+      >
+        <span className="text-[13px] font-medium text-fg leading-tight">
+          {pendingAck}
+        </span>
+      </div>
+    );
+  }
+
   // ── BREAK PROMPT — two rows, fits in 220×88 ────────────────────────
   // Header row: centered "Ready for a break?" anchor at small weight.
   // Action row: three icon buttons (thumbs up / clock / x) — icon-only
@@ -246,7 +298,7 @@ export default function FocusPip() {
         data-tauri-drag-region
         className="select-none flex flex-col w-full h-full px-2.5 py-2"
         style={{
-          background: "var(--focus-pip-bg)",
+          background: PIP_BG,
           borderRadius: 18,
           border: "0.5px solid var(--focus-pip-border)",
           boxShadow: "var(--shadow-card)",
@@ -266,7 +318,7 @@ export default function FocusPip() {
             <ThumbsUpIcon />
           </button>
           <button
-            onClick={() => sendCommand("snooze5")}
+            onClick={() => flashAck("5 more minutes", "snooze5")}
             className="w-7 h-7 rounded-full flex items-center justify-center text-fg-secondary border border-line-soft hover:border-line-strong hover:bg-overlay-hover cursor-pointer transition-colors"
             title="Remind me in 5 min"
             aria-label="Remind me in 5 minutes"
@@ -274,7 +326,7 @@ export default function FocusPip() {
             <ClockIcon />
           </button>
           <button
-            onClick={() => sendCommand("noBreak")}
+            onClick={() => flashAck("Continue working", "noBreak")}
             className="w-7 h-7 rounded-full flex items-center justify-center text-fg-faded border border-line-hairline hover:text-fg-secondary hover:border-line-soft hover:bg-overlay-hover cursor-pointer transition-colors"
             title="No — keep working"
             aria-label="Decline break"
@@ -289,7 +341,7 @@ export default function FocusPip() {
   // ── BREAK COUNTDOWN ────────────────────────────────────────────────
   if (state.phase === "break") {
     return (
-      <div data-tauri-drag-region className="px-3.5 py-2.5 select-none overflow-hidden" style={{ background: "var(--focus-pip-bg)", borderRadius: 18 }} onMouseDown={handlePipMouseDown}>
+      <div data-tauri-drag-region className="px-3.5 py-2.5 select-none overflow-hidden" style={{ background: PIP_BG, borderRadius: 18 }} onMouseDown={handlePipMouseDown}>
         <div className="flex items-center gap-2.5">
           <div className="flex-1 min-w-0">
             <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-0.5">Break</div>
@@ -305,21 +357,27 @@ export default function FocusPip() {
     );
   }
 
-  // ── ACTIVE / PAUSED — hover swaps the whole pip to controls ────────
+  // ── ACTIVE / PAUSED ────────────────────────────────────────────────
+  // Pause/resume is pinned to the right edge always — the most-used
+  // control should never be a hover-reveal. The other actions (Hide,
+  // Stop, Done, Break) fade in to its left on hover, sliding over the
+  // title area so a hover-state never overlaps the persistent pause.
   return (
     <div
       data-tauri-drag-region
       className="select-none overflow-hidden relative"
-      style={{ background: "var(--focus-pip-bg)", borderRadius: 18, border: "0.5px solid var(--focus-pip-border)" }}
+      style={{ background: PIP_BG, borderRadius: 18, border: "0.5px solid var(--focus-pip-border)" }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onMouseDown={handlePipMouseDown}
     >
-      {/* Resting layer — task name + timer. Always rendered; the
-          control overlay sits on top during hover so this content
-          is fully covered (no peek-through behind the icons). */}
-      <div className="flex items-center gap-2 pl-4 pr-2.5 py-2.5 w-full h-full">
-        <div className="flex-1 min-w-0">
+      <div className="flex items-center gap-2 pl-4 pr-2 py-2 w-full h-full">
+        {/* Title + timer — fades on hover so the icon row can take the
+            space without overlapping. */}
+        <div
+          className="flex-1 min-w-0 transition-opacity duration-150"
+          style={{ opacity: expanded ? 0 : 1, pointerEvents: expanded ? "none" : "auto" }}
+        >
           <div
             className="text-[14px] font-medium text-fg truncate cursor-pointer hover:text-accent-blue transition-colors leading-snug"
             onClick={focusMainWindow}
@@ -338,54 +396,75 @@ export default function FocusPip() {
             </span>
           </div>
         </div>
-      </div>
 
-      {/* Hover overlay — covers the entire pip when expanded so the
-          timer + title behind it are fully obscured (no visible
-          numerals peeking through the icons). Fades in/out on hover.
-          Order right-to-left: Pause (most-used) → Break → Complete →
-          Stop → Hide. */}
-      <div
-        className="absolute inset-0 flex items-center justify-end gap-0.5 px-2 transition-opacity duration-150"
-        style={{
-          background: "var(--focus-pip-bg)",
-          opacity: expanded ? 1 : 0,
-          pointerEvents: expanded ? "auto" : "none",
-        }}
-      >
-        {/* Hide pip — closes the mini window for the rest of this
-            focus session. Re-appears next session. */}
-        <button onClick={() => sendCommand("hidePip")} className={ICON_BTN} title="Hide mini timer">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M2 8s2.4-4 6-4 6 4 6 4-2.4 4-6 4-6-4-6-4z" />
-            <circle cx="8" cy="8" r="1.6" />
-            <path d="M2.5 13.5L13.5 2.5" />
-          </svg>
-        </button>
+        {/* Hover-only icon strip — sits to the left of the persistent
+            pause button. Icons fan out right-to-left from the pause:
+            when collapsed, each icon is translated rightward to "stack"
+            at the pause position (one icon-width per slot), then slides
+            to its natural position on hover with a stagger so the icon
+            closest to pause appears first. */}
+        <div
+          className="absolute left-2 right-12 top-0 bottom-0 flex items-center justify-end gap-0.5"
+          style={{
+            background: PIP_BG,
+            opacity: expanded ? 1 : 0,
+            pointerEvents: expanded ? "auto" : "none",
+            transition: "opacity 140ms ease-out",
+          }}
+        >
+          <button
+            onClick={() => sendCommand("hidePip")}
+            className={ICON_BTN}
+            title="Hide mini timer"
+            style={fanOut(3, expanded)}
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 8s2.4-4 6-4 6 4 6 4-2.4 4-6 4-6-4-6-4z" />
+              <circle cx="8" cy="8" r="1.6" />
+              <path d="M2.5 13.5L13.5 2.5" />
+            </svg>
+          </button>
 
-        <button onClick={() => sendCommand("stop")} className={ICON_BTN} title="Stop & save">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-            <rect x="2" y="2" width="10" height="10" rx="1.5" />
-          </svg>
-        </button>
+          <button
+            onClick={() => sendCommand("stop")}
+            className={ICON_BTN}
+            title="Stop & save"
+            style={fanOut(2, expanded)}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+              <rect x="2" y="2" width="10" height="10" rx="1.5" />
+            </svg>
+          </button>
 
-        <button onClick={() => sendCommand("done")} className={ICON_BTN} title="Complete task">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 8.5l3.5 3.5 6.5-7" />
-          </svg>
-        </button>
+          <button
+            onClick={() => sendCommand("done")}
+            className={ICON_BTN}
+            title="Complete task"
+            style={fanOut(1, expanded)}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 8.5l3.5 3.5 6.5-7" />
+            </svg>
+          </button>
 
-        <button onClick={() => sendCommand("requestBreak")} className={ICON_BTN} title="Take a break">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M2 12h10" />
-            <path d="M2 5h8v4a3 3 0 01-3 3H5a3 3 0 01-3-3V5z" />
-            <path d="M10 6h1.5a2 2 0 010 4H10" />
-          </svg>
-        </button>
+          <button
+            onClick={() => sendCommand("takeBreak")}
+            className={ICON_BTN}
+            title="Take a break"
+            style={fanOut(0, expanded)}
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 12h10" />
+              <path d="M2 5h8v4a3 3 0 01-3 3H5a3 3 0 01-3-3V5z" />
+              <path d="M10 6h1.5a2 2 0 010 4H10" />
+            </svg>
+          </button>
+        </div>
 
+        {/* Persistent pause/resume — always visible on the right edge. */}
         <button
           onClick={() => sendCommand("pause")}
-          className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg hover:bg-input-hover transition-colors flex-shrink-0"
+          className="relative z-10 w-9 h-9 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg hover:bg-input-hover transition-colors flex-shrink-0"
           title={state.paused ? "Resume" : "Pause"}
         >
           {state.paused ? (
@@ -400,7 +479,6 @@ export default function FocusPip() {
           )}
         </button>
       </div>
-
     </div>
   );
 }

@@ -46,6 +46,10 @@ export default function CalendarSettings() {
   const [revoked, setRevoked] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // Sync-result feedback rendered inline in the "Sync now" button slot
+  // (e.g. "Up to date.") instead of as a separate panel below the
+  // section. Keeps the panel from growing on every sync.
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const excludeDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -102,6 +106,14 @@ export default function CalendarSettings() {
     const t = setTimeout(() => setToast(null), TOAST_AUTO_DISMISS_MS);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // Auto-dismiss the inline sync-feedback faster than the panel toast
+  // — the user doesn't need to read "Up to date" for 3 seconds.
+  useEffect(() => {
+    if (!syncFeedback) return;
+    const t = setTimeout(() => setSyncFeedback(null), 1600);
+    return () => clearTimeout(t);
+  }, [syncFeedback]);
 
   // Polish #1: cancel any pending excluded-write on unmount so a
   // navigation within the 400 ms debounce window doesn't fire a
@@ -203,15 +215,15 @@ export default function CalendarSettings() {
     if (syncing) return;
     setSyncing(true);
     setError(null);
-    setToast(null);
+    setSyncFeedback(null);
     try {
       const result = await syncNow(todayString());
       if (result.created > 0) {
-        setToast(`Synced ${result.created} event${result.created === 1 ? "" : "s"}.`);
+        setSyncFeedback(`Synced ${result.created}.`);
       } else if (result.skipped > 0) {
-        setToast("Up to date.");
+        setSyncFeedback("Up to date.");
       } else {
-        setToast("No events for today.");
+        setSyncFeedback("No events.");
       }
       const ls = await getSetting(KEY_LAST_SYNCED_AT);
       setLastSyncedAt(ls);
@@ -317,20 +329,32 @@ export default function CalendarSettings() {
           </div>
         )}
 
-        {/* Sync now + last-synced */}
+        {/* Sync now + last-synced. Sync-result feedback ("Up to date.",
+            "Synced N.") replaces the button text briefly via
+            `syncFeedback` instead of expanding the section with a
+            toast row, so the panel doesn't grow on every click. */}
         {enabled && status === "granted" && (
           <div className="flex items-center justify-between pt-2" style={{ borderTop: "0.5px solid var(--border-hairline)" }}>
             <div className="text-[11px] text-fg-faded">
               {lastSyncedAt ? `Last synced ${formatLastSynced(lastSyncedAt)}` : "Not yet synced"}
             </div>
-            <button
-              onClick={handleSyncNow}
-              disabled={syncDisabled}
-              className="text-[12px] px-3 py-1.5 rounded-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              style={{ border: "1px solid var(--border-medium)" }}
-            >
-              {syncing ? "Syncing…" : "Sync now"}
-            </button>
+            {syncFeedback ? (
+              <span
+                className="text-[12px] px-3 py-1.5 rounded-md text-fg-faded select-none"
+                style={{ border: "1px solid var(--border-hairline)" }}
+              >
+                {syncFeedback}
+              </span>
+            ) : (
+              <button
+                onClick={handleSyncNow}
+                disabled={syncDisabled}
+                className="text-[12px] px-3 py-1.5 rounded-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                style={{ border: "1px solid var(--border-medium)" }}
+              >
+                {syncing ? "Syncing…" : "Sync now"}
+              </button>
+            )}
           </div>
         )}
 

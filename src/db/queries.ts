@@ -1539,29 +1539,92 @@ export interface UpsertCalendarTaskInput {
    *  the event's local-tz `startLocal` via `'T'` split + format guard. */
   dateScheduled: string;
   estimatedMinutes: number | null;
+  // v21 metadata. All optional — fall through as NULL if missing.
+  notes?: string | null;
+  location?: string | null;
+  url?: string | null;
+  /** JSON-stringified array of `{name, email, status}` objects. */
+  attendees?: string | null;
+  organizerEmail?: string | null;
+  calendarName?: string | null;
+  startLocal?: string | null;
+  endLocal?: string | null;
 }
 
-/** INSERT a calendar-imported task, or skip if a row with the same
- *  `(external_source, external_id)` already exists. Returns whether
- *  a new row was created. The conflict target matches v19's UNIQUE
- *  partial index byte-for-byte (see `idx_tasks_external` in
- *  src-tauri/src/lib.rs migrations v18 + v19). */
+/** Upsert a calendar-imported task. INSERTs new rows; on
+ *  `(external_source, external_id)` conflict, refreshes only the
+ *  fields where the calendar is the source of truth (event-shape
+ *  metadata: time range, location, description, attendees,
+ *  organizer, calendar name, URL) plus `date_scheduled` as a
+ *  deliberate exception (calendar moving an event to another day
+ *  should move the task with it).
+ *
+ *  Explicitly preserves on conflict — never clobbered by re-sync:
+ *  - title / estimated_minutes (user-authored intent; the user may
+ *    rename or re-estimate after import)
+ *  - notes (the user's own task notes, distinct from external_notes
+ *    which is the imported event description)
+ *  - status, is_highlight, sort_order, priority, project_id,
+ *    objective_id (in-app task state)
+ *
+ *  See `docs/2026-05-06-calendar-upsert-contract.md` for the full
+ *  rationale and the title-preservation failure mode that drove the
+ *  preserve-vs-refresh split (Verse review on PR #12).
+ *
+ *  Returns `true` if a new row was inserted (vs. an existing row
+ *  updated), so the caller's "created" count stays accurate.
+ *
+ *  The conflict target matches v19's UNIQUE partial index
+ *  byte-for-byte (see `idx_tasks_external`). */
 export async function upsertCalendarTask(
   input: UpsertCalendarTaskInput
 ): Promise<boolean> {
   const db = await getDb();
-  const result = await db.execute(
+  // Pre-check existence so the returned "created" boolean stays
+  // honest — DO UPDATE makes rowsAffected always 1, so we can't
+  // disambiguate from the upsert result alone.
+  const existing: unknown[] = await db.select(
+    "SELECT 1 FROM tasks WHERE external_source = 'calendar' AND external_id = $1 LIMIT 1",
+    [input.externalId]
+  );
+  const isNew = existing.length === 0;
+  await db.execute(
     `INSERT INTO tasks (
        title, project_id, date_scheduled, estimated_minutes,
        priority, status, sort_order,
-       external_source, external_id
+       external_source, external_id,
+       external_notes, external_location, external_url,
+       external_attendees, external_organizer_email,
+       external_calendar_name, external_start_local, external_end_local
      )
-     VALUES ($1, NULL, $2, $3, 'medium', 'todo', 0, 'calendar', $4)
-     ON CONFLICT(external_source, external_id) WHERE external_source IS NOT NULL DO NOTHING`,
-    [input.title, input.dateScheduled, input.estimatedMinutes, input.externalId]
+     VALUES ($1, NULL, $2, $3, 'medium', 'todo', 0, 'calendar', $4,
+             $5, $6, $7, $8, $9, $10, $11, $12)
+     ON CONFLICT(external_source, external_id) WHERE external_source IS NOT NULL DO UPDATE SET
+       date_scheduled = excluded.date_scheduled,
+       external_notes = excluded.external_notes,
+       external_location = excluded.external_location,
+       external_url = excluded.external_url,
+       external_attendees = excluded.external_attendees,
+       external_organizer_email = excluded.external_organizer_email,
+       external_calendar_name = excluded.external_calendar_name,
+       external_start_local = excluded.external_start_local,
+       external_end_local = excluded.external_end_local`,
+    [
+      input.title,
+      input.dateScheduled,
+      input.estimatedMinutes,
+      input.externalId,
+      input.notes ?? null,
+      input.location ?? null,
+      input.url ?? null,
+      input.attendees ?? null,
+      input.organizerEmail ?? null,
+      input.calendarName ?? null,
+      input.startLocal ?? null,
+      input.endLocal ?? null,
+    ]
   );
-  // tauri-plugin-sql returns rowsAffected = 0 for the DO-NOTHING branch.
-  return result.rowsAffected > 0;
+  return isNew;
 }
 
 /** Soft-delete a task by stamping `external_dismissal_reason`. The row

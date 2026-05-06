@@ -115,7 +115,7 @@ function MainApp() {
       // When showing: captures the frontmost app first so dismiss can
       // refocus it. When already visible: dismisses + refocuses.
       try {
-        await register("CmdOrCtrl+Shift+A", async () => {
+        await register("CmdOrCtrl+Shift+D", async () => {
           try {
             const win = await WebviewWindow.getByLabel("quick-add");
             if (!win) {
@@ -138,7 +138,7 @@ function MainApp() {
       } catch (err) {
         // Most common cause: shortcut already registered by another app or
         // missing macOS Accessibility permission. Log so we don't ship blind.
-        console.error("Failed to register Cmd+Shift+A shortcut:", err);
+        console.error("Failed to register Cmd+Shift+D shortcut:", err);
       }
     }
     startup();

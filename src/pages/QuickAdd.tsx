@@ -44,12 +44,15 @@ export default function QuickAdd() {
     setTimeout(() => titleRef.current?.focus(), 80);
   }, []);
 
-  // Ignore the brief blur that fires while the window is being shown +
-  // focused — without this, the window flickers (show → transient blur →
-  // dismiss → hide). Only blurs that arrive after the window has been
-  // steadily focused for ~250ms count as a real user dismiss.
-  const lastFocusedAt = useRef<number>(0);
-
+  // Reset + refocus the title input every time the window becomes
+  // visible. Blur-dismiss is intentionally NOT wired here — borderless
+  // transparent always-on-top windows on macOS get a stray blur event
+  // whenever the user releases the global-shortcut chord (the OS
+  // reconciles focus back to whichever app was frontmost). The old
+  // 250ms grace tried to absorb that but didn't always cover it; the
+  // result was the window appearing and then immediately dismissing
+  // when the user let go of Cmd+Shift+A. Esc and pressing the shortcut
+  // again already dismiss, so click-away dismiss isn't worth the bug.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     const appWindow = getCurrentWebviewWindow();
@@ -57,14 +60,9 @@ export default function QuickAdd() {
     (async () => {
       unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
         if (focused) {
-          lastFocusedAt.current = Date.now();
           resetFields();
           loadProjects();
           focusTitle();
-        } else {
-          const sinceFocus = Date.now() - lastFocusedAt.current;
-          if (sinceFocus < 250) return;
-          invoke("dismiss_quick_add");
         }
       });
     })();
@@ -150,14 +148,14 @@ export default function QuickAdd() {
     // the project dropdown has room to open upward into the 360px window.
     <div className="w-full h-screen flex items-end justify-center pb-3" style={{ background: "transparent" }}>
       <div
-        className="flex flex-col w-full max-w-[620px] mx-2.5 rounded-xl border border-line-hairline overflow-visible"
+        className="flex flex-col w-full max-w-[720px] mx-2.5 rounded-xl border border-line-hairline overflow-visible"
         style={{
-          background: "color-mix(in srgb, var(--bg-sidebar) 97%, transparent)",
+          background: "#ffffff",
           boxShadow: "var(--shadow-modal)",
         }}
       >
         {/* Header strip */}
-        <div className="flex items-center gap-2 px-4 pt-2.5 pb-1.5">
+        <div className="flex items-center gap-2 px-5 pt-3 pb-2">
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
             <defs>
               <linearGradient id="qa-sky" x1="0" y1="0" x2="0" y2="1">
@@ -191,17 +189,17 @@ export default function QuickAdd() {
             <path d="M 15.85,15.46 A 8,8 0 0 1 4.15,15.46" stroke="#A8CFE5" strokeWidth="1.6" strokeLinecap="round" />
             <path d="M 4.54,15.85 A 8,8 0 0 1 4.54,4.15" stroke="#C9B5E0" strokeWidth="1.6" strokeLinecap="round" />
           </svg>
-          <span className="text-[11px] font-semibold text-accent-blue tracking-tight">VerseDay</span>
-          <span className="text-[10px] text-fg-disabled ml-auto">&#x2318;&#x21E7;A</span>
+          <span className="text-[12px] font-semibold text-accent-blue tracking-tight">VerseDay</span>
+          <span className="text-[11px] text-fg-disabled ml-auto">&#x2318;&#x21E7;D</span>
         </div>
 
         {/* Divider between header and input */}
-        <div className="h-px bg-line-hairline mx-3" />
+        <div className="h-px bg-line-hairline mx-4" />
 
         {/* Input bar */}
         <div
           onKeyDown={handleKeyDown}
-          className="flex items-center gap-2.5 px-4 py-3 relative"
+          className="flex items-center gap-3 px-5 py-4 relative"
         >
         {/* Plus icon */}
         <svg
@@ -226,7 +224,7 @@ export default function QuickAdd() {
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Add a task..."
           autoFocus
-          className="flex-1 min-w-0 text-[14px] text-fg bg-transparent border-none outline-none placeholder:text-fg-faded"
+          className="flex-1 min-w-0 text-[15px] text-fg bg-transparent border-none outline-none placeholder:text-fg-faded"
         />
 
         {/* Estimate chips */}
@@ -237,7 +235,7 @@ export default function QuickAdd() {
               <button
                 key={preset.value}
                 onClick={() => setEstimateMinutes(active ? null : preset.value)}
-                className={`text-[11px] font-medium px-2 py-[3px] rounded-md cursor-pointer border transition-colors ${
+                className={`text-[12px] font-medium px-2.5 py-1 rounded-md cursor-pointer border transition-colors ${
                   active
                     ? "border-accent-blue/40 bg-accent-blue-soft text-accent-blue-soft-fg"
                     : "border-line-hairline bg-elevated/50 text-fg-secondary hover:text-fg hover:bg-elevated/70"
@@ -256,7 +254,7 @@ export default function QuickAdd() {
         <div ref={projectPickerRef} className="relative flex-shrink-0">
           <button
             onClick={() => setShowProjectPicker(!showProjectPicker)}
-            className={`flex items-center gap-1.5 text-[12px] px-2.5 py-[5px] rounded-lg border cursor-pointer transition-colors ${
+            className={`flex items-center gap-1.5 text-[13px] px-3 py-1.5 rounded-lg border cursor-pointer transition-colors ${
               selectedProject
                 ? "border-line-soft bg-elevated/70 text-fg"
                 : "border-line-hairline bg-elevated/40 text-fg-secondary hover:text-fg"

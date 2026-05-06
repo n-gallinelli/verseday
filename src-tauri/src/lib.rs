@@ -513,6 +513,33 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 21,
+            description: "calendar metadata: notes, location, url, attendees, organizer, calendar_name on tasks",
+            // v21 adds the per-task calendar metadata captured by the
+            // M-next sync layer. EKEvent surfaces description (notes),
+            // location, URL, attendees, and organizer in addition to
+            // title — the right-rail of TaskDetailOverlay renders
+            // these for `external_source = 'calendar'` rows.
+            //
+            // All columns are TEXT and nullable; existing rows
+            // (calendar imports from before this migration) are
+            // back-filled by the next sync pass via the upserted
+            // UPDATE branch. Attendees stored as a JSON array string —
+            // SQLite has no native array type, and we don't need to
+            // query individual attendees from SQL.
+            sql: "
+                ALTER TABLE tasks ADD COLUMN external_notes TEXT;
+                ALTER TABLE tasks ADD COLUMN external_location TEXT;
+                ALTER TABLE tasks ADD COLUMN external_url TEXT;
+                ALTER TABLE tasks ADD COLUMN external_attendees TEXT;
+                ALTER TABLE tasks ADD COLUMN external_organizer_email TEXT;
+                ALTER TABLE tasks ADD COLUMN external_calendar_name TEXT;
+                ALTER TABLE tasks ADD COLUMN external_start_local TEXT;
+                ALTER TABLE tasks ADD COLUMN external_end_local TEXT;
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -572,7 +599,7 @@ pub fn run() {
                 WebviewUrl::App("index.html#quick-add".into()),
             )
             .title("VerseDay — Quick Add")
-            .inner_size(640.0, 360.0)
+            .inner_size(760.0, 400.0)
             .resizable(false)
             .decorations(false)
             .transparent(true)

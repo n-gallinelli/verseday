@@ -184,20 +184,39 @@ export default function PlanProjectPanel({
         </div>
       </div>
 
-      {/* Footer — Next project (left) / Done planning the week (right).
-          The bulk action sweeps every still-unreviewed project in one
-          click; PlanTab decides planned vs skipped per project based
-          on whether days are committed. */}
+      {/* Footer — "Done planning" sits alone on the left as the
+          escape-hatch link. Per-project actions cluster on the right:
+          "Skip project this week" link sits next to "Next project"
+          (the right-anchored primary CTA) so the two per-project
+          choices read as paired alternatives. */}
       <footer className="px-8 py-5 border-t border-line-soft flex items-center gap-4 flex-shrink-0">
         {status == null ? (
           <>
+            <button
+              onClick={onMarkAllRemaining}
+              title="Mark every remaining project planned (or skipped if no days)"
+              className="text-[12px] text-fg-faded hover:text-fg-secondary cursor-pointer"
+            >
+              Done planning the week
+            </button>
+            {!canMarkDone && (
+              <span className="text-[11px] italic text-fg-disabled ml-auto select-none">
+                Pick a day, or skip.
+              </span>
+            )}
+            <button
+              onClick={() => onMarkSkipped(project.id)}
+              className={`${canMarkDone ? "ml-auto" : ""} text-[12px] text-fg-faded hover:text-fg-secondary cursor-pointer`}
+            >
+              Skip project this week
+            </button>
             <button
               onClick={() => onMarkPlanned(project.id)}
               disabled={!canMarkDone}
               title={
                 canMarkDone
                   ? "Mark this project planned and advance"
-                  : "Activate at least one day, or use Skip this week"
+                  : "Activate at least one day, or use Skip project this week"
               }
               className={`px-4 py-1.5 rounded-lg border text-[13px] font-medium transition-colors ${
                 canMarkDone
@@ -206,24 +225,6 @@ export default function PlanProjectPanel({
               }`}
             >
               Next project
-            </button>
-            <button
-              onClick={() => onMarkSkipped(project.id)}
-              className="text-[12px] text-fg-faded hover:text-fg-secondary cursor-pointer"
-            >
-              Skip this week
-            </button>
-            {!canMarkDone && (
-              <span className="text-[11px] text-fg-faded">
-                Pick at least one day, or skip.
-              </span>
-            )}
-            <button
-              onClick={onMarkAllRemaining}
-              title="Mark every remaining project planned (or skipped if no days)"
-              className="ml-auto px-4 py-1.5 rounded-lg border border-accent-pink-bright/50 text-accent-pink-bright text-[13px] font-medium cursor-pointer hover:border-accent-pink-bright hover:bg-accent-pink-soft transition-colors"
-            >
-              Done planning the week
             </button>
           </>
         ) : (

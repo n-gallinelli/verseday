@@ -350,7 +350,11 @@ function TaskCardImpl({
               const liveSec = Math.max(0, Math.floor((liveElapsedMs ?? 0) / 1000));
               const liveM = Math.floor(liveSec / 60);
               const liveS = liveSec % 60;
-              const liveText = liveM > 0 ? `${liveM}m ${liveS}s` : `${liveS}s`;
+              // Once the timer hits 1 minute, switch to the shared
+              // Xh Ym formatter so a 112-minute counter reads "1h 52m"
+              // instead of "112m 16s". Sub-minute, fall back to raw
+              // seconds so the user can still see the timer ticking.
+              const liveText = liveM > 0 ? formatHoursMinutes(liveM) : `${liveS}s`;
               const est = task.estimated_minutes ?? 0;
               const worked = workedMinutes ?? 0;
               const idleHasContent = worked > 0 || est > 0;
@@ -378,7 +382,7 @@ function TaskCardImpl({
                       </span>
                       <span className="text-accent-blue-soft-fg/40">/</span>
                       <span className="text-accent-blue-soft-fg/80">
-                        {est > 0 ? `${est}m` : "—"}
+                        {est > 0 ? formatHoursMinutes(est) : "—"}
                       </span>
                     </>
                   ) : (

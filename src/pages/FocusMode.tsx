@@ -774,32 +774,38 @@ function BreakCelebration({
 }) {
   return (
     <div className="w-full flex flex-col items-center animate-scale-in">
-      <div className="mb-6">
-        <VerseDayLogo size={84} />
+      {/* Logo — decorative anchor at the top, larger than before so it
+          sits as a calm presence rather than an icon-sized accent. */}
+      <div className="mb-8">
+        <VerseDayLogo size={96} />
       </div>
 
-      <h1 className="text-[34px] font-semibold text-fg leading-tight font-display mb-3">
+      {/* Headline — the screen's anchor. Bumped to 40px and given more
+          air above (mb-8 logo) and below (mb-4 here). */}
+      <h1 className="text-[40px] font-semibold text-fg leading-tight font-display mb-4 tracking-tight">
         {isLongBreak ? "Cycle complete!" : "Well done!"}
       </h1>
 
-      <p className="text-[15px] text-fg-secondary leading-relaxed max-w-[460px] mb-1 inline-flex items-center gap-2 justify-center">
-        <CoffeeCupIcon />
-        <span>
-          You finished {workMinutes} min on{" "}
-          <span className="text-fg font-medium">{taskTitle}</span>.
-        </span>
-      </p>
-      <p className="text-[14px] text-fg-faded mb-8">
-        {isLongBreak
-          ? "You've completed 4 cycles — time for a longer breather."
-          : "Time for a break?"}
+      {/* Single-line duration + task. No "You finished" preamble, no
+          mid-sentence bold — just the calm fact at a slightly larger
+          size than the old subhead so it sits closer in weight to the
+          headline. The redundant "Time for a break?" subhead is gone;
+          the buttons ask the question. */}
+      <p className="text-[17px] text-fg-secondary leading-relaxed max-w-[480px] mb-10">
+        {workMinutes} min on{" "}
+        <span className="text-fg">{taskTitle}</span>
       </p>
 
+      {/* Action row. Coffee cup lives inside the primary CTA (signals
+          "break" right where the user acts) instead of decorating the
+          subhead. Icon inherits currentColor so it matches the white
+          text on the green-deep background. */}
       <div className="flex gap-3 items-center justify-center">
         <button
           onClick={isLongBreak ? onTakeLong : onTakeShort}
-          className="px-5 py-2.5 rounded-full text-[14px] font-medium text-white bg-accent-green-deep hover:opacity-90 cursor-pointer transition-opacity"
+          className="px-5 py-2.5 rounded-full text-[14px] font-medium text-white bg-accent-green-deep hover:opacity-90 cursor-pointer transition-opacity inline-flex items-center gap-2"
         >
+          <CoffeeCupIcon />
           {isLongBreak ? "15 min break" : "5 min break"}
         </button>
         <button
@@ -810,7 +816,7 @@ function BreakCelebration({
         </button>
         <button
           onClick={onNo}
-          className="px-3 py-2.5 text-[14px] text-fg-faded hover:text-fg-secondary cursor-pointer transition-colors"
+          className="px-4 py-2.5 rounded-full text-[14px] text-fg-faded border border-line-hairline hover:text-fg-secondary hover:border-line-soft hover:bg-overlay-hover cursor-pointer transition-colors"
         >
           No
         </button>
@@ -819,18 +825,20 @@ function BreakCelebration({
   );
 }
 
+// Coffee cup — sits inside the primary CTA. Inherits currentColor so
+// the stroke matches whatever text color the parent button uses.
 function CoffeeCupIcon() {
   return (
     <svg
-      width="22"
-      height="22"
+      width="16"
+      height="16"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.5"
+      strokeWidth="1.6"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="text-accent-orange-soft-fg flex-shrink-0"
+      className="flex-shrink-0"
       aria-hidden="true"
     >
       {/* Steam — three little curves rising from the cup */}

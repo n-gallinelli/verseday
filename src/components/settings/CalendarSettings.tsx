@@ -241,10 +241,12 @@ export default function CalendarSettings() {
       </div>
 
       <div className="bg-elevated rounded-lg p-6 space-y-5" style={{ border: "0.5px solid var(--border-hairline)" }}>
-        {/* Pre-prompt copy */}
-        <div className="text-[12px] text-fg-faded leading-snug">
-          VerseDay reads your Mac calendar to surface meetings as scheduled tasks. Nothing leaves your device.
-        </div>
+        {/* Pre-prompt copy — only shown when off, since it's pre-decision context */}
+        {!enabled && (
+          <div className="text-[12px] text-fg-faded leading-snug">
+            VerseDay reads your Mac calendar to surface meetings as scheduled tasks. Nothing leaves your device.
+          </div>
+        )}
 
         {/* Toggle row */}
         <div className="flex items-center justify-between">
@@ -295,7 +297,7 @@ export default function CalendarSettings() {
             {calendars.length === 0 ? (
               <div className="text-[12px] text-fg-faded italic">No calendars found.</div>
             ) : (
-              <div className="max-h-[360px] overflow-y-auto space-y-1.5 pr-2">
+              <div className="max-h-[200px] overflow-y-auto space-y-1.5 pr-2">
                 {calendars.map((cal) => {
                   const isIncluded = !excluded.has(cal.id);
                   return (

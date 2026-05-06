@@ -1552,12 +1552,24 @@ export interface UpsertCalendarTaskInput {
 }
 
 /** Upsert a calendar-imported task. INSERTs new rows; on
- *  `(external_source, external_id)` conflict, UPDATEs the
- *  user-irrelevant calendar metadata (title + estimate + dates +
- *  description / attendees / etc.) so re-syncing reflects the
- *  current state of the upstream event. Status, sort_order, notes
- *  (the user's own notes — distinct from `external_notes`),
- *  highlight flags, and other in-app state are preserved.
+ *  `(external_source, external_id)` conflict, refreshes only the
+ *  fields where the calendar is the source of truth (event-shape
+ *  metadata: time range, location, description, attendees,
+ *  organizer, calendar name, URL) plus `date_scheduled` as a
+ *  deliberate exception (calendar moving an event to another day
+ *  should move the task with it).
+ *
+ *  Explicitly preserves on conflict — never clobbered by re-sync:
+ *  - title / estimated_minutes (user-authored intent; the user may
+ *    rename or re-estimate after import)
+ *  - notes (the user's own task notes, distinct from external_notes
+ *    which is the imported event description)
+ *  - status, is_highlight, sort_order, priority, project_id,
+ *    objective_id (in-app task state)
+ *
+ *  See `docs/2026-05-06-calendar-upsert-contract.md` for the full
+ *  rationale and the title-preservation failure mode that drove the
+ *  preserve-vs-refresh split (Verse review on PR #12).
  *
  *  Returns `true` if a new row was inserted (vs. an existing row
  *  updated), so the caller's "created" count stays accurate.
@@ -1588,9 +1600,7 @@ export async function upsertCalendarTask(
      VALUES ($1, NULL, $2, $3, 'medium', 'todo', 0, 'calendar', $4,
              $5, $6, $7, $8, $9, $10, $11, $12)
      ON CONFLICT(external_source, external_id) WHERE external_source IS NOT NULL DO UPDATE SET
-       title = excluded.title,
        date_scheduled = excluded.date_scheduled,
-       estimated_minutes = excluded.estimated_minutes,
        external_notes = excluded.external_notes,
        external_location = excluded.external_location,
        external_url = excluded.external_url,

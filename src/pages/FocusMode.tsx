@@ -85,70 +85,99 @@ function playChime() {
   }
 }
 
-type BootStatus = "idle" | "starting" | "empty" | "error";
+type BootStatus = "loading" | "empty" | "error";
 
 export default function FocusMode() {
-  const { focus, stopFocus, setPage, setPendingDetailTask, startFocus } = useAppStore();
+  const { focus, stopFocus, setPage, setPendingDetailTask, previewFocus, activateFocus } = useAppStore();
 
-  // Boot state — covers entry to the focus screen with no active session
-  // (sidebar Focus icon, ⌘0, F-with-no-tasks). Auto-loads the next queued
-  // task; falls through to empty / error states. Once `focus` is populated
-  // (here or pre-existing), the rest of the component takes over.
+  // Boot status — only describes the *no-focus* path: are we still
+  // loading the next task, did we find no remaining tasks, or did the
+  // load fail? Once `focus` is set (preview or active), the store is the
+  // single source of truth and bootStatus is irrelevant.
   //
-  // The kick-off gate is a ref, not the bootStatus state. If it were state
-  // and listed in the effect deps, setting bootStatus → "starting" would
-  // re-run the effect and cancel its own async work mid-flight. The ref
-  // gate is independent of render, so the in-flight boot survives the
-  // re-render that "starting" triggers.
-  const [bootStatus, setBootStatus] = useState<BootStatus>("idle");
+  // No bootStartedRef: the boot effect's only kick-off gate is `!focus`,
+  // and once previewFocus runs, `focus` is set so the effect bails on
+  // re-run. No need for a parallel ref that can drift on HMR.
+  const [bootStatus, setBootStatus] = useState<BootStatus>("loading");
   const [bootError, setBootError] = useState<string | null>(null);
   const [bootRetry, setBootRetry] = useState(0);
-  const bootStartedRef = useRef(false);
 
   useEffect(() => {
     if (focus) return;
-    if (bootStartedRef.current) return;
-    bootStartedRef.current = true;
-    setBootStatus("starting");
     let cancelled = false;
+    setBootStatus("loading");
+    setBootError(null);
+    // Safety timeout — if a DB query stalls (e.g. a stuck writer
+    // holding the SQLite lock), surface an error rather than rendering
+    // blank forever. 5s is generous for the queries we're issuing.
+    const timeoutId = setTimeout(() => {
+      if (cancelled) return;
+      setBootError("Loading the task is taking longer than expected.");
+      setBootStatus("error");
+    }, 5000);
     (async () => {
       try {
         const tasks = await getTasksForDate(todayString());
         if (cancelled) return;
         const remaining = tasks.filter((t) => t.status !== "done");
         if (remaining.length === 0) {
+          clearTimeout(timeoutId);
           setBootStatus("empty");
           return;
         }
         const target = remaining[0];
         const priorMs = (await getWorkedMinutesForTask(target.id)) * 60 * 1000;
         if (cancelled) return;
-        const entryId = await startTimeEntry(target.id, "tracked");
-        if (cancelled) return;
+        clearTimeout(timeoutId);
         const history = useAppStore.getState().pageHistory;
         const prev: Page = (history[history.length - 1] as Page) ?? "daily";
-        startFocus(target, entryId, prev, priorMs);
+        previewFocus(target, prev, priorMs);
       } catch (e) {
         if (cancelled) return;
-        setBootError(e instanceof Error ? e.message : "Could not start focus session");
+        clearTimeout(timeoutId);
+        setBootError(e instanceof Error ? e.message : "Could not load task");
         setBootStatus("error");
       }
     })();
     return () => {
       cancelled = true;
+      clearTimeout(timeoutId);
     };
-  }, [focus, bootRetry, startFocus]);
+  }, [focus, bootRetry, previewFocus]);
+
+  // Start the session from preview state. Creates the time entry, then
+  // activates the focus session. The play button calls this in preview
+  // mode; in active mode it calls handlePause instead.
+  const handleStartSession = useCallback(async () => {
+    const f = useAppStore.getState().focus;
+    if (!f || f.mode !== "preview") return;
+    try {
+      const entryId = await startTimeEntry(f.task.id, "tracked");
+      activateFocus(entryId);
+    } catch (e) {
+      setBootError(e instanceof Error ? e.message : "Could not start session");
+      setBootStatus("error");
+    }
+  }, [activateFocus]);
 
   // Notes state + debounced auto-save (the editor flushes pending saves on
   // its own unmount, so navigating away from focus mode is also covered).
+  // Synced from focus.task whenever the task identity changes, so notes
+  // typed in preview mode save against the right row and survive the
+  // preview → active transition.
   const [notes, setNotes] = useState(focus?.task.notes ?? "");
   const notesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useEffect(() => {
+    if (focus) setNotes(focus.task.notes ?? "");
+  }, [focus?.task.id]);
+
   function saveNotes(value: string) {
-    if (!focus) return;
+    const taskId = focus?.task.id;
+    if (!taskId) return;
     if (notesTimerRef.current) clearTimeout(notesTimerRef.current);
     notesTimerRef.current = setTimeout(() => {
-      updateTaskNotes(focus.task.id, value || null).catch(() => {});
+      updateTaskNotes(taskId, value || null).catch(() => {});
     }, 600);
   }
 
@@ -184,7 +213,8 @@ export default function FocusMode() {
   const pipHiddenRef = useRef(false);
 
   useEffect(() => {
-    if (!focus) return;
+    // Pip belongs to active sessions only — preview has nothing to mirror.
+    if (!focus || focus.mode !== "active") return;
 
     // Sweep-then-create. The previous adopt-existing pattern raced
     // against (a) HMR re-mounts where the old close() hadn't completed
@@ -245,7 +275,7 @@ export default function FocusMode() {
       pipRef.current?.close().catch(() => {});
       pipRef.current = null;
     };
-  }, [!!focus]);
+  }, [focus?.mode === "active"]);
 
   // Total elapsed (for time entry / display)
   const priorMs = focus?.priorElapsedMs ?? 0;
@@ -288,15 +318,17 @@ export default function FocusMode() {
     return elapsed - totalBreakTimeRef.current;
   }, [elapsed]);
 
-  // Timer tick
+  // Timer tick — runs only on active sessions. Preview has no startedAt
+  // and no time to count.
   useEffect(() => {
-    if (!focus) return;
+    if (!focus || focus.mode !== "active") return;
+    const startedAt = focus.startedAt;
 
     const interval = setInterval(() => {
       if (paused) return;
 
       const now = Date.now();
-      const raw = now - focus.startedAt - pausedAccumRef.current;
+      const raw = now - startedAt - pausedAccumRef.current;
       setElapsed(raw);
 
       if (phase === "work") {
@@ -346,20 +378,22 @@ export default function FocusMode() {
     return () => clearInterval(interval);
   }, [focus, paused, phase, completedPomodoros, breakDuration, getWorkElapsed]);
 
-  // Checkpoint
+  // Checkpoint — active sessions only.
   useEffect(() => {
-    if (!focus) return;
+    if (!focus || focus.mode !== "active") return;
+    const timeEntryId = focus.timeEntryId;
     const checkpoint = setInterval(() => {
       if (!paused) {
-        checkpointTimeEntry(focus.timeEntryId).catch(() => {});
+        checkpointTimeEntry(timeEntryId).catch(() => {});
       }
     }, CHECKPOINT_INTERVAL_MS);
     return () => clearInterval(checkpoint);
   }, [focus, paused]);
 
-  // Broadcast state to PiP window
+  // Broadcast state to PiP window — active sessions only. Preview has
+  // no live state to mirror; the pip stays closed.
   useEffect(() => {
-    if (!focus) {
+    if (!focus || focus.mode !== "active") {
       localStorage.removeItem(PIP_STATE_KEY);
       return;
     }
@@ -533,7 +567,7 @@ export default function FocusMode() {
   }
 
   async function handleDone() {
-    if (!focus) return;
+    if (!focus || focus.mode !== "active") return;
     try {
       await stopTimeEntry(focus.timeEntryId, getBreakSeconds());
       await updateTaskStatus(focus.task.id, "done");
@@ -544,7 +578,7 @@ export default function FocusMode() {
   }
 
   async function handleStop() {
-    if (!focus) return;
+    if (!focus || focus.mode !== "active") return;
     try {
       await stopTimeEntry(focus.timeEntryId, getBreakSeconds());
     } catch {
@@ -563,14 +597,18 @@ export default function FocusMode() {
   handleSkipBreakRef.current = handleSkipBreak;
 
   if (!focus) {
+    // No focus state in the store yet. Render based on the boot phase:
+    // loading is invisible (a few ms of blank while the next task
+    // loads); empty/error use the FocusBoot fallback. Once previewFocus
+    // fires, focus is set and we fall through to the main render.
+    if (bootStatus === "loading") return null;
     return (
       <FocusBoot
         status={bootStatus}
         error={bootError}
         onRetry={() => {
-          bootStartedRef.current = false;
           setBootError(null);
-          setBootStatus("idle");
+          setBootStatus("loading");
           setBootRetry((n) => n + 1);
         }}
         onLeave={() => setPage("daily")}
@@ -579,13 +617,20 @@ export default function FocusMode() {
   }
   if (!settingsLoaded) return null;
 
-  const isOnBreak = phase === "break";
-  const isPrompting = phase === "prompt";
+  // From here on, focus is non-null. The discriminated union narrows
+  // timeEntryId / startedAt to the active branch automatically.
+  const task = focus.task;
+  const isQueued = focus.mode === "preview";
+  const baselineMs = focus.priorElapsedMs;
 
-  // Total work time on this task (prior sessions + current, minus breaks)
+  const isOnBreak = !isQueued && phase === "break";
+  const isPrompting = !isQueued && phase === "prompt";
+
+  // Total work time on this task (prior sessions + current, minus breaks).
+  // Preview mode: just the prior logged time — nothing's incrementing.
   const workElapsed = elapsed - totalBreakTimeRef.current;
-  const totalWorkedMs = workElapsed + priorMs;
-  const estimatedMs = (focus.task.estimated_minutes ?? 0) * 60 * 1000;
+  const totalWorkedMs = isQueued ? baselineMs : workElapsed + baselineMs;
+  const estimatedMs = (task.estimated_minutes ?? 0) * 60 * 1000;
 
   const ARC_RADIUS = 90;
   const ARC_CIRCUMFERENCE = 2 * Math.PI * ARC_RADIUS;
@@ -612,7 +657,7 @@ export default function FocusMode() {
         {isPrompting && prompt ? (
           <BreakCelebration
             isLongBreak={prompt.isLongBreak}
-            taskTitle={focus.task.title}
+            taskTitle={task.title}
             workMinutes={Math.round(WORK_DURATION_MS / 60000)}
             onTakeShort={() => handleTakeBreak(SHORT_BREAK_MS)}
             onTakeLong={() => handleTakeBreak(LONG_BREAK_MS)}
@@ -626,7 +671,7 @@ export default function FocusMode() {
                 semibold/28px hero treatment because the ring is the
                 anchor of the screen now, not the title. */}
             <h1 className="text-[24px] font-medium text-fg mb-5 leading-snug font-display">
-              {focus.task.title}
+              {task.title}
             </h1>
 
             {/* Notes editor — always visible */}
@@ -667,48 +712,28 @@ export default function FocusMode() {
         {/* Timer arc */}
         {!isPrompting && (
           <div className="relative mb-6 overflow-visible" style={{ width: 220, height: 220 }}>
-            {/* Pulse rings — two shed copies of the ring expanding
-                outward and fading. Same keyframe, second one delayed
-                ~0.4s, so the user reads them as a steady "session is
-                live" heartbeat rather than a single pulse. Hidden when
-                paused — the absence of motion is the paused-state
-                signal. Wrapped in divs because WebKit won't animate
-                transforms on <svg>. */}
-            {!paused && (
-              <>
-                <div className="absolute inset-0 focus-pulse-ring">
-                  <svg
-                    viewBox="0 0 220 220"
+            {/* Pulse ring — a single shed copy of the ring expanding
+                outward and fading. Hidden when paused or queued
+                (pre-play) — absence of motion is the "not currently
+                running" signal. Wrapped in a div because WebKit won't
+                animate transforms on <svg>. */}
+            {!isQueued && !paused && (
+              <div className="absolute inset-0 focus-pulse-ring">
+                <svg
+                  viewBox="0 0 220 220"
+                  fill="none"
+                  style={{ width: 220, height: 220 }}
+                >
+                  <circle
+                    cx="110"
+                    cy="110"
+                    r={ARC_RADIUS}
+                    stroke={isOnBreak ? "var(--focus-glow-break)" : "var(--focus-glow-base)"}
+                    strokeWidth="7"
                     fill="none"
-                    style={{ width: 220, height: 220 }}
-                  >
-                    <circle
-                      cx="110"
-                      cy="110"
-                      r={ARC_RADIUS}
-                      stroke={isOnBreak ? "var(--focus-glow-break)" : "var(--focus-glow-base)"}
-                      strokeWidth="7"
-                      fill="none"
-                    />
-                  </svg>
-                </div>
-                <div className="absolute inset-0 focus-pulse-ring focus-pulse-ring-delayed">
-                  <svg
-                    viewBox="0 0 220 220"
-                    fill="none"
-                    style={{ width: 220, height: 220 }}
-                  >
-                    <circle
-                      cx="110"
-                      cy="110"
-                      r={ARC_RADIUS}
-                      stroke={isOnBreak ? "var(--focus-glow-break)" : "var(--focus-glow-base)"}
-                      strokeWidth="7"
-                      fill="none"
-                    />
-                  </svg>
-                </div>
-              </>
+                  />
+                </svg>
+              </div>
             )}
 
             {/* Main ring — static track. The work phase deliberately
@@ -751,7 +776,9 @@ export default function FocusMode() {
               </svg>
             </div>
 
-            {/* Timer text centered */}
+            {/* Timer text centered. Queued mode renders the prior logged
+                time at the same dim color the active-paused state uses
+                — visually they're both "not currently counting." */}
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <div
                 className="text-[32px] font-medium tabular-nums leading-none"
@@ -759,7 +786,7 @@ export default function FocusMode() {
                   letterSpacing: "-1px",
                   color: isOnBreak
                     ? "var(--focus-ring-progress)"
-                    : paused
+                    : isQueued || paused
                       ? "var(--text-faded)"
                       : "var(--focus-glow-base)",
                 }}
@@ -801,10 +828,17 @@ export default function FocusMode() {
             auto-dismiss covers the escape-hatch case. */}
         {!isOnBreak && !isPrompting && (
           <div className="flex items-center gap-3 mb-6">
-            {/* Stop & Save — leftmost, the "leave the session" exit. */}
+            {/* Stop & Save — leftmost, the "leave the session" exit.
+                Dimmed and disabled in queued (pre-play) mode — there's
+                no session to stop yet. */}
             <button
-              onClick={handleStop}
-              className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover transition-colors"
+              onClick={isQueued ? undefined : handleStop}
+              disabled={isQueued}
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                isQueued
+                  ? "text-fg-disabled opacity-40 cursor-default"
+                  : "text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer"
+              }`}
               title="Stop & save"
             >
               <svg width="16" height="16" viewBox="0 0 14 14" fill="currentColor">
@@ -815,10 +849,16 @@ export default function FocusMode() {
             {/* Mark Done — center, the reward action. Sits in the visual
                 middle so the eye lands on it; it's the affirmative finish.
                 Soft green fill (10% bright) gives it weight against the
-                ghost-style Stop and Pause; hover deepens it to 20%. */}
+                ghost-style Stop and Pause; hover deepens it to 20%.
+                Dimmed in queued mode — nothing to mark done yet. */}
             <button
-              onClick={handleDone}
-              className="w-12 h-12 rounded-full border-2 border-accent-green-bright/50 bg-accent-green-bright/10 flex items-center justify-center cursor-pointer hover:bg-accent-green-bright/20 transition-colors"
+              onClick={isQueued ? undefined : handleDone}
+              disabled={isQueued}
+              className={`w-12 h-12 rounded-full border-2 flex items-center justify-center transition-colors ${
+                isQueued
+                  ? "border-accent-green-bright/20 bg-accent-green-bright/5 opacity-40 cursor-default"
+                  : "border-accent-green-bright/50 bg-accent-green-bright/10 hover:bg-accent-green-bright/20 cursor-pointer"
+              }`}
               title="Mark done"
             >
               <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -826,14 +866,16 @@ export default function FocusMode() {
               </svg>
             </button>
 
-            {/* Pause / Resume — rightmost, the in-session toggle that
-                stays handy while the session keeps running. */}
+            {/* Pause / Resume — rightmost. In queued mode this is the
+                Play button that kicks off the session (creates the time
+                entry, starts the timer). In active mode it toggles
+                pause as today. */}
             <button
-              onClick={handlePause}
+              onClick={isQueued ? handleStartSession : handlePause}
               className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover transition-colors"
-              title={paused ? "Resume" : "Pause"}
+              title={isQueued ? "Start" : paused ? "Resume" : "Pause"}
             >
-              {paused ? (
+              {isQueued || paused ? (
                 <svg width="18" height="18" viewBox="0 0 14 14" fill="var(--accent-blue)">
                   <path d="M3 1v12l10-6z" />
                 </svg>
@@ -957,23 +999,23 @@ function CoffeeCupIcon() {
 }
 
 // ── FocusBoot ──────────────────────────────────────────────────────────────
-// What renders before `focus` is populated. Three states:
-//   starting  — the brief in-flight window between mount and the queued
-//               task's time entry resolving. Shown as a calm "Starting…"
-//               line rather than the empty-day copy, since the truth is
-//               "we're spinning up your task," not "you have no tasks."
-//   empty     — no remaining tasks for today. Reuses the same time-of-day
-//               empty message the (deleted) FocusLanding used to show.
-//   error     — startTimeEntry / DB failure. Inline message + retry. No
-//               fall-through to empty, since "there are tasks but we
-//               couldn't start one" is not the same as "no tasks."
+// What renders when there's no active session AND no queued task. Two
+// states:
+//   empty — no remaining tasks for today. Reuses the same time-of-day
+//           message the (deleted) FocusLanding used to show.
+//   error — DB failure during task load. Inline message + retry.
+//
+// The brief "loading" window between mount and queued task arriving
+// renders nothing (return null at the call site) — showing a "Starting…"
+// line was misleading, since the user reads it as "the session is
+// starting" when really we're just picking which task to show.
 function FocusBoot({
   status,
   error,
   onRetry,
   onLeave,
 }: {
-  status: BootStatus;
+  status: "empty" | "error";
   error: string | null;
   onRetry: () => void;
   onLeave: () => void;
@@ -995,10 +1037,6 @@ function FocusBoot({
           <circle cx="7.5" cy="7.5" r="0.5" fill="currentColor" stroke="none" />
         </svg>
 
-        {status === "starting" && (
-          <p className="text-[13px] text-fg-faded">Starting…</p>
-        )}
-
         {status === "empty" && (() => {
           const msg = getEmptyDayMessage();
           return (
@@ -1011,7 +1049,7 @@ function FocusBoot({
 
         {status === "error" && (
           <>
-            <p className="text-[15px] text-fg mb-1">Couldn't start a focus session</p>
+            <p className="text-[15px] text-fg mb-1">Couldn't load your task</p>
             <p className="text-[12px] text-fg-faded leading-relaxed mb-5">
               {error ?? "Something went wrong."}
             </p>

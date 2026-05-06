@@ -818,11 +818,9 @@ select {
 
 /* ── Focus Mode Animations ─────────────────────────────── */
 
-/* Pulse ring — a "shed copy" of the timer ring that scales outward and
-   fades, signalling that the session is live. Two rings render in the
-   JSX, both using this keyframe; .focus-pulse-ring-delayed offsets the
-   second by 0.4s so they read as a steady heartbeat instead of a single
-   pulse. Hidden when paused (the ring layer is unmounted in the JSX). */
+/* Pulse ring — a single "shed copy" of the timer ring that scales
+   outward and fades, signalling that the session is live. Hidden when
+   paused (the ring layer is unmounted in the JSX). */
 @keyframes focusPulseRipple {
   0%   { opacity: 0.45; transform: scale(1); }
   100% { opacity: 0;    transform: scale(1.22); }
@@ -831,10 +829,6 @@ select {
 .focus-pulse-ring {
   animation: focusPulseRipple 2.4s ease-out infinite;
   transform-origin: center center;
-}
-
-.focus-pulse-ring-delayed {
-  animation-delay: 0.4s;
 }
 
 @keyframes focusAmbientBg {

@@ -465,10 +465,11 @@ export default function DailyPlanner() {
     // Clicking play on the already-focused task is a no-op.
     if (current && current.task.id === task.id) return;
     try {
-      if (current) {
-        // Swap from one focused task to another. Phase 1: close the old
-        // time entry in the DB and optimistically update workedMap so the
-        // old row's pill flips from live → static cleanly with no flash.
+      if (current && current.mode === "active") {
+        // Swap from one *active* focused task to another. Phase 1: close
+        // the old time entry in the DB and optimistically update
+        // workedMap so the old row's pill flips from live → static
+        // cleanly with no flash.
         const finalElapsedMs = (Date.now() - current.startedAt) + current.priorElapsedMs;
         const finalMinutes = Math.floor(finalElapsedMs / 60000);
         const oldTaskId = current.task.id;
@@ -479,6 +480,9 @@ export default function DailyPlanner() {
           return next;
         });
       }
+      // Preview-mode current is just discarded by the startFocus call
+      // below — no time entry to close, no workedMap update needed.
+
       // Phase 2: start the new entry.
       const priorMinutes = await getWorkedMinutesForTask(task.id);
       const priorMs = priorMinutes * 60 * 1000;
@@ -487,10 +491,10 @@ export default function DailyPlanner() {
       // Deliberately NOT calling setPage("focus") — DailyPlanner is the
       // one call site that keeps focus inline.
       startFocus(task, entryId, "daily", priorMs);
-      if (current) {
-        // After a swap, refetch so the swapped-out task's pill picks up
-        // the authoritative worked total from time_entries instead of
-        // the optimistic value.
+      if (current && current.mode === "active") {
+        // After a swap from active, refetch so the swapped-out task's
+        // pill picks up the authoritative worked total from time_entries
+        // instead of the optimistic value.
         await loadData();
       }
     } catch (e) {
@@ -499,7 +503,13 @@ export default function DailyPlanner() {
       // the in-memory focus still points to a session whose time entry
       // is closed in the DB. Clear it so the stale live counter stops.
       const after = useAppStore.getState().focus;
-      if (current && after && after.timeEntryId === current.timeEntryId) {
+      if (
+        current &&
+        current.mode === "active" &&
+        after &&
+        after.mode === "active" &&
+        after.timeEntryId === current.timeEntryId
+      ) {
         stopFocus();
       }
     }
@@ -512,6 +522,11 @@ export default function DailyPlanner() {
   async function handleStopFocus(_task: Task) {
     const f = useAppStore.getState().focus;
     if (!f) return;
+    if (f.mode !== "active") {
+      // Preview has no time entry to close — just clear it.
+      stopFocus();
+      return;
+    }
     // Capture the final elapsed before tearing down the session — this
     // value seeds the optimistic workedMap update so the time pill flips
     // from live → static without flashing through 0m or a stale value

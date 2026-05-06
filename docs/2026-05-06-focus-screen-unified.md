@@ -96,6 +96,53 @@ The 5-minute fade-out (`focusGlowFadeOut`) was deliberately not carried forward.
 
 Sanity-checked the stash's opacity/scale curves before tuning. Stash had one ring at opacity 0.55 → 0, scale 1 → 1.18, single keyframe — close to but not identical to what M4 wanted. Final values (0.45 → 0, scale 1 → 1.22) are slightly punchier on travel, slightly softer on peak, optimized for the dual-ring composition. Did not copy-paste from the stash.
 
+## M7 — Store refactor: discriminated-union focus state
+
+The M2 implementation used component-local state (`queuedTask`, `queuedPriorMs`, `bootStatus`, `bootStartedRef`) to model "task picked, no time entry yet." That structure produced a class of blank-screen bugs:
+
+1. **HMR-preserved local state out of sync with code.** React Refresh preserves `useState` and `useRef` across hot reloads. After a code change to the boot enum, the previous run's `bootStatus` value (`"starting"`) was no longer in the type union, matched none of the render branches, and `bootStartedRef.current = true` kept the new boot effect from running. The screen sat at `if (!queuedTask) return null` with no path to recovery short of a full reload.
+2. **No single source of truth.** Effects gated on `focus`, render gated on `queuedTask`, and the active-task derivation used `focus?.task ?? queuedTask!` — the `!` lying when the gates desync.
+3. **The boot effect was the only path to populate queued state.** Any blocker (DB lock, ref mismatch, timing) left state at defaults forever.
+
+### Fix
+
+Move the queued representation into the store as a discriminated union:
+
+```ts
+type FocusState =
+  | { mode: "preview"; task; previousPage; priorElapsedMs }
+  | { mode: "active";  task; timeEntryId; startedAt; previousPage; priorElapsedMs };
+```
+
+`previewFocus` enters preview mode (no time entry). `activateFocus(timeEntryId)` promotes preview → active. `startFocus` (kept for DailyPlanner / ProjectDetail / ⌘F) goes straight to active. `stopFocus` clears either.
+
+FocusMode becomes a renderer with no parallel local state. Boot effect calls `previewFocus`; the store is the single source of truth. The discriminated union narrows `timeEntryId` and `startedAt` accesses to the active branch — TypeScript catches any preview-mode misuse.
+
+### Why this fixes the symptom
+
+- Stale-ref blank screen: gone. No ref gate. Effect's only kick-off condition is `!focus`; once `previewFocus` runs, `focus` is set so the effect bails on re-run.
+- Render desync: gone. `task = focus.task` (no fallback). The discriminated union narrows everything else.
+- HMR persistence trap: Zustand state is preserved across HMR by design and lives outside React's component-local persistence. No locals to strand.
+
+### Persistence migration
+
+`loadPersistedFocus` defaults missing `mode` to `"active"` so any session live at upgrade time keeps running. New sessions write `mode` explicitly.
+
+### Preview lifecycle
+
+Preview is scoped to the focus screen visit: `setPage` clears `focus` if leaving focus while in preview. Otherwise a queued task could pin yesterday's pick across navigation. Active sessions persist as before.
+
+### Active-only effects
+
+Pip creation, pip broadcast, timer tick, checkpoint — all gated on `focus?.mode === "active"`. Pip stays closed during preview (no live state to mirror). Timer doesn't tick. Checkpoint doesn't fire. The discriminated union catches any access to `timeEntryId`/`startedAt` outside these gates.
+
+### Other call sites
+
+- DailyPlanner `handleStartFocus`: swap-from-active path unchanged; preview-mode current focus is just discarded by the new `startFocus` call (no time entry to close).
+- DailyPlanner `handleStopFocus`: bails early if mode is preview (nothing to stop).
+- `useFocusTick`: returns `null` for preview (no `startedAt` to compute against).
+- ProjectDetail `handleStartFocus`: existing truthy check still blocks on either mode.
+
 ## What's not done yet
 
-M6 (manual verify in `npm run tauri dev`). Stopping here for Verse review.
+M8 (manual verify in `npm run tauri dev`). Stopping here for Verse review of M7.

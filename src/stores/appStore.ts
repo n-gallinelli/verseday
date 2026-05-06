@@ -5,13 +5,27 @@ import { todayString, mondayOfWeek } from "../utils/dates";
 const FOCUS_STORAGE_KEY = "verseday_focus";
 const SIDEBAR_COLLAPSED_KEY = "verseday_sidebar_collapsed";
 
-interface FocusState {
-  task: Task;
-  timeEntryId: number;
-  startedAt: number; // Date.now() timestamp
-  previousPage: Page;
-  priorElapsedMs: number; // accumulated time from previous sessions
-}
+// Discriminated union: a focus session is either *preview* (task picked,
+// shown on the focus screen, but no time entry created — what the user
+// sees when they click the Focus icon) or *active* (running session with
+// a real time entry). The mode tag lets TypeScript narrow timeEntryId /
+// startedAt accesses to the active branch and catch any code path that
+// touches them in preview by mistake.
+export type FocusState =
+  | {
+      mode: "preview";
+      task: Task;
+      previousPage: Page;
+      priorElapsedMs: number;
+    }
+  | {
+      mode: "active";
+      task: Task;
+      timeEntryId: number;
+      startedAt: number; // Date.now() timestamp
+      previousPage: Page;
+      priorElapsedMs: number;
+    };
 
 interface AppState {
   currentPage: Page;
@@ -35,6 +49,11 @@ interface AppState {
   setSelectedDate: (date: string) => void;
   setSelectedWeek: (date: string) => void;
   openProject: (id: number) => void;
+  /** Stage a task on the focus screen without starting a time entry. */
+  previewFocus: (task: Task, previousPage: Page, priorElapsedMs?: number) => void;
+  /** Promote a preview session to active. Caller has already created the
+   *  time entry — pass the resulting id. */
+  activateFocus: (timeEntryId: number) => void;
   startFocus: (task: Task, timeEntryId: number, previousPage: Page, priorElapsedMs?: number) => void;
   stopFocus: () => Page;
   restoreFocus: () => void;
@@ -78,7 +97,13 @@ function loadPersistedFocus(): FocusState | null {
   try {
     const raw = localStorage.getItem(FOCUS_STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as FocusState;
+    const parsed = JSON.parse(raw) as Partial<FocusState> & { mode?: "preview" | "active" };
+    // Back-compat: pre-mode entries default to "active" so users with a
+    // live session at upgrade time keep it.
+    if (!parsed.mode) {
+      return { ...parsed, mode: "active" } as FocusState;
+    }
+    return parsed as FocusState;
   } catch {
     localStorage.removeItem(FOCUS_STORAGE_KEY);
     return null;
@@ -98,12 +123,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   weeklyPlannerTab: "plan",
   setPage: (page) => {
     const prev = get().currentPage;
-    if (prev !== page) {
+    if (prev === page) return;
+    // Preview focus is scoped to the focus screen visit. Leaving focus
+    // discards the preview so a fresh "next task" loads on next entry —
+    // otherwise a queued task could go stale across navigation, or a
+    // persisted preview could pin yesterday's pick.
+    const f = get().focus;
+    if (prev === "focus" && page !== "focus" && f?.mode === "preview") {
+      persistFocus(null);
       set((s) => ({
+        focus: null,
         currentPage: page,
         pageHistory: [...s.pageHistory.slice(-19), prev],
       }));
+      return;
     }
+    set((s) => ({
+      currentPage: page,
+      pageHistory: [...s.pageHistory.slice(-19), prev],
+    }));
   },
   goBack: () => {
     const history = get().pageHistory;
@@ -121,14 +159,52 @@ export const useAppStore = create<AppState>((set, get) => ({
       pageHistory: [...s.pageHistory.slice(-19), prev],
     }));
   },
+  previewFocus: (task, previousPage, priorElapsedMs = 0) => {
+    // Stages a task on the focus screen — no time entry, no startedAt.
+    // The user transitions to active by hitting Play (FocusMode calls
+    // activateFocus after creating the time entry).
+    const focus: FocusState = {
+      mode: "preview",
+      task,
+      previousPage,
+      priorElapsedMs,
+    };
+    persistFocus(focus);
+    set({ focus });
+  },
+  activateFocus: (timeEntryId) => {
+    const f = get().focus;
+    if (!f || f.mode !== "preview") return;
+    const next: FocusState = {
+      mode: "active",
+      task: f.task,
+      timeEntryId,
+      startedAt: Date.now(),
+      previousPage: f.previousPage,
+      priorElapsedMs: f.priorElapsedMs,
+    };
+    persistFocus(next);
+    set({ focus: next });
+  },
   startFocus: (task, timeEntryId, previousPage, priorElapsedMs = 0) => {
     // Sets focus state only — does NOT navigate to the immersive Focus page.
     // Callers that want the full-screen timer experience follow up with
-    // setPage("focus") themselves (App.tsx F hotkey, ProjectDetail, and
-    // FocusMode's own auto-start all do). DailyPlanner deliberately does
-    // not, so the user can keep planning while the timer runs in the
-    // background with a live counter on the focused task row.
-    const focus = { task, timeEntryId, startedAt: Date.now(), previousPage, priorElapsedMs };
+    // setPage("focus") themselves (App.tsx F hotkey and ProjectDetail do).
+    // DailyPlanner deliberately does not, so the user can keep planning
+    // while the timer runs in the background with a live counter on the
+    // focused task row.
+    //
+    // FocusMode no longer calls startFocus directly — it goes through
+    // previewFocus → activateFocus so the screen can render the task
+    // before the time entry is created.
+    const focus: FocusState = {
+      mode: "active",
+      task,
+      timeEntryId,
+      startedAt: Date.now(),
+      previousPage,
+      priorElapsedMs,
+    };
     persistFocus(focus);
     set({ focus });
   },

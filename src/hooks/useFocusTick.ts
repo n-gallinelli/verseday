@@ -3,7 +3,8 @@ import { useAppStore } from "../stores/appStore";
 
 /**
  * Returns the live elapsed milliseconds for the active focus session, or
- * `null` if no session is active. While focus is active, ticks at 1Hz.
+ * `null` if no session is active (or the session is in preview mode —
+ * preview has no startedAt, nothing to tick).
  *
  * Computed from `focus.startedAt` (an absolute timestamp) plus
  * `focus.priorElapsedMs` so the value is correct on remount and after
@@ -17,15 +18,17 @@ export function useFocusTick(): number | null {
   const focus = useAppStore((s) => s.focus);
   const [now, setNow] = useState(() => Date.now());
 
+  const isActive = focus?.mode === "active";
+
   useEffect(() => {
-    if (!focus) return;
+    if (!isActive) return;
     // Tick at 1Hz. Cadence required by Verse for "live" to feel live;
     // performance is bounded by React.memo on TaskCard so only the focused
     // row re-renders per tick, not the entire list.
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [focus]);
+  }, [isActive]);
 
-  if (!focus) return null;
+  if (!focus || focus.mode !== "active") return null;
   return now - focus.startedAt + focus.priorElapsedMs;
 }

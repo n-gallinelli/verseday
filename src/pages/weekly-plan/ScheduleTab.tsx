@@ -19,6 +19,7 @@ import {
   updateTaskStatus,
   updateTaskDateScheduled,
   getAllTasksForProjectIds,
+  getUnscheduledTasks,
   setManualWorkedMinutes,
   getWeeklyShutdown,
   deleteTask,
@@ -30,9 +31,9 @@ import DisclosureCaret from "../../components/DisclosureCaret";
 import {
   localDateIso,
   todayString,
-  mondayOfWeek as getMondayOfWeek,
   weekdayDates as getWeekdayDates,
 } from "../../utils/dates";
+import { formatHoursMinutes } from "../../utils/format";
 import type { Task, Project } from "../../types";
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
@@ -42,15 +43,6 @@ function getFridayIso(mondayIso: string): string {
   const d = new Date(mondayIso + "T00:00:00");
   d.setDate(d.getDate() + 4);
   return localDateIso(d);
-}
-
-function formatWeekHeader(mondayIso: string): string {
-  const d = new Date(mondayIso + "T00:00:00");
-  return `Week of ${d.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  })}`;
 }
 
 function dateToDayAbbrev(
@@ -143,7 +135,7 @@ function DraggableTaskRow({
       {/* Duration */}
       {task.estimated_minutes != null && task.estimated_minutes > 0 && (
         <span className="text-[11px] text-fg-faded">
-          {task.estimated_minutes}m
+          {formatHoursMinutes(task.estimated_minutes)}
         </span>
       )}
 
@@ -465,7 +457,7 @@ function DayTasksModal({
                     )}
                     {task.estimated_minutes != null && task.estimated_minutes > 0 && (
                       <span className="text-[11px] text-fg-faded tabular-nums shrink-0">
-                        {task.estimated_minutes}m
+                        {formatHoursMinutes(task.estimated_minutes)}
                       </span>
                     )}
                   </div>
@@ -482,12 +474,15 @@ function DayTasksModal({
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export default function ScheduleTab() {
-  const { selectedWeek, setSelectedWeek, openProject } =
-    useAppStore();
+  const { selectedWeek, openProject, setSchedulePlannedMinutes } = useAppStore();
 
   const [weekTasks, setWeekTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [allProjectTasks, setAllProjectTasks] = useState<Task[]>([]);
+  // Truly floating tasks: no project AND not yet scheduled to a day.
+  // Drives the "Unassigned" rail. Loaded separately from weekTasks so
+  // anything already placed on the calendar doesn't double-render here.
+  const [unscheduledUnassigned, setUnscheduledUnassigned] = useState<Task[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [activeDragTask, setActiveDragTask] = useState<Task | null>(null);
 
@@ -521,7 +516,6 @@ export default function ScheduleTab() {
   const weekDates = getWeekdayDates(selectedWeek);
   const fridayIso = getFridayIso(selectedWeek);
   const todayStr = todayString();
-  const isThisWeek = selectedWeek === getMondayOfWeek();
 
   const projectMap = new Map(projects.map((p) => [p.id, p]));
 
@@ -529,10 +523,12 @@ export default function ScheduleTab() {
 
   const loadData = useCallback(async () => {
     try {
-      const [wt, p] = await Promise.all([
+      const [wt, p, unscheduled] = await Promise.all([
         getTasksForWeek(selectedWeek, fridayIso),
         getProjects(),
+        getUnscheduledTasks(),
       ]);
+      setUnscheduledUnassigned(unscheduled.filter((t) => t.project_id === null));
 
       // Auto-show all active, non-completed projects
       const activeProjects = p.filter((proj) => !proj.archived && !proj.completed);
@@ -617,12 +613,6 @@ export default function ScheduleTab() {
     loadData();
   }
 
-
-  function changeWeek(offset: number) {
-    const d = new Date(selectedWeek + "T00:00:00");
-    d.setDate(d.getDate() + offset * 7);
-    setSelectedWeek(localDateIso(d));
-  }
 
   function navigateToProject(id: number) {
     openProject(id);
@@ -709,8 +699,11 @@ export default function ScheduleTab() {
     });
   }
 
-  // Unassigned tasks (no project) — rendered separately
-  const unassignedTasks = weekTasks.filter((t) => t.project_id === null);
+  // Unassigned tasks for the rail — only truly floating ones (no project
+  // AND not scheduled to a day). Tasks already placed on the calendar
+  // render in their day column; surfacing them again here would just
+  // duplicate. Loaded directly from `unscheduledUnassigned` state.
+  const unassignedTasks = unscheduledUnassigned;
 
   // Group week tasks by date for calendar
   const tasksByDate = new Map<string, Task[]>();
@@ -723,14 +716,17 @@ export default function ScheduleTab() {
     }
   }
 
-  // Total planned hours
+  // Total planned hours — surfaced into the WeeklyPlanner header via
+  // the appStore so the readout sits inline next to the Plan/Schedule
+  // toggle instead of taking a row of its own.
   const totalPlannedMinutes = weekTasks.reduce(
     (sum, t) => sum + (t.estimated_minutes ?? 0),
     0
   );
-  const totalPlannedHours = (Math.round(totalPlannedMinutes / 6) / 10)
-    .toFixed(1)
-    .replace(/\.0$/, "");
+  useEffect(() => {
+    setSchedulePlannedMinutes(totalPlannedMinutes);
+    return () => setSchedulePlannedMinutes(0);
+  }, [totalPlannedMinutes, setSchedulePlannedMinutes]);
 
   // ── Render ────────────────────────────────────────────────────────────
 
@@ -756,52 +752,6 @@ export default function ScheduleTab() {
           </button>
         </div>
       )}
-
-      {/* ── Header — hero title + utility row ─────────────────────────── */}
-      <div className="px-7 pt-6 pb-4 border-b border-line-soft flex-shrink-0">
-        <div className="flex items-center gap-3 mb-3">
-          <h2 className="flex-1 text-[22px] font-medium text-fg leading-tight min-w-0 truncate">
-            {formatWeekHeader(selectedWeek)}
-          </h2>
-          {isThisWeek && (
-            <span className="text-[11px] bg-accent-orange-soft text-accent-orange-soft-fg px-2 py-0.5 rounded-full flex-shrink-0">
-              This week
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => changeWeek(-1)}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M10 4l-4 4 4 4" />
-            </svg>
-          </button>
-          <button
-            onClick={() => changeWeek(1)}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M6 4l4 4-4 4" />
-            </svg>
-          </button>
-          {!isThisWeek && (
-            <button
-              onClick={() => setSelectedWeek(getMondayOfWeek())}
-              className="text-[11px] text-accent-orange-soft-fg hover:text-accent-orange cursor-pointer ml-1"
-            >
-              Jump to this week
-            </button>
-          )}
-          <span className="text-[12px] text-fg-faded ml-auto">
-            Planned{" "}
-            <span className="text-fg-secondary tabular-nums">
-              {totalPlannedHours}h
-            </span>
-          </span>
-        </div>
-      </div>
 
       {/* ── Body: left rail (projects + notes) + calendar (main) ─────── */}
       <DndContext

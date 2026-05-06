@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { getWorkedMinutesByDate, setTaskRecurrence, parseRecurrence, serializeRecurrence } from "../db/queries";
-import { parseTimeFromTitle } from "../utils/format";
+import { parseTimeFromTitle, formatHoursMinutes } from "../utils/format";
+import { useAppStore } from "../stores/appStore";
 import CalendarPicker from "./CalendarPicker";
 import ProjectPicker from "./ProjectPicker";
 import RichTextEditor from "./RichTextEditor";
@@ -340,6 +341,12 @@ export default function TaskDetailOverlay({
   autoTrackedMinutes,
   autoFocusTitle = false,
 }: TaskDetailOverlayProps) {
+  // Cross-screen sync: when this overlay edits the task that's currently
+  // focused, mirror the change into the store so FocusMode (and any other
+  // screen reading from focus.task) sees the new values immediately.
+  const { focus, updateFocusTask, setFocusPriorElapsedMs } = useAppStore();
+  const isFocusedTask = focus?.task.id === task.id;
+
   const [title, setTitle] = useState(task.title);
   const titleRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -381,6 +388,9 @@ export default function TaskDetailOverlay({
   const [worked, setWorked] = useState(workedMinutes > 0 ? workedMinutes.toString() : "");
   const [dayBreakdown, setDayBreakdown] = useState<{ date: string; minutes: number }[]>([]);
   const [openPopover, setOpenPopover] = useState<"estimate" | "worked" | null>(null);
+  // Inline delete confirm — keeps the user inside the overlay so they can
+  // see what they're deleting until the moment of confirmation.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // Recurrence
   const parsedRecurrence = parseRecurrence(task.recurrence ?? null);
@@ -461,6 +471,22 @@ export default function TaskDetailOverlay({
     };
   }
 
+  // Mirror the just-saved fields into focus.task so FocusMode reflects
+  // the new values without waiting for a remount/refetch. No-op when the
+  // edited task isn't the focused one.
+  function mirrorToFocus(update: ReturnType<typeof buildUpdate>) {
+    if (!update || !isFocusedTask) return;
+    updateFocusTask({
+      title: update.title,
+      project_id: update.projectId,
+      estimated_minutes: update.estimatedMinutes,
+      priority: update.priority,
+      notes: update.notes,
+      date_scheduled: update.dateScheduled,
+      due_date: update.dueDate,
+    });
+  }
+
   function debouncedSave(overrides: Record<string, string> = {}) {
     if (saveRef.current) clearTimeout(saveRef.current);
     if (savedFlashRef.current) {
@@ -473,6 +499,7 @@ export default function TaskDetailOverlay({
       const update = buildUpdate(overrides);
       if (update) {
         onSave(update);
+        mirrorToFocus(update);
         setSaveState("saved");
         savedFlashRef.current = setTimeout(() => {
           savedFlashRef.current = null;
@@ -509,6 +536,7 @@ export default function TaskDetailOverlay({
     const update = buildUpdate(overrides);
     if (update) {
       onSave(update);
+      mirrorToFocus(update);
       setSaveState("saved");
       savedFlashRef.current = setTimeout(() => {
         savedFlashRef.current = null;
@@ -772,7 +800,10 @@ export default function TaskDetailOverlay({
                         setWorked(val);
                         if (onSetWorkedMinutes && val) {
                           const n = parseInt(val);
-                          if (!isNaN(n) && n > 0) onSetWorkedMinutes(task.id, n);
+                          if (!isNaN(n) && n > 0) {
+                            onSetWorkedMinutes(task.id, n);
+                            if (isFocusedTask) setFocusPriorElapsedMs(task.id, n * 60 * 1000);
+                          }
                         }
                       }}
                       onReset={
@@ -780,6 +811,7 @@ export default function TaskDetailOverlay({
                           ? () => {
                               setWorked("");
                               onSetWorkedMinutes(task.id, 0);
+                              if (isFocusedTask) setFocusPriorElapsedMs(task.id, 0);
                               setOpenPopover(null);
                             }
                           : undefined
@@ -821,7 +853,10 @@ export default function TaskDetailOverlay({
                       setWorked(val);
                       if (onSetWorkedMinutes && val) {
                         const n = parseInt(val);
-                        if (!isNaN(n) && n > 0) onSetWorkedMinutes(task.id, n);
+                        if (!isNaN(n) && n > 0) {
+                          onSetWorkedMinutes(task.id, n);
+                          if (isFocusedTask) setFocusPriorElapsedMs(task.id, n * 60 * 1000);
+                        }
                       }
                     }}
                     onReset={
@@ -835,6 +870,7 @@ export default function TaskDetailOverlay({
                             // workedMap so the row's pill shows 0m.
                             setWorked("");
                             onSetWorkedMinutes(task.id, 0);
+                            if (isFocusedTask) setFocusPriorElapsedMs(task.id, 0);
                             setOpenPopover(null);
                           }
                         : undefined
@@ -945,7 +981,7 @@ export default function TaskDetailOverlay({
                         <span className="text-[10px] text-fg-muted whitespace-nowrap">
                           {new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
                         </span>
-                        <span className="text-[10px] text-fg-secondary font-medium">{d.minutes}m</span>
+                        <span className="text-[10px] text-fg-secondary font-medium">{formatHoursMinutes(d.minutes)}</span>
                       </div>
                     );
                   })}
@@ -957,34 +993,58 @@ export default function TaskDetailOverlay({
 
         {/* Footer */}
         <div className="flex items-center gap-2 px-8 py-4 border-t border-line-hairline">
-          <span
-            className={`text-[10px] flex-1 transition-colors ${
-              saveState === "pending"
-                ? "text-fg-faded"
-                : saveState === "saved"
-                  ? "text-accent-green"
-                  : "text-fg-disabled"
-            }`}
-          >
-            {saveState === "pending"
-              ? "Saving…"
-              : saveState === "saved"
-                ? "Saved"
-                : "Auto-saved"}
-          </span>
-          {onDelete && (
-            <button
-              onClick={() => {
-                onDelete(task.id);
-                onClose();
-              }}
-              className="text-accent-destructive/60 hover:text-accent-destructive cursor-pointer p-2 rounded-md hover:bg-accent-destructive/10 transition-colors"
-              title="Delete task"
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />
-              </svg>
-            </button>
+          {confirmingDelete && onDelete ? (
+            <>
+              <span className="flex-1 text-[12px]">
+                <span className="text-accent-destructive">Delete this task?</span>{" "}
+                <span className="text-accent-warning-soft-fg">Time entries will also be deleted.</span>
+              </span>
+              <button
+                onClick={() => {
+                  onDelete(task.id);
+                  setConfirmingDelete(false);
+                  onClose();
+                }}
+                className="bg-accent-destructive text-fg-on-accent rounded-md px-3 py-1 text-[12px] cursor-pointer hover:bg-accent-destructive-hover"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setConfirmingDelete(false)}
+                className="text-fg-faded text-[12px] cursor-pointer hover:text-fg-secondary px-2 py-1"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <span
+                className={`text-[10px] flex-1 transition-colors ${
+                  saveState === "pending"
+                    ? "text-fg-faded"
+                    : saveState === "saved"
+                      ? "text-accent-green"
+                      : "text-fg-disabled"
+                }`}
+              >
+                {saveState === "pending"
+                  ? "Saving…"
+                  : saveState === "saved"
+                    ? "Saved"
+                    : "Auto-saved"}
+              </span>
+              {onDelete && (
+                <button
+                  onClick={() => setConfirmingDelete(true)}
+                  className="text-accent-destructive/60 hover:text-accent-destructive cursor-pointer p-2 rounded-md hover:bg-accent-destructive/10 transition-colors"
+                  title="Delete task"
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />
+                  </svg>
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

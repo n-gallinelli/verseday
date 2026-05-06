@@ -85,10 +85,11 @@ export function buildShutdownUserPrompt(data: ShutdownSummaryData): string {
 
   const formatTask = (
     t: (typeof data.tasks)[0],
-    includeWorked = true
+    opts: { includeWorked?: boolean; includeProject?: boolean } = {}
   ): string => {
+    const { includeWorked = true, includeProject = true } = opts;
     const parts = [`- ${t.title}`];
-    if (t.projectName) parts.push(`[${t.projectName}]`);
+    if (includeProject && t.projectName) parts.push(`[${t.projectName}]`);
     if (includeWorked && t.workedMinutes > 0)
       parts.push(`(${t.workedMinutes}m worked)`);
     if (t.estimated_minutes)
@@ -110,14 +111,34 @@ export function buildShutdownUserPrompt(data: ShutdownSummaryData): string {
   }
 
   if (completed.length > 0) {
+    // Group completed tasks by project so the model can emit a Done
+    // section with each project as a sub-heading, tasks listed under.
+    // Project name moves to the heading; we drop it from the per-task
+    // lines via includeProject:false to avoid redundancy.
+    const groups = new Map<string, typeof completed>();
+    for (const t of completed) {
+      const key = t.projectName ?? "(No project)";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(t);
+    }
+    const projectBlocks = Array.from(groups.entries())
+      .map(([projectName, tasks]) => {
+        const taskLines = tasks
+          .map((t) => formatTask(t, { includeProject: false }))
+          .join("\n");
+        return `${projectName}:\n${taskLines}`;
+      })
+      .join("\n\n");
     sections.push(
-      `\nCompleted (${completed.length}):\n${completed.map((t) => formatTask(t)).join("\n")}`
+      `\nCompleted (${completed.length}) — grouped by project:\n${projectBlocks}`
     );
   }
 
   if (incomplete.length > 0) {
     sections.push(
-      `\nDid not finish (${incomplete.length}):\n${incomplete.map((t) => formatTask(t, false)).join("\n")}`
+      `\nDid not finish (${incomplete.length}) — flat list:\n${incomplete
+        .map((t) => formatTask(t, { includeWorked: false }))
+        .join("\n")}`
     );
   }
 
@@ -127,6 +148,12 @@ export function buildShutdownUserPrompt(data: ShutdownSummaryData): string {
 
   return (
     "Write a productivity summary for this day. Use the data below.\n\n" +
+    "Structure (use these exact section labels, in this order):\n" +
+    `1. Header: "Daily summary — ${data.date}"\n` +
+    "2. \"Tasks completed today\" — group by project (project name as a " +
+    "sub-heading, tasks listed under it).\n" +
+    "3. \"Didn't get to\" — flat list of tasks not completed today, no " +
+    "project grouping.\n\n" +
     sections.join("\n")
   );
 }

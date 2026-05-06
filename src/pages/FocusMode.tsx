@@ -89,8 +89,15 @@ function playChime() {
 
 type BootStatus = "loading" | "empty" | "error";
 
-export default function FocusMode() {
-  const { focus, stopFocus, setPage, setPendingDetailTask, previewFocus, activateFocus, updateFocusTask } = useAppStore();
+interface FocusModeProps {
+  /** When false, JSX renders nothing but effects still run — used to
+   *  keep the pip + IPC channel alive while the user is on another
+   *  page mid-session. Defaults to true (full-screen focus page). */
+  visible?: boolean;
+}
+
+export default function FocusMode({ visible = true }: FocusModeProps) {
+  const { focus, stopFocus, setPage, setPendingDetailTask, previewFocus, activateFocus, updateFocusTask, currentPage } = useAppStore();
 
   // Boot status — only describes the *no-focus* path: are we still
   // loading the next task, did we find no remaining tasks, or did the
@@ -550,8 +557,11 @@ export default function FocusMode() {
   // keeps running in the background — the user can pause/stop from the
   // daily plan's focused row, or come back via the focus landing. Skipped
   // while typing in the notes editor (Tiptap handles Escape for blur);
-  // first Esc blurs the editor, second Esc fires this branch.
+  // first Esc blurs the editor, second Esc fires this branch. Only attached
+  // when the focus page is actually visible — otherwise the hidden mount
+  // (kept alive for the pip) would hijack Escape on every other page.
   useEffect(() => {
+    if (currentPage !== "focus") return;
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
       const el = document.activeElement;
@@ -568,7 +578,7 @@ export default function FocusMode() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setPage]);
+  }, [setPage, currentPage]);
 
   function handlePause() {
     if (paused) {
@@ -776,6 +786,10 @@ export default function FocusMode() {
   const totalWorkedMs = isQueued ? baselineMs : workElapsed + baselineMs;
   const estimatedMs = (task.estimated_minutes ?? 0) * 60 * 1000;
 
+  // Hidden mount: effects above continue to run (pip lifecycle, state
+  // broadcast, IPC listener) but the focus-page JSX doesn't render.
+  if (!visible) return null;
+
   return (
     <div className="fixed inset-0 flex flex-col items-center justify-center z-50 bg-base overflow-hidden">
       {/* Tunnel-in scale + fade wrapper. Plays once on mount and
@@ -838,15 +852,15 @@ export default function FocusMode() {
                 className={`mt-[5px] w-7 h-7 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors group ${
                   isQueued
                     ? "border-line-hairline opacity-40 cursor-default"
-                    : "border-line-soft hover:border-accent-green-bright/60 hover:bg-accent-green-bright/10 cursor-pointer"
+                    : "border-fg-faded hover:border-accent-green-bright hover:bg-accent-green-bright/15 cursor-pointer"
                 }`}
                 title="Mark done"
               >
                 <svg
                   width="14" height="14" viewBox="0 0 16 16"
                   fill="none"
-                  className="stroke-fg-faded group-hover:stroke-accent-green-deep transition-colors"
-                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                  className="stroke-fg-secondary group-hover:stroke-accent-green-bright transition-colors"
+                  strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round"
                 >
                   <path d="M3 8.5l3.5 3.5 6.5-7" />
                 </svg>
@@ -972,7 +986,7 @@ export default function FocusMode() {
                   style={{ letterSpacing: "-1px", color: estimatedMs > 0 ? "var(--fg)" : "var(--text-faded)" }}
                   title="Set planned time"
                 >
-                  {estimatedMs > 0 ? formatTime(estimatedMs) : "—:——"}
+                  {estimatedMs > 0 ? formatTime(estimatedMs) : "--:--"}
                 </button>
                 <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-fg-faded mt-1">
                   Planned

@@ -14,6 +14,7 @@ import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
 import PastShutdownCard from "../components/PastShutdownCard";
 import { localDateIso, todayString, mondayOfWeek as getMondayOfWeek, weekdayDates as getWeekdayDates } from "../utils/dates";
+import { formatHoursMinutes } from "../utils/format";
 import type { Project, Task } from "../types";
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
@@ -422,7 +423,7 @@ export default function Dashboard() {
                             {task.estimated_minutes != null &&
                               task.estimated_minutes > 0 && (
                                 <span className="text-[10px] text-fg-faded flex-shrink-0">
-                                  {task.estimated_minutes}m
+                                  {formatHoursMinutes(task.estimated_minutes)}
                                 </span>
                               )}
                           </div>

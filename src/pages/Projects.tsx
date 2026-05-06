@@ -31,6 +31,7 @@ import {
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
+import { formatHoursMinutes } from "../utils/format";
 import TaskDetailOverlay from "../components/TaskDetailOverlay";
 import DisclosureCaret from "../components/DisclosureCaret";
 import type { Project, Task } from "../types";
@@ -605,7 +606,7 @@ export default function Projects() {
                                     )}
                                     <span className={`text-[12px] flex-1 truncate ${task.status === "done" ? "text-fg-faded line-through" : "text-fg"}`}>{task.title}</span>
                                     {task.estimated_minutes != null && task.estimated_minutes > 0 && (
-                                      <span className="text-[10px] text-fg-disabled">{task.estimated_minutes}m</span>
+                                      <span className="text-[10px] text-fg-disabled">{formatHoursMinutes(task.estimated_minutes)}</span>
                                     )}
                                     {dateLabel && (
                                       <span className="text-[10px] text-fg-disabled">{dateLabel}</span>

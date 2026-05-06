@@ -1338,7 +1338,7 @@ export default function DailyPlanner() {
                             {task.title}
                           </span>
                           {task.estimated_minutes != null && task.estimated_minutes > 0 && !isRecent && (
-                            <span className="text-[9px] text-fg-disabled">{task.estimated_minutes}m</span>
+                            <span className="text-[9px] text-fg-disabled">{formatHoursMinutes(task.estimated_minutes)}</span>
                           )}
                           {isRecent ? (
                             <span className="text-[10px] text-accent-blue-soft-fg font-medium">
@@ -1455,7 +1455,7 @@ export default function DailyPlanner() {
                           {task.title}
                         </span>
                         {task.estimated_minutes != null && task.estimated_minutes > 0 && !isRecent && (
-                          <span className="text-[9px] text-fg-disabled">{task.estimated_minutes}m</span>
+                          <span className="text-[9px] text-fg-disabled">{formatHoursMinutes(task.estimated_minutes)}</span>
                         )}
                         {isRecent ? (
                           <span className="text-[10px] text-accent-blue-soft-fg font-medium">
@@ -1485,7 +1485,7 @@ export default function DailyPlanner() {
           onClose={() => { setDetailTask(null); setPendingDetailTask(null); }}
           onSave={(updates) => handleDetailSave(updates)}
           onToggle={(t) => { toggleTask(t).catch(() => {}); }}
-          onDelete={(id) => { setConfirmDeleteId(id); setDetailTask(null); setPendingDetailTask(null); }}
+          onDelete={(id) => { handleDelete(id); setDetailTask(null); setPendingDetailTask(null); }}
           onStartFocus={(t) => {
             handleStartFocus(t);
             setDetailTask(null);

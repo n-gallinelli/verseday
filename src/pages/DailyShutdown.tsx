@@ -14,6 +14,7 @@ import {
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
+import { formatHoursMinutes } from "../utils/format";
 import SunsetOverlay from "../components/SunsetOverlay";
 import SummaryOverlay from "../components/SummaryOverlay";
 import MoodSelector from "../components/MoodSelector";
@@ -270,8 +271,8 @@ export default function DailyShutdown() {
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
       {/* ── Header — transparent, gradient shows through ────────────── */}
-      <div className="px-6 py-4 flex-shrink-0" style={{ borderBottom: "0.5px solid var(--border-hairline)" }}>
-        <span className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-accent-blue-soft-fg block mb-1">
+      <div className="px-6 py-5 flex-shrink-0 flex items-center gap-3" style={{ borderBottom: "0.5px solid var(--border-hairline)" }}>
+        <span className="inline-flex items-center [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] bg-accent-orange-soft text-accent-orange-soft-fg px-2.5 py-1 rounded-full">
           Daily shutdown
         </span>
         <h2 className="text-[14px] font-medium text-fg">
@@ -285,21 +286,21 @@ export default function DailyShutdown() {
 
       {/* ── Body — two-step flow ────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-[760px] mx-auto px-6 py-5 space-y-6">
+        <div className="max-w-[760px] mx-auto px-6 pt-5 pb-8 space-y-8">
           {/* Step indicator — Review breadcrumb is clickable from step 2 */}
-          <div className="flex items-center gap-2 text-[11px] text-fg-faded">
+          <div className="flex items-center gap-2 text-[12px] text-fg-secondary">
             {step === 2 ? (
               <button
                 onClick={() => setStep(1)}
-                className="cursor-pointer hover:text-fg-secondary transition-colors"
+                className="cursor-pointer hover:text-fg transition-colors"
               >
                 Review
               </button>
             ) : (
-              <span className="text-fg-secondary font-medium">Review</span>
+              <span className="text-fg font-medium">Review</span>
             )}
-            <span>→</span>
-            <span className={step === 2 ? "text-fg-secondary font-medium" : ""}>Reflect</span>
+            <span className="text-fg-faded">→</span>
+            <span className={step === 2 ? "text-fg font-medium" : ""}>Reflect</span>
           </div>
 
           {step === 1 && (
@@ -326,34 +327,36 @@ export default function DailyShutdown() {
                         <div
                           key={task.id}
                           onClick={() => setDetailTask(task)}
-                          className="px-2.5 py-[6px] rounded-md border border-line-soft bg-elevated/60 flex items-center gap-2.5 transition-colors hover:bg-overlay-hover cursor-pointer"
+                          className="px-2.5 py-3 rounded-md border border-line-soft bg-elevated/60 flex items-center gap-3 transition-colors hover:bg-overlay-hover cursor-pointer"
                         >
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               handleToggleHighlight(task.id);
                             }}
-                            className="flex-shrink-0 cursor-pointer"
+                            className="flex-shrink-0 ml-0.5 cursor-pointer"
                             title={isHighlight ? "Remove highlight" : "Mark as highlight"}
                           >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill={isHighlight ? "var(--accent-highlight)" : "none"} stroke={isHighlight ? "var(--accent-highlight)" : "var(--text-disabled)"} strokeWidth="2">
                               <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                             </svg>
                           </button>
-                          {project && (
+                          {project ? (
                             <span
                               className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                               style={{ backgroundColor: project.color }}
                               title={project.name}
                             />
+                          ) : (
+                            <span className="w-1.5 h-1.5 flex-shrink-0" aria-hidden />
                           )}
                           <span className="flex-1 text-[12px] text-fg-secondary truncate">{task.title}</span>
-                          {project && (
-                            <span className="text-[10px] text-fg-faded shrink-0 max-w-[120px] truncate">{project.name}</span>
-                          )}
-                          {worked > 0 && (
-                            <span className="text-[10px] text-fg-faded tabular-nums shrink-0">{worked}m</span>
-                          )}
+                          <span className="text-[10px] text-fg-faded shrink-0 w-[120px] truncate">
+                            {project?.name ?? ""}
+                          </span>
+                          <span className="text-[10px] text-fg-faded tabular-nums shrink-0 w-[44px] text-right">
+                            {worked > 0 ? formatHoursMinutes(worked) : ""}
+                          </span>
                         </div>
                       );
                     })}
@@ -388,39 +391,47 @@ export default function DailyShutdown() {
                         <div
                           key={task.id}
                           onClick={() => setDetailTask(task)}
-                          className="group/row px-2.5 py-[6px] rounded-md border border-line-soft bg-elevated/60 flex items-center gap-2.5 transition-colors hover:bg-overlay-hover cursor-pointer"
+                          className="group/row px-2.5 py-3 rounded-md border border-line-soft bg-elevated/60 flex items-center gap-3 transition-colors hover:bg-overlay-hover cursor-pointer"
                         >
-                          {task.priority === "high" && (
-                            <span className="w-[14px] h-[14px] rounded-full border-2 border-accent-danger flex-shrink-0" title="High priority" />
+                          {task.priority === "high" ? (
+                            <span className="w-[14px] h-[14px] rounded-full border-2 border-accent-danger flex-shrink-0 ml-0.5" title="High priority" />
+                          ) : (
+                            <span className="w-[14px] h-[14px] flex-shrink-0 ml-0.5" aria-hidden />
                           )}
-                          {project && (
+                          {project ? (
                             <span
                               className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                               style={{ backgroundColor: project.color }}
                               title={project.name}
                             />
+                          ) : (
+                            <span className="w-1.5 h-1.5 flex-shrink-0" aria-hidden />
                           )}
                           <span className={`flex-1 text-[12px] truncate ${isCarried ? "text-fg-faded italic" : "text-fg"}`}>{task.title}</span>
-                          {project && !isCarried && (
-                            <span className="text-[10px] text-fg-faded shrink-0 max-w-[120px] truncate">{project.name}</span>
-                          )}
-                          {est > 0 && !isCarried && (
-                            <span className="text-[10px] text-fg-faded tabular-nums shrink-0">{est}m</span>
-                          )}
-                          {isCarried ? (
-                            <span className="text-[10px] text-accent-green flex-shrink-0">Moved →</span>
-                          ) : (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                carryTaskToTomorrow(task.id);
-                              }}
-                              className="text-[10px] text-accent-blue-soft-fg hover:text-accent-blue cursor-pointer flex-shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity"
-                              title="Move to tomorrow"
-                            >
-                              Move →
-                            </button>
-                          )}
+                          <span className="text-[10px] text-fg-faded shrink-0 w-[120px] truncate">
+                            {!isCarried ? (project?.name ?? "") : ""}
+                          </span>
+                          <span className="text-[10px] tabular-nums shrink-0 w-[68px] text-right relative">
+                            {isCarried ? (
+                              <span className="text-accent-green">Moved →</span>
+                            ) : (
+                              <>
+                                <span className={`text-fg-faded transition-opacity ${est > 0 ? "group-hover/row:opacity-0" : "opacity-0"}`}>
+                                  {est > 0 ? formatHoursMinutes(est) : ""}
+                                </span>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    carryTaskToTomorrow(task.id);
+                                  }}
+                                  className="absolute inset-0 text-right text-accent-blue-soft-fg hover:text-accent-blue cursor-pointer opacity-0 group-hover/row:opacity-100 transition-opacity"
+                                  title="Move to tomorrow"
+                                >
+                                  Move →
+                                </button>
+                              </>
+                            )}
+                          </span>
                         </div>
                       );
                     })}

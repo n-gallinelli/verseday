@@ -44,6 +44,12 @@ interface AppState {
    *  whatever they had open (plan vs schedule). */
   weeklyPlannerTab: "plan" | "schedule";
   setWeeklyPlannerTab: (tab: "plan" | "schedule") => void;
+  /** Schedule-tab planned-hours total surfaced into the WeeklyPlanner
+   *  header. Written by ScheduleTab whenever its weekTasks change;
+   *  read by WeeklyPlanner so the readout sits inline next to the
+   *  Plan/Schedule toggle instead of taking a row of its own. */
+  schedulePlannedMinutes: number;
+  setSchedulePlannedMinutes: (minutes: number) => void;
   setPage: (page: Page) => void;
   goBack: () => void;
   setSelectedDate: (date: string) => void;
@@ -129,6 +135,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   sidebarCollapsed: loadPersistedSidebarCollapsed(),
   sidebarFocusExpanded: false,
   weeklyPlannerTab: "plan",
+  schedulePlannedMinutes: 0,
+  setSchedulePlannedMinutes: (minutes) => set({ schedulePlannedMinutes: minutes }),
   setPage: (page) => {
     const prev = get().currentPage;
     if (prev === page) return;

@@ -474,7 +474,7 @@ function DayTasksModal({
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export default function ScheduleTab() {
-  const { selectedWeek, openProject } = useAppStore();
+  const { selectedWeek, openProject, setSchedulePlannedMinutes } = useAppStore();
 
   const [weekTasks, setWeekTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -716,14 +716,17 @@ export default function ScheduleTab() {
     }
   }
 
-  // Total planned hours
+  // Total planned hours — surfaced into the WeeklyPlanner header via
+  // the appStore so the readout sits inline next to the Plan/Schedule
+  // toggle instead of taking a row of its own.
   const totalPlannedMinutes = weekTasks.reduce(
     (sum, t) => sum + (t.estimated_minutes ?? 0),
     0
   );
-  const totalPlannedHours = (Math.round(totalPlannedMinutes / 6) / 10)
-    .toFixed(1)
-    .replace(/\.0$/, "");
+  useEffect(() => {
+    setSchedulePlannedMinutes(totalPlannedMinutes);
+    return () => setSchedulePlannedMinutes(0);
+  }, [totalPlannedMinutes, setSchedulePlannedMinutes]);
 
   // ── Render ────────────────────────────────────────────────────────────
 
@@ -749,20 +752,6 @@ export default function ScheduleTab() {
           </button>
         </div>
       )}
-
-      {/* Schedule-specific utility line — week nav lives in the parent
-          WeeklyPlanner header, so all that's left here is the
-          right-aligned planned-hours readout. The bottom border closes
-          the row visually so the day/rail verticals below land against
-          a horizontal line instead of floating. */}
-      <div className="px-7 pt-3 pb-2 flex-shrink-0 flex items-center justify-end border-b border-line-soft">
-        <span className="text-[12px] text-fg-faded">
-          Planned{" "}
-          <span className="text-fg-secondary tabular-nums">
-            {totalPlannedHours}h
-          </span>
-        </span>
-      </div>
 
       {/* ── Body: left rail (projects + notes) + calendar (main) ─────── */}
       <DndContext

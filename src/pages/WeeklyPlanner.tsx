@@ -23,8 +23,12 @@ function formatWeekLabel(mondayIso: string): string {
 // Tab choice persists in appStore for the session — navigating away
 // and back returns to whichever tab the user had open.
 export default function WeeklyPlanner() {
-  const { weeklyPlannerTab, setWeeklyPlannerTab, selectedWeek, setSelectedWeek } = useAppStore();
+  const { weeklyPlannerTab, setWeeklyPlannerTab, selectedWeek, setSelectedWeek, schedulePlannedMinutes } = useAppStore();
   const isThisWeek = selectedWeek === mondayOfWeek();
+  const showPlannedReadout = weeklyPlannerTab === "schedule" && schedulePlannedMinutes > 0;
+  const plannedHoursLabel = (Math.round(schedulePlannedMinutes / 6) / 10)
+    .toFixed(1)
+    .replace(/\.0$/, "");
 
   function changeWeek(offset: number) {
     const d = new Date(selectedWeek + "T00:00:00");
@@ -36,10 +40,10 @@ export default function WeeklyPlanner() {
     <div className="flex flex-col h-full overflow-hidden">
       <PlanFridayBanner onAccept={() => setWeeklyPlannerTab("plan")} />
 
-      {/* Unified header — week nav on the left, Plan/Schedule toggle on
-          the right. Replaces the previous stacked layout (centered toggle
-          row + per-tab week-nav row), saving a vertical row across both
-          tabs. */}
+      {/* Unified header — arrows flanking the date label, "this week"
+          marker, then the Plan/Schedule toggle pushed right. On the
+          Schedule tab, the planned-hours readout sits inline next to
+          the toggle instead of taking a row of its own. */}
       <div className="px-7 py-3 flex items-center gap-3 border-b border-line-hairline flex-shrink-0">
         <button
           onClick={() => changeWeek(-1)}
@@ -50,6 +54,9 @@ export default function WeeklyPlanner() {
             <path d="M10 4l-4 4 4 4" />
           </svg>
         </button>
+        <span className="text-[13px] font-medium text-fg">
+          {formatWeekLabel(selectedWeek)}
+        </span>
         <button
           onClick={() => changeWeek(1)}
           className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors"
@@ -59,9 +66,6 @@ export default function WeeklyPlanner() {
             <path d="M6 4l4 4-4 4" />
           </svg>
         </button>
-        <span className="text-[13px] font-medium text-fg">
-          {formatWeekLabel(selectedWeek)}
-        </span>
         {isThisWeek ? (
           <span className="text-[10px] uppercase tracking-[0.06em] text-fg-faded">
             this week
@@ -74,7 +78,15 @@ export default function WeeklyPlanner() {
             Jump to this week
           </button>
         )}
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-3">
+          {showPlannedReadout && (
+            <span className="text-[12px] text-fg-faded">
+              Planned{" "}
+              <span className="text-fg-secondary tabular-nums">
+                {plannedHoursLabel}h
+              </span>
+            </span>
+          )}
           <TabToggle tab={weeklyPlannerTab} onChange={setWeeklyPlannerTab} />
         </div>
       </div>

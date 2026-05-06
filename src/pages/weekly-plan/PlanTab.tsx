@@ -9,7 +9,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { useAppStore } from "../../stores/appStore";
-import { localDateIso, mondayOfWeek, weekdayDates } from "../../utils/dates";
+import { weekdayDates } from "../../utils/dates";
 import { snapCenterToCursor } from "../../utils/dnd";
 import { PLAN_TASK_DRAG_PREFIX } from "./PlanTaskList";
 import { PLAN_DAY_DROP_PREFIX } from "./PlanDayStrip";
@@ -41,26 +41,12 @@ import TaskDetailOverlay from "../../components/TaskDetailOverlay";
 import { errorMessage } from "../../utils/errors";
 
 // Plan tab orchestrator — owns the data + selection state. Children
-// (rail / panel / summary) are presentational.
-function formatWeekLabel(mondayIso: string): string {
-  const d = new Date(mondayIso + "T00:00:00");
-  const friday = new Date(d);
-  friday.setDate(d.getDate() + 4);
-  const monthDay = (date: Date) =>
-    date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  return `${monthDay(d)} – ${monthDay(friday)}`;
-}
-
+// (rail / panel / summary) are presentational. Week navigation
+// (arrows + "this week" pill) lives in WeeklyPlanner above this tab,
+// shared with Schedule.
 export default function PlanTab() {
-  const { selectedWeek, setSelectedWeek, startFocus, setPage } = useAppStore();
+  const { selectedWeek, startFocus, setPage } = useAppStore();
   const weekDates = weekdayDates(selectedWeek);
-  const isThisWeek = selectedWeek === mondayOfWeek();
-
-  function changeWeek(offset: number) {
-    const d = new Date(selectedWeek + "T00:00:00");
-    d.setDate(d.getDate() + offset * 7);
-    setSelectedWeek(localDateIso(d));
-  }
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [statuses, setStatuses] = useState<
@@ -547,45 +533,6 @@ export default function PlanTab() {
   return (
     <div className="flex flex-col flex-1 min-h-0 plan-ambient-bg">
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
-
-      {/* Plan-tab week header — quieter than Schedule's hero bar. The
-          Friday banner can advance selectedWeek, so the user always
-          needs a way to see (and undo) where they are. */}
-      <div className="px-7 py-3 flex items-center gap-3 border-b border-line-hairline flex-shrink-0">
-        <button
-          onClick={() => changeWeek(-1)}
-          className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors"
-          title="Previous week"
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M10 4l-4 4 4 4" />
-          </svg>
-        </button>
-        <button
-          onClick={() => changeWeek(1)}
-          className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors"
-          title="Next week"
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M6 4l4 4-4 4" />
-          </svg>
-        </button>
-        <span className="text-[13px] font-medium text-fg">
-          {formatWeekLabel(selectedWeek)}
-        </span>
-        {isThisWeek ? (
-          <span className="text-[10px] uppercase tracking-[0.06em] text-fg-faded">
-            this week
-          </span>
-        ) : (
-          <button
-            onClick={() => setSelectedWeek(mondayOfWeek())}
-            className="text-[11px] text-accent-orange-soft-fg hover:text-accent-orange cursor-pointer"
-          >
-            Jump to this week
-          </button>
-        )}
-      </div>
 
       <DndContext
         sensors={dndSensors}

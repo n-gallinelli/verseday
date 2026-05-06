@@ -30,7 +30,6 @@ import DisclosureCaret from "../../components/DisclosureCaret";
 import {
   localDateIso,
   todayString,
-  mondayOfWeek as getMondayOfWeek,
   weekdayDates as getWeekdayDates,
 } from "../../utils/dates";
 import type { Task, Project } from "../../types";
@@ -42,15 +41,6 @@ function getFridayIso(mondayIso: string): string {
   const d = new Date(mondayIso + "T00:00:00");
   d.setDate(d.getDate() + 4);
   return localDateIso(d);
-}
-
-function formatWeekHeader(mondayIso: string): string {
-  const d = new Date(mondayIso + "T00:00:00");
-  return `Week of ${d.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  })}`;
 }
 
 function dateToDayAbbrev(
@@ -482,8 +472,7 @@ function DayTasksModal({
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export default function ScheduleTab() {
-  const { selectedWeek, setSelectedWeek, openProject } =
-    useAppStore();
+  const { selectedWeek, openProject } = useAppStore();
 
   const [weekTasks, setWeekTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -521,7 +510,6 @@ export default function ScheduleTab() {
   const weekDates = getWeekdayDates(selectedWeek);
   const fridayIso = getFridayIso(selectedWeek);
   const todayStr = todayString();
-  const isThisWeek = selectedWeek === getMondayOfWeek();
 
   const projectMap = new Map(projects.map((p) => [p.id, p]));
 
@@ -617,12 +605,6 @@ export default function ScheduleTab() {
     loadData();
   }
 
-
-  function changeWeek(offset: number) {
-    const d = new Date(selectedWeek + "T00:00:00");
-    d.setDate(d.getDate() + offset * 7);
-    setSelectedWeek(localDateIso(d));
-  }
 
   function navigateToProject(id: number) {
     openProject(id);
@@ -757,50 +739,16 @@ export default function ScheduleTab() {
         </div>
       )}
 
-      {/* ── Header — hero title + utility row ─────────────────────────── */}
-      <div className="px-7 pt-6 pb-4 border-b border-line-soft flex-shrink-0">
-        <div className="flex items-center gap-3 mb-3">
-          <h2 className="flex-1 text-[22px] font-medium text-fg leading-tight min-w-0 truncate">
-            {formatWeekHeader(selectedWeek)}
-          </h2>
-          {isThisWeek && (
-            <span className="text-[11px] bg-accent-orange-soft text-accent-orange-soft-fg px-2 py-0.5 rounded-full flex-shrink-0">
-              This week
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => changeWeek(-1)}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M10 4l-4 4 4 4" />
-            </svg>
-          </button>
-          <button
-            onClick={() => changeWeek(1)}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M6 4l4 4-4 4" />
-            </svg>
-          </button>
-          {!isThisWeek && (
-            <button
-              onClick={() => setSelectedWeek(getMondayOfWeek())}
-              className="text-[11px] text-accent-orange-soft-fg hover:text-accent-orange cursor-pointer ml-1"
-            >
-              Jump to this week
-            </button>
-          )}
-          <span className="text-[12px] text-fg-faded ml-auto">
-            Planned{" "}
-            <span className="text-fg-secondary tabular-nums">
-              {totalPlannedHours}h
-            </span>
+      {/* Schedule-specific utility line — week nav lives in the parent
+          WeeklyPlanner header, so all that's left here is the
+          right-aligned planned-hours readout. */}
+      <div className="px-7 pt-3 pb-2 flex-shrink-0 flex items-center justify-end">
+        <span className="text-[12px] text-fg-faded">
+          Planned{" "}
+          <span className="text-fg-secondary tabular-nums">
+            {totalPlannedHours}h
           </span>
-        </div>
+        </span>
       </div>
 
       {/* ── Body: left rail (projects + notes) + calendar (main) ─────── */}

@@ -302,18 +302,6 @@ function MainApp() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [setPage, startFocus]);
 
-  // Focus mode is a full-screen overlay. FocusMode itself handles the
-  // no-session case (auto-starts on the next queued task, or shows an
-  // empty / error state) — the gate intentionally doesn't require
-  // `focus`.
-  if (currentPage === "focus") {
-    return (
-      <ErrorBoundary>
-        <FocusMode />
-      </ErrorBoundary>
-    );
-  }
-
   // Resolve which page to show in the background
   // When project_detail is open, show the previous page behind the modal
   const backgroundPage = currentPage === "project_detail"
@@ -347,36 +335,51 @@ function MainApp() {
 
   return (
     <ErrorBoundary>
-      <div className="flex h-screen overflow-hidden bg-base">
-        <Sidebar />
-        <WrapUpReminder />
-        <main
-          key={pageKey}
-          className="flex-1 overflow-hidden flex flex-col animate-fade-in"
-        >
-          {renderPage()}
-        </main>
-
-        {/* Project Detail Modal Overlay */}
-        {currentPage === "project_detail" && (
-          <div
-            className="fixed inset-0 z-40 flex items-center justify-center"
-            onClick={goBack}
+      {/* Regular app shell — hidden while the focus page is active so it
+          doesn't render under the fullscreen overlay. */}
+      {currentPage !== "focus" && (
+        <div className="flex h-screen overflow-hidden bg-base">
+          <Sidebar />
+          <WrapUpReminder />
+          <main
+            key={pageKey}
+            className="flex-1 overflow-hidden flex flex-col animate-fade-in"
           >
-            <div className="absolute inset-0 bg-overlay-scrim" />
+            {renderPage()}
+          </main>
+
+          {/* Project Detail Modal Overlay */}
+          {currentPage === "project_detail" && (
             <div
-              className="relative w-[1080px] max-w-[95vw] max-h-[85vh] bg-base rounded-xl animate-scale-in flex flex-col"
-              style={{ boxShadow: "var(--shadow-modal)" }}
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") goBack();
-              }}
+              className="fixed inset-0 z-40 flex items-center justify-center"
+              onClick={goBack}
             >
-              <ProjectDetail />
+              <div className="absolute inset-0 bg-overlay-scrim" />
+              <div
+                className="relative w-[1080px] max-w-[95vw] max-h-[85vh] bg-base rounded-xl animate-scale-in flex flex-col"
+                style={{ boxShadow: "var(--shadow-modal)" }}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") goBack();
+                }}
+              >
+                <ProjectDetail />
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
+
+      {/* FocusMode — single persistent mount across both cases (visible
+          on the focus page, hidden engine elsewhere). Toggling `visible`
+          instead of swapping mounts keeps the pip window + IPC channel
+          alive across navigation without a flicker. Mount lifetime
+          spans "focus page open OR active session running"; unmount
+          fires only when both are false, which is when the pip should
+          actually close. */}
+      {(currentPage === "focus" || focus?.mode === "active") && (
+        <FocusMode visible={currentPage === "focus"} />
+      )}
     </ErrorBoundary>
   );
 }

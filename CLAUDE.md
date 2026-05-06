@@ -21,3 +21,4 @@ Your rules:
 - Save all plans, decisions, and changelogs to /docs as .md files.
 - Never push directly to main.
 - Budget is zero — flag anything that costs money to run.
+- DB migrations: once a migration's SQL has been applied to any DB anywhere — even a single dev DB — its source bytes are frozen. Schema changes go in the next migration. Full rationale + recovery procedure in `/docs/migration-discipline.md`.

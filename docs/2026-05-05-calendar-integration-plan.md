@@ -151,9 +151,12 @@ ALTER TABLE tasks ADD COLUMN external_dismissal_reason TEXT
   CHECK (external_dismissal_reason IS NULL
          OR external_dismissal_reason IN ('user', 'cancelled'));
 
--- Partial index: only indexes rows that came from an external source,
--- so the upsert lookup is O(log n_imported), not O(log n_total).
-CREATE INDEX IF NOT EXISTS idx_tasks_external
+-- Partial UNIQUE index: only indexes rows that came from an external
+-- source, so the upsert lookup is O(log n_imported), not O(log n_total).
+-- UNIQUE so ON CONFLICT(external_source, external_id) can bind in M2's
+-- upsertCalendarTask. (v18 shipped non-unique; v19 corrects this — see
+-- migration v19 in src-tauri/src/lib.rs for the drop+recreate.)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_external
   ON tasks (external_source, external_id)
   WHERE external_source IS NOT NULL;
 ```

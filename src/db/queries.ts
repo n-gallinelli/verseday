@@ -1,6 +1,7 @@
 import { getDb } from "./database";
 import { todayString } from "../utils/dates";
 import type { Project, Task, DailyPlan, TimeEntry, WeeklyPlan, WeeklyShutdown, Link } from "../types";
+import type { DismissalReason } from "../calendar/types";
 
 export const PRESET_COLORS = [
   "#809BC2", // muted blue
@@ -441,6 +442,26 @@ export async function updateTaskSortOrders(
 
 export async function deleteTask(id: number): Promise<void> {
   const db = await getDb();
+  // Pull the metadata we need to decide between the three delete paths
+  // in one round-trip: recurring-instance bookkeeping, calendar-import
+  // soft-delete, or plain hard-delete.
+  const taskRows: { recurrence_source_id: number | null; date_scheduled: string | null; external_source: string | null }[] =
+    await db.select(
+      "SELECT recurrence_source_id, date_scheduled, external_source FROM tasks WHERE id = $1",
+      [id]
+    );
+  const t = taskRows[0];
+
+  // Calendar-imported tasks soft-delete via column instead of removing
+  // the row. Tombstones serve two roles: (a) they keep time_entries
+  // FKs valid for any work the user logged before dismissing, and
+  // (b) they tell the next sync to skip re-importing this external_id
+  // for this date (see getDismissedExternalIds + sync.ts step 5).
+  if (t && t.external_source === "calendar") {
+    await markTaskDismissed(id, "user");
+    return;
+  }
+
   // If this row is a recurring instance, record the (template, date) pair
   // so the next generateRecurringInstances call doesn't recreate it.
   // Skip-insert happens *before* the DELETE because the two statements are
@@ -448,12 +469,6 @@ export async function deleteTask(id: number): Promise<void> {
   // between, it'll either still see the live instance (ON CONFLICT swallows)
   // or already see the skip (NOT EXISTS guard short-circuits). See the v15
   // doc for the full race walk-through.
-  const taskRows: { recurrence_source_id: number | null; date_scheduled: string | null }[] =
-    await db.select(
-      "SELECT recurrence_source_id, date_scheduled FROM tasks WHERE id = $1",
-      [id]
-    );
-  const t = taskRows[0];
   if (t && t.recurrence_source_id != null && t.date_scheduled != null) {
     await db.execute(
       "INSERT INTO recurring_instance_skips (recurrence_source_id, date_scheduled) VALUES ($1, $2) ON CONFLICT DO NOTHING",
@@ -1465,4 +1480,75 @@ export async function generateRecurringInstances(date: string): Promise<void> {
       [tmpl.project_id, tmpl.title, tmpl.priority, tmpl.estimated_minutes, tmpl.notes, date, tmpl.id]
     );
   }
+}
+
+// ───────────────────────────────────────────────────────────────────
+// Calendar integration (M2)
+// ───────────────────────────────────────────────────────────────────
+
+export interface UpsertCalendarTaskInput {
+  externalId: string;
+  title: string;
+  /** Local-tz `YYYY-MM-DD`. Caller is responsible for deriving from
+   *  the event's local-tz `startLocal` via `'T'` split + format guard. */
+  dateScheduled: string;
+  estimatedMinutes: number | null;
+}
+
+/** INSERT a calendar-imported task, or skip if a row with the same
+ *  `(external_source, external_id)` already exists. Returns whether
+ *  a new row was created. The conflict target matches v19's UNIQUE
+ *  partial index byte-for-byte (see `idx_tasks_external` in
+ *  src-tauri/src/lib.rs migrations v18 + v19). */
+export async function upsertCalendarTask(
+  input: UpsertCalendarTaskInput
+): Promise<boolean> {
+  const db = await getDb();
+  const result = await db.execute(
+    `INSERT INTO tasks (
+       title, project_id, date_scheduled, estimated_minutes,
+       priority, status, sort_order,
+       external_source, external_id
+     )
+     VALUES ($1, NULL, $2, $3, 'medium', 'todo', 0, 'calendar', $4)
+     ON CONFLICT(external_source, external_id) WHERE external_source IS NOT NULL DO NOTHING`,
+    [input.title, input.dateScheduled, input.estimatedMinutes, input.externalId]
+  );
+  // tauri-plugin-sql returns rowsAffected = 0 for the DO-NOTHING branch.
+  return result.rowsAffected > 0;
+}
+
+/** Soft-delete a task by stamping `external_dismissal_reason`. The row
+ *  stays so time_entries FKs remain valid and the sync loop has a
+ *  tombstone to consult. User-facing queries filter `external_dismissal_reason
+ *  IS NULL` (see commit 1's filter sweep). */
+export async function markTaskDismissed(
+  taskId: number,
+  reason: DismissalReason
+): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "UPDATE tasks SET external_dismissal_reason = $1 WHERE id = $2",
+    [reason, taskId]
+  );
+}
+
+/** External IDs the user explicitly dismissed for a given local date.
+ *  Used by `syncCalendarEventsForDate` to skip re-importing them.
+ *  Note: only `'user'` dismissals — `'cancelled'` (M5) doesn't block
+ *  re-import (the calendar may un-cancel; that's a different surface). */
+export async function getDismissedExternalIds(
+  dateIso: string
+): Promise<string[]> {
+  const db = await getDb();
+  const rows: { external_id: string | null }[] = await db.select(
+    `SELECT external_id FROM tasks
+       WHERE date_scheduled = $1
+         AND external_source = 'calendar'
+         AND external_dismissal_reason = 'user'`,
+    [dateIso]
+  );
+  return rows
+    .map((r) => r.external_id)
+    .filter((x): x is string => x != null);
 }

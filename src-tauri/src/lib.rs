@@ -466,6 +466,53 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 20,
+            description: "weekly_plan_commitments: rebuild with full minutes CHECK (corrects v17 dev-DB drift)",
+            // Recovery migration for v17 checksum/structural drift. See
+            // docs/2026-05-05-v20-weekly-plan-commitments-fix.md.
+            //
+            // On Cam/Dan's DBs (and any DB where v17 was applied at the
+            // committed bytes), this is a structurally-equivalent rebuild —
+            // new table has identical schema to the existing one, all rows
+            // INSERT-SELECT cleanly. Idempotent.
+            //
+            // On Nick's dev DB (where intermediate-v17 with CHECK
+            // (minutes >= 0) was applied during M1-M6 iteration), this
+            // adds the missing `<= 1440` upper bound. Pre-flight on the
+            // dev DB confirmed zero existing rows violate the new CHECK
+            // (max minutes = 50). If a violator existed, INSERT would
+            // fail inside sqlx's implicit transaction and the entire
+            // rebuild would roll back — loud failure, not silent data
+            // loss. No WHERE clause on INSERT-SELECT for that reason.
+            //
+            // FK behavior verified on a fresh DB with PRAGMA foreign_keys
+            // = ON: rebuild succeeds, foreign_key_check returns clean.
+            // weekly_plan_commitments has only outbound FKs (→ projects),
+            // so no PRAGMA toggling is needed.
+            //
+            // Index/trigger preservation: the only index is the implicit
+            // sqlite_autoindex from PRIMARY KEY, auto-recreated by the
+            // new CREATE TABLE. No explicit indexes, no triggers.
+            sql: "
+                CREATE TABLE weekly_plan_commitments_v20 (
+                    week_start_date TEXT NOT NULL,
+                    project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    day_offset      INTEGER NOT NULL CHECK (day_offset BETWEEN 0 AND 4),
+                    minutes         INTEGER NOT NULL CHECK (minutes >= 0 AND minutes <= 1440),
+                    PRIMARY KEY (week_start_date, project_id, day_offset)
+                );
+
+                INSERT INTO weekly_plan_commitments_v20
+                  SELECT * FROM weekly_plan_commitments;
+
+                DROP TABLE weekly_plan_commitments;
+
+                ALTER TABLE weekly_plan_commitments_v20
+                  RENAME TO weekly_plan_commitments;
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

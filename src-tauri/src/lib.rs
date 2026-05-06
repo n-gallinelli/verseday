@@ -439,6 +439,33 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 19,
+            description: "calendar integration: upgrade idx_tasks_external to UNIQUE for ON CONFLICT binding",
+            // v19: upgrade idx_tasks_external from non-unique (v18) to UNIQUE.
+            // v18 shipped non-unique by mistake; ON CONFLICT(external_source, external_id)
+            // requires a UNIQUE index/constraint to bind. M2 is the first writer of
+            // calendar tasks, so no rows can violate uniqueness at migration time.
+            //
+            // SQLite has no ALTER INDEX … ADD UNIQUE — drop+recreate is the only path.
+            // Reusing the name `idx_tasks_external` keeps a single canonical index
+            // for this purpose; two indexes with different names for the same job
+            // is the kind of debt that costs an hour of confusion six months out.
+            //
+            // The runner (sqlx-sqlite) wraps each migration body in an implicit
+            // transaction (sqlx-sqlite migrate.rs:131) — see v14 doc — so if
+            // CREATE UNIQUE INDEX fails on a hypothetical machine that has
+            // duplicate (external_source, external_id) rows, the DROP rolls back
+            // too. No silent half-state.
+            sql: "
+                DROP INDEX IF EXISTS idx_tasks_external;
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_external
+                  ON tasks (external_source, external_id)
+                  WHERE external_source IS NOT NULL;
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

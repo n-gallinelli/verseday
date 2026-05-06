@@ -31,6 +31,10 @@ export interface Task {
   is_highlight: number;
   completed_at: string | null;
   due_date: string | null;
+  // v18: external-source provenance (NULL = task created in-app).
+  external_source: string | null;
+  external_id: string | null;
+  external_dismissal_reason: string | null;
   created_at: string;
 }
 

@@ -37,6 +37,7 @@ objc2-foundation = { version = "0.3", features = [
     "NSArray",
     "NSPredicate",
     "NSError",
+    "NSURL",
 ] }
 objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSRunningApplication"] }
 # G3 (plan v3): pinned to ~0.3 minor line; bump intentionally and
@@ -48,6 +49,7 @@ objc2-event-kit = { version = "0.3", features = [
     "EKCalendarItem",
     "EKCalendar",
     "EKObject",
+    "EKParticipant",
     "EKTypes",
 ] }
 block2 = "0.6"

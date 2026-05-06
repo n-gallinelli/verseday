@@ -33,8 +33,9 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Bool};
 use objc2_event_kit::{
     EKAuthorizationStatus, EKCalendar, EKEntityType, EKEvent, EKEventStatus, EKEventStore,
+    EKParticipant, EKParticipantStatus,
 };
-use objc2_foundation::{NSArray, NSDate, NSError, NSPredicate, NSString};
+use objc2_foundation::{NSArray, NSDate, NSError, NSPredicate, NSString, NSURL};
 use serde::Serialize;
 
 // ───────────────────────────────────────────────────────────────────
@@ -57,6 +58,19 @@ pub struct CalendarMeta {
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct Attendee {
+    /// Display name from EKParticipant. May be missing on external
+    /// invitees whose contacts the OS doesn't know about.
+    pub name: Option<String>,
+    /// Email parsed from the participant's `URL` (typically a
+    /// `mailto:` URL). None if the URL didn't parse as mailto.
+    pub email: Option<String>,
+    /// `"accepted" | "declined" | "tentative" | "pending" | "unknown"`.
+    pub status: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct CalendarEvent {
     /// Per-instance identifier. EventKit's `eventIdentifier` includes
     /// a recurrence suffix so today's standup ≠ tomorrow's standup.
@@ -70,6 +84,23 @@ pub struct CalendarEvent {
     pub all_day: bool,
     /// `"confirmed" | "tentative" | "cancelled" | "none"`.
     pub status: String,
+    /// Event description / body. Often contains conference dial-in,
+    /// agenda, links — surfaced as the right-rail's primary text.
+    pub notes: Option<String>,
+    /// Free-form location field. Sometimes a Zoom URL, sometimes a
+    /// physical address, sometimes empty.
+    pub location: Option<String>,
+    /// EKEvent.URL — typically the canonical conference / meeting link
+    /// when set by the calendar source (Google Calendar populates it
+    /// for events with a video conference attached).
+    pub url: Option<String>,
+    /// Attendees (excluding the organizer — that's its own field).
+    /// Empty array if EKEvent.attendees is nil.
+    pub attendees: Vec<Attendee>,
+    /// Organizer email parsed from EKEvent.organizer.URL (mailto:),
+    /// when present. Distinct from `attendees` because EventKit
+    /// surfaces them separately.
+    pub organizer_email: Option<String>,
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -259,6 +290,27 @@ impl CalendarSource for EventKitSource {
             }
             .to_string();
 
+            // Optional metadata: notes (event description), location,
+            // url, attendees, organizer email. EKEvent inherits these
+            // from EKCalendarItem. All accessors are Option<…>; treat
+            // empty strings as None too so the JS layer doesn't have to
+            // distinguish "" from missing.
+            let notes = unsafe { event.notes() }
+                .map(|s| s.to_string())
+                .filter(|s| !s.is_empty());
+            let location = unsafe { event.location() }
+                .map(|s| s.to_string())
+                .filter(|s| !s.is_empty());
+            let url = unsafe { event.URL() }.and_then(nsurl_to_string);
+
+            let attendees = match unsafe { event.attendees() } {
+                Some(arr) => arr.iter().map(participant_to_attendee).collect(),
+                None => Vec::new(),
+            };
+
+            let organizer_email = unsafe { event.organizer() }
+                .and_then(|p| email_from_participant(&p));
+
             out.push(CalendarEvent {
                 external_id,
                 calendar_id,
@@ -268,11 +320,55 @@ impl CalendarSource for EventKitSource {
                 end_local,
                 all_day,
                 status,
+                notes,
+                location,
+                url,
+                attendees,
+                organizer_email,
             });
         }
 
         Ok(out)
     }
+}
+
+// ───────────────────────────────────────────────────────────────────
+// EKParticipant / NSURL helpers
+// ───────────────────────────────────────────────────────────────────
+
+/// Convert an NSURL to a String via `absoluteString`. Skip empty
+/// strings so the caller can treat them as None.
+fn nsurl_to_string(url: Retained<NSURL>) -> Option<String> {
+    url.absoluteString()
+        .map(|ns| ns.to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// EKParticipant.URL is typically a `mailto:foo@bar.com` URL — pull
+/// out the email portion. Returns None if the URL doesn't parse as
+/// mailto or the local part is empty.
+fn email_from_participant(p: &EKParticipant) -> Option<String> {
+    let url = unsafe { p.URL() };
+    let raw = url.absoluteString()?.to_string();
+    raw.strip_prefix("mailto:")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn participant_to_attendee(p: Retained<EKParticipant>) -> Attendee {
+    let name = unsafe { p.name() }
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty());
+    let email = email_from_participant(&p);
+    let status = match unsafe { p.participantStatus() } {
+        EKParticipantStatus::Accepted => "accepted",
+        EKParticipantStatus::Declined => "declined",
+        EKParticipantStatus::Tentative => "tentative",
+        EKParticipantStatus::Pending => "pending",
+        _ => "unknown",
+    }
+    .to_string();
+    Attendee { name, email, status }
 }
 
 // ───────────────────────────────────────────────────────────────────

@@ -2,6 +2,13 @@
 // Field names are camelCase via `#[serde(rename_all = "camelCase")]`
 // on the Rust struct, so this matches what `invoke()` returns.
 
+export interface Attendee {
+  name: string | null;
+  email: string | null;
+  /** EKParticipantStatus: 'accepted' | 'declined' | 'tentative' | 'pending' | 'unknown'. */
+  status: string;
+}
+
 export interface CalendarEvent {
   /** Per-instance identifier — distinct for each occurrence of a
    *  recurring event. Backed by EventKit's `eventIdentifier`. See
@@ -19,6 +26,13 @@ export interface CalendarEvent {
   allDay: boolean;
   /** EventKit status: 'confirmed' | 'tentative' | 'cancelled' | 'none'. */
   status: string;
+  /** Optional metadata surfaced in TaskDetailOverlay's right rail. All
+   *  Option<…> on the Rust side; null/[] from JS. */
+  notes: string | null;
+  location: string | null;
+  url: string | null;
+  attendees: Attendee[];
+  organizerEmail: string | null;
 }
 
 /** Why a calendar task was dismissed. Soft-delete via column on

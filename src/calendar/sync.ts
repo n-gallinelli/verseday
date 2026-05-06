@@ -151,6 +151,14 @@ export async function syncCalendarEventsForDate(
       title: ev.title,
       dateScheduled: dateFromStartLocal(ev.startLocal),
       estimatedMinutes: estimatedMinutesForEvent(ev),
+      notes: ev.notes,
+      location: ev.location,
+      url: ev.url,
+      attendees: ev.attendees.length > 0 ? JSON.stringify(ev.attendees) : null,
+      organizerEmail: ev.organizerEmail,
+      calendarName: ev.calendarName,
+      startLocal: ev.startLocal,
+      endLocal: ev.endLocal,
     });
     if (inserted) created++;
     else skipped++;

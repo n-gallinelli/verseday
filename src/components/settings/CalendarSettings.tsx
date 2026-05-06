@@ -263,7 +263,7 @@ export default function CalendarSettings() {
             aria-label={enabled ? "Disable calendar import" : "Enable calendar import"}
           >
             <span
-              className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform"
+              className="absolute top-0.5 left-0 w-5 h-5 rounded-full bg-white transition-transform"
               style={{ transform: enabled ? "translateX(18px)" : "translateX(2px)" }}
             />
           </button>

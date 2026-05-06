@@ -88,7 +88,7 @@ function FocusIcon() {
 }
 
 const focusItem: NavItem = {
-  page: "focus_landing",
+  page: "focus",
   label: "Focus",
   icon: <FocusIcon />,
   tint: "var(--nav-tint-focus)",
@@ -212,24 +212,18 @@ export default function Sidebar() {
   } = useAppStore();
   const [showShortcuts, setShowShortcuts] = useState(false);
 
-  // Focus pages still default to collapsed (immersive); the user can
+  // Focus screen defaults to collapsed (immersive); the user can
   // expand via the chevron, which sets the ephemeral focus override.
-  const isFocusScreen =
-    currentPage === "focus_landing" || currentPage === "focus";
+  const isFocusScreen = currentPage === "focus";
   const collapsed = isFocusScreen ? !sidebarFocusExpanded : sidebarCollapsed;
 
   function toggleCollapsed() {
     toggleSidebar();
   }
 
-  // project_detail highlights the Projects nav item; focus highlights
-  // the Focus nav item.
+  // project_detail highlights the Projects nav item.
   const activePage =
-    currentPage === "project_detail"
-      ? "projects"
-      : currentPage === "focus"
-        ? "focus_landing"
-        : (currentPage as Page);
+    currentPage === "project_detail" ? "projects" : (currentPage as Page);
 
   if (collapsed) {
     return (
@@ -302,9 +296,9 @@ export default function Sidebar() {
       <nav className="flex-1 flex flex-col min-h-0">
         {/* Focus — standalone, above Planning */}
         <button
-          onClick={() => setPage("focus_landing")}
+          onClick={() => setPage("focus")}
           className={`w-full flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors ${
-            activePage === "focus_landing"
+            activePage === "focus"
               ? "bg-accent-blue-soft text-accent-blue-soft-fg"
               : "text-fg-secondary hover:bg-overlay-hover hover:text-fg"
           } [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)]`}

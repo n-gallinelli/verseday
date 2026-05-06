@@ -552,15 +552,8 @@ select {
   height: 0;
 }
 
-/* ── Focus Timer Pulse ─────────────────────────────────── */
-
-@keyframes timer-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%      { opacity: 0.88; transform: scale(1.018); }
-}
-
 /* Focus tunnel-in — plays once when FocusMode mounts after the user
-   hits "Start focusing." World rushes outward + content scales up from
+   arrives at the focus screen. World rushes outward + content scales up from
    center. Vignette is a separate overlay layer (see .focus-vignette
    below) so its z-index can sit above the ambient bg but below the
    timer/title. */
@@ -613,21 +606,6 @@ select {
   }
   .focus-vignette {
     opacity: 0.4;
-  }
-}
-
-.timer-circle-ring {
-  animation: timer-pulse 4s ease-in-out infinite;
-  transform-origin: center;
-}
-
-.timer-circle-ring.paused {
-  animation-play-state: paused;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .timer-circle-ring {
-    animation: none;
   }
 }
 
@@ -840,18 +818,16 @@ select {
 
 /* ── Focus Mode Animations ─────────────────────────────── */
 
-@keyframes focusGlowPulse {
-  0%, 100% { opacity: 0.25; transform: scale(1); }
-  50%      { opacity: 0.4;  transform: scale(1.02); }
+/* Pulse ring — a single "shed copy" of the timer ring that scales
+   outward and fades, signalling that the session is live. Hidden when
+   paused (the ring layer is unmounted in the JSX). */
+@keyframes focusPulseRipple {
+  0%   { opacity: 0.45; transform: scale(1); }
+  100% { opacity: 0;    transform: scale(1.22); }
 }
 
-@keyframes focusGlowFadeOut {
-  from { opacity: 1; }
-  to { opacity: 0.05; }
-}
-
-.focus-glow-layer {
-  animation: focusGlowPulse 8s ease-in-out infinite, focusGlowFadeOut 60s ease-out 300s forwards;
+.focus-pulse-ring {
+  animation: focusPulseRipple 2.4s ease-out infinite;
   transform-origin: center center;
 }
 
@@ -870,8 +846,9 @@ select {
     animation: none;
     background-color: var(--focus-ambient-neutral);
   }
-  .focus-glow-layer {
+  .focus-pulse-ring {
     animation: none;
+    opacity: 0.25;
   }
 }
 

@@ -167,7 +167,11 @@ export async function getProjectById(id: number): Promise<Project | null> {
 export async function rolloverUnfinishedTasks(today: string): Promise<void> {
   const db = await getDb();
 
-  // Roll forward: tasks from past dates, not done, rolled fewer than 4 times
+  // Roll forward: tasks from past dates, not done, rolled fewer than 4 times.
+  // Skip calendar-imported tasks — they are date-specific snapshots from
+  // the user's external calendar; rolling them forward would mis-attribute
+  // a meeting that happened yesterday to today's agenda. The next sync
+  // re-imports for the active date instead.
   await db.execute(
     `UPDATE tasks
      SET original_date = COALESCE(original_date, date_scheduled),
@@ -176,7 +180,8 @@ export async function rolloverUnfinishedTasks(today: string): Promise<void> {
      WHERE date_scheduled < $1
        AND status != 'done'
        AND rollover_count < 4
-       AND recurrence_source_id IS NULL`,
+       AND recurrence_source_id IS NULL
+       AND external_source IS NULL`,
     [today]
   );
 
@@ -191,7 +196,8 @@ export async function rolloverUnfinishedTasks(today: string): Promise<void> {
      WHERE date_scheduled < $1
        AND status != 'done'
        AND rollover_count >= 4
-       AND recurrence_source_id IS NULL`,
+       AND recurrence_source_id IS NULL
+       AND external_source IS NULL`,
     [today]
   );
 }
@@ -202,11 +208,14 @@ export async function rolloverUnfinishedTasks(today: string): Promise<void> {
  */
 export async function getUnfinishedRolloverTasks(): Promise<Task[]> {
   const db = await getDb();
+  // external_source IS NULL excludes calendar-imported rows from the
+  // rollover surface — they don't roll forward (see rolloverUnfinishedTasks).
   return db.select(
     `SELECT * FROM tasks
      WHERE status != 'done'
        AND rollover_count > 0
        AND rollover_count <= 4
+       AND external_source IS NULL
      ORDER BY rollover_count DESC, sort_order
      LIMIT 50`
   );
@@ -221,7 +230,7 @@ export async function getTasksForDate(date: string): Promise<Task[]> {
   // hidden from daily lists. Same filter applies across every "tasks for
   // this date" surface — see migration v15 doc for the full set.
   return db.select(
-    "SELECT * FROM tasks WHERE date_scheduled = $1 AND recurrence IS NULL ORDER BY sort_order LIMIT 500",
+    "SELECT * FROM tasks WHERE date_scheduled = $1 AND recurrence IS NULL AND external_dismissal_reason IS NULL ORDER BY sort_order LIMIT 500",
     [date]
   );
 }
@@ -256,6 +265,7 @@ export async function searchTasksByTitle(
   return db.select(
     `SELECT * FROM tasks
        WHERE title LIKE $1 COLLATE NOCASE
+         AND external_dismissal_reason IS NULL
        ORDER BY status = 'done', date_scheduled DESC, id DESC
        LIMIT $2`,
     [`%${trimmed}%`, limit]
@@ -507,13 +517,13 @@ export async function getCompletedShutdowns(
        dp.date,
        dp.mood,
        dp.reflection,
-       (SELECT COUNT(*) FROM tasks t WHERE t.date_scheduled = dp.date AND t.recurrence IS NULL AND t.status = 'done') AS tasks_done,
+       (SELECT COUNT(*) FROM tasks t WHERE t.date_scheduled = dp.date AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL AND t.status = 'done') AS tasks_done,
        (SELECT COALESCE(SUM(
           (strftime('%s', te.end_time) - strftime('%s', te.start_time)) - COALESCE(te.break_seconds, 0)
         ), 0)
         FROM time_entries te
         JOIN tasks t ON te.task_id = t.id
-        WHERE t.date_scheduled = dp.date AND t.recurrence IS NULL AND te.end_time IS NOT NULL) AS worked_seconds
+        WHERE t.date_scheduled = dp.date AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL AND te.end_time IS NOT NULL) AS worked_seconds
      FROM daily_plans dp
      WHERE dp.mood IS NOT NULL OR (dp.reflection IS NOT NULL AND dp.reflection != '')
      ORDER BY dp.date DESC
@@ -531,7 +541,7 @@ export async function getCompletedShutdowns(
 export async function getCompletedTasksForDate(date: string): Promise<Task[]> {
   const db = await getDb();
   return db.select(
-    `SELECT * FROM tasks WHERE date_scheduled = $1 AND recurrence IS NULL AND status = 'done' ORDER BY sort_order ASC LIMIT 200`,
+    `SELECT * FROM tasks WHERE date_scheduled = $1 AND recurrence IS NULL AND external_dismissal_reason IS NULL AND status = 'done' ORDER BY sort_order ASC LIMIT 200`,
     [date]
   );
 }
@@ -544,7 +554,7 @@ export async function getTimeEntriesForDate(
   return db.select(
     `SELECT te.* FROM time_entries te
      JOIN tasks t ON te.task_id = t.id
-     WHERE t.date_scheduled = $1 AND t.recurrence IS NULL
+     WHERE t.date_scheduled = $1 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL
      ORDER BY te.start_time LIMIT 1000`,
     [date]
   );
@@ -602,7 +612,7 @@ export async function closeOrphanedTimeEntries(): Promise<number> {
 export async function getTotalPlannedMinutes(date: string): Promise<number> {
   const db = await getDb();
   const rows: { total: number }[] = await db.select(
-    "SELECT COALESCE(SUM(estimated_minutes), 0) as total FROM tasks WHERE date_scheduled = $1 AND recurrence IS NULL",
+    "SELECT COALESCE(SUM(estimated_minutes), 0) as total FROM tasks WHERE date_scheduled = $1 AND recurrence IS NULL AND external_dismissal_reason IS NULL",
     [date]
   );
   return rows[0]?.total ?? 0;
@@ -617,7 +627,7 @@ export async function getTotalWorkedMinutes(date: string): Promise<number> {
     ), 0) as total
     FROM time_entries te
     JOIN tasks t ON te.task_id = t.id
-    WHERE t.date_scheduled = $1 AND t.recurrence IS NULL`,
+    WHERE t.date_scheduled = $1 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL`,
     [date]
   );
   return rows[0]?.total ?? 0;
@@ -654,7 +664,7 @@ export async function getTasksForWeek(
 ): Promise<Task[]> {
   const db = await getDb();
   return db.select(
-    "SELECT * FROM tasks WHERE date_scheduled >= $1 AND date_scheduled <= $2 AND recurrence IS NULL ORDER BY date_scheduled, sort_order LIMIT 500",
+    "SELECT * FROM tasks WHERE date_scheduled >= $1 AND date_scheduled <= $2 AND recurrence IS NULL AND external_dismissal_reason IS NULL ORDER BY date_scheduled, sort_order LIMIT 500",
     [startDate, endDate]
   );
 }
@@ -686,7 +696,7 @@ export async function getWorkedMinutesForWeek(
     ), 0) as total
     FROM time_entries te
     JOIN tasks t ON te.task_id = t.id
-    WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL
+    WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL
     GROUP BY t.date_scheduled`,
     [startDate, endDate]
   );
@@ -715,7 +725,7 @@ export async function getWorkedMinutesPerProjectPerDay(
       ), 0) as total
       FROM time_entries te
       JOIN tasks t ON te.task_id = t.id
-      WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL
+      WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL
       GROUP BY t.date_scheduled, t.project_id`,
       [startDate, endDate]
     );
@@ -882,7 +892,7 @@ export async function getPlannedMinutesPerDay(
   const rows: { date_scheduled: string; total: number }[] = await db.select(
     `SELECT date_scheduled, COALESCE(SUM(estimated_minutes), 0) as total
      FROM tasks
-     WHERE date_scheduled >= $1 AND date_scheduled <= $2
+     WHERE date_scheduled >= $1 AND date_scheduled <= $2 AND external_dismissal_reason IS NULL
      GROUP BY date_scheduled`,
     [startDate, endDate]
   );
@@ -900,7 +910,7 @@ export async function getRecentCompletedTasks(
   const db = await getDb();
   return db.select(
     `SELECT * FROM tasks
-     WHERE date_scheduled >= $1 AND date_scheduled <= $2 AND status = 'done'
+     WHERE date_scheduled >= $1 AND date_scheduled <= $2 AND status = 'done' AND external_dismissal_reason IS NULL
      ORDER BY date_scheduled DESC, sort_order
      LIMIT 10`,
     [startDate, endDate]
@@ -923,6 +933,7 @@ export async function getTasksCompletedInWeek(
   return db.select(
     `SELECT * FROM tasks
      WHERE status = 'done'
+       AND external_dismissal_reason IS NULL
        AND (
          (completed_at IS NOT NULL
             AND completed_at >= $1
@@ -1110,7 +1121,7 @@ export async function getSidebarTasks(
     "SELECT * FROM tasks WHERE date_scheduled IS NULL AND status != 'done' ORDER BY sort_order LIMIT 50"
   );
   const overdue: Task[] = await db.select(
-    "SELECT * FROM tasks WHERE date_scheduled < $1 AND date_scheduled >= $2 AND status != 'done' ORDER BY date_scheduled DESC, sort_order LIMIT 50",
+    "SELECT * FROM tasks WHERE date_scheduled < $1 AND date_scheduled >= $2 AND status != 'done' AND external_dismissal_reason IS NULL ORDER BY date_scheduled DESC, sort_order LIMIT 50",
     [today, cutoff]
   );
   return { unscheduled, overdue };

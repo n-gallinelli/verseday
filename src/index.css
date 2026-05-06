@@ -143,7 +143,7 @@
   --plan-ambient-warm: #f5e6c5;
   --focus-ring-track: rgba(0, 0, 0, 0.05);
   --focus-ring-progress: #4a9e6e;
-  --focus-glow-base: #7B9ED9;
+  --focus-glow-base: #4a9e6e;
   --focus-glow-break: #4a9e6e;
   --focus-pip-bg: #f5f4f0;
   --focus-pip-border: rgba(0, 0, 0, 0.08);
@@ -294,7 +294,7 @@
     --plan-ambient-warm: #2a2218;
     --focus-ring-track: rgba(255, 255, 255, 0.06);
     --focus-ring-progress: #52a981;
-    --focus-glow-base: #7396cc;
+    --focus-glow-base: #52a981;
     --focus-glow-break: #52a981;
     --focus-pip-bg: #1f1f24;
     --focus-pip-border: rgba(255, 255, 255, 0.10);

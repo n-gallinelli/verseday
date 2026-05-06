@@ -8,6 +8,20 @@
   the existing 0.5px border + 18px radius for visual containment.
 - Files: `src/components/FocusPip.tsx`
 
+### Focus screen — rhythm + hierarchy polish
+- Project label is now an inline pill with project-color tint sitting
+  directly above the task title. Replaces the absolute-positioned
+  top-bar that floated disconnected from the content.
+- Button order swapped from Pause | Done | Stop → Pause | Stop | Done
+  so the row reads left → right as neutral → negative → reward. Done
+  stays the visually distinct green-ringed primary.
+- Bumped title→notes and notes→timer spacing (`mb-3`→`mb-6`,
+  `mb-4`→`mb-10`) so each zone gets to breathe.
+- Work-state ring + timer text now use the same green as the break
+  state (`#4a9e6e` light / `#52a981` dark) instead of blue. The
+  pulse-vs-fill behavior still distinguishes work from break.
+- Files: `src/pages/FocusMode.tsx`, `src/index.css`
+
 ### Focus pip — fix duplicate windows
 - Replaced the `getByLabel`/adopt-existing pattern with a sweep-then-
   create flow: every focus-session start enumerates all webview

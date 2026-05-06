@@ -589,7 +589,7 @@ export default function WeeklyShutdown() {
                             )}
                             {worked > 0 && (
                               <span className="text-[10px] text-fg-faded tabular-nums shrink-0">
-                                {Math.round(worked)}m
+                                {formatHoursMinutes(Math.round(worked))}
                               </span>
                             )}
                           </div>

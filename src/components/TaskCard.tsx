@@ -11,6 +11,7 @@ import {
 } from "../db/queries";
 import RichTextEditor from "./RichTextEditor";
 import CalendarChip from "./CalendarChip";
+import { formatHoursMinutes } from "../utils/format";
 import type { Task, Project, Link } from "../types";
 
 interface TaskCardProps {
@@ -379,17 +380,17 @@ function TaskCardImpl({
                       </span>
                       <span className="text-accent-blue-soft-fg/40">/</span>
                       <span className="text-accent-blue-soft-fg/80">
-                        {est > 0 ? `${est}m` : "—"}
+                        {est > 0 ? formatHoursMinutes(est) : "—"}
                       </span>
                     </>
                   ) : (
                     <>
                       <span className={staticOver ? "text-accent-danger font-medium" : "text-fg-faded"}>
-                        {worked > 0 ? `${worked}m` : "0m"}
+                        {worked > 0 ? formatHoursMinutes(worked) : "0m"}
                       </span>
                       <span className="text-fg-disabled">/</span>
                       <span className="text-fg-faded">
-                        {est > 0 ? `${est}m` : "—"}
+                        {est > 0 ? formatHoursMinutes(est) : "—"}
                       </span>
                     </>
                   )}

@@ -33,6 +33,7 @@ import {
   todayString,
   weekdayDates as getWeekdayDates,
 } from "../../utils/dates";
+import { formatHoursMinutes } from "../../utils/format";
 import type { Task, Project } from "../../types";
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
@@ -134,7 +135,7 @@ function DraggableTaskRow({
       {/* Duration */}
       {task.estimated_minutes != null && task.estimated_minutes > 0 && (
         <span className="text-[11px] text-fg-faded">
-          {task.estimated_minutes}m
+          {formatHoursMinutes(task.estimated_minutes)}
         </span>
       )}
 
@@ -456,7 +457,7 @@ function DayTasksModal({
                     )}
                     {task.estimated_minutes != null && task.estimated_minutes > 0 && (
                       <span className="text-[11px] text-fg-faded tabular-nums shrink-0">
-                        {task.estimated_minutes}m
+                        {formatHoursMinutes(task.estimated_minutes)}
                       </span>
                     )}
                   </div>

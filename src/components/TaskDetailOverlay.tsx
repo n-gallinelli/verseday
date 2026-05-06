@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { getWorkedMinutesByDate, setTaskRecurrence, parseRecurrence, serializeRecurrence } from "../db/queries";
-import { parseTimeFromTitle } from "../utils/format";
+import { parseTimeFromTitle, formatHoursMinutes } from "../utils/format";
 import { useAppStore } from "../stores/appStore";
 import CalendarPicker from "./CalendarPicker";
 import ProjectPicker from "./ProjectPicker";
@@ -978,7 +978,7 @@ export default function TaskDetailOverlay({
                         <span className="text-[10px] text-fg-muted whitespace-nowrap">
                           {new Date(d.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
                         </span>
-                        <span className="text-[10px] text-fg-secondary font-medium">{d.minutes}m</span>
+                        <span className="text-[10px] text-fg-secondary font-medium">{formatHoursMinutes(d.minutes)}</span>
                       </div>
                     );
                   })}

@@ -14,6 +14,7 @@ import {
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
+import { formatHoursMinutes } from "../utils/format";
 import SunsetOverlay from "../components/SunsetOverlay";
 import SummaryOverlay from "../components/SummaryOverlay";
 import MoodSelector from "../components/MoodSelector";
@@ -354,7 +355,7 @@ export default function DailyShutdown() {
                             {project?.name ?? ""}
                           </span>
                           <span className="text-[10px] text-fg-faded tabular-nums shrink-0 w-[44px] text-right">
-                            {worked > 0 ? `${worked}m` : ""}
+                            {worked > 0 ? formatHoursMinutes(worked) : ""}
                           </span>
                         </div>
                       );
@@ -416,7 +417,7 @@ export default function DailyShutdown() {
                             ) : (
                               <>
                                 <span className={`text-fg-faded transition-opacity ${est > 0 ? "group-hover/row:opacity-0" : "opacity-0"}`}>
-                                  {est > 0 ? `${est}m` : ""}
+                                  {est > 0 ? formatHoursMinutes(est) : ""}
                                 </span>
                                 <button
                                   onClick={(e) => {

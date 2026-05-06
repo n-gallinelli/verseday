@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useDroppable, useDraggable } from "@dnd-kit/core";
 import type { Task } from "../../types";
+import { formatHoursMinutes } from "../../utils/format";
 import { PLAN_TASK_DRAG_PREFIX } from "./PlanTaskList";
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
@@ -384,7 +385,7 @@ function ScheduledTaskChip({
         </div>
         {task.estimated_minutes != null && task.estimated_minutes > 0 && (
           <div className="text-[10px] text-fg-faded tabular-nums mt-0.5">
-            {task.estimated_minutes}m
+            {formatHoursMinutes(task.estimated_minutes)}
           </div>
         )}
       </div>

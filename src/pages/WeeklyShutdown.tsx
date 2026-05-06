@@ -69,7 +69,12 @@ function StackedBarChart({
     if (!inner) return 0;
     return Array.from(inner.values()).reduce((s, n) => s + n, 0);
   });
-  const maxMinutes = Math.max(60, ...dayTotals); // floor at 60m so empty weeks don't look giant
+  // Pinned y-axis max — 7h gives a stable scale across weeks so a
+  // light week doesn't read as full bars and a heavy week doesn't
+  // shrink last week's bars to nothing. Days that exceed 7h clamp
+  // to a full bar (overflow is rare and the day label still shows
+  // the actual total below).
+  const Y_AXIS_MAX_MINUTES = 7 * 60;
 
   // Hover state for the custom tooltip. Native `title` is slow and
   // inconsistent across platforms; a proper tooltip reads instantly
@@ -86,7 +91,7 @@ function StackedBarChart({
       {weekDates.map((date, idx) => {
         const inner = workedByDay.get(date);
         const total = dayTotals[idx];
-        const heightPct = (total / maxMinutes) * 100;
+        const heightPct = Math.min(100, (total / Y_AXIS_MAX_MINUTES) * 100);
 
         // Sort segments by minutes desc so the largest project sits at
         // the bottom of the stack (visually anchors the bar).

@@ -599,7 +599,7 @@ pub fn run() {
                 WebviewUrl::App("index.html#quick-add".into()),
             )
             .title("VerseDay — Quick Add")
-            .inner_size(640.0, 360.0)
+            .inner_size(760.0, 400.0)
             .resizable(false)
             .decorations(false)
             .transparent(true)

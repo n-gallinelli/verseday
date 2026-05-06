@@ -17,6 +17,7 @@ import RichTextEditor from "../components/RichTextEditor";
 import VerseDayLogo from "../components/VerseDayLogo";
 import { todayString } from "../utils/dates";
 import { getEmptyDayMessage } from "../utils/format";
+import { playBreakChime as playChime } from "../utils/sounds";
 import type { Page } from "../types";
 
 // If the user doesn't engage with the break prompt within this window,
@@ -59,33 +60,6 @@ function formatCountdown(ms: number): string {
 const PIP_STATE_KEY = "verseday_pip_state";
 const PIP_CMD_KEY = "verseday_pip_cmd";
 
-function playChime() {
-  try {
-    const ctx = new AudioContext();
-    const now = ctx.currentTime;
-
-    // Two-tone chime: C5 then E5
-    const frequencies = [523.25, 659.25];
-    frequencies.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, now + i * 0.15);
-      gain.gain.linearRampToValueAtTime(0.3, now + i * 0.15 + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.15 + 0.6);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now + i * 0.15);
-      osc.stop(now + i * 0.15 + 0.6);
-    });
-
-    // Clean up after sounds finish
-    setTimeout(() => ctx.close(), 1500);
-  } catch {
-    // Silent fallback — audio may not be available
-  }
-}
 
 type BootStatus = "loading" | "empty" | "error";
 
@@ -640,10 +614,16 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   }
 
   async function handleDone() {
-    if (!focus || focus.mode !== "active") return;
+    if (!focus) return;
     const completedTaskId = focus.task.id;
     try {
-      await stopTimeEntry(focus.timeEntryId, getBreakSeconds());
+      // Active session: close the time entry first so the worked
+      // minutes get baked in before the row flips to done. Preview
+      // mode has no time entry — just mark the task done and roll
+      // to the next one.
+      if (focus.mode === "active") {
+        await stopTimeEntry(focus.timeEntryId, getBreakSeconds());
+      }
       await updateTaskStatus(completedTaskId, "done");
     } catch {
       // Best effort
@@ -766,6 +746,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           setBootRetry((n) => n + 1);
         }}
         onLeave={() => setPage("daily")}
+        onShutdown={() => setPage("daily_shutdown")}
       />
     );
   }
@@ -791,11 +772,16 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center z-50 bg-base overflow-hidden">
+    <div className="fixed inset-0 flex flex-col items-center z-50 overflow-hidden" style={{ background: "#ffffff" }}>
       {/* Tunnel-in scale + fade wrapper. Plays once on mount and
           again whenever zoomKey bumps (Done → next-task transition).
-          Keyed remount re-fires the CSS keyframe. */}
-      <div key={zoomKey} className="relative z-[1] w-full h-full flex flex-col items-center justify-center animate-focus-tunnel-in">
+          Keyed remount re-fires the CSS keyframe. Top-anchored
+          (pt-[24vh]) instead of center-aligned so the VerseDay logo
+          and the first line of the task title sit at the same
+          vertical position regardless of how many lines the title
+          wraps to — long titles extend the composition downward
+          instead of pushing the logo up. */}
+      <div key={zoomKey} className="relative z-[1] w-full h-full flex flex-col items-center pt-[24vh] animate-focus-tunnel-in">
 
       {/* Pomodoro-complete celebration takes over the entire content
           area when the prompt fires — no modal-over-screen, just the
@@ -823,11 +809,12 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
            max-w-[860px] keeps the columns tight enough to read as one
            composed unit instead of two clusters on opposite sides.
            VerseDay logo sits centered above the row to frame the page.
-          mb-20 shifts the composition above the viewport's vertical
-          center so the screen feels less bottom-heavy with shorter
-          notes. px-12 keeps the absolute-positioned check button
+          Layout is top-anchored by the parent (pt-[24vh]); the logo
+          and first line of title hold their position regardless of
+          title length, with longer titles wrapping downward.
+          px-12 keeps the absolute-positioned check button
           breathing space from the screen's left edge. */
-        <div className="relative w-full max-w-[900px] px-12 flex flex-col items-center mb-20">
+        <div className="relative w-full max-w-[900px] px-12 flex flex-col items-center">
           {/* VerseDay logo — quiet ornament centered above the row,
               framing the page. Lower opacity so it sits in the
               background of the composition. */}
@@ -847,19 +834,14 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                 the title's first line even when the title wraps. */}
             <div className="flex-1 min-w-0 max-w-[540px] flex items-start gap-3">
               <button
-                onClick={isQueued ? undefined : handleDone}
-                disabled={isQueued}
-                className={`mt-[5px] w-7 h-7 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors group ${
-                  isQueued
-                    ? "border-line-hairline opacity-40 cursor-default"
-                    : "border-fg-faded hover:border-accent-green-bright hover:bg-accent-green-bright/15 cursor-pointer"
-                }`}
+                onClick={handleDone}
+                className="mt-[5px] w-7 h-7 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors group cursor-pointer border-fg-faded hover:border-accent-green-deep hover:bg-accent-green-deep"
                 title="Mark done"
               >
                 <svg
                   width="14" height="14" viewBox="0 0 16 16"
                   fill="none"
-                  className="stroke-fg-secondary group-hover:stroke-accent-green-bright transition-colors"
+                  className="stroke-fg-secondary group-hover:stroke-white transition-colors"
                   strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round"
                 >
                   <path d="M3 8.5l3.5 3.5 6.5-7" />
@@ -1107,45 +1089,42 @@ function BreakCelebration({
         <VerseDayLogo size={96} />
       </div>
 
-      {/* Headline — the screen's anchor. Bumped to 40px and given more
-          air above (mb-8 logo) and below (mb-4 here). */}
+      {/* Headline — calm + human, lowercase fact rather than a
+          punctuated celebration. */}
       <h1 className="text-[40px] font-semibold text-fg leading-tight font-display mb-4 tracking-tight">
-        {isLongBreak ? "Cycle complete!" : "Well done!"}
+        Nice work.
       </h1>
 
-      {/* Single-line duration + task. No "You finished" preamble, no
-          mid-sentence bold — just the calm fact at a slightly larger
-          size than the old subhead so it sits closer in weight to the
-          headline. The redundant "Time for a break?" subhead is gone;
-          the buttons ask the question. */}
+      {/* Body — sentence form so the action ("Go take 5.") reads as a
+          gentle suggestion. Duration adapts to the variant; long-break
+          says 15 instead of 5. */}
       <p className="text-[17px] text-fg-secondary leading-relaxed max-w-[480px] mb-10">
-        {workMinutes} min on{" "}
-        <span className="text-fg">{taskTitle}</span>
+        You focused for {workMinutes} minutes on{" "}
+        <span className="text-fg">{taskTitle}</span>. Go take {isLongBreak ? 15 : 5}.
       </p>
 
-      {/* Action row. Coffee cup lives inside the primary CTA (signals
-          "break" right where the user acts) instead of decorating the
-          subhead. Icon inherits currentColor so it matches the white
-          text on the green-deep background. */}
+      {/* Action row. "Rest now" leads with intent (not duration —
+          that's in the copy above). "In 5 min" snoozes the prompt;
+          "Skip it" declines the break entirely. */}
       <div className="flex gap-3 items-center justify-center">
         <button
           onClick={isLongBreak ? onTakeLong : onTakeShort}
           className="px-5 py-2.5 rounded-full text-[14px] font-medium text-white bg-accent-green-deep hover:opacity-90 cursor-pointer transition-opacity inline-flex items-center gap-2"
         >
           <CoffeeCupIcon />
-          {isLongBreak ? "15 min break" : "5 min break"}
+          Rest now
         </button>
         <button
-          onClick={isLongBreak ? onTakeShort : onSnooze}
+          onClick={onSnooze}
           className="px-4 py-2.5 rounded-full text-[14px] text-fg-secondary border border-line-soft hover:border-line-strong hover:bg-overlay-hover cursor-pointer transition-colors"
         >
-          {isLongBreak ? "5 min instead" : "In 5 min"}
+          In 5 min
         </button>
         <button
           onClick={onNo}
           className="px-4 py-2.5 rounded-full text-[14px] text-fg-faded border border-line-hairline hover:text-fg-secondary hover:border-line-soft hover:bg-overlay-hover cursor-pointer transition-colors"
         >
-          No
+          Skip it
         </button>
       </div>
     </div>
@@ -1367,35 +1346,53 @@ function FocusBoot({
   error,
   onRetry,
   onLeave,
+  onShutdown,
 }: {
   status: "empty" | "error";
   error: string | null;
   onRetry: () => void;
   onLeave: () => void;
+  onShutdown: () => void;
 }) {
+  // Escape exits to the daily plan from either the empty or error
+  // state. The active-session Escape handler in the parent FocusMode
+  // doesn't fire here because focus is null on this view.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      onLeave();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onLeave]);
+
   return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center z-50 focus-ambient-bg overflow-hidden">
-      <div className="focus-vignette" />
+    <div className="fixed inset-0 flex flex-col items-center justify-center z-50 overflow-hidden" style={{ background: "#ffffff" }}>
       <div className="relative z-[1] flex flex-col items-center text-center max-w-[420px] px-8">
-        {/* Focus identity icon — same concentric-circle motif as the nav. */}
-        <svg
-          width="34" height="34" viewBox="0 0 15 15" fill="none"
-          stroke="currentColor" strokeWidth="1.3"
-          strokeLinecap="round" strokeLinejoin="round"
-          className="text-fg-muted mb-6"
-          aria-hidden
-        >
-          <circle cx="7.5" cy="7.5" r="5.5" />
-          <circle cx="7.5" cy="7.5" r="2.5" />
-          <circle cx="7.5" cy="7.5" r="0.5" fill="currentColor" stroke="none" />
-        </svg>
+        {/* VerseDay logo — calm brand mark for the empty/error state.
+            Matches the active focus screen so the page identity is
+            consistent across all focus states. */}
+        <div className="mb-6 opacity-70">
+          <VerseDayLogo size={56} />
+        </div>
 
         {status === "empty" && (() => {
           const msg = getEmptyDayMessage();
           return (
             <>
               <p className="text-[15px] text-fg-muted mb-1">{msg.title}</p>
-              <p className="text-[12px] text-fg-faded leading-relaxed">{msg.subtitle}</p>
+              <p className="text-[12px] text-fg-faded leading-relaxed mb-7">{msg.subtitle}</p>
+              {/* "Shut down" CTA — when there's nothing left to focus
+                  on, the natural next move is to wrap the day. Calm
+                  outlined treatment so it reads as an option, not a
+                  prompt. */}
+              <button
+                onClick={onShutdown}
+                className="px-4 py-2 rounded-full text-[13px] text-accent-orange-soft-fg border border-accent-orange/40 hover:bg-accent-orange-soft hover:border-accent-orange cursor-pointer transition-colors"
+              >
+                Shut down
+              </button>
             </>
           );
         })()}

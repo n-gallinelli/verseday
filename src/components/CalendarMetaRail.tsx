@@ -51,6 +51,53 @@ function isUrl(s: string): boolean {
   return /^https?:\/\//i.test(s.trim());
 }
 
+/** Google Calendar inserts decorative ASCII dividers around the
+ *  conferencing-info block (e.g. `::~:~::~:~:~:~:~:~::-`). Strip lines
+ *  that are pure separator characters so the description reads as
+ *  prose. We require at least one `:` or `~` so legitimate dashes /
+ *  bullet rules in user-authored descriptions stay intact. */
+function cleanDescription(desc: string): string {
+  return desc
+    .split("\n")
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) return true;
+      const isDivider = /^[\s:~\-]+$/.test(trimmed) && /[:~]/.test(trimmed);
+      return !isDivider;
+    })
+    .join("\n");
+}
+
+/** Split text on URLs and render the URLs as anchors, leaving the
+ *  rest as text. Capture-group split puts matches at odd indices. */
+function renderTextWithLinks(text: string): React.ReactNode[] {
+  const urlPattern = /(https?:\/\/[^\s<>)]+)/g;
+  const parts = text.split(urlPattern);
+  return parts.map((part, i) => {
+    if (i % 2 === 1) {
+      // Trim trailing punctuation that's almost certainly not part of
+      // the URL (period at end of sentence, comma, closing paren).
+      const trailing = part.match(/[.,!?;:)]+$/);
+      const url = trailing ? part.slice(0, -trailing[0].length) : part;
+      const tail = trailing ? trailing[0] : "";
+      return (
+        <span key={i}>
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-accent-blue hover:underline break-all"
+          >
+            {url}
+          </a>
+          {tail}
+        </span>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
 const ATTENDEE_STATUS_LABEL: Record<string, string> = {
   accepted: "✓",
   declined: "✗",
@@ -66,7 +113,8 @@ export default function CalendarMetaRail({ task }: Props) {
   const url = task.external_url?.trim() || null;
   const calendarName = task.external_calendar_name?.trim() || null;
   const organizer = task.external_organizer_email?.trim() || null;
-  const description = task.external_notes?.trim() || null;
+  const rawDescription = task.external_notes?.trim() || null;
+  const description = rawDescription ? cleanDescription(rawDescription) : null;
 
   // The location field is sometimes a Zoom/Meet/Teams URL itself —
   // detect and render as a link if so.
@@ -148,7 +196,7 @@ export default function CalendarMetaRail({ task }: Props) {
       {description && (
         <Section label="Description">
           <p className="text-[13px] text-fg-secondary whitespace-pre-wrap leading-relaxed break-words">
-            {description}
+            {renderTextWithLinks(description)}
           </p>
         </Section>
       )}

@@ -545,17 +545,6 @@ export default function FocusMode() {
           scale up from center. */}
       <div className="relative z-[1] w-full h-full flex flex-col items-center justify-center animate-focus-tunnel-in">
 
-      {/* Top context bar — project name */}
-      {project && (
-        <div className="absolute top-6 left-0 right-0 flex items-center justify-center gap-1.5">
-          <div
-            className="w-1.5 h-1.5 rounded-full"
-            style={{ backgroundColor: project.color }}
-          />
-          <span className="text-[11px] text-fg-faded">{project.name}</span>
-        </div>
-      )}
-
       {/* Center content */}
       <div className="relative text-center max-w-[760px] px-8 flex flex-col items-center mt-4">
         {/* Pomodoro-complete celebration takes over the entire content
@@ -575,8 +564,31 @@ export default function FocusMode() {
           />
         ) : (
           <>
+            {/* Project pill — anchors task context above the title.
+                Tinted with the project color so the badge feels owned
+                by the project, not a global label. Replaces the
+                absolute-positioned top bar that used to float
+                disconnected from the content. */}
+            {project && (
+              <div
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full mb-3"
+                style={{
+                  backgroundColor: `color-mix(in srgb, ${project.color} 14%, transparent)`,
+                  color: `color-mix(in srgb, ${project.color} 70%, var(--text-secondary))`,
+                }}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ backgroundColor: project.color }}
+                />
+                <span className="text-[11px] font-medium leading-none">
+                  {project.name}
+                </span>
+              </div>
+            )}
+
             {/* Task name — hero */}
-            <h1 className="text-[28px] font-semibold text-fg mb-3 leading-snug font-display">
+            <h1 className="text-[28px] font-semibold text-fg mb-6 leading-snug font-display">
               {focus.task.title}
             </h1>
 
@@ -588,7 +600,7 @@ export default function FocusMode() {
                 saveNotes(html);
               }}
               placeholder="Add notes…"
-              className="w-full min-h-[120px] mb-4 px-4 py-3.5 bg-transparent text-center text-[14px] text-fg leading-relaxed"
+              className="w-full min-h-[120px] mb-10 px-4 py-3.5 bg-transparent text-center text-[14px] text-fg leading-relaxed"
             />
 
             {/* Completion burst — concentric rings that scale out and fade */}
@@ -742,18 +754,9 @@ export default function FocusMode() {
               )}
             </button>
 
-            {/* Mark Done — primary */}
-            <button
-              onClick={handleDone}
-              className="w-12 h-12 rounded-full border-2 border-accent-green-bright/50 flex items-center justify-center cursor-pointer hover:bg-accent-green-bright/10 transition-colors"
-              title="Mark done"
-            >
-              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 8.5l3.5 3.5 6.5-7" />
-              </svg>
-            </button>
-
-            {/* Stop & Save — secondary */}
+            {/* Stop & Save — secondary, sits between Pause and Done.
+                Reads left → right by destructiveness then reward:
+                Pause (neutral) → Stop (negative-ish) → Done (reward). */}
             <button
               onClick={handleStop}
               className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover transition-colors"
@@ -761,6 +764,17 @@ export default function FocusMode() {
             >
               <svg width="16" height="16" viewBox="0 0 14 14" fill="currentColor">
                 <rect x="2" y="2" width="10" height="10" rx="1.5" />
+              </svg>
+            </button>
+
+            {/* Mark Done — primary, rightmost as the reward action. */}
+            <button
+              onClick={handleDone}
+              className="w-12 h-12 rounded-full border-2 border-accent-green-bright/50 flex items-center justify-center cursor-pointer hover:bg-accent-green-bright/10 transition-colors"
+              title="Mark done"
+            >
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 8.5l3.5 3.5 6.5-7" />
               </svg>
             </button>
           </div>

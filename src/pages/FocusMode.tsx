@@ -838,15 +838,15 @@ export default function FocusMode() {
                 className={`mt-[5px] w-7 h-7 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors group ${
                   isQueued
                     ? "border-line-hairline opacity-40 cursor-default"
-                    : "border-line-soft hover:border-accent-green-bright/60 hover:bg-accent-green-bright/10 cursor-pointer"
+                    : "border-fg-faded hover:border-accent-green-bright hover:bg-accent-green-bright/15 cursor-pointer"
                 }`}
                 title="Mark done"
               >
                 <svg
                   width="14" height="14" viewBox="0 0 16 16"
                   fill="none"
-                  className="stroke-fg-faded group-hover:stroke-accent-green-deep transition-colors"
-                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                  className="stroke-fg-secondary group-hover:stroke-accent-green-bright transition-colors"
+                  strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round"
                 >
                   <path d="M3 8.5l3.5 3.5 6.5-7" />
                 </svg>

@@ -55,6 +55,10 @@ export default function RichTextEditor({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isEmpty, setIsEmpty] = useState(() => !value || value.trim() === "");
   const [isFocused, setIsFocused] = useState(false);
+  // Tracks the last HTML this editor itself emitted via onChange, so we can
+  // tell external value updates (cross-surface sync, task switch) apart from
+  // our own echoes — only externals trigger setContent.
+  const lastEmittedRef = useRef(value);
 
   const editor = useEditor({
     extensions: [
@@ -83,12 +87,25 @@ export default function RichTextEditor({
       setIsEmpty(e.isEmpty);
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
-        onChange(e.getHTML());
+        const html = e.getHTML();
+        lastEmittedRef.current = html;
+        onChange(html);
       }, 300);
     },
     onFocus: () => setIsFocused(true),
     onBlur: () => setIsFocused(false),
   });
+
+  // Sync editor doc when value changes from outside (cross-surface broadcast,
+  // task switch in FocusMode). Skip echoes of our own onChange via the ref
+  // compare so typing doesn't loop or drop the cursor.
+  useEffect(() => {
+    if (!editor) return;
+    if (value === lastEmittedRef.current) return;
+    editor.commands.setContent(normalizeContent(value), { emitUpdate: false });
+    lastEmittedRef.current = value;
+    setIsEmpty(editor.isEmpty);
+  }, [value, editor]);
 
   // Flush pending save on unmount
   useEffect(() => {
@@ -97,7 +114,9 @@ export default function RichTextEditor({
         clearTimeout(debounceRef.current);
         debounceRef.current = null;
         if (editor) {
-          onChange(editor.getHTML());
+          const html = editor.getHTML();
+          lastEmittedRef.current = html;
+          onChange(html);
         }
       }
     };

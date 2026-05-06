@@ -148,9 +148,11 @@ export function buildShutdownUserPrompt(data: ShutdownSummaryData): string {
 
   return (
     "Write a productivity summary for this day. Use the data below.\n\n" +
-    "Structure: under a 'Done' section, group completed tasks by project " +
-    "(project name as a heading, tasks listed under it). Under a separate " +
-    "'Didn't get to' section, list incomplete tasks as a flat list without " +
+    "Structure (use these exact section labels, in this order):\n" +
+    `1. Header: "Daily summary — ${data.date}"\n` +
+    "2. \"Tasks completed today\" — group by project (project name as a " +
+    "sub-heading, tasks listed under it).\n" +
+    "3. \"Didn't get to\" — flat list of tasks not completed today, no " +
     "project grouping.\n\n" +
     sections.join("\n")
   );

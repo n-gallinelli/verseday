@@ -30,6 +30,7 @@ import {
   setManualWorkedMinutes,
   startTimeEntry,
   getWorkedMinutesForTask,
+  getDefaultTaskEstimateMin,
   type WeeklyPlanProjectStatus,
 } from "../../db/queries";
 import type { Project, Task } from "../../types";
@@ -38,12 +39,6 @@ import PlanProjectPanel from "./PlanProjectPanel";
 import ErrorBanner from "../../components/ErrorBanner";
 import TaskDetailOverlay from "../../components/TaskDetailOverlay";
 import { errorMessage } from "../../utils/errors";
-
-// Default estimate applied when a task without an estimate is dragged
-// onto a day — keeps the day's commitment in sync with the chip the
-// user just dropped. Matches DEFAULT_MINUTES in PlanDayStrip so the
-// "starter slot" length is consistent across the screen.
-const DEFAULT_DRAG_ESTIMATE_MINUTES = 30;
 
 // Plan tab orchestrator — owns the data + selection state. Children
 // (rail / panel / summary) are presentational.
@@ -345,17 +340,17 @@ export default function PlanTab() {
     const fromOffset =
       fromDate != null ? weekDates.indexOf(fromDate) : -1;
 
-    // If the task has no estimate, default to 30m on first drop so the
-    // day's commitment reflects the time it just gained. Persist the
-    // default on the task itself — chip displays it, and any later
-    // move correctly transfers those 30m between days. Only happens
-    // on the first drop; if the user has set 0 explicitly we still
-    // treat that as "no time tracked" (estimated_minutes 0 is a
-    // legitimate value the rest of the app honors).
+    // If the task has no estimate, fall back to the user's configured
+    // default (Settings → Task defaults; 15m if unset). Persist it on
+    // the task — chip displays it, and any later move correctly
+    // transfers those minutes between days. After the createTask
+    // default-substitution change, brand-new tasks always have an
+    // estimate, so this branch only fires for legacy null rows.
+    // An explicit 0 from the user is still honored as "no time."
     let estimate = task.estimated_minutes;
     const needsDefaultEstimate = estimate == null;
     if (needsDefaultEstimate) {
-      estimate = DEFAULT_DRAG_ESTIMATE_MINUTES;
+      estimate = await getDefaultTaskEstimateMin();
     }
 
     try {

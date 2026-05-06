@@ -1,5 +1,9 @@
 import { useEffect, useState, useRef } from "react";
-import { getSetting, setSetting } from "../db/queries";
+import {
+  getSetting,
+  setSetting,
+  DEFAULT_TASK_ESTIMATE_FALLBACK_MIN,
+} from "../db/queries";
 import CalendarSettings from "../components/settings/CalendarSettings";
 
 const FOCUS_DEFAULTS = {
@@ -8,6 +12,13 @@ const FOCUS_DEFAULTS = {
   focus_long_break_min: 15,
   focus_cycles_before_long: 4,
 };
+
+// Task-defaults section. Single field today, but room to grow (priority
+// default, default project, etc.) without restructuring.
+const TASK_DEFAULT_KEY = "default_task_estimate_min";
+const TASK_DEFAULT_MIN = 5;
+const TASK_DEFAULT_MAX = 240;
+const TASK_DEFAULT_STEP = 5;
 
 type FocusKey = keyof typeof FOCUS_DEFAULTS;
 
@@ -34,7 +45,11 @@ const FOCUS_FIELDS: {
 
 export default function Settings() {
   const [focusValues, setFocusValues] = useState<Record<FocusKey, number>>({ ...FOCUS_DEFAULTS });
+  const [taskEstimate, setTaskEstimate] = useState<number>(
+    DEFAULT_TASK_ESTIMATE_FALLBACK_MIN
+  );
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const taskDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -45,9 +60,33 @@ export default function Settings() {
         })
       );
       setFocusValues(Object.fromEntries(entries) as Record<FocusKey, number>);
+
+      const taskRaw = await getSetting(TASK_DEFAULT_KEY);
+      const parsed = taskRaw ? parseInt(taskRaw, 10) : NaN;
+      setTaskEstimate(
+        Number.isFinite(parsed) && parsed > 0
+          ? parsed
+          : DEFAULT_TASK_ESTIMATE_FALLBACK_MIN
+      );
     }
     load();
   }, []);
+
+  function handleTaskEstimateChange(value: number) {
+    const clamped = Math.min(
+      TASK_DEFAULT_MAX,
+      Math.max(TASK_DEFAULT_MIN, value)
+    );
+    setTaskEstimate(clamped);
+    if (taskDebounceRef.current) clearTimeout(taskDebounceRef.current);
+    taskDebounceRef.current = setTimeout(() => {
+      setSetting(TASK_DEFAULT_KEY, String(clamped));
+    }, 400);
+  }
+
+  function handleTaskEstimateStep(delta: number) {
+    handleTaskEstimateChange(taskEstimate + delta * TASK_DEFAULT_STEP);
+  }
 
   function handleFocusChange(key: FocusKey, value: number, min: number, max: number) {
     const clamped = Math.min(max, Math.max(min, value));
@@ -144,6 +183,56 @@ export default function Settings() {
                   </div>
                 </div>
               ))}
+            </div>
+          </section>
+
+          {/* Task defaults */}
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--text-faded)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2.5 3.5h9M2.5 7h9M2.5 10.5h6" />
+                </svg>
+                <h3 className="uppercase [font-size:var(--font-size-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded" style={{ fontWeight: 500 }}>
+                  Task defaults
+                </h3>
+              </div>
+            </div>
+            <div className="bg-elevated rounded-lg p-6 space-y-5" style={{ border: "0.5px solid var(--border-hairline)" }}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[13px] text-fg">Default time estimate</div>
+                  <div className="text-[11px] text-fg-faded">
+                    Used when a new task is created without an explicit estimate
+                  </div>
+                </div>
+                <div
+                  className="flex items-center bg-elevated rounded-lg overflow-hidden flex-shrink-0 w-[168px]"
+                  style={{ border: "1px solid var(--border-medium)" }}
+                >
+                  <button
+                    onClick={() => handleTaskEstimateStep(-1)}
+                    disabled={taskEstimate <= TASK_DEFAULT_MIN}
+                    className="w-8 h-8 flex items-center justify-center text-fg-muted hover:text-fg cursor-pointer disabled:opacity-25 disabled:cursor-default text-[15px] transition-colors"
+                  >
+                    −
+                  </button>
+                  <div className="flex-1 flex items-center justify-center gap-1.5">
+                    <span className="text-[15px] font-medium text-fg min-w-[28px] text-center tabular-nums">
+                      {taskEstimate}
+                    </span>
+                    <div className="w-px h-4 bg-line-soft" />
+                    <span className="text-[12px] text-fg-faded w-[40px]">min</span>
+                  </div>
+                  <button
+                    onClick={() => handleTaskEstimateStep(1)}
+                    disabled={taskEstimate >= TASK_DEFAULT_MAX}
+                    className="w-8 h-8 flex items-center justify-center text-fg-muted hover:text-fg cursor-pointer disabled:opacity-25 disabled:cursor-default text-[15px] transition-colors"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
             </div>
           </section>
 

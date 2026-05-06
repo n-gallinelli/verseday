@@ -308,10 +308,40 @@ export interface CreateTaskInput {
   notes?: string | null;
 }
 
+// Fallback when the user hasn't set default_task_estimate_min.
+// Matches the spec'd default in the Settings UI.
+export const DEFAULT_TASK_ESTIMATE_FALLBACK_MIN = 15;
+
+// Read the user's configured default estimate. Returns the fallback
+// (15) if the setting is missing or unparseable. Live-reads from the
+// settings table so a Settings-page change takes effect immediately
+// — no app-wide cache to invalidate.
+export async function getDefaultTaskEstimateMin(): Promise<number> {
+  const raw = await getSetting("default_task_estimate_min");
+  if (!raw) return DEFAULT_TASK_ESTIMATE_FALLBACK_MIN;
+  const parsed = parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_TASK_ESTIMATE_FALLBACK_MIN;
+  }
+  return parsed;
+}
+
 export async function createTask(input: CreateTaskInput): Promise<number> {
   const priority = input.priority ?? "medium";
   validatePriority(priority);
   const db = await getDb();
+
+  // If the caller didn't supply an estimate, fall back to the user's
+  // configured default. Centralising it here means every UI call site
+  // (QuickAdd, DailyPlanner, ProjectDetail, PlanTab, ScheduleTab) gets
+  // the behavior without having to thread the setting through. An
+  // explicit 0 from the caller is still honored as "no time tracked"
+  // — only null triggers the substitution.
+  const estimatedMinutes =
+    input.estimatedMinutes != null
+      ? input.estimatedMinutes
+      : await getDefaultTaskEstimateMin();
+
   // New tasks land at the top of their scope (project or date). Achieved by
   // assigning sort_order = min(existing) - 1 so they sort before everything
   // else without needing to renumber siblings. SQLite INTEGER is 64-bit,
@@ -328,7 +358,7 @@ export async function createTask(input: CreateTaskInput): Promise<number> {
       input.title,
       input.projectId,
       input.dateScheduled,
-      input.estimatedMinutes,
+      estimatedMinutes,
       priority,
       input.notes ?? null,
       nextSort,

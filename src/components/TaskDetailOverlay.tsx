@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { getWorkedMinutesByDate, setTaskRecurrence, parseRecurrence, serializeRecurrence } from "../db/queries";
 import { parseTimeFromTitle } from "../utils/format";
+import { useAppStore } from "../stores/appStore";
 import CalendarPicker from "./CalendarPicker";
 import ProjectPicker from "./ProjectPicker";
 import RichTextEditor from "./RichTextEditor";
@@ -340,6 +341,12 @@ export default function TaskDetailOverlay({
   autoTrackedMinutes,
   autoFocusTitle = false,
 }: TaskDetailOverlayProps) {
+  // Cross-screen sync: when this overlay edits the task that's currently
+  // focused, mirror the change into the store so FocusMode (and any other
+  // screen reading from focus.task) sees the new values immediately.
+  const { focus, updateFocusTask, setFocusPriorElapsedMs } = useAppStore();
+  const isFocusedTask = focus?.task.id === task.id;
+
   const [title, setTitle] = useState(task.title);
   const titleRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -461,6 +468,22 @@ export default function TaskDetailOverlay({
     };
   }
 
+  // Mirror the just-saved fields into focus.task so FocusMode reflects
+  // the new values without waiting for a remount/refetch. No-op when the
+  // edited task isn't the focused one.
+  function mirrorToFocus(update: ReturnType<typeof buildUpdate>) {
+    if (!update || !isFocusedTask) return;
+    updateFocusTask({
+      title: update.title,
+      project_id: update.projectId,
+      estimated_minutes: update.estimatedMinutes,
+      priority: update.priority,
+      notes: update.notes,
+      date_scheduled: update.dateScheduled,
+      due_date: update.dueDate,
+    });
+  }
+
   function debouncedSave(overrides: Record<string, string> = {}) {
     if (saveRef.current) clearTimeout(saveRef.current);
     if (savedFlashRef.current) {
@@ -473,6 +496,7 @@ export default function TaskDetailOverlay({
       const update = buildUpdate(overrides);
       if (update) {
         onSave(update);
+        mirrorToFocus(update);
         setSaveState("saved");
         savedFlashRef.current = setTimeout(() => {
           savedFlashRef.current = null;
@@ -509,6 +533,7 @@ export default function TaskDetailOverlay({
     const update = buildUpdate(overrides);
     if (update) {
       onSave(update);
+      mirrorToFocus(update);
       setSaveState("saved");
       savedFlashRef.current = setTimeout(() => {
         savedFlashRef.current = null;
@@ -772,7 +797,10 @@ export default function TaskDetailOverlay({
                         setWorked(val);
                         if (onSetWorkedMinutes && val) {
                           const n = parseInt(val);
-                          if (!isNaN(n) && n > 0) onSetWorkedMinutes(task.id, n);
+                          if (!isNaN(n) && n > 0) {
+                            onSetWorkedMinutes(task.id, n);
+                            if (isFocusedTask) setFocusPriorElapsedMs(task.id, n * 60 * 1000);
+                          }
                         }
                       }}
                       onReset={
@@ -780,6 +808,7 @@ export default function TaskDetailOverlay({
                           ? () => {
                               setWorked("");
                               onSetWorkedMinutes(task.id, 0);
+                              if (isFocusedTask) setFocusPriorElapsedMs(task.id, 0);
                               setOpenPopover(null);
                             }
                           : undefined
@@ -821,7 +850,10 @@ export default function TaskDetailOverlay({
                       setWorked(val);
                       if (onSetWorkedMinutes && val) {
                         const n = parseInt(val);
-                        if (!isNaN(n) && n > 0) onSetWorkedMinutes(task.id, n);
+                        if (!isNaN(n) && n > 0) {
+                          onSetWorkedMinutes(task.id, n);
+                          if (isFocusedTask) setFocusPriorElapsedMs(task.id, n * 60 * 1000);
+                        }
                       }
                     }}
                     onReset={
@@ -835,6 +867,7 @@ export default function TaskDetailOverlay({
                             // workedMap so the row's pill shows 0m.
                             setWorked("");
                             onSetWorkedMinutes(task.id, 0);
+                            if (isFocusedTask) setFocusPriorElapsedMs(task.id, 0);
                             setOpenPopover(null);
                           }
                         : undefined

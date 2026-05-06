@@ -58,6 +58,10 @@ interface AppState {
    *  made on the focus screen (notes, title) survive navigating away and
    *  back without requiring a fresh DB fetch. */
   updateFocusTask: (patch: Partial<Task>) => void;
+  /** Sync the focus session's prior-elapsed baseline when the user
+   *  changes the task's worked-minutes elsewhere (e.g. TaskDetailOverlay).
+   *  Only fires if the current focus is on the given task. */
+  setFocusPriorElapsedMs: (taskId: number, priorMs: number) => void;
   startFocus: (task: Task, timeEntryId: number, previousPage: Page, priorElapsedMs?: number) => void;
   stopFocus: () => Page;
   restoreFocus: () => void;
@@ -194,6 +198,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const f = get().focus;
     if (!f) return;
     const next = { ...f, task: { ...f.task, ...patch } } as FocusState;
+    persistFocus(next);
+    set({ focus: next });
+  },
+  setFocusPriorElapsedMs: (taskId, priorMs) => {
+    const f = get().focus;
+    if (!f || f.task.id !== taskId) return;
+    const next = { ...f, priorElapsedMs: priorMs } as FocusState;
     persistFocus(next);
     set({ focus: next });
   },

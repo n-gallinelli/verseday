@@ -1485,7 +1485,7 @@ export default function DailyPlanner() {
           onClose={() => { setDetailTask(null); setPendingDetailTask(null); }}
           onSave={(updates) => handleDetailSave(updates)}
           onToggle={(t) => { toggleTask(t).catch(() => {}); }}
-          onDelete={(id) => { setConfirmDeleteId(id); setDetailTask(null); setPendingDetailTask(null); }}
+          onDelete={(id) => { handleDelete(id); setDetailTask(null); setPendingDetailTask(null); }}
           onStartFocus={(t) => {
             handleStartFocus(t);
             setDetailTask(null);

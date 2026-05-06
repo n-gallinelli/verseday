@@ -388,6 +388,9 @@ export default function TaskDetailOverlay({
   const [worked, setWorked] = useState(workedMinutes > 0 ? workedMinutes.toString() : "");
   const [dayBreakdown, setDayBreakdown] = useState<{ date: string; minutes: number }[]>([]);
   const [openPopover, setOpenPopover] = useState<"estimate" | "worked" | null>(null);
+  // Inline delete confirm — keeps the user inside the overlay so they can
+  // see what they're deleting until the moment of confirmation.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // Recurrence
   const parsedRecurrence = parseRecurrence(task.recurrence ?? null);
@@ -990,34 +993,58 @@ export default function TaskDetailOverlay({
 
         {/* Footer */}
         <div className="flex items-center gap-2 px-8 py-4 border-t border-line-hairline">
-          <span
-            className={`text-[10px] flex-1 transition-colors ${
-              saveState === "pending"
-                ? "text-fg-faded"
-                : saveState === "saved"
-                  ? "text-accent-green"
-                  : "text-fg-disabled"
-            }`}
-          >
-            {saveState === "pending"
-              ? "Saving…"
-              : saveState === "saved"
-                ? "Saved"
-                : "Auto-saved"}
-          </span>
-          {onDelete && (
-            <button
-              onClick={() => {
-                onDelete(task.id);
-                onClose();
-              }}
-              className="text-accent-destructive/60 hover:text-accent-destructive cursor-pointer p-2 rounded-md hover:bg-accent-destructive/10 transition-colors"
-              title="Delete task"
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />
-              </svg>
-            </button>
+          {confirmingDelete && onDelete ? (
+            <>
+              <span className="flex-1 text-[12px]">
+                <span className="text-accent-destructive">Delete this task?</span>{" "}
+                <span className="text-accent-warning-soft-fg">Time entries will also be deleted.</span>
+              </span>
+              <button
+                onClick={() => {
+                  onDelete(task.id);
+                  setConfirmingDelete(false);
+                  onClose();
+                }}
+                className="bg-accent-destructive text-fg-on-accent rounded-md px-3 py-1 text-[12px] cursor-pointer hover:bg-accent-destructive-hover"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setConfirmingDelete(false)}
+                className="text-fg-faded text-[12px] cursor-pointer hover:text-fg-secondary px-2 py-1"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <span
+                className={`text-[10px] flex-1 transition-colors ${
+                  saveState === "pending"
+                    ? "text-fg-faded"
+                    : saveState === "saved"
+                      ? "text-accent-green"
+                      : "text-fg-disabled"
+                }`}
+              >
+                {saveState === "pending"
+                  ? "Saving…"
+                  : saveState === "saved"
+                    ? "Saved"
+                    : "Auto-saved"}
+              </span>
+              {onDelete && (
+                <button
+                  onClick={() => setConfirmingDelete(true)}
+                  className="text-accent-destructive/60 hover:text-accent-destructive cursor-pointer p-2 rounded-md hover:bg-accent-destructive/10 transition-colors"
+                  title="Delete task"
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />
+                  </svg>
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

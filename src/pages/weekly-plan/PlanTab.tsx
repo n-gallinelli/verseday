@@ -24,15 +24,26 @@ import {
   getTasksForProject,
   createTask,
   updateTask,
+  updateTaskStatus,
   updateTaskDateScheduled,
   deleteTask,
+  setManualWorkedMinutes,
+  startTimeEntry,
+  getWorkedMinutesForTask,
   type WeeklyPlanProjectStatus,
 } from "../../db/queries";
 import type { Project, Task } from "../../types";
 import PlanProjectRail from "./PlanProjectRail";
 import PlanProjectPanel from "./PlanProjectPanel";
 import ErrorBanner from "../../components/ErrorBanner";
+import TaskDetailOverlay from "../../components/TaskDetailOverlay";
 import { errorMessage } from "../../utils/errors";
+
+// Default estimate applied when a task without an estimate is dragged
+// onto a day — keeps the day's commitment in sync with the chip the
+// user just dropped. Matches DEFAULT_MINUTES in PlanDayStrip so the
+// "starter slot" length is consistent across the screen.
+const DEFAULT_DRAG_ESTIMATE_MINUTES = 30;
 
 // Plan tab orchestrator — owns the data + selection state. Children
 // (rail / panel / summary) are presentational.
@@ -46,7 +57,7 @@ function formatWeekLabel(mondayIso: string): string {
 }
 
 export default function PlanTab() {
-  const { selectedWeek, setSelectedWeek } = useAppStore();
+  const { selectedWeek, setSelectedWeek, startFocus, setPage } = useAppStore();
   const weekDates = weekdayDates(selectedWeek);
   const isThisWeek = selectedWeek === mondayOfWeek();
 
@@ -79,6 +90,10 @@ export default function PlanTab() {
   // Drag state — name shown in the floating overlay while a task is
   // being dragged onto a day button.
   const [dragTaskTitle, setDragTaskTitle] = useState<string | null>(null);
+
+  // Task-detail overlay — opening a chip on the day strip pops the
+  // same overlay used by Schedule / Daily / Projects.
+  const [detailTask, setDetailTask] = useState<Task | null>(null);
 
   const dndSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -205,6 +220,38 @@ export default function PlanTab() {
     }
   }
 
+  // "Done planning the week" — sweep every still-unreviewed project.
+  // Projects with ≥1 day committed → planned; otherwise → skipped.
+  // Auto-skipping empty projects is intentional: the button needs to
+  // be one click. The user can still revisit any project from the
+  // week summary to adjust days afterward.
+  //
+  // Updates state after EACH successful write rather than once at
+  // the end so a mid-loop failure leaves UI and DB consistent for
+  // projects that did succeed; the user can retry "Done planning"
+  // and the loop picks up from where it stopped (already-reviewed
+  // projects are filtered out at the top).
+  async function markRemainingProjects() {
+    const remaining = projects.filter((p) => !statuses.has(p.id));
+    if (remaining.length === 0) return;
+    try {
+      for (const p of remaining) {
+        const days = commitments.get(p.id);
+        const status: WeeklyPlanProjectStatus =
+          days && days.size > 0 ? "planned" : "skipped";
+        await setWeeklyPlanProjectStatus(selectedWeek, p.id, status);
+        setStatuses((prev) => {
+          const next = new Map(prev);
+          next.set(p.id, status);
+          return next;
+        });
+      }
+      setSelectedId(null);
+    } catch (e) {
+      setError(errorMessage(e, "Failed to finish weekly plan"));
+    }
+  }
+
   async function setCommitment(
     projectId: number,
     dayOffset: number,
@@ -298,15 +345,52 @@ export default function PlanTab() {
     const fromOffset =
       fromDate != null ? weekDates.indexOf(fromDate) : -1;
 
+    // If the task has no estimate, default to 30m on first drop so the
+    // day's commitment reflects the time it just gained. Persist the
+    // default on the task itself — chip displays it, and any later
+    // move correctly transfers those 30m between days. Only happens
+    // on the first drop; if the user has set 0 explicitly we still
+    // treat that as "no time tracked" (estimated_minutes 0 is a
+    // legitimate value the rest of the app honors).
+    let estimate = task.estimated_minutes;
+    const needsDefaultEstimate = estimate == null;
+    if (needsDefaultEstimate) {
+      estimate = DEFAULT_DRAG_ESTIMATE_MINUTES;
+    }
+
     try {
       await updateTaskDateScheduled(taskId, dateIso);
+
+      if (needsDefaultEstimate) {
+        // Persist the defaulted estimate. Mirrors PlanTaskList.handleUpdateTaskTitle's
+        // pattern of spreading existing fields so we don't accidentally
+        // null out priority / notes / due_date.
+        await updateTask({
+          id: task.id,
+          title: task.title,
+          projectId: task.project_id,
+          estimatedMinutes: estimate,
+          priority: task.priority,
+          notes: task.notes,
+          dateScheduled: dateIso,
+          dueDate: task.due_date,
+        });
+      }
 
       // Optimistic local update — flip date_scheduled in place. The
       // render-time partition shifts the task between PlanTaskList
       // (unscheduled) and the day's chip rail.
       setTasks((prev) =>
         prev.map((t) =>
-          t.id === taskId ? { ...t, date_scheduled: dateIso } : t
+          t.id === taskId
+            ? {
+                ...t,
+                date_scheduled: dateIso,
+                estimated_minutes: needsDefaultEstimate
+                  ? estimate
+                  : t.estimated_minutes,
+              }
+            : t
         )
       );
 
@@ -315,7 +399,6 @@ export default function PlanTab() {
       // dragging it from Tuesday to Wednesday transfers those 45
       // minutes (Tue -= 45, Wed += 45). Source decrement only fires
       // when the source day was a tracked day in this week.
-      const estimate = task.estimated_minutes;
       if (estimate != null && estimate > 0) {
         if (fromOffset !== -1) {
           const projMap = commitments.get(selectedId);
@@ -362,6 +445,79 @@ export default function PlanTab() {
       setTasks((prev) => prev.filter((t) => t.id !== id));
     } catch (e) {
       setError(errorMessage(e, "Failed to delete task"));
+    }
+  }
+
+  // Detail-overlay save. The overlay edits any field on the task,
+  // including project_id (could move it out of the currently-selected
+  // project) — easiest to just refetch tasks for the selected project
+  // so the partition re-derives correctly.
+  async function handleDetailSave(updates: {
+    id: number;
+    title: string;
+    projectId: number | null;
+    estimatedMinutes: number | null;
+    priority: string;
+    notes: string | null;
+    dateScheduled: string | null;
+    dueDate: string | null;
+  }) {
+    try {
+      await updateTask(updates);
+      await reloadTasks(selectedId);
+    } catch (e) {
+      setError(errorMessage(e, "Failed to save task"));
+    }
+  }
+
+  async function handleToggleTaskFromOverlay(task: Task) {
+    try {
+      await updateTaskStatus(task.id, task.status === "done" ? "todo" : "done");
+      await reloadTasks(selectedId);
+    } catch (e) {
+      setError(errorMessage(e, "Failed to update task"));
+    }
+  }
+
+  async function handleDeleteTaskFromOverlay(taskId: number) {
+    try {
+      await deleteTask(taskId);
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+      setDetailTask(null);
+    } catch (e) {
+      setError(errorMessage(e, "Failed to delete task"));
+    }
+  }
+
+  // Mirrors ProjectDetail.handleStartFocus — start the timer, jump to
+  // the immersive focus screen. Plan tab is part of the "weekly" page
+  // so that's the previousPage we'll return to on session end.
+  async function handleStartFocus(task: Task) {
+    if (useAppStore.getState().focus) {
+      setError("A focus session is already active");
+      return;
+    }
+    try {
+      const priorMinutes = await getWorkedMinutesForTask(task.id);
+      const priorMs = priorMinutes * 60 * 1000;
+      const entryId = await startTimeEntry(task.id, "tracked");
+      startFocus(task, entryId, "weekly", priorMs);
+      setPage("focus");
+      setDetailTask(null);
+    } catch (e) {
+      setError(errorMessage(e, "Failed to start timer"));
+    }
+  }
+
+  async function handleSetWorkedMinutesFromOverlay(
+    taskId: number,
+    minutes: number
+  ) {
+    try {
+      await setManualWorkedMinutes(taskId, minutes);
+      await reloadTasks(selectedId);
+    } catch (e) {
+      setError(errorMessage(e, "Failed to update worked time"));
     }
   }
 
@@ -468,11 +624,13 @@ export default function PlanTab() {
           onMarkPlanned={(id) => markStatus(id, "planned")}
           onMarkSkipped={(id) => markStatus(id, "skipped")}
           onMarkUnplanned={(id) => clearStatus(id)}
+          onMarkAllRemaining={markRemainingProjects}
           onSetCommitment={setCommitment}
           onClearCommitment={clearCommitment}
           onCreateTask={handleCreateTask}
           onUpdateTaskTitle={handleUpdateTaskTitle}
           onDeleteTask={handleDeleteTask}
+          onOpenTaskDetail={setDetailTask}
         />
       </div>
 
@@ -487,6 +645,20 @@ export default function PlanTab() {
         )}
       </DragOverlay>
       </DndContext>
+
+      {detailTask && (
+        <TaskDetailOverlay
+          key={detailTask.id}
+          task={detailTask}
+          projects={projects}
+          onClose={() => setDetailTask(null)}
+          onSave={handleDetailSave}
+          onToggle={handleToggleTaskFromOverlay}
+          onDelete={handleDeleteTaskFromOverlay}
+          onStartFocus={handleStartFocus}
+          onSetWorkedMinutes={handleSetWorkedMinutesFromOverlay}
+        />
+      )}
     </div>
   );
 }

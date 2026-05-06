@@ -48,19 +48,16 @@ function BarChart({
   plannedByDay: Map<string, number>;
   workedByDay: Map<string, number>;
 }) {
-  // Derive y-axis max from data
-  const allValues = weekDates.flatMap((d) => [
-    plannedByDay.get(d) ?? 0,
-    workedByDay.get(d) ?? 0,
-  ]);
-  const maxMinutes = Math.max(...allValues, 60); // min 60 so empty weeks don't break
-  const yAxisMax = Math.ceil(maxMinutes / 60); // round up to nearest hour
+  // Fixed 7h y-axis — the standard working-day budget. Days that
+  // exceed it cap at the top (Math.min below); rare and acceptable.
+  const yAxisMax = 7;
 
   const yLabels: number[] = [];
-  const step = Math.max(1, Math.ceil(yAxisMax / 4));
+  const step = 2;
   for (let i = 0; i <= yAxisMax; i += step) {
     yLabels.push(i);
   }
+  if (yLabels[yLabels.length - 1] !== yAxisMax) yLabels.push(yAxisMax);
   yLabels.reverse();
 
   return (

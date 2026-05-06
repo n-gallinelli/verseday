@@ -11,6 +11,8 @@ import {
   updateTask,
   updateTaskStatus,
   setManualWorkedMinutes,
+  deleteTask,
+  startTimeEntry,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
@@ -19,6 +21,7 @@ import SunsetOverlay from "../components/SunsetOverlay";
 import SummaryOverlay from "../components/SummaryOverlay";
 import MoodSelector from "../components/MoodSelector";
 import TaskDetailOverlay from "../components/TaskDetailOverlay";
+import CalendarChip from "../components/CalendarChip";
 import type { Task, Project } from "../types";
 
 const SHUTDOWN_KEY_PREFIX = "daily-shutdown-";
@@ -52,7 +55,7 @@ function serializeReflection(fields: ReflectionFields): string {
 }
 
 export default function DailyShutdown() {
-  const { selectedDate, setSelectedDate, setPage } = useAppStore();
+  const { selectedDate, setSelectedDate, setPage, startFocus } = useAppStore();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -244,6 +247,26 @@ export default function DailyShutdown() {
     }
   }
 
+  async function handleDeleteTask(id: number) {
+    try {
+      await deleteTask(id);
+      setError(null);
+      loadData();
+    } catch (e) {
+      setError(errorMessage(e, "Failed to delete task"));
+    }
+  }
+
+  async function handleStartFocusFromOverlay(task: Task) {
+    try {
+      const priorMs = (workedPerTask.get(task.id) ?? 0) * 60 * 1000;
+      const entryId = await startTimeEntry(task.id, "tracked");
+      startFocus(task, entryId, "daily_shutdown", priorMs);
+    } catch (e) {
+      setError(errorMessage(e, "Failed to start timer"));
+    }
+  }
+
 
   const completedTasks = tasks.filter((t) => t.status === "done");
   const incompleteTasks = tasks.filter((t) => t.status !== "done");
@@ -350,7 +373,10 @@ export default function DailyShutdown() {
                           ) : (
                             <span className="w-1.5 h-1.5 flex-shrink-0" aria-hidden />
                           )}
-                          <span className="flex-1 text-[12px] text-fg-secondary truncate">{task.title}</span>
+                          <span className="flex-1 min-w-0 text-[12px] text-fg-secondary truncate">
+                            {task.external_source === "calendar" && <CalendarChip className="mr-1.5 align-[-1px]" />}
+                            {task.title}
+                          </span>
                           <span className="text-[10px] text-fg-faded shrink-0 w-[120px] truncate">
                             {project?.name ?? ""}
                           </span>
@@ -407,7 +433,10 @@ export default function DailyShutdown() {
                           ) : (
                             <span className="w-1.5 h-1.5 flex-shrink-0" aria-hidden />
                           )}
-                          <span className={`flex-1 text-[12px] truncate ${isCarried ? "text-fg-faded italic" : "text-fg"}`}>{task.title}</span>
+                          <span className={`flex-1 min-w-0 text-[12px] truncate ${isCarried ? "text-fg-faded italic" : "text-fg"}`}>
+                            {task.external_source === "calendar" && <CalendarChip className="mr-1.5 align-[-1px]" />}
+                            {task.title}
+                          </span>
                           <span className="text-[10px] text-fg-faded shrink-0 w-[120px] truncate">
                             {!isCarried ? (project?.name ?? "") : ""}
                           </span>
@@ -555,7 +584,10 @@ export default function DailyShutdown() {
         />
       )}
 
-      {/* Task detail overlay — opened by clicking any row in step 1. */}
+      {/* Task detail overlay — opened by clicking any row in step 1.
+          Mirrors DailyPlanner's invocation so the detail view is
+          identical regardless of where it was opened from (trash icon,
+          start-focus button, pre-filled worked-minutes). */}
       {detailTask && (
         <TaskDetailOverlay
           key={detailTask.id}
@@ -568,6 +600,13 @@ export default function DailyShutdown() {
               .then(() => loadData())
               .catch(() => {});
           }}
+          onDelete={(id) => { handleDeleteTask(id); setDetailTask(null); }}
+          onStartFocus={(t) => {
+            handleStartFocusFromOverlay(t);
+            setDetailTask(null);
+            setPage("focus");
+          }}
+          workedMinutes={workedPerTask.get(detailTask.id) ?? 0}
           onSetWorkedMinutes={(id, mins) =>
             setManualWorkedMinutes(id, mins).then(() => loadData()).catch(() => {})
           }

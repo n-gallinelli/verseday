@@ -47,6 +47,7 @@ import SummaryOverlay from "../components/SummaryOverlay";
 import ProjectPicker from "../components/ProjectPicker";
 import DisclosureCaret from "../components/DisclosureCaret";
 import { formatHoursMinutes, parseTimeFromTitle, getEmptyDayMessage } from "../utils/format";
+import { useCalendarAutoSync } from "../calendar/hooks";
 import { errorMessage } from "../utils/errors";
 import { useFocusTick } from "../hooks/useFocusTick";
 import type { Task, DailyPlan, Project } from "../types";
@@ -88,6 +89,13 @@ export default function DailyPlanner() {
   const [addedIds, setAddedIds] = useState<Set<number>>(new Set());
   const [projectStats, setProjectStats] = useState<Map<number, { total: number; done: number }>>(new Map());
   const [error, setError] = useState<string | null>(null);
+
+  // M4 — auto-sync the user's calendar into selectedDate. Owns the
+  // hourly tick + visibilitychange + window.focus + permission re-check
+  // + auto-flip on revoke. See src/calendar/hooks.ts.
+  const { syncing: calendarSyncing, lastResultAt: calendarLastResultAt } =
+    useCalendarAutoSync(selectedDate);
+  const [showSlowSyncToast, setShowSlowSyncToast] = useState(false);
 
   // Create form
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -313,6 +321,26 @@ export default function DailyPlanner() {
     setConfirmDeleteId(null);
     loadData();
   }, [selectedDate]);
+
+  // M4 — refetch when calendar auto-sync imported new rows. Only
+  // fires on result.created > 0 (Verse polish: no refetch noise on
+  // every visibility ping that produces zero new rows).
+  useEffect(() => {
+    if (calendarLastResultAt === null) return;
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calendarLastResultAt]);
+
+  // M4 — slow-sync toast. Appears only after sync has been in flight
+  // for ≥3s; auto-clears when sync resolves. Plan §5.
+  useEffect(() => {
+    if (!calendarSyncing) {
+      setShowSlowSyncToast(false);
+      return;
+    }
+    const t = setTimeout(() => setShowSlowSyncToast(true), 3000);
+    return () => clearTimeout(t);
+  }, [calendarSyncing]);
 
   // Consume pendingDetailTask handed off from another page (e.g. Escape from
   // FocusMode / FocusLanding) — open the detail overlay for that task. Don't
@@ -699,6 +727,12 @@ export default function DailyPlanner() {
       {/* ── Main content ────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col overflow-hidden">
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
+
+      {showSlowSyncToast && (
+        <div className="mx-6 mt-2 mb-1 px-3 py-1.5 rounded-md text-[12px] text-fg-faded text-center" style={{ background: "var(--bg-elevated)", border: "0.5px solid var(--border-hairline)" }}>
+          Syncing calendar…
+        </div>
+      )}
 
       {/* Date Header */}
       <div className="px-7 pt-5 pb-4">

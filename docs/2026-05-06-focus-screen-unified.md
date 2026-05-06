@@ -68,6 +68,36 @@ The brief asked for a small project pill (green dot + name) above the task title
 
 `git stash@{0}` ("wip: pre-unification ripple+pill") contains a partial ripple/pill rework on `main`. Conceptually adjacent to M4 but lower salvage value once M4 lands two-ring pulse. Keep stashed for reference; reach for it if M4 needs a starting point for opacity/scale curves.
 
+## M3 + M4 (combined commit)
+
+Combined because M3 (layout) and M4 (pulse) share the same SVG stack — tuning them in one pass avoids a second round of fiddling with the same z-ordering.
+
+### Decisions
+
+**Title.** 28px semibold → 24px medium. The ring + timer numerals are the screen's anchor; the title sits quieter under them. `mb-6` → `mb-5` to bring the notes closer.
+
+**Work-time progress arc.** Previously the colored arc only rendered during break; the work phase showed a static green ring. Brief wanted the arc to fill clockwise as time accumulates, which now happens (`progress = totalWorkedMs / estimatedMs`, capped at 100% via `Math.min`, hidden if no estimate). Same SVG slot as the break countdown — only one of the two ever renders. No-estimate tasks get an empty arc; the pulse rings carry the "session is live" signal regardless of whether the estimate produces visible progress.
+
+Overflow handling: capped at 100%, no color change past the cap. Treating "over the estimate" as a separate visual problem; flagged for later.
+
+**Complete button tint.** Added `bg-accent-green-bright/10` default fill, `bg-accent-green-bright/20` hover. Border kept, size kept (w-12 vs siblings' w-10). The fill gives the button visual weight without making it shouty — it sits between the ghost-style Stop/Pause and a fully-saturated CTA.
+
+**Pulse rings.** Two `<div>` wrappers each containing a circle stroke matching the main ring (7px). Both use the same `focusPulseRipple` keyframe (opacity 0.45 → 0, scale 1 → 1.22, 2.4s ease-out infinite); the second carries `.focus-pulse-ring-delayed` for an `animation-delay: 0.4s`. Single keyframe + two delay values per Verse's note.
+
+Hidden when paused (the wrapper divs are not rendered) — absence of motion is the paused-state signal.
+
+Hidden during prompt phase: the existing `{!isPrompting && (...)}` wrapper around the timer block already handles this, since BreakCelebration replaces the entire ring during prompt. No new conditional needed.
+
+**Dead CSS removed.** `timer-pulse` keyframe + `.timer-circle-ring`/`.timer-circle-ring.paused` classes (the main ring no longer pulses on its own — the pulse is its own dedicated layer now). Old `focusGlowPulse` + `focusGlowFadeOut` + `.focus-glow-layer` replaced by the new pulse-ring keyframe.
+
+The 5-minute fade-out (`focusGlowFadeOut`) was deliberately not carried forward. Its purpose was calming the screen on long sessions; the new ripple is already gentle (peak opacity 0.45, fades to 0 within each cycle), so a global fade-out would just kill the heartbeat.
+
+**`prefers-reduced-motion` fallback.** Pulse animation drops; rings render at static opacity 0.25 so the ring stack still visually exists.
+
+### Stash @{0}
+
+Sanity-checked the stash's opacity/scale curves before tuning. Stash had one ring at opacity 0.55 → 0, scale 1 → 1.18, single keyframe — close to but not identical to what M4 wanted. Final values (0.45 → 0, scale 1 → 1.22) are slightly punchier on travel, slightly softer on peak, optimized for the dual-ring composition. Did not copy-paste from the stash.
+
 ## What's not done yet
 
-M3 (layout), M4 (pulse ring), M6 (polish). Stopping here for Verse review.
+M6 (manual verify in `npm run tauri dev`). Stopping here for Verse review.

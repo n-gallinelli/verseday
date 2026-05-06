@@ -624,8 +624,11 @@ export default function FocusMode() {
           />
         ) : (
           <>
-            {/* Task name — hero */}
-            <h1 className="text-[28px] font-semibold text-fg mb-6 leading-snug font-display">
+            {/* Task name — sits quieter under the dominant ring/timer.
+                Medium weight (500), 24px. Lower than its previous
+                semibold/28px hero treatment because the ring is the
+                anchor of the screen now, not the title. */}
+            <h1 className="text-[24px] font-medium text-fg mb-5 leading-snug font-display">
               {focus.task.title}
             </h1>
 
@@ -667,28 +670,58 @@ export default function FocusMode() {
         {/* Timer arc */}
         {!isPrompting && (
           <div className="relative mb-6 overflow-visible" style={{ width: 220, height: 220 }}>
-            {/* Glow layer — wrapper div handles the CSS animation (WebKit won't animate transforms on <svg>) */}
+            {/* Pulse rings — two shed copies of the ring expanding
+                outward and fading. Same keyframe, second one delayed
+                ~0.4s, so the user reads them as a steady "session is
+                live" heartbeat rather than a single pulse. Hidden when
+                paused — the absence of motion is the paused-state
+                signal. Wrapped in divs because WebKit won't animate
+                transforms on <svg>. */}
             {!paused && (
-              <div className="absolute inset-0 focus-glow-layer">
-                <svg
-                  viewBox="0 0 220 220"
-                  fill="none"
-                  style={{ width: 220, height: 220 }}
-                >
-                  <circle
-                    cx="110"
-                    cy="110"
-                    r={ARC_RADIUS}
-                    stroke={isOnBreak ? "var(--focus-glow-break)" : "var(--focus-glow-base)"}
-                    strokeWidth="14"
+              <>
+                <div className="absolute inset-0 focus-pulse-ring">
+                  <svg
+                    viewBox="0 0 220 220"
                     fill="none"
-                  />
-                </svg>
-              </div>
+                    style={{ width: 220, height: 220 }}
+                  >
+                    <circle
+                      cx="110"
+                      cy="110"
+                      r={ARC_RADIUS}
+                      stroke={isOnBreak ? "var(--focus-glow-break)" : "var(--focus-glow-base)"}
+                      strokeWidth="7"
+                      fill="none"
+                    />
+                  </svg>
+                </div>
+                <div className="absolute inset-0 focus-pulse-ring focus-pulse-ring-delayed">
+                  <svg
+                    viewBox="0 0 220 220"
+                    fill="none"
+                    style={{ width: 220, height: 220 }}
+                  >
+                    <circle
+                      cx="110"
+                      cy="110"
+                      r={ARC_RADIUS}
+                      stroke={isOnBreak ? "var(--focus-glow-break)" : "var(--focus-glow-base)"}
+                      strokeWidth="7"
+                      fill="none"
+                    />
+                  </svg>
+                </div>
+              </>
             )}
 
-            {/* Main arc — wrapper div for pulse animation (WebKit can't animate transform on SVG elements) */}
-            <div className={`absolute inset-0 timer-circle-ring${paused ? " paused" : ""}`}>
+            {/* Main ring — track + progress arc.
+                Work phase: progress = totalWorkedMs / estimatedMs, capped
+                at 100%. No-estimate tasks render an empty arc (don't fake
+                a guess — the pulse rings carry the "session is live"
+                signal regardless).
+                Break phase: progress = breakRemaining / breakDuration,
+                same arc render path, different color/source. */}
+            <div className="absolute inset-0">
               <svg
                 viewBox="0 0 220 220"
                 fill="none"
@@ -703,8 +736,26 @@ export default function FocusMode() {
                   strokeWidth="7"
                   fill="none"
                 />
-                {/* Progress stroke — only fills during a break countdown.
-                    During work the ring just pulses (timer-circle-ring class). */}
+                {/* Work progress — fills clockwise as time accumulates
+                    against the estimate. Hidden during break so the
+                    break countdown takes over the same arc slot. */}
+                {!isOnBreak && progress > 0 && (
+                  <circle
+                    cx="110"
+                    cy="110"
+                    r={ARC_RADIUS}
+                    stroke="var(--focus-ring-progress)"
+                    strokeWidth="7"
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeDasharray={ARC_CIRCUMFERENCE}
+                    strokeDashoffset={arcOffset}
+                    transform="rotate(-90 110 110)"
+                    style={{ transition: "stroke-dashoffset 0.3s linear" }}
+                  />
+                )}
+                {/* Break countdown — same arc slot, draining as the
+                    break elapses. */}
                 {isOnBreak && (
                   <circle
                     cx="110"
@@ -785,10 +836,12 @@ export default function FocusMode() {
             </button>
 
             {/* Mark Done — center, the reward action. Sits in the visual
-                middle so the eye lands on it; it's the affirmative finish. */}
+                middle so the eye lands on it; it's the affirmative finish.
+                Soft green fill (10% bright) gives it weight against the
+                ghost-style Stop and Pause; hover deepens it to 20%. */}
             <button
               onClick={handleDone}
-              className="w-12 h-12 rounded-full border-2 border-accent-green-bright/50 flex items-center justify-center cursor-pointer hover:bg-accent-green-bright/10 transition-colors"
+              className="w-12 h-12 rounded-full border-2 border-accent-green-bright/50 bg-accent-green-bright/10 flex items-center justify-center cursor-pointer hover:bg-accent-green-bright/20 transition-colors"
               title="Mark done"
             >
               <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

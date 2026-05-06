@@ -10,6 +10,7 @@ import {
   isSafeUrl,
 } from "../db/queries";
 import RichTextEditor from "./RichTextEditor";
+import CalendarChip from "./CalendarChip";
 import type { Task, Project, Link } from "../types";
 
 interface TaskCardProps {
@@ -317,6 +318,7 @@ function TaskCardImpl({
             task.status === "done" ? "line-through !text-fg-faded" : ""
           }`}
         >
+          {task.external_source === "calendar" && <CalendarChip className="mr-1.5 align-[-1px]" />}
           {task.title}
         </span>
 

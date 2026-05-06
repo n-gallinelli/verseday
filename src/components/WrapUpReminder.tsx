@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAppStore } from "../stores/appStore";
-import Button from "./Button";
+import VerseDayLogo from "./VerseDayLogo";
 
 const WRAPUP_HOUR = 16;
 const WRAPUP_MINUTE = 30;
@@ -109,28 +109,46 @@ export default function WrapUpReminder() {
     setVisible(false);
   }
 
+  // Dismiss for the rest of today without claiming a shutdown happened.
+  // The per-day flag clears at midnight, so the reminder is free to fire
+  // again tomorrow at 4:30 PM.
+  function handleDismiss() {
+    markCompletedToday();
+    setVisible(false);
+  }
+
   if (!visible) return null;
 
   return (
     <div className="fixed bottom-4 right-4 z-40 animate-slide-up">
       <div
-        className="bg-elevated border border-line-soft rounded-xl shadow-lg px-5 py-4 w-[300px]"
+        className="relative bg-elevated border border-line-soft rounded-xl shadow-lg px-5 py-4 w-[300px]"
         style={{ borderWidth: "0.5px" }}
       >
-        <div className="flex items-center gap-2.5 mb-3">
-          <span className="text-[15px] font-medium text-accent-blue tracking-tight">
-            VerseDay
-          </span>
+        <button
+          onClick={handleDismiss}
+          aria-label="Dismiss"
+          className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-md text-fg-disabled hover:text-fg-faded hover:bg-overlay-hover cursor-pointer transition-colors"
+        >
+          <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 3l8 8M11 3l-8 8" />
+          </svg>
+        </button>
+        <div className="flex items-center mb-3">
+          <VerseDayLogo size={24} />
         </div>
         <p className="text-[14px] text-fg font-medium mb-1">
           Wrap up your day
         </p>
         <p className="text-[12px] text-fg-muted mb-4">
-          Take a few minutes to reflect and plan for tomorrow.
+          Take a few minutes to reflect.
         </p>
-        <Button size="sm" className="w-full" onClick={handleStartShutdown}>
+        <button
+          onClick={handleStartShutdown}
+          className="w-full flex items-center justify-center gap-2 rounded-lg border border-accent-blue/50 text-accent-blue-soft-fg px-4 py-1.5 text-[13px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors"
+        >
           Start shutdown
-        </Button>
+        </button>
         <div className="flex items-center gap-2 mt-2">
           <button
             onClick={() => handleSnooze(15)}

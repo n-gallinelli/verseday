@@ -2,11 +2,13 @@ import { useEffect, useState, useRef } from "react";
 import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 
-// Single compact size for every phase. Earlier the prompt resized to a
-// taller window — that read as a separate popup hovering near the pip
-// rather than a state of the pip itself, so we collapsed it back into
-// 220×68 and re-laid the prompt content to fit.
+// Compact baseline for work/break readouts. The prompt phase grows
+// 20px taller (a small bump, NOT the original 320×140 popup) so the
+// "Break?" header and three pills can sit in two rows without
+// cramping. Width is pinned at 220 across phases so the pip stays
+// pip-shaped.
 const PIP_SIZE_COMPACT = { width: 220, height: 68 };
+const PIP_SIZE_PROMPT = { width: 220, height: 88 };
 
 const PIP_STATE_KEY = "verseday_pip_state";
 const PIP_CMD_KEY = "verseday_pip_cmd";
@@ -64,6 +66,65 @@ function playCalm() {
   }
 }
 
+// Icon set for the break-prompt buttons. All three render at 16px,
+// inherit currentColor from their parent button so theme + filled-vs-
+// outlined treatments work without per-icon overrides.
+function ThumbsUpIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M7 11v9H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3z" />
+      <path d="M7 11l4-7a2 2 0 0 1 2 0c.7.4 1 1.2 1 2v3h4.5a2 2 0 0 1 2 2.3l-1.2 6a2 2 0 0 1-2 1.7H7" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  );
+}
+
 async function focusMainWindow() {
   try {
     const main = await WebviewWindow.getByLabel("main");
@@ -103,13 +164,17 @@ export default function FocusPip() {
     document.body.style.margin = "0";
   }, []);
 
-  // Pin the OS window to the compact size on first state load. The
-  // pip used to grow for the prompt phase; that's gone now — every
-  // phase fits the same 220×68 footprint.
+  // Resize per phase. Compact for work/break, slightly taller for
+  // the prompt to give Break? + three pills room. Watch for jitter
+  // if the user docks the pip to the bottom of the screen — Tauri's
+  // setSize anchors to the top, so a 20px height bump grows
+  // downward.
   useEffect(() => {
     if (!state) return;
+    const target =
+      state.phase === "prompt" ? PIP_SIZE_PROMPT : PIP_SIZE_COMPACT;
     getCurrentWebviewWindow()
-      .setSize(new LogicalSize(PIP_SIZE_COMPACT.width, PIP_SIZE_COMPACT.height))
+      .setSize(new LogicalSize(target.width, target.height))
       .catch(() => {});
   }, [state?.phase]);
 
@@ -167,15 +232,19 @@ export default function FocusPip() {
     return null;
   }
 
-  // ── BREAK PROMPT — compact, fits in 220×68 ─────────────────────────
-  // Layout: tiny "Break?" header on the left, three pill buttons on
-  // the right (Yes / In 5 / No). FocusMode owns a 30s auto-dismiss
-  // timer for this phase, so the user is never trapped in it.
+  // ── BREAK PROMPT — two rows, fits in 220×88 ────────────────────────
+  // Header row: centered "Ready for a break?" anchor at small weight.
+  // Action row: three icon buttons (thumbs up / clock / x) — icon-only
+  // keeps the pip uncluttered at this width; tooltips carry the
+  // labels for accessibility. Filled green primary, outlined
+  // secondary, outlined-faint tertiary mirror the full-screen
+  // celebration's button hierarchy. FocusMode owns the 30s
+  // auto-dismiss; the user is never trapped.
   if (state.phase === "prompt") {
     return (
       <div
         data-tauri-drag-region
-        className="select-none cursor-grab active:cursor-grabbing flex items-center gap-2 px-3 py-2 w-full h-full"
+        className="select-none flex flex-col w-full h-full px-2.5 py-2"
         style={{
           background: "var(--focus-pip-bg)",
           borderRadius: 18,
@@ -184,30 +253,33 @@ export default function FocusPip() {
         }}
         onMouseDown={handlePipMouseDown}
       >
-        <span className="text-[12px] font-medium text-fg pl-1 flex-shrink-0">
-          Break?
-        </span>
-        <div className="flex items-center gap-1 flex-1 justify-end">
+        <p className="text-[13px] font-medium text-fg text-center mb-2 leading-tight">
+          Ready for a break?
+        </p>
+        <div className="flex items-center justify-center gap-2.5 flex-1">
           <button
             onClick={() => sendCommand("takeBreak")}
-            className="px-2.5 py-1 rounded-md text-[11px] font-medium text-white bg-accent-green-deep hover:opacity-90 cursor-pointer transition-opacity"
-            title="Take a break"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-white bg-accent-green-deep hover:opacity-90 cursor-pointer transition-opacity"
+            title="Yes — take a 5 min break"
+            aria-label="Take a 5 minute break"
           >
-            Yes
+            <ThumbsUpIcon />
           </button>
           <button
             onClick={() => sendCommand("snooze5")}
-            className="px-2 py-1 rounded-md text-[11px] text-fg-secondary border border-line-soft hover:border-line-strong hover:bg-overlay-hover cursor-pointer transition-colors"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-secondary border border-line-soft hover:border-line-strong hover:bg-overlay-hover cursor-pointer transition-colors"
             title="Remind me in 5 min"
+            aria-label="Remind me in 5 minutes"
           >
-            In 5
+            <ClockIcon />
           </button>
           <button
             onClick={() => sendCommand("noBreak")}
-            className="px-2 py-1 rounded-md text-[11px] text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer transition-colors"
-            title="Keep working"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-faded border border-line-hairline hover:text-fg-secondary hover:border-line-soft hover:bg-overlay-hover cursor-pointer transition-colors"
+            title="No — keep working"
+            aria-label="Decline break"
           >
-            No
+            <CloseIcon />
           </button>
         </div>
       </div>
@@ -217,7 +289,7 @@ export default function FocusPip() {
   // ── BREAK COUNTDOWN ────────────────────────────────────────────────
   if (state.phase === "break") {
     return (
-      <div data-tauri-drag-region className="px-3.5 py-2.5 select-none overflow-hidden cursor-grab active:cursor-grabbing" style={{ background: "var(--focus-pip-bg)", borderRadius: 18 }} onMouseDown={handlePipMouseDown}>
+      <div data-tauri-drag-region className="px-3.5 py-2.5 select-none overflow-hidden" style={{ background: "var(--focus-pip-bg)", borderRadius: 18 }} onMouseDown={handlePipMouseDown}>
         <div className="flex items-center gap-2.5">
           <div className="flex-1 min-w-0">
             <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-0.5">Break</div>
@@ -237,7 +309,7 @@ export default function FocusPip() {
   return (
     <div
       data-tauri-drag-region
-      className="select-none overflow-hidden flex flex-col cursor-grab active:cursor-grabbing"
+      className="select-none overflow-hidden flex flex-col"
       style={{ background: "var(--focus-pip-bg)", borderRadius: 18, border: "0.5px solid var(--focus-pip-border)" }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}

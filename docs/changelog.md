@@ -8,6 +8,20 @@
   the existing 0.5px border + 18px radius for visual containment.
 - Files: `src/components/FocusPip.tsx`
 
+### Break prompt — polish pass
+- **Pip:** restored a small height bump for the prompt phase (220×88
+  vs the compact 220×68). Two-row layout with a centered "Ready for
+  a break?" header and three icon buttons below: thumbs-up (yes,
+  filled green), clock (in 5 min, outlined), and ✕ (no, outlined-
+  faint). Tooltips + aria-labels keep meaning accessible.
+- **FocusMode celebration:** dropped the redundant "Time for a break?"
+  subhead, simplified the duration line (no "You finished" preamble,
+  no mid-sentence bold), bumped the headline to 40px with more air
+  around it, and moved the coffee cup *into* the primary CTA where
+  it signals the action. Icon now inherits currentColor instead of
+  hard-coding orange.
+- Files: `src/components/FocusPip.tsx`, `src/pages/FocusMode.tsx`
+
 ### Break prompt — pip-native + welcoming completion screen
 - **Pip:** the break prompt no longer resizes the pip into a separate-
   looking window. It fits the same 220×68 footprint with a tiny

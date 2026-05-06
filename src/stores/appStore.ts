@@ -125,9 +125,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Sets focus state only — does NOT navigate to the immersive Focus page.
     // Callers that want the full-screen timer experience follow up with
     // setPage("focus") themselves (App.tsx F hotkey, ProjectDetail, and
-    // FocusLanding all do). DailyPlanner deliberately does not, so the
-    // user can keep planning while the timer runs in the background with
-    // a live counter on the focused task row.
+    // FocusMode's own auto-start all do). DailyPlanner deliberately does
+    // not, so the user can keep planning while the timer runs in the
+    // background with a live counter on the focused task row.
     const focus = { task, timeEntryId, startedAt: Date.now(), previousPage, priorElapsedMs };
     persistFocus(focus);
     set({ focus });
@@ -153,8 +153,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setWeeklyPlannerTab: (tab) => set({ weeklyPlannerTab: tab }),
   toggleSidebar: () => {
     const s = get();
-    const isFocusScreen =
-      s.currentPage === "focus_landing" || s.currentPage === "focus";
+    const isFocusScreen = s.currentPage === "focus";
     if (isFocusScreen) {
       set({ sidebarFocusExpanded: !s.sidebarFocusExpanded });
     } else {
@@ -165,8 +164,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   setSidebarCollapsed: (collapsed) => {
     const s = get();
-    const isFocusScreen =
-      s.currentPage === "focus_landing" || s.currentPage === "focus";
+    const isFocusScreen = s.currentPage === "focus";
     if (isFocusScreen) {
       // On focus screens, "expanded" maps to focusExpanded=true.
       set({ sidebarFocusExpanded: !collapsed });

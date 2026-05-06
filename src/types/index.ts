@@ -90,6 +90,5 @@ export type Page =
   | "project_detail"
   | "dashboard"
   | "focus"
-  | "focus_landing"
   | "past_shutdowns"
   | "settings";

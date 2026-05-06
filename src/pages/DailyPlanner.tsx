@@ -343,7 +343,7 @@ export default function DailyPlanner() {
   }, [calendarSyncing]);
 
   // Consume pendingDetailTask handed off from another page (e.g. Escape from
-  // FocusMode / FocusLanding) — open the detail overlay for that task. Don't
+  // FocusMode) — open the detail overlay for that task. Don't
   // clear pendingDetailTask here: App.tsx remounts this page when pageKey
   // increments after the page transition, so the first instance would clear
   // the slot before the second instance ever reads it. The slot gets cleared

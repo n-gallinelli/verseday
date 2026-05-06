@@ -15,7 +15,6 @@ import WeeklyPlanner from "./pages/WeeklyPlanner";
 import WeeklyShutdown from "./pages/WeeklyShutdown";
 import Dashboard from "./pages/Dashboard";
 import Settings from "./pages/Settings";
-import FocusLanding from "./pages/FocusLanding";
 import PastShutdowns from "./pages/PastShutdowns";
 import WrapUpReminder from "./components/WrapUpReminder";
 import { useAppStore } from "./stores/appStore";
@@ -28,7 +27,7 @@ import {
 import type { Page, Task } from "./types";
 
 const PAGE_SHORTCUTS: Record<string, Page> = {
-  "0": "focus_landing",
+  "0": "focus",
   "1": "daily",
   "2": "daily_shutdown",
   "3": "weekly",
@@ -152,19 +151,13 @@ function MainApp() {
       const key = e.key.toLowerCase();
 
       // ── Arrow-key sidebar toggle: handle (or skip) FIRST so no
-      // downstream logic can intercept arrow keys on focus screens or
-      // inside modals. Arrow keys belong to the focused screen's own
-      // navigation there (FocusLanding cycles tasks; project_detail
-      // is a modal). Inputs are handled by the global isInputFocused
-      // guard below for the rest of the bare keys, but arrow keys on
-      // focus screens must do nothing app-level regardless.
+      // downstream logic can intercept arrow keys on the focus screen
+      // or inside modals. Inputs are handled by the global
+      // isInputFocused guard below for the rest of the bare keys, but
+      // arrow keys on focus must do nothing app-level regardless.
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         const p = useAppStore.getState().currentPage;
-        if (
-          p === "focus" ||
-          p === "focus_landing" ||
-          p === "project_detail"
-        ) {
+        if (p === "focus" || p === "project_detail") {
           return;
         }
         if (isInputFocused() || meta || e.shiftKey || e.altKey) return;
@@ -253,7 +246,8 @@ function MainApp() {
             const tasks = await getTasksForDate(today);
             const incomplete = tasks.filter((t) => t.status !== "done");
             if (incomplete.length === 0) {
-              setPage("focus_landing");
+              // Focus screen handles the empty-day case in its own boot UI.
+              setPage("focus");
               return;
             }
             let target: Task | null = null;
@@ -308,8 +302,11 @@ function MainApp() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [setPage, startFocus]);
 
-  // Focus mode is a full-screen overlay
-  if (currentPage === "focus" && focus) {
+  // Focus mode is a full-screen overlay. FocusMode itself handles the
+  // no-session case (auto-starts on the next queued task, or shows an
+  // empty / error state) — the gate intentionally doesn't require
+  // `focus`.
+  if (currentPage === "focus") {
     return (
       <ErrorBoundary>
         <FocusMode />
@@ -341,8 +338,6 @@ function MainApp() {
         return <Dashboard />;
       case "settings":
         return <Settings />;
-      case "focus_landing":
-        return <FocusLanding />;
       case "past_shutdowns":
         return <PastShutdowns />;
       default:

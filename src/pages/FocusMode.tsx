@@ -6,12 +6,16 @@ import {
   checkpointTimeEntry,
   updateTaskStatus,
   updateTaskNotes,
-  getProjectById,
   getSetting,
+  getTasksForDate,
+  getWorkedMinutesForTask,
+  startTimeEntry,
 } from "../db/queries";
 import RichTextEditor from "../components/RichTextEditor";
 import VerseDayLogo from "../components/VerseDayLogo";
-import type { Project } from "../types";
+import { todayString } from "../utils/dates";
+import { getEmptyDayMessage } from "../utils/format";
+import type { Page } from "../types";
 
 // If the user doesn't engage with the break prompt within this window,
 // treat it as "No" — close the prompt, continue working. Stops the
@@ -81,17 +85,59 @@ function playChime() {
   }
 }
 
+type BootStatus = "idle" | "starting" | "empty" | "error";
+
 export default function FocusMode() {
-  const { focus, stopFocus, setPage, setPendingDetailTask } = useAppStore();
+  const { focus, stopFocus, setPage, setPendingDetailTask, startFocus } = useAppStore();
 
-  const [project, setProject] = useState<Project | null>(null);
+  // Boot state — covers entry to the focus screen with no active session
+  // (sidebar Focus icon, ⌘0, F-with-no-tasks). Auto-loads the next queued
+  // task; falls through to empty / error states. Once `focus` is populated
+  // (here or pre-existing), the rest of the component takes over.
+  //
+  // The kick-off gate is a ref, not the bootStatus state. If it were state
+  // and listed in the effect deps, setting bootStatus → "starting" would
+  // re-run the effect and cancel its own async work mid-flight. The ref
+  // gate is independent of render, so the in-flight boot survives the
+  // re-render that "starting" triggers.
+  const [bootStatus, setBootStatus] = useState<BootStatus>("idle");
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [bootRetry, setBootRetry] = useState(0);
+  const bootStartedRef = useRef(false);
 
-  // Load project info
   useEffect(() => {
-    if (focus?.task.project_id) {
-      getProjectById(focus.task.project_id).then(setProject).catch(() => {});
-    }
-  }, [focus?.task.project_id]);
+    if (focus) return;
+    if (bootStartedRef.current) return;
+    bootStartedRef.current = true;
+    setBootStatus("starting");
+    let cancelled = false;
+    (async () => {
+      try {
+        const tasks = await getTasksForDate(todayString());
+        if (cancelled) return;
+        const remaining = tasks.filter((t) => t.status !== "done");
+        if (remaining.length === 0) {
+          setBootStatus("empty");
+          return;
+        }
+        const target = remaining[0];
+        const priorMs = (await getWorkedMinutesForTask(target.id)) * 60 * 1000;
+        if (cancelled) return;
+        const entryId = await startTimeEntry(target.id, "tracked");
+        if (cancelled) return;
+        const history = useAppStore.getState().pageHistory;
+        const prev: Page = (history[history.length - 1] as Page) ?? "daily";
+        startFocus(target, entryId, prev, priorMs);
+      } catch (e) {
+        if (cancelled) return;
+        setBootError(e instanceof Error ? e.message : "Could not start focus session");
+        setBootStatus("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [focus, bootRetry, startFocus]);
 
   // Notes state + debounced auto-save (the editor flushes pending saves on
   // its own unmount, so navigating away from focus mode is also covered).
@@ -516,7 +562,21 @@ export default function FocusMode() {
   handleNoBreakRef.current = handleNoBreak;
   handleSkipBreakRef.current = handleSkipBreak;
 
-  if (!focus) return null;
+  if (!focus) {
+    return (
+      <FocusBoot
+        status={bootStatus}
+        error={bootError}
+        onRetry={() => {
+          bootStartedRef.current = false;
+          setBootError(null);
+          setBootStatus("idle");
+          setBootRetry((n) => n + 1);
+        }}
+        onLeave={() => setPage("daily")}
+      />
+    );
+  }
   if (!settingsLoaded) return null;
 
   const isOnBreak = phase === "break";
@@ -564,29 +624,6 @@ export default function FocusMode() {
           />
         ) : (
           <>
-            {/* Project pill — anchors task context above the title.
-                Tinted with the project color so the badge feels owned
-                by the project, not a global label. Replaces the
-                absolute-positioned top bar that used to float
-                disconnected from the content. */}
-            {project && (
-              <div
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full mb-3"
-                style={{
-                  backgroundColor: `color-mix(in srgb, ${project.color} 14%, transparent)`,
-                  color: `color-mix(in srgb, ${project.color} 70%, var(--text-secondary))`,
-                }}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ backgroundColor: project.color }}
-                />
-                <span className="text-[11px] font-medium leading-none">
-                  {project.name}
-                </span>
-              </div>
-            )}
-
             {/* Task name — hero */}
             <h1 className="text-[28px] font-semibold text-fg mb-6 leading-snug font-display">
               {focus.task.title}
@@ -736,7 +773,31 @@ export default function FocusMode() {
             auto-dismiss covers the escape-hatch case. */}
         {!isOnBreak && !isPrompting && (
           <div className="flex items-center gap-3 mb-6">
-            {/* Pause / Resume — secondary */}
+            {/* Stop & Save — leftmost, the "leave the session" exit. */}
+            <button
+              onClick={handleStop}
+              className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover transition-colors"
+              title="Stop & save"
+            >
+              <svg width="16" height="16" viewBox="0 0 14 14" fill="currentColor">
+                <rect x="2" y="2" width="10" height="10" rx="1.5" />
+              </svg>
+            </button>
+
+            {/* Mark Done — center, the reward action. Sits in the visual
+                middle so the eye lands on it; it's the affirmative finish. */}
+            <button
+              onClick={handleDone}
+              className="w-12 h-12 rounded-full border-2 border-accent-green-bright/50 flex items-center justify-center cursor-pointer hover:bg-accent-green-bright/10 transition-colors"
+              title="Mark done"
+            >
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 8.5l3.5 3.5 6.5-7" />
+              </svg>
+            </button>
+
+            {/* Pause / Resume — rightmost, the in-session toggle that
+                stays handy while the session keeps running. */}
             <button
               onClick={handlePause}
               className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover transition-colors"
@@ -752,30 +813,6 @@ export default function FocusMode() {
                   <rect x="8.5" y="1" width="3.5" height="12" rx="1" />
                 </svg>
               )}
-            </button>
-
-            {/* Stop & Save — secondary, sits between Pause and Done.
-                Reads left → right by destructiveness then reward:
-                Pause (neutral) → Stop (negative-ish) → Done (reward). */}
-            <button
-              onClick={handleStop}
-              className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover transition-colors"
-              title="Stop & save"
-            >
-              <svg width="16" height="16" viewBox="0 0 14 14" fill="currentColor">
-                <rect x="2" y="2" width="10" height="10" rx="1.5" />
-              </svg>
-            </button>
-
-            {/* Mark Done — primary, rightmost as the reward action. */}
-            <button
-              onClick={handleDone}
-              className="w-12 h-12 rounded-full border-2 border-accent-green-bright/50 flex items-center justify-center cursor-pointer hover:bg-accent-green-bright/10 transition-colors"
-              title="Mark done"
-            >
-              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 8.5l3.5 3.5 6.5-7" />
-              </svg>
             </button>
           </div>
         )}
@@ -886,5 +923,85 @@ function CoffeeCupIcon() {
       {/* Handle */}
       <path d="M17 10h2a2.5 2.5 0 0 1 0 5h-2" />
     </svg>
+  );
+}
+
+// ── FocusBoot ──────────────────────────────────────────────────────────────
+// What renders before `focus` is populated. Three states:
+//   starting  — the brief in-flight window between mount and the queued
+//               task's time entry resolving. Shown as a calm "Starting…"
+//               line rather than the empty-day copy, since the truth is
+//               "we're spinning up your task," not "you have no tasks."
+//   empty     — no remaining tasks for today. Reuses the same time-of-day
+//               empty message the (deleted) FocusLanding used to show.
+//   error     — startTimeEntry / DB failure. Inline message + retry. No
+//               fall-through to empty, since "there are tasks but we
+//               couldn't start one" is not the same as "no tasks."
+function FocusBoot({
+  status,
+  error,
+  onRetry,
+  onLeave,
+}: {
+  status: BootStatus;
+  error: string | null;
+  onRetry: () => void;
+  onLeave: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 flex flex-col items-center justify-center z-50 focus-ambient-bg overflow-hidden">
+      <div className="focus-vignette" />
+      <div className="relative z-[1] flex flex-col items-center text-center max-w-[420px] px-8">
+        {/* Focus identity icon — same concentric-circle motif as the nav. */}
+        <svg
+          width="34" height="34" viewBox="0 0 15 15" fill="none"
+          stroke="currentColor" strokeWidth="1.3"
+          strokeLinecap="round" strokeLinejoin="round"
+          className="text-fg-muted mb-6"
+          aria-hidden
+        >
+          <circle cx="7.5" cy="7.5" r="5.5" />
+          <circle cx="7.5" cy="7.5" r="2.5" />
+          <circle cx="7.5" cy="7.5" r="0.5" fill="currentColor" stroke="none" />
+        </svg>
+
+        {status === "starting" && (
+          <p className="text-[13px] text-fg-faded">Starting…</p>
+        )}
+
+        {status === "empty" && (() => {
+          const msg = getEmptyDayMessage();
+          return (
+            <>
+              <p className="text-[15px] text-fg-muted mb-1">{msg.title}</p>
+              <p className="text-[12px] text-fg-faded leading-relaxed">{msg.subtitle}</p>
+            </>
+          );
+        })()}
+
+        {status === "error" && (
+          <>
+            <p className="text-[15px] text-fg mb-1">Couldn't start a focus session</p>
+            <p className="text-[12px] text-fg-faded leading-relaxed mb-5">
+              {error ?? "Something went wrong."}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onRetry}
+                className="px-3.5 py-1.5 rounded-full text-[13px] text-accent-blue-soft-fg border border-accent-blue/50 hover:bg-accent-blue-soft cursor-pointer transition-colors"
+              >
+                Try again
+              </button>
+              <button
+                onClick={onLeave}
+                className="px-3.5 py-1.5 rounded-full text-[13px] text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer transition-colors"
+              >
+                Back to plan
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

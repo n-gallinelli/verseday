@@ -409,6 +409,21 @@ export default function TaskDetailOverlay({
     setLocalStatus(task.status);
   }, [task.id, task.status]);
 
+  // Listen for notes changes coming from FocusMode (or any other
+  // surface editing this same task) — keeps the detail overlay's
+  // notes in lockstep with focus when both are open at once.
+  useEffect(() => {
+    function onNotesChanged(e: Event) {
+      const ce = e as CustomEvent<{ taskId: number; html: string }>;
+      if (ce.detail.taskId !== task.id) return;
+      if (ce.detail.html === notes) return;
+      setNotes(ce.detail.html);
+    }
+    window.addEventListener("verseday:task-notes-changed", onNotesChanged);
+    return () =>
+      window.removeEventListener("verseday:task-notes-changed", onNotesChanged);
+  }, [task.id, notes]);
+
   const handleModalClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (openPopover && !target.closest("[data-time-pill]")) {
@@ -673,6 +688,14 @@ export default function TaskDetailOverlay({
               onChange={(html) => {
                 setNotes(html);
                 debouncedSave({ notes: html });
+                // Broadcast so FocusMode (or any other surface
+                // showing this task's notes) picks up the new value
+                // without a remount / refetch.
+                window.dispatchEvent(
+                  new CustomEvent("verseday:task-notes-changed", {
+                    detail: { taskId: task.id, html },
+                  })
+                );
               }}
               placeholder="..."
               className="w-full bg-elevated text-[13px] text-fg-secondary leading-relaxed min-h-[380px]"

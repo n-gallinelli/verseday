@@ -54,6 +54,10 @@ interface AppState {
   /** Promote a preview session to active. Caller has already created the
    *  time entry — pass the resulting id. */
   activateFocus: (timeEntryId: number) => void;
+  /** Patch the task on the current focus session in-place. Used so edits
+   *  made on the focus screen (notes, title) survive navigating away and
+   *  back without requiring a fresh DB fetch. */
+  updateFocusTask: (patch: Partial<Task>) => void;
   startFocus: (task: Task, timeEntryId: number, previousPage: Page, priorElapsedMs?: number) => void;
   stopFocus: () => Page;
   restoreFocus: () => void;
@@ -183,6 +187,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       previousPage: f.previousPage,
       priorElapsedMs: f.priorElapsedMs,
     };
+    persistFocus(next);
+    set({ focus: next });
+  },
+  updateFocusTask: (patch) => {
+    const f = get().focus;
+    if (!f) return;
+    const next = { ...f, task: { ...f.task, ...patch } } as FocusState;
     persistFocus(next);
     set({ focus: next });
   },

@@ -305,116 +305,100 @@ export default function FocusPip() {
     );
   }
 
-  // ── ACTIVE / PAUSED — horizontal expand ────────────────────────────
+  // ── ACTIVE / PAUSED — hover swaps the whole pip to controls ────────
   return (
     <div
       data-tauri-drag-region
-      className="select-none overflow-hidden flex flex-col"
+      className="select-none overflow-hidden relative"
       style={{ background: "var(--focus-pip-bg)", borderRadius: 18, border: "0.5px solid var(--focus-pip-border)" }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onMouseDown={handlePipMouseDown}
     >
-      {/* Main row — content anchored right, controls expand leftward */}
-      <div className="flex items-center flex-1 min-h-0">
-        {/* Task name + timer — always visible */}
-        <div className="flex items-center gap-2 pl-4 pr-2.5 py-2.5 flex-1 min-w-0">
-          <div className="flex-1 min-w-0">
-            <div
-              className="text-[14px] font-medium text-fg truncate cursor-pointer hover:text-accent-blue transition-colors leading-snug"
-              onClick={focusMainWindow}
-            >
-              {state.taskTitle}
-            </div>
-            <div className="text-[12px] tabular-nums leading-snug flex items-center gap-1.5">
-              <span className={state.paused ? "text-fg-faded" : "text-accent-green-deep"}>
-                {formatTime(state.elapsed)}
-              </span>
-              <span className="text-fg-disabled">/</span>
-              <span className="text-fg-faded">
-                {state.estimatedMinutes != null && state.estimatedMinutes > 0
-                  ? formatTime(state.estimatedMinutes * 60000)
-                  : "—"}
-              </span>
-            </div>
-          </div>
-
-          {/* Expanded controls — slide in from right, appear to left of
-              play/pause. Solid bg covers the timer text behind them so
-              the icons aren't visually fighting with "12:34 / 25:00"
-              underneath. Inset shadow on the leading edge to feather
-              the seam where the controls meet the timer area. */}
+      {/* Resting layer — task name + timer. Always rendered; the
+          control overlay sits on top during hover so this content
+          is fully covered (no peek-through behind the icons). */}
+      <div className="flex items-center gap-2 pl-4 pr-2.5 py-2.5 w-full h-full">
+        <div className="flex-1 min-w-0">
           <div
-            className="flex items-center gap-0.5 overflow-hidden flex-shrink-0 transition-all duration-150 relative z-[1]"
-            style={{
-              maxWidth: expanded ? "180px" : "0px",
-              opacity: expanded ? 1 : 0,
-              paddingRight: expanded ? "4px" : "0px",
-              paddingLeft: expanded ? "6px" : "0px",
-              background: "var(--focus-pip-bg)",
-              boxShadow: expanded
-                ? "-8px 0 8px -4px var(--focus-pip-bg)"
-                : "none",
-            }}
+            className="text-[14px] font-medium text-fg truncate cursor-pointer hover:text-accent-blue transition-colors leading-snug"
+            onClick={focusMainWindow}
           >
-            {/* Order is intentional: most-used actions sit closest to
-                the always-visible Pause on the right. Reading
-                right-to-left from Pause: Break (most common in a focus
-                cycle) → Complete → Stop → Hide. */}
-
-            {/* Hide pip — closes the mini window for the rest of this
-                focus session. Re-appears next session. */}
-            <button onClick={() => sendCommand("hidePip")} className={ICON_BTN} title="Hide mini timer">
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                {/* Eye with a diagonal slash through it */}
-                <path d="M2 8s2.4-4 6-4 6 4 6 4-2.4 4-6 4-6-4-6-4z" />
-                <circle cx="8" cy="8" r="1.6" />
-                <path d="M2.5 13.5L13.5 2.5" />
-              </svg>
-            </button>
-
-            {/* Stop */}
-            <button onClick={() => sendCommand("stop")} className={ICON_BTN} title="Stop & save">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-                <rect x="2" y="2" width="10" height="10" rx="1.5" />
-              </svg>
-            </button>
-
-            {/* Complete */}
-            <button onClick={() => sendCommand("done")} className={ICON_BTN} title="Complete task">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 8.5l3.5 3.5 6.5-7" />
-              </svg>
-            </button>
-
-            {/* Break */}
-            <button onClick={() => sendCommand("requestBreak")} className={ICON_BTN} title="Take a break">
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 12h10" />
-                <path d="M2 5h8v4a3 3 0 01-3 3H5a3 3 0 01-3-3V5z" />
-                <path d="M10 6h1.5a2 2 0 010 4H10" />
-              </svg>
-            </button>
+            {state.taskTitle}
           </div>
-
-          {/* Play/pause — always anchored to right edge */}
-          <button
-            onClick={() => sendCommand("pause")}
-            className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg hover:bg-input-hover transition-colors flex-shrink-0"
-            title={state.paused ? "Resume" : "Pause"}
-          >
-            {state.paused ? (
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="var(--accent-blue)">
-                <path d="M3 1v12l10-6z" />
-              </svg>
-            ) : (
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-                <rect x="2" y="1" width="3.5" height="12" rx="1" />
-                <rect x="8.5" y="1" width="3.5" height="12" rx="1" />
-              </svg>
-            )}
-          </button>
+          <div className="text-[12px] tabular-nums leading-snug flex items-center gap-1.5">
+            <span className={state.paused ? "text-fg-faded" : "text-accent-green-deep"}>
+              {formatTime(state.elapsed)}
+            </span>
+            <span className="text-fg-disabled">/</span>
+            <span className="text-fg-faded">
+              {state.estimatedMinutes != null && state.estimatedMinutes > 0
+                ? formatTime(state.estimatedMinutes * 60000)
+                : "—"}
+            </span>
+          </div>
         </div>
+      </div>
+
+      {/* Hover overlay — covers the entire pip when expanded so the
+          timer + title behind it are fully obscured (no visible
+          numerals peeking through the icons). Fades in/out on hover.
+          Order right-to-left: Pause (most-used) → Break → Complete →
+          Stop → Hide. */}
+      <div
+        className="absolute inset-0 flex items-center justify-end gap-0.5 px-2 transition-opacity duration-150"
+        style={{
+          background: "var(--focus-pip-bg)",
+          opacity: expanded ? 1 : 0,
+          pointerEvents: expanded ? "auto" : "none",
+        }}
+      >
+        {/* Hide pip — closes the mini window for the rest of this
+            focus session. Re-appears next session. */}
+        <button onClick={() => sendCommand("hidePip")} className={ICON_BTN} title="Hide mini timer">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 8s2.4-4 6-4 6 4 6 4-2.4 4-6 4-6-4-6-4z" />
+            <circle cx="8" cy="8" r="1.6" />
+            <path d="M2.5 13.5L13.5 2.5" />
+          </svg>
+        </button>
+
+        <button onClick={() => sendCommand("stop")} className={ICON_BTN} title="Stop & save">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+            <rect x="2" y="2" width="10" height="10" rx="1.5" />
+          </svg>
+        </button>
+
+        <button onClick={() => sendCommand("done")} className={ICON_BTN} title="Complete task">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 8.5l3.5 3.5 6.5-7" />
+          </svg>
+        </button>
+
+        <button onClick={() => sendCommand("requestBreak")} className={ICON_BTN} title="Take a break">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 12h10" />
+            <path d="M2 5h8v4a3 3 0 01-3 3H5a3 3 0 01-3-3V5z" />
+            <path d="M10 6h1.5a2 2 0 010 4H10" />
+          </svg>
+        </button>
+
+        <button
+          onClick={() => sendCommand("pause")}
+          className="w-9 h-9 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg hover:bg-input-hover transition-colors flex-shrink-0"
+          title={state.paused ? "Resume" : "Pause"}
+        >
+          {state.paused ? (
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="var(--accent-blue)">
+              <path d="M3 1v12l10-6z" />
+            </svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+              <rect x="2" y="1" width="3.5" height="12" rx="1" />
+              <rect x="8.5" y="1" width="3.5" height="12" rx="1" />
+            </svg>
+          )}
+        </button>
       </div>
 
     </div>

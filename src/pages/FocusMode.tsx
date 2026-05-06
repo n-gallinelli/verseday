@@ -6,6 +6,8 @@ import {
   checkpointTimeEntry,
   updateTaskStatus,
   updateTaskNotes,
+  updateTaskTitle,
+  updateTaskEstimate,
   getSetting,
   getTasksForDate,
   getWorkedMinutesForTask,
@@ -88,7 +90,7 @@ function playChime() {
 type BootStatus = "loading" | "empty" | "error";
 
 export default function FocusMode() {
-  const { focus, stopFocus, setPage, setPendingDetailTask, previewFocus, activateFocus } = useAppStore();
+  const { focus, stopFocus, setPage, setPendingDetailTask, previewFocus, activateFocus, updateFocusTask } = useAppStore();
 
   // Boot status — only describes the *no-focus* path: are we still
   // loading the next task, did we find no remaining tasks, or did the
@@ -168,8 +170,41 @@ export default function FocusMode() {
   const [notes, setNotes] = useState(focus?.task.notes ?? "");
   const notesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Inline title edit. titleDraft === null means the h1 renders;
+  // setting it to a string flips into the input.
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
+
+  // Planned + Actual time popovers — both use the same component
+  // shape (input + presets + clear), differ only in what they
+  // commit to.
+  const [plannedOpen, setPlannedOpen] = useState(false);
+  const [actualOpen, setActualOpen] = useState(false);
+
+  // Bumped on Done → next-task transitions to replay the tunnel-in
+  // zoom animation by remounting the wrapper that owns the keyframe.
+  const [zoomKey, setZoomKey] = useState(0);
+
   useEffect(() => {
     if (focus) setNotes(focus.task.notes ?? "");
+  }, [focus?.task.id]);
+
+  // Reset session-relative state whenever the focus task changes
+  // (e.g. Done → next-task transition). Without this the new task
+  // would inherit the previous session's elapsed counter, paused
+  // accumulator, Pomodoro phase, etc.
+  useEffect(() => {
+    setElapsed(0);
+    setPaused(false);
+    pausedAtRef.current = null;
+    pausedAccumRef.current = 0;
+    totalBreakTimeRef.current = 0;
+    workCycleStartRef.current = 0;
+    setCompletedPomodoros(0);
+    setPhase("work");
+    setBreakRemaining(0);
+    setBreakDuration(0);
+    setPrompt(null);
+    snoozeThresholdRef.current = null;
   }, [focus?.task.id]);
 
   function saveNotes(value: string) {
@@ -178,8 +213,36 @@ export default function FocusMode() {
     if (notesTimerRef.current) clearTimeout(notesTimerRef.current);
     notesTimerRef.current = setTimeout(() => {
       updateTaskNotes(taskId, value || null).catch(() => {});
+      // Mirror into the store so focus.task.notes stays fresh —
+      // navigating away and coming back will seed the editor from
+      // this updated value instead of the original session-start
+      // snapshot.
+      updateFocusTask({ notes: value || null });
+      // Broadcast so other surfaces displaying this task's notes
+      // (TaskDetailOverlay) pick up the new value without a remount.
+      window.dispatchEvent(
+        new CustomEvent("verseday:task-notes-changed", {
+          detail: { taskId, html: value },
+        })
+      );
     }, 600);
   }
+
+  // Listen for notes changes coming from other surfaces editing the
+  // same task — keeps focus's local notes state in lockstep with
+  // TaskDetailOverlay even when both are open at once.
+  useEffect(() => {
+    function onNotesChanged(e: Event) {
+      const ce = e as CustomEvent<{ taskId: number; html: string }>;
+      const id = focus?.task.id;
+      if (!id || ce.detail.taskId !== id) return;
+      if (ce.detail.html === notes) return;
+      setNotes(ce.detail.html);
+    }
+    window.addEventListener("verseday:task-notes-changed", onNotesChanged);
+    return () =>
+      window.removeEventListener("verseday:task-notes-changed", onNotesChanged);
+  }, [focus?.task.id, notes]);
 
   // Timer settings from DB — gated behind settingsLoaded
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -568,13 +631,36 @@ export default function FocusMode() {
 
   async function handleDone() {
     if (!focus || focus.mode !== "active") return;
+    const completedTaskId = focus.task.id;
     try {
       await stopTimeEntry(focus.timeEntryId, getBreakSeconds());
-      await updateTaskStatus(focus.task.id, "done");
+      await updateTaskStatus(completedTaskId, "done");
     } catch {
       // Best effort
     }
-    stopFocus();
+    // Try to load the next remaining task so the user can keep
+    // flowing through their list. New session lands as preview —
+    // user explicitly hits Start (or the timer-box click) when
+    // they're ready. Replay the tunnel-in zoom so the transition
+    // feels like a fresh focus, not a soft remount.
+    try {
+      const tasks = await getTasksForDate(todayString());
+      const remaining = tasks.filter(
+        (t) => t.status !== "done" && t.id !== completedTaskId
+      );
+      if (remaining.length === 0) {
+        stopFocus();
+        return;
+      }
+      const next = remaining[0];
+      const priorMs = (await getWorkedMinutesForTask(next.id)) * 60 * 1000;
+      const history = useAppStore.getState().pageHistory;
+      const prev: Page = (history[history.length - 1] as Page) ?? "daily";
+      previewFocus(next, prev, priorMs);
+      setZoomKey((k) => k + 1);
+    } catch {
+      stopFocus();
+    }
   }
 
   async function handleStop() {
@@ -595,6 +681,64 @@ export default function FocusMode() {
   handleSnoozeRef.current = handleSnooze;
   handleNoBreakRef.current = handleNoBreak;
   handleSkipBreakRef.current = handleSkipBreak;
+
+  // Commit the in-flight title edit. Trims, only writes if changed,
+  // updates DB + store + local notes-channel listeners (none for
+  // title, but mirrors the notes pattern for consistency).
+  function commitTitle() {
+    if (titleDraft === null) return;
+    const trimmed = titleDraft.trim();
+    const id = focus?.task.id;
+    if (id && trimmed && trimmed !== focus?.task.title) {
+      updateTaskTitle(id, trimmed).catch(() => {});
+      updateFocusTask({ title: trimmed });
+    }
+    setTitleDraft(null);
+  }
+
+  // Set the task's planned (estimated) duration. minutes === null
+  // clears the planned value. Writes to DB + store, closes popover.
+  function setPlannedMinutes(minutes: number | null) {
+    const id = focus?.task.id;
+    if (id) {
+      updateTaskEstimate(id, minutes).catch(() => {});
+      updateFocusTask({ estimated_minutes: minutes });
+    }
+    setPlannedOpen(false);
+  }
+
+  // Apply a target total-worked value to the in-flight session.
+  // Floored at priorElapsedMs (the time logged in earlier sessions
+  // for this task) so the focus screen never displays less than what
+  // the DB knows about. Reducing below the prior total is a
+  // destructive rewrite of historical time_entries — that lives in a
+  // separate, future affordance, not in this popover.
+  function applyActualMs(targetMs: number) {
+    if (!focus || focus.mode !== "active") return;
+    const newMs = Math.max(focus.priorElapsedMs, targetMs);
+    const desiredElapsed = newMs - focus.priorElapsedMs;
+    const reference = paused && pausedAtRef.current !== null ? pausedAtRef.current : Date.now();
+    pausedAccumRef.current = reference - focus.startedAt - desiredElapsed;
+    setElapsed(desiredElapsed);
+  }
+
+  // Parsing for the popover inputs.
+  function parseActualInput(raw: string): number | null {
+    const parts = raw.trim().split(":").map((p) => parseInt(p, 10));
+    if (parts.length === 0 || parts.some((n) => isNaN(n) || n < 0)) return null;
+    if (parts.length === 1) return parts[0] * 60 * 1000; // bare number = minutes
+    if (parts.length === 2) return (parts[0] * 60 + parts[1]) * 1000; // M:SS
+    if (parts.length === 3) return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
+    return null;
+  }
+
+  function parsePlannedInput(raw: string): number | null {
+    const parts = raw.trim().split(":").map((p) => parseInt(p, 10));
+    if (parts.length === 0 || parts.some((n) => isNaN(n) || n < 0)) return null;
+    if (parts.length === 1) return parts[0]; // bare number = minutes
+    if (parts.length === 2) return parts[0] * 60 + parts[1]; // H:MM
+    return null;
+  }
 
   if (!focus) {
     // No focus state in the store yet. Render based on the boot phase:
@@ -632,29 +776,20 @@ export default function FocusMode() {
   const totalWorkedMs = isQueued ? baselineMs : workElapsed + baselineMs;
   const estimatedMs = (task.estimated_minutes ?? 0) * 60 * 1000;
 
-  const ARC_RADIUS = 90;
-  const ARC_CIRCUMFERENCE = 2 * Math.PI * ARC_RADIUS;
-
   return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center z-50 focus-ambient-bg overflow-hidden">
-      {/* Tunnel-in vignette — closes in from the edges on mount,
-          settles to a soft darken so the focus screen reads as quieter
-          than the rest of the app. Decoration only. */}
-      <div className="focus-vignette" />
+    <div className="fixed inset-0 flex flex-col items-center justify-center z-50 bg-base overflow-hidden">
+      {/* Tunnel-in scale + fade wrapper. Plays once on mount and
+          again whenever zoomKey bumps (Done → next-task transition).
+          Keyed remount re-fires the CSS keyframe. */}
+      <div key={zoomKey} className="relative z-[1] w-full h-full flex flex-col items-center justify-center animate-focus-tunnel-in">
 
-      {/* Tunnel-in scale + fade wrapper. Plays once on mount: the
-          surrounding world rushes outward as the timer and title
-          scale up from center. */}
-      <div className="relative z-[1] w-full h-full flex flex-col items-center justify-center animate-focus-tunnel-in">
-
-      {/* Center content */}
-      <div className="relative text-center max-w-[760px] px-8 flex flex-col items-center mt-4">
-        {/* Pomodoro-complete celebration takes over the entire content
-            area when the prompt fires — no modal-over-screen, just the
-            screen *becoming* the celebration. Task title, notes,
-            timer, and controls are all hidden during this phase
-            (they reappear as soon as the user resolves the prompt). */}
-        {isPrompting && prompt ? (
+      {/* Pomodoro-complete celebration takes over the entire content
+          area when the prompt fires — no modal-over-screen, just the
+          screen *becoming* the celebration. Single centered column for
+          this branch; the two-column work/break layout only applies
+          when there's something to actually work on. */}
+      {isPrompting && prompt ? (
+        <div className="relative text-center max-w-[760px] px-8 flex flex-col items-center mt-4">
           <BreakCelebration
             isLongBreak={prompt.isLongBreak}
             taskTitle={task.title}
@@ -664,231 +799,264 @@ export default function FocusMode() {
             onSnooze={handleSnooze}
             onNo={handleNoBreak}
           />
-        ) : (
-          <>
-            {/* Task name — sits quieter under the dominant ring/timer.
-                Medium weight (500), 24px. Lower than its previous
-                semibold/28px hero treatment because the ring is the
-                anchor of the screen now, not the title. */}
-            <h1 className="text-[24px] font-medium text-fg mb-5 leading-snug font-display">
-              {task.title}
-            </h1>
-
-            {/* Notes editor — always visible */}
-            <RichTextEditor
-              value={notes}
-              onChange={(html) => {
-                setNotes(html);
-                saveNotes(html);
-              }}
-              placeholder="Add notes…"
-              className="w-full min-h-[120px] mb-10 px-4 py-3.5 bg-transparent text-center text-[14px] text-fg leading-relaxed"
-            />
-
-            {/* Completion burst — concentric rings that scale out and fade */}
-            {completionBurst && (
-              <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 -top-[30px] z-10" style={{ width: 240, height: 240 }}>
-                <svg
-                  viewBox="0 0 240 240"
-                  fill="none"
-                  className="absolute inset-0 animate-focus-complete-burst"
-                  style={{ transformOrigin: "center" }}
-                >
-                  <circle cx="120" cy="120" r="92" stroke="var(--accent-green)" strokeWidth="6" />
-                </svg>
-                <svg
-                  viewBox="0 0 240 240"
-                  fill="none"
-                  className="absolute inset-0 animate-focus-complete-core"
-                  style={{ transformOrigin: "center" }}
-                >
-                  <circle cx="120" cy="120" r="62" stroke="var(--accent-green)" strokeWidth="3" opacity="0.5" />
-                </svg>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Timer arc */}
-        {!isPrompting && (
-          <div className="relative mb-6 overflow-visible" style={{ width: 220, height: 220 }}>
-            {/* Pulse ring — a single shed copy of the ring expanding
-                outward and fading. Hidden when paused or queued
-                (pre-play) — absence of motion is the "not currently
-                running" signal. Wrapped in a div because WebKit won't
-                animate transforms on <svg>. */}
-            {!isQueued && !paused && (
-              <div className="absolute inset-0 focus-pulse-ring">
-                <svg
-                  viewBox="0 0 220 220"
-                  fill="none"
-                  style={{ width: 220, height: 220 }}
-                >
-                  <circle
-                    cx="110"
-                    cy="110"
-                    r={ARC_RADIUS}
-                    stroke={isOnBreak ? "var(--focus-glow-break)" : "var(--focus-glow-base)"}
-                    strokeWidth="7"
-                    fill="none"
-                  />
-                </svg>
-              </div>
-            )}
-
-            {/* Main ring — static track. The work phase deliberately
-                does not draw progress against the estimate; the user
-                wants the ring to read as a steady frame, not a
-                progress meter. The pulse rings carry the "session is
-                live" signal. Break phase overlays a draining countdown
-                arc on top of this track. */}
-            <div className="absolute inset-0">
-              <svg
-                viewBox="0 0 220 220"
-                fill="none"
-                style={{ width: 220, height: 220 }}
+        </div>
+      ) : (
+        /* Two-column layout: title + notes on the left (text grows
+           downward freely), timer + controls on the right (anchored,
+           never gets pushed by long notes). items-start so the title
+           and the top of the ring share a common top edge; the parent
+           wrapper handles vertical centering of the whole block.
+           max-w-[860px] keeps the columns tight enough to read as one
+           composed unit instead of two clusters on opposite sides.
+           VerseDay logo sits centered above the row to frame the page.
+          mb-20 shifts the composition above the viewport's vertical
+          center so the screen feels less bottom-heavy with shorter
+          notes. px-12 keeps the absolute-positioned check button
+          breathing space from the screen's left edge. */
+        <div className="relative w-full max-w-[900px] px-12 flex flex-col items-center mb-20">
+          {/* VerseDay logo — quiet ornament centered above the row,
+              framing the page. Lower opacity so it sits in the
+              background of the composition. */}
+          <div className="mb-7 opacity-70">
+            <VerseDayLogo size={56} />
+          </div>
+          {/* Single flex row containing check, title, and times — all
+              top-aligned against the title's first line via
+              items-start. Each child gets a small mt offset to
+              compensate for line-height + font-metric differences so
+              their visible tops (icon top, text cap-top, button top)
+              line up with the title's first-line cap-top. */}
+          <div className="w-full flex items-start gap-10">
+            {/* Check + title group. flex-1 so it claims the available
+                width up to max-w-[540px]; gap-3 keeps the check and
+                the title close. items-start so the check stays with
+                the title's first line even when the title wraps. */}
+            <div className="flex-1 min-w-0 max-w-[540px] flex items-start gap-3">
+              <button
+                onClick={isQueued ? undefined : handleDone}
+                disabled={isQueued}
+                className={`mt-[5px] w-7 h-7 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors group ${
+                  isQueued
+                    ? "border-line-hairline opacity-40 cursor-default"
+                    : "border-line-soft hover:border-accent-green-bright/60 hover:bg-accent-green-bright/10 cursor-pointer"
+                }`}
+                title="Mark done"
               >
-                {/* Track */}
-                <circle
-                  cx="110"
-                  cy="110"
-                  r={ARC_RADIUS}
-                  stroke="var(--focus-ring-track)"
-                  strokeWidth="7"
+                <svg
+                  width="14" height="14" viewBox="0 0 16 16"
                   fill="none"
-                />
-                {/* Break countdown — drains as the break elapses. */}
-                {isOnBreak && (
-                  <circle
-                    cx="110"
-                    cy="110"
-                    r={ARC_RADIUS}
-                    stroke="var(--focus-ring-progress)"
-                    strokeWidth="7"
+                  className="stroke-fg-faded group-hover:stroke-accent-green-deep transition-colors"
+                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                >
+                  <path d="M3 8.5l3.5 3.5 6.5-7" />
+                </svg>
+              </button>
+              <div className="flex-1 min-w-0">
+                {titleDraft !== null ? (
+                  <TitleEditor
+                    value={titleDraft}
+                    onChange={setTitleDraft}
+                    onCommit={commitTitle}
+                    onCancel={() => setTitleDraft(null)}
+                  />
+                ) : (
+                  <h1
+                    onClick={() => !isQueued && setTitleDraft(task.title)}
+                    className="text-[32px] font-medium text-fg leading-tight cursor-text hover:text-fg-secondary transition-colors"
+                    title="Click to edit"
+                  >
+                    {task.title}
+                  </h1>
+                )}
+              </div>
+            </div>
+
+          {/* Times block — Actual + Planned + Start/Pause pill.
+              mt-[3px] aligns the numerals' cap-top with the title's
+              first-line cap-top. relative hosts the completion-burst
+              overlay. */}
+          <div className="relative flex-shrink-0 flex items-start gap-6 mt-[6px]">
+              {completionBurst && (
+                <div className="pointer-events-none absolute z-10 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ width: 240, height: 240 }}>
+                  <svg
+                    viewBox="0 0 240 240"
                     fill="none"
-                    strokeLinecap="round"
-                    strokeDasharray={ARC_CIRCUMFERENCE}
-                    strokeDashoffset={ARC_CIRCUMFERENCE * (breakRemaining / breakDuration)}
-                    transform="rotate(-90 110 110)"
-                    style={{ transition: "stroke-dashoffset 0.3s ease" }}
+                    className="absolute inset-0 animate-focus-complete-burst"
+                    style={{ transformOrigin: "center" }}
+                  >
+                    <circle cx="120" cy="120" r="92" stroke="var(--accent-green)" strokeWidth="6" />
+                  </svg>
+                  <svg
+                    viewBox="0 0 240 240"
+                    fill="none"
+                    className="absolute inset-0 animate-focus-complete-core"
+                    style={{ transformOrigin: "center" }}
+                  >
+                    <circle cx="120" cy="120" r="62" stroke="var(--accent-green)" strokeWidth="3" opacity="0.5" />
+                  </svg>
+                </div>
+              )}
+
+              {/* Actual — current elapsed (or break countdown).
+                  Click numerals to open the editor popover (active
+                  sessions only). When the timer is actively counting
+                  the numerals turn green so the running state reads
+                  at a glance. Label sits below the time so the
+                  number is the anchor and the label is the gloss. */}
+              <div className="flex flex-col items-center relative">
+                <button
+                  onClick={() => {
+                    if (isQueued || isOnBreak || focus?.mode !== "active") return;
+                    setActualOpen((v) => !v);
+                  }}
+                  disabled={isQueued || isOnBreak || focus?.mode !== "active"}
+                  className={`text-[26px] font-medium tabular-nums leading-none bg-transparent border-0 p-0 ${
+                    !isQueued && !isOnBreak && focus?.mode === "active"
+                      ? "cursor-pointer hover:opacity-80"
+                      : "cursor-default"
+                  } transition-opacity`}
+                  style={{
+                    letterSpacing: "-1px",
+                    color: isOnBreak
+                      ? "var(--focus-ring-progress)"
+                      : isQueued || paused
+                        ? "var(--text-faded)"
+                        : "var(--focus-glow-base)",
+                  }}
+                  title={!isQueued && !isOnBreak && focus?.mode === "active" ? "Click to adjust" : undefined}
+                >
+                  {isOnBreak
+                    ? formatCountdown(breakRemaining)
+                    : formatTime(totalWorkedMs)}
+                </button>
+                <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-fg-faded mt-1">
+                  {isOnBreak ? "Break" : "Actual"}
+                </span>
+
+                {actualOpen && focus?.mode === "active" && (
+                  <TimePopover
+                    title="Actual"
+                    initialInput={formatTime(totalWorkedMs)}
+                    currentMinutes={Math.round(totalWorkedMs / 60000)}
+                    minMinutes={Math.ceil(focus.priorElapsedMs / 60000)}
+                    onCommitInput={(raw) => {
+                      const ms = parseActualInput(raw);
+                      if (ms !== null) applyActualMs(ms);
+                      setActualOpen(false);
+                    }}
+                    onSelectPreset={(min) => {
+                      applyActualMs(min * 60 * 1000);
+                      setActualOpen(false);
+                    }}
+                    onClear={() => {
+                      // "Clear actual" floors at the DB-known prior
+                      // total — discards only the *current session's*
+                      // contribution. Reducing below prior would
+                      // require rewriting time_entries (separate
+                      // future affordance).
+                      applyActualMs(focus.priorElapsedMs);
+                      setActualOpen(false);
+                    }}
+                    onClose={() => setActualOpen(false)}
                   />
                 )}
-              </svg>
-            </div>
-
-            {/* Timer text centered. Queued mode renders the prior logged
-                time at the same dim color the active-paused state uses
-                — visually they're both "not currently counting." */}
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <div
-                className="text-[32px] font-medium tabular-nums leading-none"
-                style={{
-                  letterSpacing: "-1px",
-                  color: isOnBreak
-                    ? "var(--focus-ring-progress)"
-                    : isQueued || paused
-                      ? "var(--text-faded)"
-                      : "var(--focus-glow-base)",
-                }}
-              >
-                {isOnBreak
-                  ? formatCountdown(breakRemaining)
-                  : formatTime(totalWorkedMs)}
               </div>
+
+              {/* Planned — estimate. Click numerals to open preset
+                  popover; "Clear planned" inside resets to none.
+                  Label sits below the time, mirroring Actual. */}
+              <div className="flex flex-col items-center relative">
+                <button
+                  onClick={() => setPlannedOpen((v) => !v)}
+                  className="text-[26px] font-medium tabular-nums leading-none cursor-pointer hover:opacity-80 transition-opacity bg-transparent border-0 p-0"
+                  style={{ letterSpacing: "-1px", color: estimatedMs > 0 ? "var(--fg)" : "var(--text-faded)" }}
+                  title="Set planned time"
+                >
+                  {estimatedMs > 0 ? formatTime(estimatedMs) : "—:——"}
+                </button>
+                <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-fg-faded mt-1">
+                  Planned
+                </span>
+
+                {plannedOpen && (
+                  <TimePopover
+                    title="Planned"
+                    initialInput={
+                      task.estimated_minutes
+                        ? `${Math.floor(task.estimated_minutes / 60)}:${(task.estimated_minutes % 60).toString().padStart(2, "0")}`
+                        : "0:00"
+                    }
+                    currentMinutes={task.estimated_minutes ?? null}
+                    onCommitInput={(raw) => {
+                      const min = parsePlannedInput(raw);
+                      if (min !== null) setPlannedMinutes(min || null);
+                      setPlannedOpen(false);
+                    }}
+                    onSelectPreset={(min) => setPlannedMinutes(min)}
+                    onClear={() => setPlannedMinutes(null)}
+                    onClose={() => setPlannedOpen(false)}
+                  />
+                )}
+              </div>
+
+              {/* Start / Pause / Resume pill — green vibrant primary
+                  CTA. During break this becomes Skip, since pause
+                  doesn't apply to break countdowns. */}
               {isOnBreak ? (
-                <p className="text-[11px] tracking-[0.06em] text-fg-faded mt-1">
-                  break
-                </p>
-              ) : paused ? (
-                <p className="text-[11px] tracking-[0.06em] text-fg-faded mt-1">
-                  paused
-                </p>
-              ) : estimatedMs > 0 ? (
-                <p className="text-[11px] tracking-[0.06em] text-fg-faded mt-1">
-                  of {formatTime(estimatedMs)}
-                </p>
-              ) : null}
-            </div>
-          </div>
-        )}
-
-        {/* Break: skip button */}
-        {isOnBreak && (
-          <button
-            onClick={handleSkipBreak}
-            className="text-[13px] text-fg-faded cursor-pointer hover:text-fg-secondary transition-colors mb-6"
-          >
-            Skip break
-          </button>
-        )}
-
-        {/* Controls — icon buttons. Hidden during the break prompt
-            so the BreakCelebration takeover *is* the screen, not a
-            card with floating Done/Stop icons under it. The 30s
-            auto-dismiss covers the escape-hatch case. */}
-        {!isOnBreak && !isPrompting && (
-          <div className="flex items-center gap-3 mb-6">
-            {/* Stop & Save — leftmost, the "leave the session" exit.
-                Dimmed and disabled in queued (pre-play) mode — there's
-                no session to stop yet. */}
-            <button
-              onClick={isQueued ? undefined : handleStop}
-              disabled={isQueued}
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
-                isQueued
-                  ? "text-fg-disabled opacity-40 cursor-default"
-                  : "text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer"
-              }`}
-              title="Stop & save"
-            >
-              <svg width="16" height="16" viewBox="0 0 14 14" fill="currentColor">
-                <rect x="2" y="2" width="10" height="10" rx="1.5" />
-              </svg>
-            </button>
-
-            {/* Mark Done — center, the reward action. Sits in the visual
-                middle so the eye lands on it; it's the affirmative finish.
-                Soft green fill (10% bright) gives it weight against the
-                ghost-style Stop and Pause; hover deepens it to 20%.
-                Dimmed in queued mode — nothing to mark done yet. */}
-            <button
-              onClick={isQueued ? undefined : handleDone}
-              disabled={isQueued}
-              className={`w-12 h-12 rounded-full border-2 flex items-center justify-center transition-colors ${
-                isQueued
-                  ? "border-accent-green-bright/20 bg-accent-green-bright/5 opacity-40 cursor-default"
-                  : "border-accent-green-bright/50 bg-accent-green-bright/10 hover:bg-accent-green-bright/20 cursor-pointer"
-              }`}
-              title="Mark done"
-            >
-              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 8.5l3.5 3.5 6.5-7" />
-              </svg>
-            </button>
-
-            {/* Pause / Resume — rightmost. In queued mode this is the
-                Play button that kicks off the session (creates the time
-                entry, starts the timer). In active mode it toggles
-                pause as today. */}
-            <button
-              onClick={isQueued ? handleStartSession : handlePause}
-              className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover transition-colors"
-              title={isQueued ? "Start" : paused ? "Resume" : "Pause"}
-            >
-              {isQueued || paused ? (
-                <svg width="18" height="18" viewBox="0 0 14 14" fill="var(--accent-blue)">
-                  <path d="M3 1v12l10-6z" />
-                </svg>
+                <button
+                  onClick={handleSkipBreak}
+                  className="inline-flex items-center justify-center gap-2 px-5 min-w-[120px] h-11 rounded-full bg-overlay-hover text-fg-secondary text-[13px] font-medium uppercase tracking-[0.1em] cursor-pointer hover:bg-overlay-pressed transition-colors"
+                >
+                  Skip
+                </button>
               ) : (
-                <svg width="18" height="18" viewBox="0 0 14 14" fill="currentColor">
-                  <rect x="2" y="1" width="3.5" height="12" rx="1" />
-                  <rect x="8.5" y="1" width="3.5" height="12" rx="1" />
-                </svg>
+                <button
+                  onClick={isQueued ? handleStartSession : handlePause}
+                  className={`inline-flex items-center justify-center gap-2 px-5 min-w-[120px] h-11 rounded-full text-[13px] font-medium uppercase tracking-[0.1em] cursor-pointer transition-colors ${
+                    isQueued || paused
+                      ? "bg-accent-green-bright text-white hover:opacity-90"
+                      : "bg-overlay-hover text-fg-secondary hover:bg-overlay-pressed"
+                  }`}
+                >
+                  {isQueued || paused ? (
+                    <>
+                      <svg width="11" height="11" viewBox="0 0 14 14" fill="currentColor">
+                        <path d="M3 1v12l10-6z" />
+                      </svg>
+                      {isQueued ? "Start" : "Resume"}
+                    </>
+                  ) : (
+                    <>
+                      <svg width="10" height="10" viewBox="0 0 14 14" fill="currentColor">
+                        <rect x="2" y="1" width="3.5" height="12" rx="1" />
+                        <rect x="8.5" y="1" width="3.5" height="12" rx="1" />
+                      </svg>
+                      Pause
+                    </>
+                  )}
+                </button>
               )}
-            </button>
           </div>
-        )}
-      </div>
+          </div>
+
+          {/* Hairline + full-width notes. The hairline starts at the
+              left edge of the title text so it visually anchors to
+              the title row, and spans about half the wrapper. */}
+          <hr
+            className="border-0 border-t border-line-hairline ml-10 mt-5 self-start"
+            style={{ width: "calc(50% - 40px)" }}
+          />
+          <RichTextEditor
+            value={notes}
+            onChange={(html) => {
+              setNotes(html);
+              saveNotes(html);
+            }}
+            placeholder="Add notes…"
+            className="w-full mt-3 min-h-[240px] pl-10 pr-4 py-3.5 bg-transparent text-left text-[14px] text-fg leading-relaxed"
+          />
+        </div>
+      )}
       </div>
     </div>
   );
@@ -972,6 +1140,177 @@ function BreakCelebration({
 
 // Coffee cup — sits inside the primary CTA. Inherits currentColor so
 // the stroke matches whatever text color the parent button uses.
+// ── TitleEditor ────────────────────────────────────────────────────────────
+// Auto-resizing textarea so the title wraps visually as the user types
+// (an <input> would force everything onto a single line until Enter).
+// Enter commits; Esc cancels; the height grows with content via a
+// scrollHeight measurement on each keystroke.
+function TitleEditor({
+  value,
+  onChange,
+  onCommit,
+  onCancel,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  onCommit: () => void;
+  onCancel: () => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      autoFocus
+      value={value}
+      rows={1}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={onCommit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          onCommit();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          onCancel();
+        }
+      }}
+      className="text-[32px] font-medium text-fg leading-tight px-4 bg-transparent outline-none w-full border-0 resize-none overflow-hidden block"
+    />
+  );
+}
+
+// ── TimePopover ────────────────────────────────────────────────────────────
+// Shared popover for the Actual + Planned readouts. Header has a live
+// editable input (Enter commits, Esc closes); body is a list of preset
+// minutes; footer is a blue "Clear {title.toLowerCase()}" link. Each
+// caller owns the parsing and commit logic so the same shape works for
+// elapsed-ms (Actual) and integer-minute (Planned).
+const TIME_PRESETS = [5, 10, 15, 20, 25, 30, 45, 60];
+
+function TimePopover({
+  title,
+  initialInput,
+  currentMinutes,
+  minMinutes = 0,
+  onCommitInput,
+  onSelectPreset,
+  onClear,
+  onClose,
+}: {
+  title: string;
+  initialInput: string;
+  /** Used to render the check next to the matching preset. */
+  currentMinutes: number | null;
+  /** Presets below this floor render disabled — used by Actual to
+   *  prevent reducing below the DB-known prior baseline. */
+  minMinutes?: number;
+  onCommitInput: (raw: string) => void;
+  onSelectPreset: (minutes: number) => void;
+  onClear: () => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [input, setInput] = useState(initialInput);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!ref.current) return;
+      if (!ref.current.contains(e.target as Node)) onClose();
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  function fmtPreset(min: number) {
+    if (min < 60) return `${min} min`;
+    if (min === 60) return "1 hr";
+    return `${(min / 60).toFixed(1)} hr`;
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-60 bg-elevated border border-line-soft rounded-lg z-30"
+      style={{ boxShadow: "var(--shadow-card)" }}
+    >
+      <div className="px-4 pt-3 pb-3 border-b border-line-hairline">
+        <div className="text-[12px] text-fg-faded mb-1">{title}:</div>
+        <input
+          autoFocus
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              onCommitInput(input);
+            }
+          }}
+          className="text-[20px] tabular-nums text-fg leading-none bg-transparent outline-none border-0 w-full"
+          style={{ letterSpacing: "-0.5px" }}
+        />
+        {/* Return-to-save hint stays visible the whole time the popover
+            is open — clicking a preset shouldn't make it flicker out
+            momentarily before the popover closes. */}
+        <div className="text-[11px] text-fg-faded mt-2 flex items-center gap-1">
+          <span className="font-mono text-[10px] px-1 py-px border border-line-hairline rounded">↵</span>
+          <span>
+            <span className="text-fg-secondary">Return</span> to save
+          </span>
+        </div>
+      </div>
+      <div className="py-1">
+        {TIME_PRESETS.map((min) => {
+          const selected = currentMinutes === min;
+          const disabled = min < minMinutes;
+          return (
+            <button
+              key={min}
+              onClick={() => !disabled && onSelectPreset(min)}
+              disabled={disabled}
+              title={disabled ? `Below the ${minMinutes}-min logged baseline` : undefined}
+              className={`w-full px-4 py-2 flex items-center justify-between text-[14px] transition-colors ${
+                disabled
+                  ? "text-fg-disabled opacity-50 cursor-not-allowed"
+                  : "text-fg cursor-pointer hover:bg-overlay-hover"
+              }`}
+            >
+              <span>{fmtPreset(min)}</span>
+              {selected && (
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 8.5l3.5 3.5 6.5-7" />
+                </svg>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <div className="border-t border-line-hairline">
+        <button
+          onClick={onClear}
+          className="w-full px-4 py-2.5 text-[14px] text-accent-blue text-left cursor-pointer hover:bg-overlay-hover transition-colors"
+        >
+          Clear {title.toLowerCase()}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CoffeeCupIcon() {
   return (
     <svg

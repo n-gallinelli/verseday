@@ -1153,6 +1153,22 @@ export async function updateTaskNotes(
   await db.execute("UPDATE tasks SET notes = $1 WHERE id = $2", [notes, id]);
 }
 
+export async function updateTaskTitle(
+  id: number,
+  title: string
+): Promise<void> {
+  const db = await getDb();
+  await db.execute("UPDATE tasks SET title = $1 WHERE id = $2", [title, id]);
+}
+
+export async function updateTaskEstimate(
+  id: number,
+  minutes: number | null
+): Promise<void> {
+  const db = await getDb();
+  await db.execute("UPDATE tasks SET estimated_minutes = $1 WHERE id = $2", [minutes, id]);
+}
+
 // Sidebar tasks (unscheduled + overdue, capped at 14 days back)
 export async function getSidebarTasks(
   today: string

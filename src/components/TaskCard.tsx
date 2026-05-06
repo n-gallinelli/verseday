@@ -402,10 +402,10 @@ function TaskCardImpl({
                   e.stopPropagation();
                   onStop(task);
                 }}
-                className="w-6 h-6 rounded-full flex items-center justify-center cursor-pointer transition-colors bg-accent-blue-soft text-accent-blue-soft-fg hover:bg-accent-blue/20"
+                className="w-6 h-6 flex items-center justify-center cursor-pointer text-accent-blue-soft-fg hover:text-accent-blue transition-colors"
                 title="Pause focus"
               >
-                <svg width="9" height="10" viewBox="0 0 9 10" fill="currentColor">
+                <svg width="10" height="11" viewBox="0 0 9 10" fill="currentColor">
                   <rect x="0.5" y="1" width="2.5" height="8" rx="0.6" />
                   <rect x="6" y="1" width="2.5" height="8" rx="0.6" />
                 </svg>

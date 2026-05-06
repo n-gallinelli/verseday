@@ -537,6 +537,26 @@ select {
   word-break: break-all;
 }
 
+/* Chain-link glyph prepended to every <a> in notes — visual cue that
+   the text is a link without forcing the user to read the underline.
+   Rendered via CSS mask so the icon picks up the link's currentColor
+   and stays visually consistent with the link text (no hardcoded
+   black). The icon only appears once Tiptap's autolink wraps the URL
+   in an <a>, which happens on space/enter — so as the user types a
+   URL it reads as normal text, and the icon shows up once the line is
+   committed. Applies anywhere notes render via RichTextEditor. */
+.tiptap a::before {
+  content: "";
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-right: 0.25em;
+  vertical-align: -0.08em;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M6.5 9.5l3-3'/><path d='M9.5 4.5a2.5 2.5 0 0 1 3.5 3.5L11 10'/><path d='M6.5 11.5a2.5 2.5 0 0 1-3.5-3.5L5 6'/></svg>") center / contain no-repeat;
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M6.5 9.5l3-3'/><path d='M9.5 4.5a2.5 2.5 0 0 1 3.5 3.5L11 10'/><path d='M6.5 11.5a2.5 2.5 0 0 1-3.5-3.5L5 6'/></svg>") center / contain no-repeat;
+}
+
 .tiptap code {
   background: var(--overlay-pressed);
   border-radius: 3px;
@@ -818,18 +838,6 @@ select {
 
 /* ── Focus Mode Animations ─────────────────────────────── */
 
-/* Pulse ring — a single "shed copy" of the timer ring that scales
-   outward and fades, signalling that the session is live. Hidden when
-   paused (the ring layer is unmounted in the JSX). */
-@keyframes focusPulseRipple {
-  0%   { opacity: 0.45; transform: scale(1); }
-  100% { opacity: 0;    transform: scale(1.22); }
-}
-
-.focus-pulse-ring {
-  animation: focusPulseRipple 2.4s ease-out infinite;
-  transform-origin: center center;
-}
 
 @keyframes focusAmbientBg {
   0% { background-color: var(--focus-ambient-cool); }
@@ -845,10 +853,6 @@ select {
   .focus-ambient-bg {
     animation: none;
     background-color: var(--focus-ambient-neutral);
-  }
-  .focus-pulse-ring {
-    animation: none;
-    opacity: 0.25;
   }
 }
 

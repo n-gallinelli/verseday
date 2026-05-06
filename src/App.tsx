@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { register } from "@tauri-apps/plugin-global-shortcut";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
 import ErrorBoundary from "./components/ErrorBoundary";
 import FocusPip from "./components/FocusPip";
@@ -90,6 +90,22 @@ function MainApp() {
     startupDone.current = true;
 
     async function startup() {
+      // Defensive: close any stray focus-pip window that survived
+      // a previous app session (force-quit, crash, etc). Must run
+      // BEFORE restoreFocus() — restoring a persisted focus state
+      // immediately mounts FocusMode, which spawns a fresh pip; we
+      // don't want a zombie left over to coexist with it.
+      try {
+        const all = await getAllWebviewWindows();
+        await Promise.all(
+          all
+            .filter((w) => w.label === "focus-pip")
+            .map((w) => w.close().catch(() => {}))
+        );
+      } catch {
+        // Non-critical — sweep is a safety net, not load-bearing.
+      }
+
       restoreFocus();
       const restored = useAppStore.getState().focus;
       if (!restored) {

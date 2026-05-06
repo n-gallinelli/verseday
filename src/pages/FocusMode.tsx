@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
 import { useAppStore } from "../stores/appStore";
 import {
   stopTimeEntry,
@@ -140,14 +140,25 @@ export default function FocusMode() {
   useEffect(() => {
     if (!focus) return;
 
-    // Create PiP window
+    // Sweep-then-create. The previous adopt-existing pattern raced
+    // against (a) HMR re-mounts where the old close() hadn't completed
+    // before the new mount queried for an existing pip, (b) force-
+    // quit zombies that survived between app sessions, and (c) silent
+    // close failures via .catch(() => {}). All three could end up
+    // with multiple pip windows. Sweeping every "focus-pip"-labeled
+    // window before creating guarantees exactly one — at the cost of
+    // losing the user's last drag position (acceptable; a separate
+    // settings key for window position can come later if missed).
+    let cancelled = false;
     (async () => {
       try {
-        const existing = await WebviewWindow.getByLabel("focus-pip");
-        if (existing) {
-          pipRef.current = existing;
-          return;
-        }
+        const all = await getAllWebviewWindows();
+        await Promise.all(
+          all
+            .filter((w) => w.label === "focus-pip")
+            .map((w) => w.close().catch(() => {}))
+        );
+        if (cancelled) return;
         const pip = new WebviewWindow("focus-pip", {
           url: "/#focus-pip",
           title: "Focus",
@@ -166,13 +177,24 @@ export default function FocusMode() {
           x: 20,
           y: 20,
         });
+        // Per Verse F1: assign first, then re-check cancelled. The
+        // window between `if (cancelled)` and the assignment is small
+        // but non-zero (new WebviewWindow triggers IPC). Assigning
+        // first guarantees the cleanup function (which reads
+        // pipRef.current) can find the new window if unmount races
+        // with creation.
         pipRef.current = pip;
+        if (cancelled) {
+          pip.close().catch(() => {});
+          pipRef.current = null;
+        }
       } catch {
         // PiP creation failed — not critical
       }
     })();
 
     return () => {
+      cancelled = true;
       // Close PiP when leaving focus mode
       pipRef.current?.close().catch(() => {});
       pipRef.current = null;

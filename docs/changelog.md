@@ -8,6 +8,32 @@
   the existing 0.5px border + 18px radius for visual containment.
 - Files: `src/components/FocusPip.tsx`
 
+### Focus pip — fix duplicate windows
+- Replaced the `getByLabel`/adopt-existing pattern with a sweep-then-
+  create flow: every focus-session start enumerates all webview
+  windows, closes any labeled `focus-pip`, then creates exactly one
+  new pip. Same sweep also runs at app startup (before `restoreFocus`)
+  to clear zombies left by force-quit / crash.
+- Added a `cancelled` guard with assign-then-recheck ordering so an
+  unmount that races with creation can still close the new window
+  (per Verse F1).
+- Trade-off: the user's last drag position resets at every session
+  start (spawn coords are `x: 20, y: 20`). A separate settings key
+  for window position is a future branch if missed.
+
+#### Manual test plan
+Author cannot run an interactive Tauri build. Three scenarios to
+validate before merge:
+1. **Force-quit zombie:** start a focus session → force-quit the app
+   from the Activity Monitor while the pip is visible → relaunch the
+   app. Expected: exactly one pip (the restored one), no leftover.
+2. **HMR survival:** start a focus session → edit `FocusMode.tsx` (any
+   trivial whitespace change) and save while Vite is running.
+   Expected: exactly one pip after the reload.
+3. **Stop + restart:** start session → click the Stop icon on the pip
+   → start a new session via any path. Expected: exactly one pip.
+- Files: `src/pages/FocusMode.tsx`, `src/App.tsx`
+
 ### Break prompt — polish pass
 - **Pip:** restored a small height bump for the prompt phase (220×88
   vs the compact 220×68). Two-row layout with a centered "Ready for

@@ -175,14 +175,21 @@ export default function DailyPlanner() {
   const [sidebarUnscheduledIds, setSidebarUnscheduledIds] = useState<number[]>([]);
   const [sidebarOverdueIds, setSidebarOverdueIds] = useState<number[]>([]);
   const [unfinishedTaskIds, setUnfinishedTaskIds] = useState<number[]>([]);
-  // Resolve to full Task arrays once per render. Keeps the existing
-  // .filter / .find call-sites untouched. Memoized to keep refs stable
-  // across renders that don't change inputs.
+  // Resolve to full Task arrays once per render. Memoized to keep refs
+  // stable across renders that don't change inputs. The bucket
+  // semantics are enforced HERE rather than trusted from the ID list
+  // because the canonical map can update faster than the local ID
+  // arrays during a pull (loadTasksForDate writes the new
+  // date_scheduled before getSidebarTasks's setSidebarUnscheduledIds
+  // fires). Without these filters a freshly-pulled task briefly
+  // appears in both `pullable` and `recent`, producing a duplicate
+  // row in the project rail.
+  const todayIsoForSidebar = new Date().toISOString().split("T")[0];
   const sidebarUnscheduled = useMemo(() => {
     const out: Task[] = [];
     for (const id of sidebarUnscheduledIds) {
       const t = tasksById.get(id);
-      if (t) out.push(t);
+      if (t && t.date_scheduled === null) out.push(t);
     }
     return out;
   }, [sidebarUnscheduledIds, tasksById]);
@@ -190,14 +197,19 @@ export default function DailyPlanner() {
     const out: Task[] = [];
     for (const id of sidebarOverdueIds) {
       const t = tasksById.get(id);
-      if (t) out.push(t);
+      if (t && t.date_scheduled !== null && t.date_scheduled < todayIsoForSidebar) {
+        out.push(t);
+      }
     }
     return out;
-  }, [sidebarOverdueIds, tasksById]);
+  }, [sidebarOverdueIds, tasksById, todayIsoForSidebar]);
   const unfinishedTasks = useMemo(() => {
     const out: Task[] = [];
     for (const id of unfinishedTaskIds) {
       const t = tasksById.get(id);
+      // Backlog rows mirror the original query — keep entries even if
+      // status flips to done mid-render; the existing render filter
+      // strips done before display.
       if (t) out.push(t);
     }
     return out;

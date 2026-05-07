@@ -22,9 +22,6 @@ import {
   getProjectStats,
   getTasksForProject,
   updateProjectSortOrders,
-  updateTask,
-  setTaskStatusFromUI,
-  deleteTask,
   archiveProject,
   searchTasksByTitle,
   PRESET_COLORS,
@@ -32,7 +29,6 @@ import {
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
 import { formatHoursMinutes } from "../utils/format";
-import TaskDetailOverlay from "../components/TaskDetailOverlay";
 import DisclosureCaret from "../components/DisclosureCaret";
 import type { Project, Task } from "../types";
 
@@ -79,6 +75,8 @@ function formatDate(iso: string): string {
 
 export default function Projects() {
   const { openProject } = useAppStore();
+  const openTaskDetail = useAppStore((s) => s.openTaskDetail);
+  const cacheTasks = useAppStore((s) => s.cacheTasks);
   const [projects, setProjects] = useState<Project[]>([]);
   const [statsMap, setStatsMap] = useState<
     Map<number, { total: number; done: number; lastDate: string | null }>
@@ -97,7 +95,6 @@ export default function Projects() {
   }, [viewMode]);
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<number>>(new Set());
   const [projectTasks, setProjectTasks] = useState<Map<number, Task[]>>(new Map());
-  const [detailTask, setDetailTask] = useState<Task | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [matchingTasks, setMatchingTasks] = useState<Task[]>([]);
   const [archivedUndo, setArchivedUndo] = useState<{ id: number; name: string } | null>(null);
@@ -125,6 +122,23 @@ export default function Projects() {
     loadData();
   }, [loadData]);
 
+  // M1.b — refetch when the singleton overlay commits a mutation.
+  // M3.2 retires this listener in favor of canonical store
+  // subscriptions; until then, the broadcast bridges the seam.
+  useEffect(() => {
+    function refresh() {
+      loadData();
+      // Drop expanded-project task caches so they reload fresh on next expand.
+      setProjectTasks(new Map());
+    }
+    window.addEventListener("verseday:task-updated", refresh);
+    window.addEventListener("verseday:task-deleted", refresh);
+    return () => {
+      window.removeEventListener("verseday:task-updated", refresh);
+      window.removeEventListener("verseday:task-deleted", refresh);
+    };
+  }, [loadData]);
+
   // Search tasks alongside projects. Lightly debounced so each keystroke
   // doesn't hit SQLite. Empty query clears the result list.
   useEffect(() => {
@@ -135,7 +149,10 @@ export default function Projects() {
     }
     const timer = setTimeout(() => {
       searchTasksByTitle(q)
-        .then(setMatchingTasks)
+        .then((tasks) => {
+          setMatchingTasks(tasks);
+          cacheTasks(tasks);
+        })
         .catch(() => setMatchingTasks([]));
     }, 120);
     return () => clearTimeout(timer);
@@ -172,6 +189,7 @@ export default function Projects() {
         if (!projectTasks.has(projectId)) {
           getTasksForProject(projectId, true).then((tasks) => {
             setProjectTasks((m) => new Map(m).set(projectId, tasks));
+            cacheTasks(tasks);
           }).catch(() => {});
         }
       }
@@ -592,7 +610,7 @@ export default function Projects() {
                                 return (
                                   <button
                                     key={task.id}
-                                    onClick={() => setDetailTask(task)}
+                                    onClick={() => openTaskDetail(task.id)}
                                     className="w-full flex items-center gap-2 px-1 py-1.5 text-left rounded-md cursor-pointer hover:bg-overlay-hover transition-colors"
                                   >
                                     {task.status === "done" ? (
@@ -645,7 +663,7 @@ export default function Projects() {
                         return (
                           <button
                             key={task.id}
-                            onClick={() => setDetailTask(task)}
+                            onClick={() => openTaskDetail(task.id)}
                             className="bg-elevated rounded-[10px] px-4 py-[12px] flex items-center gap-2.5 text-left cursor-pointer hover:bg-overlay-hover transition-colors"
                             style={{ border: "0.5px solid var(--border-hairline)" }}
                           >
@@ -731,31 +749,10 @@ export default function Projects() {
         </div>
       )}
 
-      {/* Task detail overlay */}
-      {detailTask && (
-        <TaskDetailOverlay
-          key={detailTask.id}
-          task={detailTask}
-          projects={projects}
-          onClose={() => { setDetailTask(null); loadData(); }}
-          onSave={(updates) => updateTask(updates).then(() => {
-            loadData();
-            if (detailTask.project_id != null) {
-              getTasksForProject(detailTask.project_id).then((t) => {
-                setProjectTasks((m) => new Map(m).set(detailTask.project_id!, t.slice(0, 5)));
-              }).catch(() => {});
-            }
-          }).catch(() => {})}
-          onToggle={(t) => {
-            setTaskStatusFromUI(t.id, t.status === "done" ? "todo" : "done")
-              .then(() => { setDetailTask(null); loadData(); })
-              .catch(() => {});
-          }}
-          onDelete={(id) => {
-            deleteTask(id).then(() => { setDetailTask(null); loadData(); }).catch(() => {});
-          }}
-        />
-      )}
+      {/* TaskDetailOverlay is mounted as a singleton at App.tsx
+          (M1 — see TaskDetailOverlayHost). The verseday:task-updated /
+          task-deleted listeners refresh local state when the host
+          commits changes. */}
     </div>
   );
 }

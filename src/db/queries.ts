@@ -222,6 +222,15 @@ export async function getUnfinishedRolloverTasks(): Promise<Task[]> {
   );
 }
 
+export async function getTaskById(id: number): Promise<Task | null> {
+  const db = await getDb();
+  const rows: Task[] = await db.select(
+    "SELECT * FROM tasks WHERE id = $1 LIMIT 1",
+    [id]
+  );
+  return rows[0] ?? null;
+}
+
 export async function getTasksForDate(date: string): Promise<Task[]> {
   const db = await getDb();
   // recurrence IS NULL excludes recurring templates, which can leak into a
@@ -600,9 +609,7 @@ export async function getCompletedShutdowns(
        dp.mood,
        dp.reflection,
        (SELECT COUNT(*) FROM tasks t WHERE t.date_scheduled = dp.date AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL AND t.status = 'done') AS tasks_done,
-       (SELECT COALESCE(SUM(
-          (strftime('%s', te.end_time) - strftime('%s', te.start_time)) - COALESCE(te.break_seconds, 0)
-        ), 0)
+       (SELECT COALESCE(SUM(te.worked_seconds), 0)
         FROM time_entries te
         JOIN tasks t ON te.task_id = t.id
         WHERE t.date_scheduled = dp.date AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL AND te.end_time IS NOT NULL) AS worked_seconds
@@ -665,6 +672,39 @@ export async function stopTimeEntry(
   );
 }
 
+/** Read a single time_entries row by id. Used by the worked-seconds
+ *  R1 orphan check in restoreFocus: if focus references a row that's
+ *  already closed (closeOrphanedTimeEntries closed it during a prior
+ *  run, etc.), the loader writes any locally-tracked workedMs to the
+ *  closed row and clears focus rather than letting Resume → Stop
+ *  write to a closed row.
+ *  Added in S.2 of docs/2026-05-07-worked-seconds-simplification.md. */
+export async function getTimeEntryById(
+  id: number,
+): Promise<{ id: number; end_time: string | null; worked_seconds: number } | null> {
+  const db = await getDb();
+  const rows: { id: number; end_time: string | null; worked_seconds: number }[] =
+    await db.select(
+      "SELECT id, end_time, worked_seconds FROM time_entries WHERE id = $1 LIMIT 1",
+      [id],
+    );
+  return rows[0] ?? null;
+}
+
+/** Set worked_seconds on a time_entries row. Single-row update, used
+ *  by the R1 orphan landing path and by the S.5 stop-side write.
+ *  Added in S.2. */
+export async function updateTimeEntryWorkedSeconds(
+  id: number,
+  workedSeconds: number,
+): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "UPDATE time_entries SET worked_seconds = $1 WHERE id = $2",
+    [Math.max(0, Math.round(workedSeconds)), id],
+  );
+}
+
 export async function checkpointTimeEntry(id: number): Promise<void> {
   const db = await getDb();
   await db.execute("UPDATE time_entries SET end_time = $1 WHERE id = $2", [
@@ -702,11 +742,15 @@ export async function getTotalPlannedMinutes(date: string): Promise<number> {
 
 export async function getTotalWorkedMinutes(date: string): Promise<number> {
   const db = await getDb();
+  // S.5 — reads worked_seconds directly. Open entries (the in-progress
+  // session, if any) contribute 0 until stopped — the live focus.workedMs
+  // is the source of truth for that session's contribution. Consumers
+  // that need to include the live session add focus.workedMs / 60000 at
+  // the application layer; in practice DailyPlanner re-renders on every
+  // tick anyway, and the brief gap-on-stop where a closed session pops
+  // into the total is acceptable.
   const rows: { total: number }[] = await db.select(
-    `SELECT COALESCE(SUM(
-      (julianday(COALESCE(te.end_time, datetime('now'))) - julianday(te.start_time)) * 1440
-      - COALESCE(te.break_seconds, 0) / 60.0
-    ), 0) as total
+    `SELECT COALESCE(SUM(te.worked_seconds), 0) / 60.0 as total
     FROM time_entries te
     JOIN tasks t ON te.task_id = t.id
     WHERE t.date_scheduled = $1 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL`,
@@ -772,10 +816,7 @@ export async function getWorkedMinutesForWeek(
 ): Promise<Map<string, number>> {
   const db = await getDb();
   const rows: { date_scheduled: string; total: number }[] = await db.select(
-    `SELECT t.date_scheduled, COALESCE(SUM(
-      (julianday(COALESCE(te.end_time, datetime('now'))) - julianday(te.start_time)) * 1440
-      - COALESCE(te.break_seconds, 0) / 60.0
-    ), 0) as total
+    `SELECT t.date_scheduled, COALESCE(SUM(te.worked_seconds), 0) / 60.0 as total
     FROM time_entries te
     JOIN tasks t ON te.task_id = t.id
     WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL
@@ -801,10 +842,7 @@ export async function getWorkedMinutesPerProjectPerDay(
   const db = await getDb();
   const rows: { date_scheduled: string; project_id: number | null; total: number }[] =
     await db.select(
-      `SELECT t.date_scheduled, t.project_id, COALESCE(SUM(
-        (julianday(COALESCE(te.end_time, datetime('now'))) - julianday(te.start_time)) * 1440
-        - COALESCE(te.break_seconds, 0) / 60.0
-      ), 0) as total
+      `SELECT t.date_scheduled, t.project_id, COALESCE(SUM(te.worked_seconds), 0) / 60.0 as total
       FROM time_entries te
       JOIN tasks t ON te.task_id = t.id
       WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL
@@ -1083,10 +1121,7 @@ export async function getWorkedMinutesForTaskIds(
   // SAFETY: IDs are TypeScript numbers from internal state, not user input.
   const inList = taskIds.join(",");
   const rows: { task_id: number; total: number }[] = await db.select(
-    `SELECT task_id, COALESCE(SUM(
-      (julianday(COALESCE(end_time, datetime('now'))) - julianday(start_time)) * 1440
-      - COALESCE(break_seconds, 0) / 60.0
-    ), 0) as total
+    `SELECT task_id, COALESCE(SUM(worked_seconds), 0) / 60.0 as total
     FROM time_entries
     WHERE task_id IN (${inList})
     GROUP BY task_id`,
@@ -1102,10 +1137,7 @@ export async function getWorkedMinutesForTaskIds(
 export async function getWorkedMinutesForTask(taskId: number): Promise<number> {
   const db = await getDb();
   const rows: { total: number }[] = await db.select(
-    `SELECT COALESCE(SUM(
-      (julianday(COALESCE(end_time, datetime('now'))) - julianday(start_time)) * 1440
-      - COALESCE(break_seconds, 0) / 60.0
-    ), 0) as total
+    `SELECT COALESCE(SUM(worked_seconds), 0) / 60.0 as total
     FROM time_entries
     WHERE task_id = $1`,
     [taskId]
@@ -1119,10 +1151,7 @@ export async function getWorkedMinutesByDate(
   const db = await getDb();
   const rows: { day: string; total: number }[] = await db.select(
     `SELECT date(start_time) as day,
-      COALESCE(SUM(
-        (julianday(COALESCE(end_time, datetime('now'))) - julianday(start_time)) * 1440
-        - COALESCE(break_seconds, 0) / 60.0
-      ), 0) as total
+      COALESCE(SUM(worked_seconds), 0) / 60.0 as total
     FROM time_entries
     WHERE task_id = $1
     GROUP BY date(start_time)
@@ -1139,12 +1168,12 @@ export async function setManualWorkedMinutes(
   targetMinutes: number
 ): Promise<void> {
   const db = await getDb();
-  // Current worked minutes (sums closed entries only).
+  // Current worked minutes (sums closed entries only). S.5 — reads
+  // worked_seconds. Adjustment INSERTs below also populate
+  // worked_seconds explicitly so the new entry is immediately visible
+  // to subsequent reads.
   const rows: { total: number }[] = await db.select(
-    `SELECT COALESCE(SUM(
-      (julianday(COALESCE(end_time, datetime('now'))) - julianday(start_time)) * 1440
-      - COALESCE(break_seconds, 0) / 60.0
-    ), 0) as total
+    `SELECT COALESCE(SUM(worked_seconds), 0) / 60.0 as total
     FROM time_entries
     WHERE task_id = $1 AND end_time IS NOT NULL`,
     [taskId]
@@ -1159,8 +1188,8 @@ export async function setManualWorkedMinutes(
     // Add an adjustment entry for the difference.
     const startTime = new Date(Date.now() - diff * 60 * 1000).toISOString();
     await db.execute(
-      "INSERT INTO time_entries (task_id, start_time, end_time, entry_type) VALUES ($1, $2, $3, 'tracked')",
-      [taskId, startTime, now]
+      "INSERT INTO time_entries (task_id, start_time, end_time, entry_type, worked_seconds) VALUES ($1, $2, $3, 'tracked', $4)",
+      [taskId, startTime, now, diff * 60]
     );
     return;
   }
@@ -1176,8 +1205,8 @@ export async function setManualWorkedMinutes(
   if (targetMinutes > 0) {
     const startTime = new Date(Date.now() - targetMinutes * 60 * 1000).toISOString();
     await db.execute(
-      "INSERT INTO time_entries (task_id, start_time, end_time, entry_type) VALUES ($1, $2, $3, 'tracked')",
-      [taskId, startTime, now]
+      "INSERT INTO time_entries (task_id, start_time, end_time, entry_type, worked_seconds) VALUES ($1, $2, $3, 'tracked', $4)",
+      [taskId, startTime, now, targetMinutes * 60]
     );
   }
 }

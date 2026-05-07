@@ -15,18 +15,15 @@ import {
   getTasksForWeek,
   getProjects,
   createTask,
-  updateTask,
   setTaskStatusFromUI,
   updateTaskDateScheduled,
   getAllTasksForProjectIds,
   getUnscheduledTasks,
-  setManualWorkedMinutes,
   getWeeklyShutdown,
   deleteTask,
 } from "../../db/queries";
 import ErrorBanner from "../../components/ErrorBanner";
 import { errorMessage } from "../../utils/errors";
-import TaskDetailOverlay from "../../components/TaskDetailOverlay";
 import DisclosureCaret from "../../components/DisclosureCaret";
 import {
   localDateIso,
@@ -475,6 +472,9 @@ function DayTasksModal({
 
 export default function ScheduleTab() {
   const { selectedWeek, openProject, setSchedulePlannedMinutes } = useAppStore();
+  const openTaskDetail = useAppStore((s) => s.openTaskDetail);
+  const cacheTasks = useAppStore((s) => s.cacheTasks);
+  const selectedTaskDetailId = useAppStore((s) => s.selectedTaskDetailId);
 
   const [weekTasks, setWeekTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -496,7 +496,6 @@ export default function ScheduleTab() {
   } | null>(null);
 
   // Task detail overlay
-  const [detailTask, setDetailTask] = useState<Task | null>(null);
 
   // Tasks created via the "+ Add" button on a day column — held until the
   // overlay closes. If the user closes without naming, we delete the empty
@@ -546,6 +545,7 @@ export default function ScheduleTab() {
       setWeekTasks(wt);
       setAllProjectTasks(projectTasks);
       setProjects(p);
+      cacheTasks([...wt, ...projectTasks, ...unscheduled]);
 
       // Load carry forward from previous week's shutdown
       const prevMonday = new Date(selectedWeek + "T00:00:00");
@@ -563,6 +563,21 @@ export default function ScheduleTab() {
 
   useEffect(() => {
     loadData();
+  }, [loadData]);
+
+  // M1.b — refetch when the singleton overlay commits a mutation.
+  // M3.2 retires this listener in favor of canonical store
+  // subscriptions; until then, the broadcast bridges the seam.
+  useEffect(() => {
+    function refresh() {
+      loadData();
+    }
+    window.addEventListener("verseday:task-updated", refresh);
+    window.addEventListener("verseday:task-deleted", refresh);
+    return () => {
+      window.removeEventListener("verseday:task-updated", refresh);
+      window.removeEventListener("verseday:task-deleted", refresh);
+    };
   }, [loadData]);
 
   // ── Actions ───────────────────────────────────────────────────────────
@@ -585,33 +600,52 @@ export default function ScheduleTab() {
         estimatedMinutes: null,
       });
       draftTaskIds.current.add(id);
-      // Refetch so the overlay receives a fully-formed Task row.
+      // Refetch so the singleton overlay's cache resolves the new row.
       const fresh = await getTasksForWeek(selectedWeek, fridayIso);
       const newTask = fresh.find((t) => t.id === id);
       setWeekTasks(fresh);
-      if (newTask) setDetailTask(newTask);
+      if (newTask) {
+        cacheTasks([newTask]);
+        openTaskDetail(newTask.id, { autoFocusTitle: true });
+      }
     } catch (e) {
       setError(errorMessage(e, "Failed to add task"));
     }
   }
 
-  async function handleDetailClose() {
-    const closing = detailTask;
-    setDetailTask(null);
-    if (closing && draftTaskIds.current.has(closing.id)) {
-      draftTaskIds.current.delete(closing.id);
-      try {
-        const fresh = await getTasksForWeek(selectedWeek, fridayIso);
-        const updated = fresh.find((t) => t.id === closing.id);
-        if (updated && !updated.title.trim()) {
-          await deleteTask(closing.id);
-        }
-      } catch {
-        // best effort — leave the row if the cleanup query fails
+  // Draft-task close cleanup. The singleton overlay is owned by
+  // TaskDetailOverlayHost; when it closes (selectedTaskDetailId →
+  // null), if the previously-open id was a draft created by
+  // handleCreateForDate above and its title is still empty, delete the
+  // row. M1.b — ScheduleTab keeps draft-tracking local because it's
+  // genuinely scoped to this screen's quick-add flow; the singleton
+  // doesn't need to know.
+  const prevDetailIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    const prev = prevDetailIdRef.current;
+    prevDetailIdRef.current = selectedTaskDetailId;
+    if (prev !== null && selectedTaskDetailId === null) {
+      // Overlay just closed — run draft cleanup for `prev` if applicable.
+      const closingId = prev;
+      if (draftTaskIds.current.has(closingId)) {
+        draftTaskIds.current.delete(closingId);
+        (async () => {
+          try {
+            const fresh = await getTasksForWeek(selectedWeek, fridayIso);
+            const updated = fresh.find((t) => t.id === closingId);
+            if (updated && !updated.title.trim()) {
+              await deleteTask(closingId);
+            }
+          } catch {
+            // best effort — leave the row if the cleanup query fails
+          }
+          loadData();
+        })();
+      } else {
+        loadData();
       }
     }
-    loadData();
-  }
+  }, [selectedTaskDetailId, selectedWeek, fridayIso, loadData]);
 
 
   function navigateToProject(id: number) {
@@ -806,7 +840,7 @@ export default function ScheduleTab() {
                     tasks={group.tasks}
                     weekDates={weekDates}
                     onToggleTask={toggleTask}
-                    onOpenDetail={setDetailTask}
+                    onOpenDetail={(t) => openTaskDetail(t.id)}
                     onNavigateProject={navigateToProject}
                   />
                 ))}
@@ -823,7 +857,7 @@ export default function ScheduleTab() {
                           task={task}
                           weekDates={weekDates}
                           onToggleTask={toggleTask}
-                          onOpenDetail={setDetailTask}
+                          onOpenDetail={(t) => openTaskDetail(t.id)}
                           isLast={i === unassignedTasks.length - 1}
                         />
                       ))}
@@ -877,7 +911,7 @@ export default function ScheduleTab() {
                     projectMap={projectMap}
                     isToday={isToday}
                     onCreateForDate={handleCreateForDate}
-                    onOpenDetail={setDetailTask}
+                    onOpenDetail={(t) => openTaskDetail(t.id)}
                   />
                 </div>
               </div>
@@ -896,19 +930,9 @@ export default function ScheduleTab() {
       </DragOverlay>
       </DndContext>
 
-      {/* Task detail overlay */}
-      {detailTask && (
-        <TaskDetailOverlay
-          key={detailTask.id}
-          task={detailTask}
-          projects={projects}
-          autoFocusTitle={draftTaskIds.current.has(detailTask.id)}
-          onClose={handleDetailClose}
-          onSave={(updates) => updateTask(updates).then(() => loadData()).catch(() => {})}
-          onToggle={(t) => { toggleTask(t).catch(() => {}); }}
-          onSetWorkedMinutes={(id, mins) => setManualWorkedMinutes(id, mins).then(() => loadData()).catch(() => {})}
-        />
-      )}
+      {/* TaskDetailOverlay is mounted as a singleton at App.tsx
+          (M1 — see TaskDetailOverlayHost). Draft-task cleanup on close
+          is handled by the prevDetailIdRef effect above. */}
 
       {/* Day modal — shows tasks scheduled for a single day */}
       {dayModalDate && (
@@ -920,7 +944,7 @@ export default function ScheduleTab() {
           onToggle={toggleTask}
           onOpenDetail={(t) => {
             setDayModalDate(null);
-            setDetailTask(t);
+            openTaskDetail(t.id);
           }}
         />
       )}

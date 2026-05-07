@@ -22,7 +22,6 @@ import { CSS } from "@dnd-kit/utilities";
 import { useAppStore } from "../stores/appStore";
 import {
   getProjectById,
-  getProjects,
   getTasksForProject,
   updateProject,
   createTask,
@@ -42,7 +41,6 @@ import {
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
-import TaskDetailOverlay from "../components/TaskDetailOverlay";
 import CalendarPicker from "../components/CalendarPicker";
 import { parseTimeFromTitle } from "../utils/format";
 import RichTextEditor from "../components/RichTextEditor";
@@ -443,10 +441,11 @@ function SortableTaskRow({
 
 export default function ProjectDetail() {
   const { selectedProjectId, openProject, startFocus, goBack, setPage } = useAppStore();
+  const openTaskDetail = useAppStore((s) => s.openTaskDetail);
+  const cacheTasks = useAppStore((s) => s.cacheTasks);
   const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [workedMap, setWorkedMap] = useState<Map<number, number>>(new Map());
-  const [projects, setProjects] = useState<Project[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(true);
 
@@ -479,7 +478,6 @@ export default function ProjectDetail() {
   const [taskEditDate, setTaskEditDate] = useState("");
 
   // Task detail overlay
-  const [detailTask, setDetailTask] = useState<Task | null>(null);
 
   // Title shown in the floating drag chip — set on drag start, cleared
   // on drag end. Drives the DragOverlay so the user has live visual
@@ -505,12 +503,9 @@ export default function ProjectDetail() {
   const refreshTasks = useCallback(async () => {
     if (!selectedProjectId) return;
     try {
-      const [t, allP] = await Promise.all([
-        getTasksForProject(selectedProjectId, showDone),
-        getProjects(),
-      ]);
+      const t = await getTasksForProject(selectedProjectId, showDone);
       setTasks(t);
-      setProjects(allP.filter((pr) => !pr.archived));
+      cacheTasks(t);
       setError(null);
       try {
         const wmap = await getWorkedMinutesForTaskIds(t.map((task) => task.id));
@@ -527,14 +522,13 @@ export default function ProjectDetail() {
   const loadData = useCallback(async () => {
     if (!selectedProjectId) return;
     try {
-      const [p, t, allP] = await Promise.all([
+      const [p, t] = await Promise.all([
         getProjectById(selectedProjectId),
         getTasksForProject(selectedProjectId, showDone),
-        getProjects(),
       ]);
       setProject(p);
       setTasks(t);
-      setProjects(allP.filter((pr) => !pr.archived));
+      cacheTasks(t);
       try {
         const wmap = await getWorkedMinutesForTaskIds(t.map((task) => task.id));
         setWorkedMap(wmap);
@@ -571,6 +565,21 @@ export default function ProjectDetail() {
     setEditingTaskId(null);
     setConfirmDeleteId(null);
   }, [loadData]);
+
+  // M1.b — refetch when the singleton overlay commits a mutation.
+  // M3.2 retires this listener in favor of canonical store
+  // subscriptions; until then, the broadcast bridges the seam.
+  useEffect(() => {
+    function refresh() {
+      refreshTasks();
+    }
+    window.addEventListener("verseday:task-updated", refresh);
+    window.addEventListener("verseday:task-deleted", refresh);
+    return () => {
+      window.removeEventListener("verseday:task-updated", refresh);
+      window.removeEventListener("verseday:task-deleted", refresh);
+    };
+  }, [refreshTasks]);
 
   // ── Project auto-save (debounced) ─────────────────────────────────────
 
@@ -1258,7 +1267,7 @@ export default function ProjectDetail() {
                       task={task}
                       workedMinutes={workedMap.get(task.id) ?? 0}
                       onToggle={toggleTask}
-                      onOpenDetail={setDetailTask}
+                      onOpenDetail={(t) => openTaskDetail(t.id)}
                       onDelete={(id) => setConfirmDeleteId(id)}
                       onStart={handleStartFocus}
                       onSetDate={(id, date) => {
@@ -1385,7 +1394,7 @@ export default function ProjectDetail() {
                     dayTasks={tasks.filter((t) => t.date_scheduled === date)}
                     accentColor={editColor}
                     onQuickAdd={() => setQuickAddDate(date)}
-                    onOpenTask={setDetailTask}
+                    onOpenTask={(t) => openTaskDetail(t.id)}
                   />
                 ))}
               </div>
@@ -1435,19 +1444,10 @@ export default function ProjectDetail() {
           )}
         </div>
 
-      {/* Task detail overlay */}
-      {detailTask && (
-        <TaskDetailOverlay
-          key={detailTask.id}
-          task={detailTask}
-          projects={projects}
-          onClose={() => { setDetailTask(null); refreshTasks(); }}
-          onSave={(updates) => updateTask(updates).then(() => refreshTasks()).catch(() => {})}
-          onToggle={(t) => { toggleTask(t); }}
-          onDelete={(id) => { handleDeleteTask(id); setDetailTask(null); }}
-          onStartFocus={(t) => { handleStartFocus(t); setDetailTask(null); }}
-        />
-      )}
+      {/* TaskDetailOverlay is mounted as a singleton at App.tsx
+          (M1 — see TaskDetailOverlayHost). The verseday:task-updated /
+          task-deleted listeners refresh local state when the host
+          commits changes. */}
 
       {/* Quick-add modal — pops up when a "This week" day cell is clicked */}
       {quickAddDate && (

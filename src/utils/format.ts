@@ -40,7 +40,10 @@ export function formatHoursMinutes(totalMinutes: number): string {
   const m = Math.round(totalMinutes % 60);
   if (h === 0) return `${m}m`;
   if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
+  // Zero-pad the minutes part when hours are present so "1h 09m"
+  // reads as a fixed-width duration rather than mixing widths
+  // (1h 9m looked off in the daily-plan column).
+  return `${h}h ${m.toString().padStart(2, "0")}m`;
 }
 
 export interface EmptyDayMessage {

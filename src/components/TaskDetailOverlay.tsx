@@ -343,10 +343,12 @@ export default function TaskDetailOverlay({
   autoFocusTitle = false,
 }: TaskDetailOverlayProps) {
   // Cross-screen sync: when this overlay edits the task that's currently
-  // focused, mirror the change into the store so FocusMode (and any other
-  // screen reading from focus.task) sees the new values immediately.
+  // focused, mirror the change into the cache so FocusMode (and any other
+  // surface reading via selectFocusedTask) sees the new values
+  // immediately. M2.2 — `updateFocusTask` is now a thin cacheTasks
+  // wrapper; signature unchanged for callers.
   const { focus, updateFocusTask, setFocusPriorElapsedMs } = useAppStore();
-  const isFocusedTask = focus?.task.id === task.id;
+  const isFocusedTask = focus?.taskId === task.id;
 
   const [title, setTitle] = useState(task.title);
   const titleRef = useRef<HTMLTextAreaElement | null>(null);
@@ -413,6 +415,20 @@ export default function TaskDetailOverlay({
   useEffect(() => {
     getWorkedMinutesByDate(task.id).then(setDayBreakdown).catch(() => {});
   }, [task.id]);
+
+  // Sync local `worked` draft to the workedMinutes prop. The host
+  // (TaskDetailOverlayHost) fetches workedMinutes asynchronously after
+  // the overlay mounts, so the initial render sees workedMinutes=0
+  // and the useState initializer above seeds `worked=""`. Without this
+  // sync, the field stays at "" even after the fetch lands.
+  // Pre-S.5 this was masked because the wall-clock query returned
+  // non-zero for in-progress sessions, so workedMinutes was rarely 0
+  // at mount; under the worked-seconds model, a freshly-stopped task
+  // legitimately reports its real worked time only after the async
+  // fetch completes.
+  useEffect(() => {
+    setWorked(workedMinutes > 0 ? workedMinutes.toString() : "");
+  }, [workedMinutes]);
 
   // Close popover on click outside
   // Sync local status if parent refreshes the task object.

@@ -17,6 +17,7 @@ import Dashboard from "./pages/Dashboard";
 import Settings from "./pages/Settings";
 import PastShutdowns from "./pages/PastShutdowns";
 import WrapUpReminder from "./components/WrapUpReminder";
+import TaskDetailOverlayHost from "./components/TaskDetailOverlayHost";
 import { useAppStore } from "./stores/appStore";
 import {
   closeOrphanedTimeEntries,
@@ -105,7 +106,7 @@ function MainApp() {
         // Non-critical — sweep is a safety net, not load-bearing.
       }
 
-      restoreFocus();
+      await restoreFocus();
       const restored = useAppStore.getState().focus;
       if (!restored) {
         await closeOrphanedTimeEntries();
@@ -385,6 +386,13 @@ function MainApp() {
       {(currentPage === "focus" || focus?.mode === "active") && (
         <FocusMode visible={currentPage === "focus"} />
       )}
+
+      {/* Singleton task detail overlay (Verse rule 2). One mount for the
+          whole app; opened by setting selectedTaskDetailId in the store
+          via openTaskDetail(id). M1.a — additive seam: the six per-screen
+          mounts are still in place; this host stays inert until M1.b
+          rewires their callers to openTaskDetail. */}
+      <TaskDetailOverlayHost />
     </ErrorBoundary>
   );
 }

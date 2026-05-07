@@ -540,6 +540,43 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 22,
+            description: "worked-seconds simplification: directly-stored worked_seconds on time_entries",
+            // v22 adds a directly-stored worked-seconds counter to
+            // time_entries, replacing the wall-clock derivation
+            // ((end_time - start_time) - break_seconds) used by the
+            // worked-minutes queries. Closed rows are backfilled one
+            // time from the existing wall-clock formula; open rows
+            // (end_time IS NULL) keep the default 0 — the running
+            // session writes its workedMs / 1000 on stop going forward.
+            //
+            // start_time / end_time / break_seconds columns stay
+            // populated for audit, reports, and debugging. Reads
+            // switch to worked_seconds in S.5; writes still set
+            // end_time on stop for the audit trail.
+            //
+            // The MAX(0, ...) guard handles edge data where
+            // break_seconds exceeded the wall-clock duration (corrupt
+            // / pre-existing rows; shouldn't exist in practice).
+            // CAST(ROUND(...) AS INTEGER) gives integer seconds with
+            // proper round-half-to-even (SQLite's default).
+            //
+            // Design: docs/2026-05-07-worked-seconds-simplification.md
+            // (rev 2 — Verse-approved).
+            sql: "
+                ALTER TABLE time_entries ADD COLUMN worked_seconds INTEGER NOT NULL DEFAULT 0;
+
+                UPDATE time_entries
+                SET worked_seconds = MAX(
+                  0,
+                  CAST(ROUND((julianday(end_time) - julianday(start_time)) * 86400) AS INTEGER)
+                    - COALESCE(break_seconds, 0)
+                )
+                WHERE end_time IS NOT NULL;
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

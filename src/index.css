@@ -145,8 +145,11 @@
   --focus-ring-progress: #4a9e6e;
   --focus-glow-base: #4a9e6e;
   --focus-glow-break: #4a9e6e;
-  --focus-pip-bg: #f5f4f0;
+  --focus-pip-bg: #ffffff;
   --focus-pip-border: rgba(0, 0, 0, 0.08);
+  /* Full-screen focus surface (FocusMode + FocusBoot). Pure white in
+     light mode for a clean canvas; near-black in dark mode. */
+  --focus-bg: #ffffff;
 
   /* — Scrollbar — */
   --scrollbar-thumb: rgba(0, 0, 0, 0.10);
@@ -298,6 +301,10 @@
     --focus-glow-break: #52a981;
     --focus-pip-bg: #1f1f24;
     --focus-pip-border: rgba(255, 255, 255, 0.10);
+    /* Dark counterpart for the full-screen focus surface — matches
+       the app's base dark canvas so focus mode reads as a calm
+       night view, not a bright light source. */
+    --focus-bg: #16161a;
 
     /* — Scrollbar — */
     --scrollbar-thumb: rgba(255, 255, 255, 0.12);

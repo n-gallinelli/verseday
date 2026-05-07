@@ -772,7 +772,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-0 flex flex-col items-center z-50 overflow-hidden" style={{ background: "#ffffff" }}>
+    <div className="fixed inset-0 flex flex-col items-center z-50 overflow-hidden" style={{ background: "var(--focus-bg)" }}>
       {/* Tunnel-in scale + fade wrapper. Plays once on mount and
           again whenever zoomKey bumps (Done → next-task transition).
           Keyed remount re-fires the CSS keyframe. Top-anchored
@@ -1368,7 +1368,7 @@ function FocusBoot({
   }, [onLeave]);
 
   return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center z-50 overflow-hidden" style={{ background: "#ffffff" }}>
+    <div className="fixed inset-0 flex flex-col items-center justify-center z-50 overflow-hidden" style={{ background: "var(--focus-bg)" }}>
       <div className="relative z-[1] flex flex-col items-center text-center max-w-[420px] px-8">
         {/* VerseDay logo — calm brand mark for the empty/error state.
             Matches the active focus screen so the page identity is

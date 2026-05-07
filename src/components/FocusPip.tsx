@@ -11,9 +11,9 @@ import { playBreakChime as playCalm } from "../utils/sounds";
 const PIP_SIZE_COMPACT = { width: 220, height: 60 };
 const PIP_SIZE_PROMPT = { width: 220, height: 80 };
 
-// Pure-white solid surface — overrides the themed --focus-pip-bg so
-// the pip always reads as a clean tag against any desktop wallpaper.
-const PIP_BG = "#ffffff";
+// Pip surface color — themed via --focus-pip-bg so the pip reads
+// white in light mode and dark in night mode against the desktop.
+const PIP_BG = "var(--focus-pip-bg)";
 
 const PIP_STATE_KEY = "verseday_pip_state";
 const PIP_CMD_KEY = "verseday_pip_cmd";

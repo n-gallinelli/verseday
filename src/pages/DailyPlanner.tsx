@@ -496,10 +496,23 @@ export default function DailyPlanner() {
         // the old time entry in the DB and optimistically update
         // workedMap so the old row's pill flips from live → static
         // cleanly with no flash.
-        const finalElapsedMs = (Date.now() - current.startedAt) + current.priorElapsedMs;
+        //
+        // M2.4 — paused time on the outgoing session feeds break_seconds
+        // so the stored worked minutes exclude paused stretches.
+        // (Pomodoro break time isn't tracked on this path — it lives
+        // local to FocusMode; pre-existing behavior.)
+        const now = Date.now();
+        const openPauseMs =
+          current.paused && current.pausedAtMs !== null
+            ? now - current.pausedAtMs
+            : 0;
+        const breakSeconds = (current.pausedAccumMs + openPauseMs) / 1000;
+        const finalElapsedMs =
+          now - current.startedAt - current.pausedAccumMs - openPauseMs +
+          current.priorElapsedMs;
         const finalMinutes = Math.floor(finalElapsedMs / 60000);
         const oldTaskId = current.taskId;
-        await stopTimeEntry(current.timeEntryId, 0);
+        await stopTimeEntry(current.timeEntryId, breakSeconds);
         setWorkedMap((prev) => {
           const next = new Map(prev);
           next.set(oldTaskId, finalMinutes);
@@ -559,7 +572,17 @@ export default function DailyPlanner() {
     // value seeds the optimistic workedMap update so the time pill flips
     // from live → static without flashing through 0m or a stale value
     // while loadData() refetches.
-    const finalElapsedMs = (Date.now() - f.startedAt) + f.priorElapsedMs;
+    //
+    // M2.4 — paused time excluded from both the optimistic value and the
+    // DB break_seconds so the displayed and recorded minutes match.
+    // (Function is currently dead code per M3.5 cleanup target; updated
+    // for correctness in case it's ever rewired.)
+    const now = Date.now();
+    const openPauseMs =
+      f.paused && f.pausedAtMs !== null ? now - f.pausedAtMs : 0;
+    const breakSeconds = (f.pausedAccumMs + openPauseMs) / 1000;
+    const finalElapsedMs =
+      now - f.startedAt - f.pausedAccumMs - openPauseMs + f.priorElapsedMs;
     const finalMinutes = Math.floor(finalElapsedMs / 60000);
     const taskId = f.taskId;
     setWorkedMap((prev) => {
@@ -568,7 +591,7 @@ export default function DailyPlanner() {
       return next;
     });
     try {
-      await stopTimeEntry(f.timeEntryId, 0);
+      await stopTimeEntry(f.timeEntryId, breakSeconds);
       stopFocus();
       // Synchronous-feeling refresh: loadData replaces the optimistic
       // value with the authoritative one from time_entries; should match

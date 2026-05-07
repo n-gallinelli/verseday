@@ -693,8 +693,23 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     setBreakRemaining(0);
   }
 
+  // Total non-worked seconds for this session — fed to stopTimeEntry's
+  // break_seconds column so downstream worked-minutes queries
+  // (getWorkedMinutesForTaskIds) compute against actual work time.
+  // Combines Pomodoro break time (totalBreakTimeRef, FocusMode-local)
+  // with all paused time (closed pauses via focus.pausedAccumMs plus
+  // any open pause if the user is stopping while paused). M2.4 — the
+  // paused-time portion is new; pre-M2.4 it was implicitly counted as
+  // worked time, over-recording by however long the user paused.
   function getBreakSeconds(): number {
-    return totalBreakTimeRef.current / 1000;
+    let total = totalBreakTimeRef.current;
+    if (focus && focus.mode === "active") {
+      total += focus.pausedAccumMs;
+      if (focus.paused && focus.pausedAtMs !== null) {
+        total += Date.now() - focus.pausedAtMs;
+      }
+    }
+    return total / 1000;
   }
 
   async function handleDone() {

@@ -1,7 +1,11 @@
 import { create } from "zustand";
 import type { Page, Task } from "../types";
 import { todayString, mondayOfWeek } from "../utils/dates";
-import { getTaskById } from "../db/queries";
+import {
+  getTaskById,
+  getTimeEntryById,
+  updateTimeEntryWorkedSeconds,
+} from "../db/queries";
 
 const FOCUS_STORAGE_KEY = "verseday_focus";
 const SIDEBAR_COLLAPSED_KEY = "verseday_sidebar_collapsed";
@@ -34,10 +38,18 @@ export type FocusState =
       // no time entry, so pause is meaningless there. togglePauseFocus
       // guards mode === "active".
       paused: boolean;
-      /** Wall-clock ms when current pause began; null when running. */
+      /** Wall-clock ms when current pause began; null when running.
+       *  TRANSITIONAL — retired in S.5 of the worked-seconds simplification
+       *  (docs/2026-05-07-worked-seconds-simplification.md). */
       pausedAtMs: number | null;
-      /** Total paused time this session, excluding any open pause. */
+      /** Total paused time this session, excluding any open pause.
+       *  TRANSITIONAL — retired in S.5. */
       pausedAccumMs: number;
+      /** Worked time this session, in ms. Incremented by tickFocus while
+       *  running. Becomes the source of truth for the displayed counter
+       *  in S.3 and for the DB worked_seconds column in S.5. Added in
+       *  S.2 alongside the wall-clock fields (dual-write seam). */
+      workedMs: number;
     };
 
 interface AppState {
@@ -108,7 +120,7 @@ interface AppState {
   setFocusPriorElapsedMs: (taskId: number, priorMs: number) => void;
   startFocus: (task: Task, timeEntryId: number, previousPage: Page, priorElapsedMs?: number) => void;
   stopFocus: () => Page;
-  restoreFocus: () => void;
+  restoreFocus: () => Promise<void>;
   /** Toggle pause on the active focus session. Manages pausedAtMs /
    *  pausedAccumMs internally. No-op if focus is null or in preview mode.
    *  M2.1 — wired from FocusMode/PiP/DailyPlan in M2.2/M2.3. */
@@ -121,6 +133,14 @@ interface AppState {
    *  helper at src/utils/focusElapsed.ts returns minus priorElapsedMs).
    *  No-op if focus is null or in preview mode. */
   adjustFocusElapsed: (desiredElapsedMs: number) => void;
+  /** Increment the running session's workedMs by deltaMs. No-op if
+   *  focus is null, in preview mode, or paused. Caller passes
+   *  `Date.now() - lastTickAt` (not a fixed 1000ms) so JS event-loop
+   *  stalls don't drift the counter. Persists on every call —
+   *  per-second localStorage write is cheap; the persisted value is
+   *  the answer if the app crashes between writes. Added in S.2 of
+   *  the worked-seconds simplification. */
+  tickFocus: (deltaMs: number) => void;
   setPendingDetailTask: (task: Task | null) => void;
   /** Toggle the sidebar (smart: focus pages flip the ephemeral override; other pages flip the persisted preference). */
   toggleSidebar: () => void;
@@ -206,17 +226,40 @@ function loadPersistedFocus(): LoadedFocus | null {
       localStorage.removeItem(FOCUS_STORAGE_KEY);
       return null;
     }
+    // S.2 — workedMs derivation for in-flight state migration.
+    // Pre-S.2 persisted state has wall-clock fields but no workedMs.
+    // Derive once from the legacy formula. After this load,
+    // restoreFocus immediately persists the new shape (R3) so the
+    // shim is one-shot.
+    //
+    // If the previous session was running (paused === false), force
+    // it paused. We don't want to start ticking workedMs into a
+    // session whose user mental model says "I quit, I wasn't working
+    // during the quit." User clicks Resume to continue.
+    const paused = active.paused ?? false;
+    const startedAt = active.startedAt;
+    const pausedAccumMs = active.pausedAccumMs ?? 0;
+    const pausedAtMs = active.pausedAtMs ?? null;
+    let workedMs = (active as Partial<Extract<FocusState, { mode: "active" }>>).workedMs;
+    let derivedAndForcedPaused = false;
+    if (workedMs === undefined) {
+      const now = Date.now();
+      const openPause = paused && pausedAtMs !== null ? now - pausedAtMs : 0;
+      workedMs = Math.max(0, now - startedAt - pausedAccumMs - openPause);
+      derivedAndForcedPaused = !paused; // only force if was running
+    }
     return {
       focus: {
         mode: "active",
         taskId,
         timeEntryId: active.timeEntryId,
-        startedAt: active.startedAt,
+        startedAt,
         previousPage: active.previousPage ?? "daily",
         priorElapsedMs: active.priorElapsedMs ?? 0,
-        paused: active.paused ?? false,
-        pausedAtMs: active.pausedAtMs ?? null,
-        pausedAccumMs: active.pausedAccumMs ?? 0,
+        paused: derivedAndForcedPaused ? true : paused,
+        pausedAtMs,
+        pausedAccumMs,
+        workedMs,
       },
       legacyTaskSnapshot: legacyTask ?? null,
     };
@@ -338,6 +381,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       paused: false,
       pausedAtMs: null,
       pausedAccumMs: 0,
+      // S.2 — worked-seconds counter starts at 0. Tick effect bumps it
+      // via tickFocus. Wall-clock fields above stay populated for the
+      // dual-write seam (S.4 keeps them; S.5 retires).
+      workedMs: 0,
     };
     persistFocus(next);
     set({ focus: next });
@@ -388,6 +435,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       paused: false,
       pausedAtMs: null,
       pausedAccumMs: 0,
+      // S.2 — see activateFocus comment.
+      workedMs: 0,
     };
     get().cacheTasks([task]);
     persistFocus(focus);
@@ -411,7 +460,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     return prev;
   },
-  restoreFocus: () => {
+  restoreFocus: async () => {
     const persisted = loadPersistedFocus();
     if (!persisted) return;
     // Prime the cache so selectFocusedTask resolves on first render.
@@ -434,6 +483,44 @@ export const useAppStore = create<AppState>((set, get) => ({
           // or list refresh anyway.
         });
     }
+
+    // S.2 R1 — orphan-entry-referenced-by-focus check. If the time
+    // entry the focus points at is already closed (e.g.
+    // closeOrphanedTimeEntries closed it during a prior run), don't
+    // restore the focus; that would let a future Resume → Stop write
+    // to a closed row. Land any locally-tracked workedMs on the
+    // closed row first (only if its worked_seconds is currently 0 —
+    // don't clobber a real backfill or prior write), then clear focus.
+    if (persisted.focus.mode === "active") {
+      try {
+        const entry = await getTimeEntryById(persisted.focus.timeEntryId);
+        if (entry && entry.end_time !== null) {
+          if ((entry.worked_seconds ?? 0) === 0 && persisted.focus.workedMs > 0) {
+            await updateTimeEntryWorkedSeconds(
+              persisted.focus.timeEntryId,
+              Math.round(persisted.focus.workedMs / 1000),
+            );
+          }
+          persistFocus(null);
+          return;
+        }
+      } catch {
+        // DB read failed. Fall through and restore focus normally —
+        // worse to crash on boot than to dangle a focus reference;
+        // closeOrphanedTimeEntries (called after restoreFocus in
+        // App.tsx) plus the existing stop path are the next safety net.
+      }
+    }
+
+    // S.2 R3 — if the loader's in-flight migration shim derived a
+    // workedMs value (i.e. the persisted shape lacked the field), the
+    // shim already set it on persisted.focus. Persist immediately so
+    // the next launch sees the new shape and the shim becomes a
+    // no-op. Without this flush, every boot re-runs the shim against
+    // unchanged old-shape JSON — wasted work and a perpetual
+    // derivation step.
+    persistFocus(persisted.focus);
+
     set({ currentPage: "focus", focus: persisted.focus });
   },
   togglePauseFocus: () => {
@@ -467,6 +554,28 @@ export const useAppStore = create<AppState>((set, get) => ({
     const reference = f.paused && f.pausedAtMs !== null ? f.pausedAtMs : now;
     const newAccum = reference - f.startedAt - desiredElapsedMs;
     const next = { ...f, pausedAccumMs: newAccum };
+    persistFocus(next);
+    set({ focus: next });
+  },
+  tickFocus: (deltaMs) => {
+    // S.2 — increments workedMs while the session is running. No-op if
+    // focus is null, in preview mode, or paused. Caller passes the
+    // wall-clock delta since the last tick (Date.now() - lastTickAt),
+    // not a fixed cadence — JS event-loop stalls or background-tab
+    // throttling don't drift the counter; a stalled tick catches up
+    // on the next iteration.
+    //
+    // Persists on every call. localStorage write-per-second is cheap;
+    // the persisted value IS the answer if the app crashes.
+    //
+    // Wall-clock fields (startedAt/pausedAtMs/pausedAccumMs) are NOT
+    // touched here — the dual-write seam in S.4 keeps them maintained
+    // separately so wall-clock-derived queries continue to work
+    // until the S.5 atomic cutover.
+    const f = get().focus;
+    if (!f || f.mode !== "active" || f.paused) return;
+    if (deltaMs <= 0) return;
+    const next: FocusState = { ...f, workedMs: f.workedMs + deltaMs };
     persistFocus(next);
     set({ focus: next });
   },

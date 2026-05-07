@@ -674,6 +674,39 @@ export async function stopTimeEntry(
   );
 }
 
+/** Read a single time_entries row by id. Used by the worked-seconds
+ *  R1 orphan check in restoreFocus: if focus references a row that's
+ *  already closed (closeOrphanedTimeEntries closed it during a prior
+ *  run, etc.), the loader writes any locally-tracked workedMs to the
+ *  closed row and clears focus rather than letting Resume → Stop
+ *  write to a closed row.
+ *  Added in S.2 of docs/2026-05-07-worked-seconds-simplification.md. */
+export async function getTimeEntryById(
+  id: number,
+): Promise<{ id: number; end_time: string | null; worked_seconds: number } | null> {
+  const db = await getDb();
+  const rows: { id: number; end_time: string | null; worked_seconds: number }[] =
+    await db.select(
+      "SELECT id, end_time, worked_seconds FROM time_entries WHERE id = $1 LIMIT 1",
+      [id],
+    );
+  return rows[0] ?? null;
+}
+
+/** Set worked_seconds on a time_entries row. Single-row update, used
+ *  by the R1 orphan landing path and by the S.5 stop-side write.
+ *  Added in S.2. */
+export async function updateTimeEntryWorkedSeconds(
+  id: number,
+  workedSeconds: number,
+): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "UPDATE time_entries SET worked_seconds = $1 WHERE id = $2",
+    [Math.max(0, Math.round(workedSeconds)), id],
+  );
+}
+
 export async function checkpointTimeEntry(id: number): Promise<void> {
   const db = await getDb();
   await db.execute("UPDATE time_entries SET end_time = $1 WHERE id = $2", [

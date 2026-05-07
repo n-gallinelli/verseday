@@ -541,10 +541,12 @@ export default function DailyPlanner() {
     }
   }
 
-  // Signature accepts a Task argument to match TaskCard's onStop prop, but
-  // we read the active focus from the store rather than trusting the
-  // passed-in task — the row knows which task it is, but the focus state
-  // is the source of truth for which session is being stopped.
+  // M2.3 — unreferenced after the row's onStop binding was retired.
+  // Kept in place for M3.5 cleanup per Verse review (don't delete in
+  // M2.3, that's scope creep). Full-stop is now only available via PiP
+  // and the Focus screen; the row's pause/resume button toggles via
+  // togglePauseFocus instead.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleStopFocus(_task: Task) {
     const f = useAppStore.getState().focus;
     if (!f) return;
@@ -1147,7 +1149,6 @@ export default function DailyPlanner() {
                           setExpandedId(expandedId === id ? null : id)
                         }
                         onStart={handleStartFocus}
-                        onStop={handleStopFocus}
                         onOpenDetail={(t) => openTaskDetail(t.id)}
                         onOpenProject={openProject}
                         expandedNotes={expandedId === task.id}
@@ -1156,6 +1157,11 @@ export default function DailyPlanner() {
                         justArrived={arrivedIds.has(task.id)}
                         justAdded={addedIds.has(task.id)}
                         isFocused={focusedTaskId === task.id}
+                        isPaused={
+                          focusedTaskId === task.id &&
+                          focus?.mode === "active" &&
+                          focus.paused
+                        }
                         liveElapsedMs={
                           focusedTaskId === task.id && focusElapsedMs != null
                             ? focusElapsedMs

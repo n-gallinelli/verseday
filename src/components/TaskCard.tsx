@@ -12,6 +12,7 @@ import {
 import RichTextEditor from "./RichTextEditor";
 import CalendarChip from "./CalendarChip";
 import { formatHoursMinutes } from "../utils/format";
+import { useAppStore } from "../stores/appStore";
 import type { Task, Project, Link } from "../types";
 
 interface TaskCardProps {
@@ -40,11 +41,16 @@ interface TaskCardProps {
   // active row." Ticks at 1Hz via useFocusTick. See DailyPlanner's
   // handleStartFocus.
   liveElapsedMs?: number;
-  // Switches the start-focus button into a stop button on the focused row.
-  // Click invokes onStop instead of onStart. onStop is only wired by
-  // DailyPlanner's inline focus flow.
+  // Switches the start-focus button into a pause/resume button on the
+  // focused row. M2.3 — clicks toggle pause via the store action
+  // (togglePauseFocus), so the row icon mirrors PiP / Focus screen.
+  // The legacy onStop prop was retired — full-stop is now only
+  // available from PiP and Focus screen, per the rev 3 design.
   isFocused?: boolean;
-  onStop?: (task: Task) => void;
+  // True only when the row is the focused row AND the session is paused.
+  // Drives icon swap (Pause ↔ Play), tooltip flip, and pill color
+  // muting so a paused row is visually quiet.
+  isPaused?: boolean;
   // Click handler for the project bar — opens the project's detail page.
   // Wired by DailyPlanner via the store's openProject action.
   onOpenProject?: (projectId: number) => void;
@@ -97,9 +103,15 @@ function TaskCardImpl({
   justAdded = false,
   liveElapsedMs,
   isFocused = false,
-  onStop,
+  isPaused = false,
   onOpenProject,
 }: TaskCardProps) {
+  // M2.3 — pause toggle subscribes through the store so the Daily Plan
+  // row, PiP, and Focus screen share the same action. Pre-rev-3 the
+  // row's "pause" button fully stopped the session via onStop; that
+  // semantic moved to PiP/Focus only (see rev 3 doc §"Stop availability
+  // on Daily Plan row").
+  const togglePauseFocus = useAppStore((s) => s.togglePauseFocus);
   const {
     attributes,
     listeners,
@@ -367,7 +379,15 @@ function TaskCardImpl({
               //     so row geometry is identical regardless)
               const visClass =
                 isFocused || idleHasContent ? "" : "invisible";
-              const bgClass = isFocused ? "bg-accent-blue-soft" : "bg-overlay-hover";
+              // Paused: drop the accent-blue tint to a generic overlay
+              // tint so the pill doesn't read as "live" against the
+              // surrounding page. Running and idle keep their existing
+              // treatments.
+              const bgClass = isFocused
+                ? isPaused
+                  ? "bg-overlay-hover"
+                  : "bg-accent-blue-soft"
+                : "bg-overlay-hover";
               // Drop min-w when focused so the pill + pause button fit
               // together inside the 132px slot.
               const widthClass = isFocused ? "" : "min-w-[100px]";
@@ -378,15 +398,30 @@ function TaskCardImpl({
                   } ${bgClass} ${visClass}`}
                 >
                   {isFocused ? (
-                    <>
-                      <span className="text-accent-blue-soft-fg">
-                        {liveText}
-                      </span>
-                      <span className="text-accent-blue-soft-fg/40">/</span>
-                      <span className="text-accent-blue-soft-fg/80">
-                        {est > 0 ? formatHoursMinutes(est) : "—"}
-                      </span>
-                    </>
+                    // Paused: mute the live pill colors to text-fg-faded so
+                    // the row visually quiets down (matches the PiP's
+                    // paused state at FocusPip.tsx:387). Running: keep the
+                    // accent-blue treatment that signals "this row is the
+                    // live one."
+                    isPaused ? (
+                      <>
+                        <span className="text-fg-faded">{liveText}</span>
+                        <span className="text-fg-disabled">/</span>
+                        <span className="text-fg-faded">
+                          {est > 0 ? formatHoursMinutes(est) : "—"}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-accent-blue-soft-fg">
+                          {liveText}
+                        </span>
+                        <span className="text-accent-blue-soft-fg/40">/</span>
+                        <span className="text-accent-blue-soft-fg/80">
+                          {est > 0 ? formatHoursMinutes(est) : "—"}
+                        </span>
+                      </>
+                    )
                   ) : (
                     <>
                       <span className="text-fg-faded">
@@ -401,19 +436,31 @@ function TaskCardImpl({
                 </span>
               );
             })()}
-            {isFocused && onStop && (
+            {isFocused && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  onStop(task);
+                  togglePauseFocus();
                 }}
-                className="w-6 h-6 rounded-full flex items-center justify-center cursor-pointer text-accent-blue-soft-fg hover:text-accent-blue hover:bg-overlay-pressed transition-colors duration-150"
-                title="Pause focus"
+                className={`w-6 h-6 rounded-full flex items-center justify-center cursor-pointer hover:bg-overlay-pressed transition-colors duration-150 ${
+                  isPaused
+                    ? "text-fg-faded hover:text-fg-secondary"
+                    : "text-accent-blue-soft-fg hover:text-accent-blue"
+                }`}
+                title={isPaused ? "Resume focus" : "Pause focus"}
               >
-                <svg width="10" height="11" viewBox="0 0 9 10" fill="currentColor">
-                  <rect x="0.5" y="1" width="2.5" height="8" rx="0.6" />
-                  <rect x="6" y="1" width="2.5" height="8" rx="0.6" />
-                </svg>
+                {isPaused ? (
+                  // Play triangle — same shape as the in-page Resume
+                  // button and the PiP's resume icon.
+                  <svg width="9" height="10" viewBox="0 0 9 10" fill="currentColor">
+                    <path d="M2 1.2v7.6L8 5z" />
+                  </svg>
+                ) : (
+                  <svg width="10" height="11" viewBox="0 0 9 10" fill="currentColor">
+                    <rect x="0.5" y="1" width="2.5" height="8" rx="0.6" />
+                    <rect x="6" y="1" width="2.5" height="8" rx="0.6" />
+                  </svg>
+                )}
               </button>
             )}
           </div>
@@ -606,6 +653,7 @@ function taskCardPropsEqual(prev: TaskCardProps, next: TaskCardProps): boolean {
   // equal across renders and the comparator returns true → memo skip.
   if (prev.liveElapsedMs !== next.liveElapsedMs) return false;
   if (prev.isFocused !== next.isFocused) return false;
+  if (prev.isPaused !== next.isPaused) return false;
   if (prev.task !== next.task) return false;
   if (prev.project !== next.project) return false;
   if (prev.expandedNotes !== next.expandedNotes) return false;

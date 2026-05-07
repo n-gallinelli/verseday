@@ -734,3 +734,23 @@ APPROVED / REJECTED on revision 4. Specifically:
 
 If APPROVED, I'll proceed with step 1 implementation as written. If
 REJECTED, send the specific change needed.
+
+---
+
+## Post-ship fix — Cmd+Shift+D dismissed on key release (2026-05-06)
+
+**Symptom:** Pressing Cmd+Shift+D showed the quick-add bar; the moment the
+user released the chord, the bar dismissed itself. The user could never
+type into it.
+
+**Root cause:** `tauri-plugin-global-shortcut` invokes the registered
+handler on **both** `Pressed` and `Released` events (see plugin's own
+`index.d.ts` example). The `App.tsx` registration ignored
+`event.state` and ran the show/dismiss toggle on every fire — so:
+
+- Press → window not visible → `show()`
+- Release → window visible → `dismiss_quick_add`
+
+**Fix:** Gate the handler on `event.state === "Pressed"` (`App.tsx:118`).
+One-line change. The blur-on-release behavior described at
+`QuickAdd.tsx:50` is a separate macOS quirk and unaffected.

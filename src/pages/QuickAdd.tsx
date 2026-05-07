@@ -39,9 +39,27 @@ export default function QuickAdd() {
     }
   }, []);
 
+  // Drive the cursor straight into the title input so the user can
+  // start typing the moment the bar appears. A single setTimeout
+  // wasn't enough on cold show — the WebView can take a beat to
+  // deliver document focus after the chord lands. Retry on a short
+  // ladder and short-circuit as soon as activeElement matches; later
+  // attempts are harmless no-ops if the input already has focus.
   const focusTitle = useCallback(() => {
-    requestAnimationFrame(() => titleRef.current?.focus());
-    setTimeout(() => titleRef.current?.focus(), 80);
+    function tryFocus(): boolean {
+      const el = titleRef.current;
+      if (!el) return false;
+      el.focus();
+      el.select();
+      return document.activeElement === el;
+    }
+    if (tryFocus()) return;
+    requestAnimationFrame(() => {
+      if (tryFocus()) return;
+      setTimeout(tryFocus, 40);
+      setTimeout(tryFocus, 120);
+      setTimeout(tryFocus, 280);
+    });
   }, []);
 
   // Reset + refocus the title input every time the window becomes
@@ -155,8 +173,8 @@ export default function QuickAdd() {
         }}
       >
         {/* Header strip */}
-        <div className="flex items-center gap-2 px-5 pt-3 pb-2">
-          <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+        <div className="flex items-center gap-2.5 px-5 pt-3.5 pb-2.5">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
             <defs>
               <linearGradient id="qa-sky" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#E8D4F0" />
@@ -189,8 +207,8 @@ export default function QuickAdd() {
             <path d="M 15.85,15.46 A 8,8 0 0 1 4.15,15.46" stroke="#A8CFE5" strokeWidth="1.6" strokeLinecap="round" />
             <path d="M 4.54,15.85 A 8,8 0 0 1 4.54,4.15" stroke="#C9B5E0" strokeWidth="1.6" strokeLinecap="round" />
           </svg>
-          <span className="text-[12px] font-semibold text-accent-blue tracking-tight">VerseDay</span>
-          <span className="text-[11px] text-fg-disabled ml-auto">&#x2318;&#x21E7;D</span>
+          <span className="text-[14px] font-semibold text-accent-blue tracking-tight">VerseDay</span>
+          <span className="text-[11px] text-fg-disabled ml-auto">&#x2318;&#x21E7;A</span>
         </div>
 
         {/* Divider between header and input */}

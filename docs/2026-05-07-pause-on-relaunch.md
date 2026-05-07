@@ -1,6 +1,6 @@
 # Pause on Relaunch + Quit-Time Correctness
 
-**Status:** Awaiting Verse review
+**Status:** Rev 2 — incorporated Verse review (orphan-cap guard + three minor notes folded in)
 **Date:** 2026-05-07
 **Author:** Terse
 **Branch:** `refactor/task-as-entity` (lands after M2 closes; before merge to main)
@@ -36,23 +36,44 @@ The checkpoint effect at `src/pages/FocusMode.tsx:443-450` already writes `time_
 2. if (!persisted) return
 3. (existing) prime cache from legacy snapshot or async getTaskById fetch
 4. let focus = persisted.focus
-5. if (focus.mode === "active" && !focus.paused) {
-6.    let pausedAtMs: number
-7.    try {
-8.       const endIso = await getTimeEntryEndTime(focus.timeEntryId)
-9.       if (endIso !== null) {
-10.         pausedAtMs = parseISOToMs(endIso)         // case A — checkpoint exists
-11.      } else {
-12.         pausedAtMs = focus.startedAt              // case B — no checkpoint yet
-13.      }
-14.   } catch {
-15.      pausedAtMs = Date.now()                      // case C — DB read failed
-16.   }
-17.   focus = { ...focus, paused: true, pausedAtMs }
-18.   persistFocus(focus)
-19. }
-20. set({ currentPage: "focus", focus })
+5. if (focus.mode === "active") {
+6.    // Orphan-cap guard (Verse rev 2). If startedAt is older than the
+7.    // ORPHAN_CAP_MS that closeOrphanedTimeEntries uses, drop the
+8.    // session entirely. closeOrphanedTimeEntries (called immediately
+9.    // after restoreFocus in App.tsx) will close the time entry; if
+10.   // we left focus referencing it, a subsequent Resume → Stop would
+11.   // call stopTimeEntry on an already-closed row (undefined
+12.   // behavior). Clearing focus matches the user's mental model — "I
+13.   // was gone too long, of course it's not running" — and lets the
+14.   // orphan path finish the cleanup it was already going to do.
+15.   if (Date.now() - focus.startedAt > ORPHAN_CAP_MS) {
+16.      persistFocus(null)
+17.      // Don't set focus or currentPage — caller falls back to
+18.      // default (currentPage stays "daily"), focus stays null.
+19.      return
+20.   }
+21.   if (!focus.paused) {
+22.      let pausedAtMs: number
+23.      try {
+24.         const endIso = await getTimeEntryEndTime(focus.timeEntryId)
+25.         if (endIso !== null) {
+26.            pausedAtMs = new Date(endIso).getTime()  // case A — checkpoint exists
+27.         } else {
+28.            pausedAtMs = focus.startedAt             // case B — no checkpoint yet
+29.         }
+30.      } catch {
+31.         pausedAtMs = Date.now()                     // case C — DB read failed
+32.      }
+33.      focus = { ...focus, paused: true, pausedAtMs }
+34.      persistFocus(focus)
+35.   }
+36. }
+37. set({ currentPage: "focus", focus })
 ```
+
+`ORPHAN_CAP_MS = 4 * 60 * 60 * 1000` — matches the constant in `closeOrphanedTimeEntries` (`/src/db/queries.ts:692`, `MAX_ORPHAN_HOURS = 4`). Both values must stay in sync; if the orphan cap ever changes, the auto-pause guard must change with it. Best to define `ORPHAN_CAP_MS` once and import it, but for this milestone a co-located comment + matching literal is sufficient (one of the two will be updated by the same hand if the policy ever changes).
+
+ISO parsing is `new Date(endIso).getTime()` — inline expression, no helper needed.
 
 `restoreFocus` becomes `async`. The single caller (`src/App.tsx:109`) is already inside `async function startup()`, so adding `await` is one-character. `closeOrphanedTimeEntries`, called immediately after, already uses `await`.
 
@@ -193,6 +214,10 @@ Start a session. Cmd-Q within 30 seconds (before the first checkpoint).
 Start a session. Pause it (focus.paused = true). Cmd-Q. Relaunch.
 *Pass:* Counter shows the same frozen value as before quit — i.e. the value at the original pause. Identical to the M2 capstone Test #7 behavior. The auto-pause guard at line 5 of the algorithm (`!focus.paused`) ensures it doesn't double-pause or overwrite the original `pausedAtMs`.
 
+**Test (e) — running → quit → relaunch >4 hours later. (Verse rev 2)**
+Start a session. Cmd-Q. Wait > 4 hours (or shorten `MAX_ORPHAN_HOURS` temporarily to test). Relaunch.
+*Pass:* No focus session on relaunch. The orphan-cap guard at lines 15–20 of the algorithm calls `persistFocus(null)` and returns without setting `focus` or `currentPage`, so the store stays at its initialized default (`currentPage: "daily"`, `focus: null`). `closeOrphanedTimeEntries` then closes the time entry on disk via the existing 4-hour cap. No reference to a closed `timeEntryId` survives in the store; no crash, no double-write.
+
 ### 6. Daily Plan top-right pill (Finding A from M2.6)
 
 After M2.6 lands, the pill at `DailyPlanner.tsx:854` already gates on `focus?.mode === "active" && focus.paused`. Auto-pause-on-relaunch sets `focus.paused = true` through the same store action path that M2.3/M2.6 read. No additional pill work needed in this milestone — the rendering is correct for free.
@@ -206,7 +231,10 @@ Confirmed: zero changes to `DailyPlanner.tsx`, `TaskCard.tsx`, `FocusMode.tsx`, 
 - **`restoreFocus` becomes async.** Single caller, already in async context. No fan-out concern.
 - **One DB read on app boot.** Bounded by 1 row, indexed by primary key. Sub-millisecond. Doesn't block the user from clicking around — `App.tsx:109` already awaits things like `closeOrphanedTimeEntries`.
 - **Time spent paused is now unconditionally not counted.** Pre-this-milestone, a user who quit while running and relaunched within minutes might have wanted to count that wall-clock as worked (e.g., they were actively working but the app crashed). Post-this-milestone, they'd need to manually adjust via the actual-time popover. Trade-off: the user has explicitly asked for this conservative default. The popover gives them an escape hatch.
-- **Persistence flush on Cmd-Q.** Pre-existing behavior, not new — M2 already depends on `localStorage.setItem` flushing before WebKit storage shutdown. The user's Test #7 console-log evidence confirmed the flush works in practice.
+- **Durability of the load-bearing reads.** Two persistence layers in play:
+  - `localStorage[FOCUS_STORAGE_KEY]` — the persisted `FocusState`. WebKit-backed; flush on Cmd-Q is best-effort but validated by user testing during M2 capstone Test #7 (the JSON survives quit-relaunch correctly).
+  - `time_entries.end_time` in SQLite — written by `checkpointTimeEntry` every 30s while running. SQLite writes go through Tauri's `tauri-plugin-sql` (rusqlite under the hood); `db.execute` returns after the WAL/journal commit completes, so each checkpoint is durably on disk before the next 30-second tick. Even an unclean kill loses at most the last 30 seconds — exactly the accuracy bound this design targets.
+- **Checkpoint is gated on `!focus.paused`.** Confirmed at `src/pages/FocusMode.tsx:463` — the checkpoint interval only writes `end_time = now()` when the session is running. So `time_entries.end_time` doesn't advance during paused stretches, which means the checkpoint we read on relaunch reflects the last *running* tick, not the last wall-clock tick. This is correct for case A: we want `pausedAtMs` to track when the user was last actually working, not when the app last happened to be alive. (In test (d), this is moot — the auto-pause guard skips the case-A read entirely when the persisted focus is already paused, so the original `pausedAtMs` survives untouched.)
 - **No security surface.** No new IPC, no new persisted secrets, no new external calls. Local refactor.
 - **Budget impact: zero.**
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import {
   DndContext,
   closestCenter,
@@ -12,15 +12,11 @@ import {
   verticalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { useAppStore } from "../stores/appStore";
+import { selectTaskIdsByDate, useAppStore } from "../stores/appStore";
 import {
-  getTasksForDate,
   getProjects,
   createTask,
-  updateTask,
-  setTaskStatusFromUI,
   updateTaskSortOrders,
-  deleteTask,
   startTimeEntry,
   stopTimeEntry,
   updateTimeEntryWorkedSeconds,
@@ -69,6 +65,19 @@ export default function DailyPlanner() {
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
   const cacheTasks = useAppStore((s) => s.cacheTasks);
   const openSummaryOverlay = useAppStore((s) => s.openSummaryOverlay);
+  // M3.2.b.1 — main task list comes from the canonical store. The
+  // selector returns the ordered ID list for selectedDate; we resolve
+  // each id against tasksById at render time. Subscribing to tasksById
+  // wholesale re-renders the parent on any task mutation, but no DB
+  // round-trip — net win over the prior verseday:task-* refetch path.
+  // M3.2.b.4 splits this into per-row TaskCard subscriptions so the
+  // parent stops re-rendering on unrelated mutations.
+  const taskIds = useAppStore((s) => selectTaskIdsByDate(s, selectedDate));
+  const tasksById = useAppStore((s) => s.tasksById);
+  const loadTasksForDate = useAppStore((s) => s.loadTasksForDate);
+  const updateTaskAction = useAppStore((s) => s.updateTask);
+  const deleteTaskAction = useAppStore((s) => s.deleteTaskAction);
+  const setTaskStatusAction = useAppStore((s) => s.setTaskStatus);
   // 1Hz tick while focus is active. Returns the elapsed ms or null when no
   // session. Only the focused row's TaskCard re-renders per tick — every
   // other card bails out via the custom React.memo comparator that ignores
@@ -77,7 +86,22 @@ export default function DailyPlanner() {
   // The focused task's id (if any), surfaced cleanly so the renderRow
   // closure can compare without indexing into focus.task each time.
   const focusedTaskId = focus?.taskId ?? null;
-  const [tasks, setTasks] = useState<Task[]>([]);
+  // M3.2.b.1 — derived from the canonical map. Memoized so its
+  // reference is stable across renders that don't change the inputs
+  // (taskIds is stable when the date's index entry is unchanged;
+  // tasksById churns on any task mutation). Filters out the rare
+  // window where an id is in the index but not yet in the map (e.g.
+  // mid-update during a refetch). Per-row TaskCard subscription lands
+  // in M3.2.b.4 — until then the parent re-renders on map changes,
+  // but no DB roundtrip.
+  const tasks = useMemo(() => {
+    const out: Task[] = [];
+    for (const id of taskIds) {
+      const t = tasksById.get(id);
+      if (t) out.push(t);
+    }
+    return out;
+  }, [taskIds, tasksById]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [plannedMinutes, setPlannedMinutes] = useState(0);
   const [workedMinutes, setWorkedMinutes] = useState(0);
@@ -143,10 +167,41 @@ export default function DailyPlanner() {
   // Shutdown state (for localStorage check only)
   const initialLoadDone = useRef(false);
 
-  // Sidebar state
-  const [sidebarUnscheduled, setSidebarUnscheduled] = useState<Task[]>([]);
-  const [sidebarOverdue, setSidebarOverdue] = useState<Task[]>([]);
-  const [unfinishedTasks, setUnfinishedTasks] = useState<Task[]>([]);
+  // Sidebar state — IDs only; full Task data resolves through tasksById
+  // at render time so cross-screen renames re-render rows without a
+  // refetch (M3.2.b.1). Sidebar queries (getSidebarTasks /
+  // getUnfinishedRolloverTasks) span dates and don't fit a per-date
+  // selector, so the IDs themselves stay screen-local.
+  const [sidebarUnscheduledIds, setSidebarUnscheduledIds] = useState<number[]>([]);
+  const [sidebarOverdueIds, setSidebarOverdueIds] = useState<number[]>([]);
+  const [unfinishedTaskIds, setUnfinishedTaskIds] = useState<number[]>([]);
+  // Resolve to full Task arrays once per render. Keeps the existing
+  // .filter / .find call-sites untouched. Memoized to keep refs stable
+  // across renders that don't change inputs.
+  const sidebarUnscheduled = useMemo(() => {
+    const out: Task[] = [];
+    for (const id of sidebarUnscheduledIds) {
+      const t = tasksById.get(id);
+      if (t) out.push(t);
+    }
+    return out;
+  }, [sidebarUnscheduledIds, tasksById]);
+  const sidebarOverdue = useMemo(() => {
+    const out: Task[] = [];
+    for (const id of sidebarOverdueIds) {
+      const t = tasksById.get(id);
+      if (t) out.push(t);
+    }
+    return out;
+  }, [sidebarOverdueIds, tasksById]);
+  const unfinishedTasks = useMemo(() => {
+    const out: Task[] = [];
+    for (const id of unfinishedTaskIds) {
+      const t = tasksById.get(id);
+      if (t) out.push(t);
+    }
+    return out;
+  }, [unfinishedTaskIds, tasksById]);
 
   // Per-row undo for tasks pulled from the rail into today (10s window)
   const [recentlyPulled, setRecentlyPulled] = useState<
@@ -276,8 +331,13 @@ export default function DailyPlanner() {
       if (selectedDate === todayIso) {
         await rolloverUnfinishedTasks(todayIso);
       }
-      const [t, pm, wm, dp, p, sb, uf] = await Promise.all([
-        getTasksForDate(selectedDate),
+      // M3.2.b.1 — main task list goes through the store. loadTasksForDate
+      // populates tasksById and sets taskIdsByDate[selectedDate]; the
+      // selector subscription above re-renders the list automatically.
+      // Other parallel data still uses direct queries — they're not
+      // task-shape and have no canonical-map analogue.
+      const [_, pm, wm, dp, p, sb, uf] = await Promise.all([
+        loadTasksForDate(selectedDate),
         getTotalPlannedMinutes(selectedDate),
         getTotalWorkedMinutes(selectedDate),
         getDailyPlan(selectedDate),
@@ -285,11 +345,7 @@ export default function DailyPlanner() {
         getSidebarTasks(todayIso),
         getUnfinishedRolloverTasks(),
       ]);
-      setTasks(t);
-      // Prime the singleton overlay's cache so opening detail on any of
-      // these tasks resolves synchronously. M3.2 retires this in favor
-      // of a canonical store-owned tasks map.
-      cacheTasks(t);
+      void _;
       setPlannedMinutes(pm);
       setWorkedMinutes(wm);
       setDailyPlan(dp);
@@ -297,19 +353,25 @@ export default function DailyPlanner() {
       // Fetch project stats for right panel
       const pStats = await getProjectStats();
       setProjectStats(pStats);
-      // Fetch worked minutes per task
-      if (t.length > 0) {
-        const wmap = await getWorkedMinutesForTaskIds(t.map((task) => task.id));
+      // Fetch worked minutes per task. Read taskIdsByDate fresh from the
+      // store after the loadTasksForDate above resolved — taskIds in the
+      // selector's React closure may still point to the prior render.
+      const freshIds = useAppStore
+        .getState()
+        .taskIdsByDate.get(selectedDate) ?? [];
+      if (freshIds.length > 0) {
+        const wmap = await getWorkedMinutesForTaskIds(freshIds);
         setWorkedMap(wmap);
       } else {
         setWorkedMap(new Map());
       }
-      setSidebarUnscheduled(sb.unscheduled);
-      setSidebarOverdue(sb.overdue);
-      setUnfinishedTasks(uf);
-      // Prime the cache for sidebar lists too — any of these can open
-      // the detail overlay via a click.
+      // Sidebar lists: prime the canonical map with the full Task data
+      // so per-row reads resolve, then store IDs locally. M3.2.b.5 retires
+      // the cacheTasks call.
       cacheTasks([...sb.unscheduled, ...sb.overdue, ...uf]);
+      setSidebarUnscheduledIds(sb.unscheduled.map((t) => t.id));
+      setSidebarOverdueIds(sb.overdue.map((t) => t.id));
+      setUnfinishedTaskIds(uf.map((t) => t.id));
       setDailyNotes(dp?.notes ?? "");
       setError(null);
       // Mark initial load done (for stagger animation)
@@ -441,7 +503,9 @@ export default function DailyPlanner() {
     // shift the surviving incomplete rows experience as they fill the gap.
     const oldPositions = captureRowPositions();
     try {
-      await setTaskStatusFromUI(task.id, wasDone ? "todo" : "done");
+      // M3.2.b.1 — store action handles optimistic map write + DB +
+      // verseday:task-status-changed broadcast (FocusMode auto-stop).
+      await setTaskStatusAction(task.id, wasDone ? "todo" : "done");
       // Unchecking a completed task bumps it to the BOTTOM of the
       // incomplete list (rather than restoring its prior position),
       // so the user can see what they just unchecked at a glance.
@@ -625,7 +689,9 @@ export default function DailyPlanner() {
       }
     }
     try {
-      await updateTask({
+      // M3.2.b.1 — store action: optimistic write to canonical map +
+      // index maintenance + DB. Failure path refetches truth.
+      await updateTaskAction({
         id: editingId,
         title,
         projectId: editProjectId ? parseInt(editProjectId) : null,
@@ -636,6 +702,8 @@ export default function DailyPlanner() {
       });
       setEditingId(null);
       setError(null);
+      // Refresh worked-minutes / planned-minutes / sidebar — those are
+      // outside the canonical-task-map's reach.
       loadData();
     } catch (e) {
       setError(errorMessage(e, "Failed to update task"));
@@ -699,7 +767,9 @@ export default function DailyPlanner() {
 
   async function handleDelete(id: number) {
     try {
-      await deleteTask(id);
+      // M3.2.b.1 — store action: optimistic removal from canonical map
+      // + index cleanup + DB. Failure path re-inserts on refetch.
+      await deleteTaskAction(id);
       setConfirmDeleteId(null);
       setError(null);
       loadData();
@@ -715,11 +785,16 @@ export default function DailyPlanner() {
     const newIndex = tasks.findIndex((t) => t.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
     const reordered = arrayMove(tasks, oldIndex, newIndex);
-    setTasks(reordered);
+    // M3.2.b.1 — `tasks` is selector-derived; the optimistic local
+    // setTasks call is gone. DB write commits the new order, then
+    // loadTasksForDate refreshes the index so the selector returns the
+    // new order. dnd-kit handles the drop animation locally; the brief
+    // gap between drop and refresh is the DB roundtrip.
     try {
       await updateTaskSortOrders(
         reordered.map((t, i) => ({ id: t.id, sortOrder: i }))
       );
+      await loadTasksForDate(selectedDate);
     } catch (e) {
       setError(errorMessage(e, "Failed to reorder tasks"));
       loadData();

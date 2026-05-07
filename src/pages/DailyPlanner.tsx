@@ -1520,9 +1520,23 @@ export default function DailyPlanner() {
 
         {/* Task backlog — tasks rolling over up to 4 days. Header + list share
             one shaded container so the section reads as a distinct group from
-            the active project list above. */}
+            the active project list above.
+            Click pulls the task to today (mirroring the project + unscheduled
+            rails). The detail overlay is reachable via a hover-revealed icon
+            on the right. recentlyPulled rows are merged in for the 10s undo
+            window so the row stays put with "Undo" affordance after pull,
+            even though loadData's refresh has already removed it from
+            unfinishedTaskIds. */}
         {(() => {
-          const backlog = unfinishedTasks.filter((t) => t.status !== "done");
+          const backlogBase = unfinishedTasks.filter(
+            (t) => t.status !== "done" && t.date_scheduled !== selectedDate,
+          );
+          const recentBacklog = Array.from(recentlyPulled.values())
+            .map((r) => r.task)
+            .filter((t) => t.rollover_count > 0);
+          const baseIds = new Set(backlogBase.map((t) => t.id));
+          const recentOnly = recentBacklog.filter((t) => !baseIds.has(t.id));
+          const backlog = [...backlogBase, ...recentOnly];
           if (backlog.length === 0) return null;
           return (
             <div className="px-2 mt-2">
@@ -1539,16 +1553,68 @@ export default function DailyPlanner() {
                 </button>
                 {unfinishedExpanded && (
                   <div className="px-1.5 pb-1.5 space-y-px">
-                    {backlog.map((task) => (
-                      <button
-                        key={task.id}
-                        onClick={() => openTaskDetail(task.id)}
-                        className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-overlay-hover transition-colors group"
-                      >
-                        <span className="text-[11px] text-fg-secondary group-hover:text-fg flex-1 truncate transition-colors">{task.title}</span>
-                        <span className="text-[9px] text-accent-warning-soft-fg/70 tabular-nums">{task.rollover_count}d</span>
-                      </button>
-                    ))}
+                    {backlog.map((task) => {
+                      const isRecent = recentlyPulled.has(task.id);
+                      return (
+                        <div
+                          key={task.id}
+                          className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors group relative ${
+                            isRecent ? "bg-accent-blue/[0.07]" : "hover:bg-overlay-hover"
+                          }`}
+                        >
+                          <button
+                            onClick={() => {
+                              if (isRecent) undoPull(task.id);
+                              else pullTaskToDay(task.id);
+                            }}
+                            title={isRecent ? "Undo (within 10s)" : "Add to today"}
+                            className="flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-left"
+                          >
+                            <span
+                              className={`text-[11px] flex-1 truncate transition-colors ${
+                                isRecent ? "text-fg-faded" : "text-fg-secondary group-hover:text-fg"
+                              }`}
+                            >
+                              {task.title}
+                            </span>
+                          </button>
+                          {isRecent ? (
+                            <span className="text-[10px] text-accent-blue-soft-fg font-medium flex-shrink-0">
+                              Undo
+                            </span>
+                          ) : (
+                            <>
+                              {/* Hover-revealed detail-open shortcut — replaces
+                                  the now-absent click-to-detail on the row. */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openTaskDetail(task.id);
+                                }}
+                                title="Open details"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-fg-faded hover:text-fg"
+                              >
+                                <svg
+                                  width="13"
+                                  height="13"
+                                  viewBox="0 0 14 14"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="1.6"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M5.5 3l4 4-4 4" />
+                                </svg>
+                              </button>
+                              <span className="text-[9px] text-accent-warning-soft-fg/70 tabular-nums flex-shrink-0">
+                                {task.rollover_count}d
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

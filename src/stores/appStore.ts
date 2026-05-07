@@ -246,7 +246,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       prev = "projects";
     }
     persistFocus(null);
-    set({ focus: null, currentPage: prev });
+    // Only navigate when stopping from the immersive Focus screen.
+    // Inline pauses (DailyPlanner row, etc.) must not whisk the user
+    // back to wherever the timer was originally started.
+    if (state.currentPage === "focus") {
+      set({ focus: null, currentPage: prev });
+    } else {
+      set({ focus: null });
+    }
     return prev;
   },
   restoreFocus: () => {

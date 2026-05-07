@@ -853,31 +853,52 @@ export default function DailyPlanner() {
           {/* Focus button — inline */}
           {(() => {
             const isFocusing = !!focus;
+            // M2.6 — pause symmetry. When the active session is paused,
+            // the pill drops its accent-blue tint, the dot stops
+            // pulsing, and the label flips from "Focusing…" to "Paused"
+            // — matching the row pill's paused treatment in M2.3 and
+            // the PiP's paused treatment.
+            const isPaused = focus?.mode === "active" && focus.paused;
             const nextTask = tasks.find((t) => t.status !== "done");
 
             if (isFocusing) {
               return (
                 <button
                   onClick={() => setPage("focus")}
-                  // Status pill, not primary CTA: softer accent-blue tint
-                  // with an outlined edge so it reads as "currently
-                  // running" instead of "click to start something." A
-                  // slow opacity pulse on the dot (2s cycle, .45 → 1)
-                  // gives a localized recording-light feel without the
-                  // whole pill breathing.
-                  className="rounded-lg bg-accent-blue-soft text-accent-blue-soft-fg border border-accent-blue/40 hover:border-accent-blue hover:bg-accent-blue/15 cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors"
-                  title="Open focus screen"
+                  className={
+                    isPaused
+                      ? "rounded-lg bg-overlay-hover text-fg-faded border border-line-soft hover:border-line-strong hover:bg-overlay-pressed cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors"
+                      : // Status pill, not primary CTA: softer accent-blue
+                        // tint with an outlined edge so it reads as
+                        // "currently running" instead of "click to start
+                        // something." A slow opacity pulse on the dot
+                        // (2s cycle, .45 → 1) gives a localized
+                        // recording-light feel without the whole pill
+                        // breathing.
+                        "rounded-lg bg-accent-blue-soft text-accent-blue-soft-fg border border-accent-blue/40 hover:border-accent-blue hover:bg-accent-blue/15 cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors"
+                  }
+                  title={isPaused ? "Open focus screen (paused)" : "Open focus screen"}
                 >
                   <span
-                    className="w-2 h-2 rounded-full bg-accent-blue animate-focus-dot"
+                    className={
+                      isPaused
+                        ? "w-2 h-2 rounded-full bg-fg-disabled"
+                        : "w-2 h-2 rounded-full bg-accent-blue animate-focus-dot"
+                    }
                     aria-hidden
                   />
                   <span className="text-[13px] font-medium">
-                    Focusing<span aria-hidden>
-                      <span>.</span>
-                      <span className="animate-ellipsis-2">.</span>
-                      <span className="animate-ellipsis-3">.</span>
-                    </span>
+                    {isPaused ? (
+                      "Paused"
+                    ) : (
+                      <>
+                        Focusing<span aria-hidden>
+                          <span>.</span>
+                          <span className="animate-ellipsis-2">.</span>
+                          <span className="animate-ellipsis-3">.</span>
+                        </span>
+                      </>
+                    )}
                   </span>
                 </button>
               );

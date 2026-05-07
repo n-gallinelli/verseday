@@ -451,6 +451,43 @@ export async function updateTaskStatus(
   }
 }
 
+/** Read a single task's current status. Returns null if no row with
+ *  that id exists. Used by the focus engine's defensive mount check
+ *  to clean up persisted focus state pointing at an already-done
+ *  task. */
+export async function getTaskStatusById(id: number): Promise<string | null> {
+  const db = await getDb();
+  const rows: { status: string }[] = await db.select(
+    "SELECT status FROM tasks WHERE id = $1 LIMIT 1",
+    [id]
+  );
+  return rows[0]?.status ?? null;
+}
+
+/** UI-initiated status change. Same DB write as `updateTaskStatus`,
+ *  plus a `verseday:task-status-changed` broadcast so cross-surface
+ *  listeners (notably FocusMode) can react — e.g. stop the running
+ *  focus timer when a user marks the focused task done from a
+ *  different screen. Use this from toggle handlers in DailyPlanner,
+ *  Projects, ProjectDetail, DailyShutdown, PlanTab, ScheduleTab.
+ *
+ *  FocusMode's own `handleDone` deliberately uses raw
+ *  `updateTaskStatus` (no broadcast) so it can advance to the next
+ *  task without its own listener short-circuiting the flow. */
+export async function setTaskStatusFromUI(
+  id: number,
+  status: string
+): Promise<void> {
+  await updateTaskStatus(id, status);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("verseday:task-status-changed", {
+        detail: { taskId: id, status },
+      })
+    );
+  }
+}
+
 export async function updateTaskSortOrders(
   updates: { id: number; sortOrder: number }[]
 ): Promise<void> {

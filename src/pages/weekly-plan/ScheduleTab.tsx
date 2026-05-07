@@ -16,7 +16,7 @@ import {
   getProjects,
   createTask,
   updateTask,
-  updateTaskStatus,
+  setTaskStatusFromUI,
   updateTaskDateScheduled,
   getAllTasksForProjectIds,
   getUnscheduledTasks,
@@ -569,7 +569,7 @@ export default function ScheduleTab() {
 
   async function toggleTask(task: Task) {
     try {
-      await updateTaskStatus(task.id, task.status === "done" ? "todo" : "done");
+      await setTaskStatusFromUI(task.id, task.status === "done" ? "todo" : "done");
       loadData();
     } catch (e) {
       setError(errorMessage(e, "Failed to update task"));

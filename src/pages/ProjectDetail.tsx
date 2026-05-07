@@ -27,7 +27,7 @@ import {
   updateProject,
   createTask,
   updateTask,
-  updateTaskStatus,
+  setTaskStatusFromUI,
   updateTaskDateScheduled,
   updateTaskSortOrders,
   deleteTask,
@@ -819,7 +819,7 @@ export default function ProjectDetail() {
 
   async function toggleTask(task: Task) {
     try {
-      await updateTaskStatus(task.id, task.status === "done" ? "todo" : "done");
+      await setTaskStatusFromUI(task.id, task.status === "done" ? "todo" : "done");
       refreshTasks();
     } catch (e) {
       setError(errorMessage(e, "Failed to update task"));

@@ -24,7 +24,7 @@ import {
   getTasksForProject,
   createTask,
   updateTask,
-  updateTaskStatus,
+  setTaskStatusFromUI,
   updateTaskDateScheduled,
   deleteTask,
   setManualWorkedMinutes,
@@ -453,7 +453,7 @@ export default function PlanTab() {
 
   async function handleToggleTaskFromOverlay(task: Task) {
     try {
-      await updateTaskStatus(task.id, task.status === "done" ? "todo" : "done");
+      await setTaskStatusFromUI(task.id, task.status === "done" ? "todo" : "done");
       await reloadTasks(selectedId);
     } catch (e) {
       setError(errorMessage(e, "Failed to update task"));

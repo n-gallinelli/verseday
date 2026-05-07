@@ -10,6 +10,7 @@ import {
   updateTaskEstimate,
   getSetting,
   getTasksForDate,
+  getTaskStatusById,
   getWorkedMinutesForTask,
   startTimeEntry,
 } from "../db/queries";
@@ -527,6 +528,55 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       window.removeEventListener("verseday:toggle-pause", onTogglePause);
   }, []);
 
+  // Cross-screen safety net: if the focused task is marked done from
+  // any other surface (Daily Plan toggle, detail overlay, project
+  // page, etc.), run the same Done flow as the focus screen's check
+  // button — close the time entry (if active) and advance to the
+  // next remaining task. Pip stops broadcasting state for the
+  // completed task as soon as focus moves off, so it can never sit
+  // showing a done task. setTaskStatusFromUI broadcasts this event
+  // after the DB write; FocusMode's own handleDone uses raw
+  // updateTaskStatus (no broadcast) so this listener doesn't fire
+  // recursively from its own advance.
+  useEffect(() => {
+    function onStatusChanged(e: Event) {
+      const ce = e as CustomEvent<{ taskId: number; status: string }>;
+      const f = useAppStore.getState().focus;
+      if (!f) return;
+      if (ce.detail.taskId !== f.task.id) return;
+      if (ce.detail.status !== "done") return;
+      handleDoneRef.current();
+    }
+    window.addEventListener("verseday:task-status-changed", onStatusChanged);
+    return () =>
+      window.removeEventListener("verseday:task-status-changed", onStatusChanged);
+  }, []);
+
+  // Defensive mount check: if persisted focus state points at a task
+  // whose status is already "done" (e.g. status changed from older
+  // code that didn't broadcast, or in another app session before
+  // this build), advance off it. Without this guard, the pip would
+  // continue rendering the done task — exactly the failure the user
+  // saw post-deploy with a stale "ddd" pip.
+  useEffect(() => {
+    if (!focus) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const status = await getTaskStatusById(focus.task.id);
+        if (cancelled) return;
+        if (status === "done") {
+          handleDoneRef.current();
+        }
+      } catch {
+        // Best effort — if the lookup fails, leave focus alone.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [focus?.task.id]);
+
   // Escape: leave the focus screen without stopping the timer. The session
   // keeps running in the background — the user can pause/stop from the
   // daily plan's focused row, or come back via the focus landing. Skipped
@@ -654,11 +704,14 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   }
 
   async function handleStop() {
-    if (!focus || focus.mode !== "active") return;
-    try {
-      await stopTimeEntry(focus.timeEntryId, getBreakSeconds());
-    } catch {
-      // Best effort
+    if (!focus) return;
+    // Preview has no time entry to close — just clear the focus state.
+    if (focus.mode === "active") {
+      try {
+        await stopTimeEntry(focus.timeEntryId, getBreakSeconds());
+      } catch {
+        // Best effort
+      }
     }
     stopFocus();
   }

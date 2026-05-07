@@ -18,7 +18,7 @@ import {
   getProjects,
   createTask,
   updateTask,
-  updateTaskStatus,
+  setTaskStatusFromUI,
   updateTaskSortOrders,
   deleteTask,
   startTimeEntry,
@@ -417,7 +417,7 @@ export default function DailyPlanner() {
     // shift the surviving incomplete rows experience as they fill the gap.
     const oldPositions = captureRowPositions();
     try {
-      await updateTaskStatus(task.id, wasDone ? "todo" : "done");
+      await setTaskStatusFromUI(task.id, wasDone ? "todo" : "done");
       // Unchecking a completed task bumps it to the BOTTOM of the
       // incomplete list (rather than restoring its prior position),
       // so the user can see what they just unchecked at a glance.

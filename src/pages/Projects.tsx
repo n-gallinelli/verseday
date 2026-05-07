@@ -23,7 +23,7 @@ import {
   getTasksForProject,
   updateProjectSortOrders,
   updateTask,
-  updateTaskStatus,
+  setTaskStatusFromUI,
   deleteTask,
   archiveProject,
   searchTasksByTitle,
@@ -747,7 +747,7 @@ export default function Projects() {
             }
           }).catch(() => {})}
           onToggle={(t) => {
-            updateTaskStatus(t.id, t.status === "done" ? "todo" : "done")
+            setTaskStatusFromUI(t.id, t.status === "done" ? "todo" : "done")
               .then(() => { setDetailTask(null); loadData(); })
               .catch(() => {});
           }}

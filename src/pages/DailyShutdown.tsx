@@ -9,7 +9,7 @@ import {
   getProjects,
   toggleTaskHighlight,
   updateTask,
-  updateTaskStatus,
+  setTaskStatusFromUI,
   setManualWorkedMinutes,
   deleteTask,
   startTimeEntry,
@@ -596,7 +596,7 @@ export default function DailyShutdown() {
           onClose={() => { setDetailTask(null); loadData(); }}
           onSave={(updates) => updateTask(updates).then(() => loadData()).catch(() => {})}
           onToggle={(t) => {
-            updateTaskStatus(t.id, t.status === "done" ? "todo" : "done")
+            setTaskStatusFromUI(t.id, t.status === "done" ? "todo" : "done")
               .then(() => loadData())
               .catch(() => {});
           }}

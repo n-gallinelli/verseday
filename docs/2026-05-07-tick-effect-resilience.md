@@ -1,5 +1,17 @@
 # Tick Effect Resilience — Post-Resume Counter Stalls at 0:00
 
+> **OBSOLETE under the worked-seconds model.** M2.5.1's seed effect — the
+> patient this fix was treating — was deleted in S.3 of the worked-seconds
+> simplification (`docs/2026-05-07-worked-seconds-simplification.md`).
+> Under the new model, the displayed counter reads `focus.workedMs`
+> directly; there's no derived `elapsed` state to seed, no
+> `getWorkElapsed` useCallback, no dep-loop pattern to defend against.
+> The 1Hz `tickFocus` interval owns the increment, period. This doc is
+> preserved for historical context.
+
+---
+
+
 **Status:** Rev 2 — Verse-approved design. Awaiting M2.5.1 implementation commit.
 **Decision:** Split — tick-fix lands first as M2.5.1, then pause-on-relaunch as a separate single-commit milestone. (Verse rationale: every commit green; conceptually distinct concerns; better commit-message provenance.)
 **Date:** 2026-05-07

@@ -1,5 +1,19 @@
 # Pause Symmetry Across Focus Screen, PiP, and Daily Plan
 
+> **Wall-clock sections OBSOLETE under the worked-seconds model.** M2's
+> pause-symmetry behavior is preserved end-to-end (Focus, PiP, Daily Plan
+> row pill, top-right pill, in-page button — all freeze on pause, all
+> resume on resume), but the *mechanism* documented here — `pausedAtMs`,
+> `pausedAccumMs`, `computeFocusElapsedMs`, the dual-write seam — was
+> retired by the worked-seconds simplification (S.5 atomic cutover at
+> `793bb2c`). Under the new model, pause is `{ ...f, paused: !f.paused }`;
+> `tickFocus` is gated on `!paused`, so `workedMs` freezes naturally.
+> The `taskId` migration (rev 3) and R2 PiP rename propagation are still
+> live and load-bearing. Preserved for historical context.
+
+---
+
+
 **Status:** Resubmitted to Verse (rev 3) — folds in `FocusState.task → FocusState.taskId` correction per task-as-entity plan M2 prep. Rev 2 (six-item fix) preserved below; rev 3 deltas marked inline.
 **Date:** 2026-05-07
 **Author:** Terse

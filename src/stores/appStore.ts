@@ -16,10 +16,12 @@ const SIDEBAR_COLLAPSED_KEY = "verseday_sidebar_collapsed";
 // a real time entry). The mode tag lets TypeScript narrow timeEntryId /
 // startedAt accesses to the active branch and catch any code path that
 // touches them in preview by mistake.
-// M2.2 — `taskId: number` is the canonical reference. The transitional
-// `task: Task` snapshot from M2.1 is retired; consumers read the live
-// task via selectFocusedTask (cache-backed) so a rename made elsewhere
-// in the app reflects on every focus surface within one render.
+// S.6 — wall-clock fields (startedAt, pausedAtMs, pausedAccumMs)
+// retired. workedMs is the sole source of truth for session-only
+// elapsed; tickFocus increments it while running, togglePauseFocus
+// flips a flag that gates the increment. taskId remains the canonical
+// task reference (M2.2); selectFocusedTask resolves task data from
+// tasksByIdCache (M3.2 reroutes to canonical tasksById).
 export type FocusState =
   | {
       mode: "preview";
@@ -31,24 +33,14 @@ export type FocusState =
       mode: "active";
       taskId: number;
       timeEntryId: number;
-      startedAt: number; // Date.now() timestamp
       previousPage: Page;
       priorElapsedMs: number;
-      // Pause is a first-class concept on the active branch. Preview has
-      // no time entry, so pause is meaningless there. togglePauseFocus
-      // guards mode === "active".
+      /** Pause is a flag — tickFocus is gated on !paused, so workedMs
+       *  freezes naturally during pauses. No wall-clock bookkeeping. */
       paused: boolean;
-      /** Wall-clock ms when current pause began; null when running.
-       *  TRANSITIONAL — retired in S.5 of the worked-seconds simplification
-       *  (docs/2026-05-07-worked-seconds-simplification.md). */
-      pausedAtMs: number | null;
-      /** Total paused time this session, excluding any open pause.
-       *  TRANSITIONAL — retired in S.5. */
-      pausedAccumMs: number;
-      /** Worked time this session, in ms. Incremented by tickFocus while
-       *  running. Becomes the source of truth for the displayed counter
-       *  in S.3 and for the DB worked_seconds column in S.5. Added in
-       *  S.2 alongside the wall-clock fields (dual-write seam). */
+      /** Worked time this session, in ms. Incremented by tickFocus
+       *  every ~1s while running. The live truth between start and
+       *  stop; written to time_entries.worked_seconds on stop. */
       workedMs: number;
     };
 
@@ -221,53 +213,64 @@ function loadPersistedFocus(): LoadedFocus | null {
 
     // mode === "active" — pause field defaults for pre-rev-2 entries.
     const active = parsed as Partial<Extract<FocusState, { mode: "active" }>>;
-    if (active.timeEntryId === undefined || active.startedAt === undefined) {
-      // Active sessions need both — corrupt entry.
+    if (active.timeEntryId === undefined) {
+      // Active sessions need a time entry id. Corrupt.
       localStorage.removeItem(FOCUS_STORAGE_KEY);
       return null;
     }
-    // S.2 — workedMs derivation for in-flight state migration.
-    // Pre-S.2 persisted state has wall-clock fields but no workedMs.
-    // Derive once from the legacy formula. After this load,
-    // restoreFocus immediately persists the new shape (R3) so the
-    // shim is one-shot.
+    // S.6 — defensive retention of the pre-S.2 in-flight migration shim.
+    // Modern persisted state has workedMs and lacks startedAt/pausedAtMs/
+    // pausedAccumMs (S.6 retired those). Legacy state (from a build
+    // pre-dating S.2) has the wall-clock fields but no workedMs.
+    // - workedMs present → use it directly. No-op shim.
+    // - workedMs missing → derive from the legacy wall-clock formula
+    //   one final time, then immediately persist the modern shape
+    //   (restoreFocus calls persistFocus right after — R3) so this
+    //   path runs exactly once per legacy persisted entry.
     //
-    // If the previous session was running (paused === false), force
-    // it paused. We don't want to start ticking workedMs into a
-    // session whose user mental model says "I quit, I wasn't working
-    // during the quit." User clicks Resume to continue.
+    // If the previous session was running (paused === false), force-
+    // pause on derive — the worked-seconds model treats quit time as
+    // not-worked, but the wall-clock formula included quit-window
+    // elapsed up to the moment of relaunch. Force-pause prevents
+    // ticking from that inflated value when the user resumes.
     const paused = active.paused ?? false;
-    const startedAt = active.startedAt;
-    const pausedAccumMs = active.pausedAccumMs ?? 0;
-    const persistedPausedAtMs = active.pausedAtMs ?? null;
-    let workedMs = (active as Partial<Extract<FocusState, { mode: "active" }>>).workedMs;
-    let derivedAndForcedPaused = false;
-    const now = Date.now();
-    if (workedMs === undefined) {
-      const openPause = paused && persistedPausedAtMs !== null ? now - persistedPausedAtMs : 0;
-      workedMs = Math.max(0, now - startedAt - pausedAccumMs - openPause);
-      derivedAndForcedPaused = !paused; // only force if was running
+    const persistedWorkedMs = (active as Partial<Extract<FocusState, { mode: "active" }>>)
+      .workedMs;
+    let workedMs: number;
+    let resolvedPaused = paused;
+    if (persistedWorkedMs !== undefined) {
+      workedMs = persistedWorkedMs;
+    } else {
+      // Legacy derive path. Read the (now-extinct) wall-clock fields
+      // from `parsed` directly — they're not on the FocusState type
+      // anymore, but JSON.parse returns them if present in storage.
+      const legacy = parsed as Partial<{
+        startedAt: number;
+        pausedAtMs: number | null;
+        pausedAccumMs: number;
+      }>;
+      const startedAt = legacy.startedAt;
+      if (startedAt === undefined) {
+        // No workedMs and no startedAt → can't derive. Drop.
+        localStorage.removeItem(FOCUS_STORAGE_KEY);
+        return null;
+      }
+      const legacyPausedAtMs = legacy.pausedAtMs ?? null;
+      const legacyPausedAccumMs = legacy.pausedAccumMs ?? 0;
+      const now = Date.now();
+      const openPause = paused && legacyPausedAtMs !== null ? now - legacyPausedAtMs : 0;
+      workedMs = Math.max(0, now - startedAt - legacyPausedAccumMs - openPause);
+      // Force-pause if the legacy state was running.
+      if (!paused) resolvedPaused = true;
     }
-    // R4 — when force-pausing a previously-running session, set
-    // pausedAtMs = now so the wall-clock-derived display freezes
-    // correctly during the dual-write window (S.2-S.4). Without this,
-    // paused === true with pausedAtMs === null leaves openPause = 0
-    // in computeFocusElapsedMs, and the displayed counter keeps
-    // ticking up wall-clock-style despite the paused flag. S.5 retires
-    // the wall-clock derivation entirely; until then this invariant
-    // matters.
-    const finalPausedAtMs = derivedAndForcedPaused ? now : persistedPausedAtMs;
     return {
       focus: {
         mode: "active",
         taskId,
         timeEntryId: active.timeEntryId,
-        startedAt,
         previousPage: active.previousPage ?? "daily",
         priorElapsedMs: active.priorElapsedMs ?? 0,
-        paused: derivedAndForcedPaused ? true : paused,
-        pausedAtMs: finalPausedAtMs,
-        pausedAccumMs,
+        paused: resolvedPaused,
         workedMs,
       },
       legacyTaskSnapshot: legacyTask ?? null,
@@ -384,15 +387,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       mode: "active",
       taskId: f.taskId,
       timeEntryId,
-      startedAt: Date.now(),
       previousPage: f.previousPage,
       priorElapsedMs: f.priorElapsedMs,
       paused: false,
-      pausedAtMs: null,
-      pausedAccumMs: 0,
-      // S.2 — worked-seconds counter starts at 0. Tick effect bumps it
-      // via tickFocus. Wall-clock fields above stay populated for the
-      // dual-write seam (S.4 keeps them; S.5 retires).
       workedMs: 0,
     };
     persistFocus(next);
@@ -438,13 +435,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       mode: "active",
       taskId: task.id,
       timeEntryId,
-      startedAt: Date.now(),
       previousPage,
       priorElapsedMs,
       paused: false,
-      pausedAtMs: null,
-      pausedAccumMs: 0,
-      // S.2 — see activateFocus comment.
       workedMs: 0,
     };
     get().cacheTasks([task]);

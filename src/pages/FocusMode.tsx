@@ -497,8 +497,6 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     const state = {
       elapsed: elapsed + priorMs,
       paused: focus.paused,
-      pausedAtMs: focus.pausedAtMs,
-      pausedAccumMs: focus.pausedAccumMs,
       phase,
       breakRemaining,
       taskTitle: focusedTask.title,
@@ -658,20 +656,35 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [setPage, currentPage]);
 
-  // Thin wrapper around togglePauseFocus that also slides the break
-  // start forward by the pause duration on resume, so a break timer
-  // doesn't "catch up" to wall-clock time after a paused stretch. The
-  // store action owns paused / pausedAtMs / pausedAccumMs; this
-  // wrapper owns the FocusMode-local break-start adjustment that the
-  // pre-M2.2 handlePause performed alongside the pause toggle.
+  // Thin wrapper around togglePauseFocus. Pomodoro break-phase
+  // adjustment (so a paused break doesn't "catch up" to wall-clock
+  // time when resumed) is handled by the pause-tracking effect below
+  // — it watches focus.paused transitions and slides breakStartRef
+  // forward by the pause duration on resume during break phase.
   function handleTogglePause() {
-    const f = useAppStore.getState().focus;
-    if (!f || f.mode !== "active") return;
-    if (f.paused && f.pausedAtMs !== null && phase === "break") {
-      breakStartRef.current += Date.now() - f.pausedAtMs;
-    }
     togglePauseFocus();
   }
+
+  // S.6 — pause-start tracking for the Pomodoro break-phase adjustment.
+  // The store action no longer carries pausedAtMs (worked-seconds
+  // model retired wall-clock fields). Local ref records when the
+  // user paused; on resume during break phase, advance breakStartRef
+  // so the break countdown effectively pauses too.
+  const pauseStartRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (focus?.mode !== "active") {
+      pauseStartRef.current = null;
+      return;
+    }
+    if (focus.paused && pauseStartRef.current === null) {
+      pauseStartRef.current = Date.now();
+    } else if (!focus.paused && pauseStartRef.current !== null) {
+      if (phase === "break") {
+        breakStartRef.current += Date.now() - pauseStartRef.current;
+      }
+      pauseStartRef.current = null;
+    }
+  }, [focus?.mode === "active" && focus.paused, phase, focus?.mode]);
 
   // Break prompt responses
   function handleTakeBreak(durationMs: number) {

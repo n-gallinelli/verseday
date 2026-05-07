@@ -1,5 +1,19 @@
 # Pause on Relaunch + Quit-Time Correctness
 
+> **OBSOLETE under the worked-seconds model.** This entire milestone was
+> dissolved by the worked-seconds simplification (`docs/2026-05-07-worked-
+> seconds-simplification.md`). Under that model, quit time can't leak into
+> worked time because `workedMs` is a counter that only increments while
+> the app is running and unpaused — there's nothing to clamp, no checkpoint
+> heuristic, no orphan-cap math. Auto-pause-on-relaunch became a 3-line
+> flag flip in `restoreFocus`. The implementation that actually shipped
+> was reverted at `9f2b05d` and replaced by the worked-seconds series
+> (S.1 through S.6). This doc is preserved for historical context — it
+> documents the wall-clock-era reasoning that motivated the pivot.
+
+---
+
+
 **Status:** Rev 2 — incorporated Verse review (orphan-cap guard + three minor notes folded in)
 **Date:** 2026-05-07
 **Author:** Terse

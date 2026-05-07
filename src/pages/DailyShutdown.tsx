@@ -350,33 +350,40 @@ export default function DailyShutdown() {
                         <div
                           key={task.id}
                           onClick={() => setDetailTask(task)}
-                          className="px-2.5 py-3 rounded-md border border-line-soft bg-elevated/60 flex items-center gap-3 transition-colors hover:bg-overlay-hover cursor-pointer"
+                          className="px-3 py-3 rounded-md border border-line-soft bg-elevated/60 flex items-center gap-3 transition-colors hover:bg-overlay-hover cursor-pointer"
                         >
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleToggleHighlight(task.id);
-                            }}
-                            className="flex-shrink-0 ml-0.5 cursor-pointer"
-                            title={isHighlight ? "Remove highlight" : "Mark as highlight"}
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill={isHighlight ? "var(--accent-highlight)" : "none"} stroke={isHighlight ? "var(--accent-highlight)" : "var(--text-disabled)"} strokeWidth="2">
-                              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                            </svg>
-                          </button>
-                          {project ? (
-                            <span
-                              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: project.color }}
-                              title={project.name}
-                            />
-                          ) : (
-                            <span className="w-1.5 h-1.5 flex-shrink-0" aria-hidden />
-                          )}
-                          <span className="flex-1 min-w-0 text-[12px] text-fg-secondary truncate">
-                            {task.external_source === "calendar" && <CalendarChip className="mr-1.5 align-[-1px]" />}
-                            {task.title}
-                          </span>
+                          {/* Leading group — star + project dot + title
+                              read as one tight unit (gap-2) anchored to
+                              the row's left edge. Outer gap-3 keeps the
+                              right-side slots (project name, time)
+                              clearly separated. */}
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleHighlight(task.id);
+                              }}
+                              className="flex-shrink-0 ml-2 cursor-pointer"
+                              title={isHighlight ? "Remove highlight" : "Mark as highlight"}
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill={isHighlight ? "var(--accent-highlight)" : "none"} stroke={isHighlight ? "var(--accent-highlight)" : "var(--text-disabled)"} strokeWidth="2">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                              </svg>
+                            </button>
+                            {project ? (
+                              <span
+                                className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: project.color }}
+                                title={project.name}
+                              />
+                            ) : (
+                              <span className="w-1.5 h-1.5 flex-shrink-0" aria-hidden />
+                            )}
+                            <span className="flex-1 min-w-0 text-[12px] text-fg-secondary truncate">
+                              {task.external_source === "calendar" && <CalendarChip className="mr-1.5 align-[-1px]" />}
+                              {task.title}
+                            </span>
+                          </div>
                           <span className="text-[10px] text-fg-faded shrink-0 w-[120px] truncate">
                             {project?.name ?? ""}
                           </span>
@@ -417,26 +424,31 @@ export default function DailyShutdown() {
                         <div
                           key={task.id}
                           onClick={() => setDetailTask(task)}
-                          className="group/row px-2.5 py-3 rounded-md border border-line-soft bg-elevated/60 flex items-center gap-3 transition-colors hover:bg-overlay-hover cursor-pointer"
+                          className="group/row px-3 py-3 rounded-md border border-line-soft bg-elevated/60 flex items-center gap-3 transition-colors hover:bg-overlay-hover cursor-pointer"
                         >
-                          {task.priority === "high" ? (
-                            <span className="w-[14px] h-[14px] rounded-full border-2 border-accent-danger flex-shrink-0 ml-0.5" title="High priority" />
-                          ) : (
-                            <span className="w-[14px] h-[14px] flex-shrink-0 ml-0.5" aria-hidden />
-                          )}
-                          {project ? (
-                            <span
-                              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: project.color }}
-                              title={project.name}
-                            />
-                          ) : (
-                            <span className="w-1.5 h-1.5 flex-shrink-0" aria-hidden />
-                          )}
-                          <span className={`flex-1 min-w-0 text-[12px] truncate ${isCarried ? "text-fg-faded italic" : "text-fg"}`}>
-                            {task.external_source === "calendar" && <CalendarChip className="mr-1.5 align-[-1px]" />}
-                            {task.title}
-                          </span>
+                          {/* Leading group — priority indicator + dot
+                              + title read tight (gap-2). Outer gap-3
+                              keeps right-side slots clearly separated. */}
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            {task.priority === "high" ? (
+                              <span className="w-[14px] h-[14px] rounded-full border-2 border-accent-danger flex-shrink-0 ml-2" title="High priority" />
+                            ) : (
+                              <span className="w-[14px] h-[14px] flex-shrink-0 ml-2" aria-hidden />
+                            )}
+                            {project ? (
+                              <span
+                                className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: project.color }}
+                                title={project.name}
+                              />
+                            ) : (
+                              <span className="w-1.5 h-1.5 flex-shrink-0" aria-hidden />
+                            )}
+                            <span className={`flex-1 min-w-0 text-[12px] truncate ${isCarried ? "text-fg-faded italic" : "text-fg"}`}>
+                              {task.external_source === "calendar" && <CalendarChip className="mr-1.5 align-[-1px]" />}
+                              {task.title}
+                            </span>
+                          </div>
                           <span className="text-[10px] text-fg-faded shrink-0 w-[120px] truncate">
                             {!isCarried ? (project?.name ?? "") : ""}
                           </span>

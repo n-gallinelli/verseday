@@ -416,6 +416,20 @@ export default function TaskDetailOverlay({
     getWorkedMinutesByDate(task.id).then(setDayBreakdown).catch(() => {});
   }, [task.id]);
 
+  // Sync local `worked` draft to the workedMinutes prop. The host
+  // (TaskDetailOverlayHost) fetches workedMinutes asynchronously after
+  // the overlay mounts, so the initial render sees workedMinutes=0
+  // and the useState initializer above seeds `worked=""`. Without this
+  // sync, the field stays at "" even after the fetch lands.
+  // Pre-S.5 this was masked because the wall-clock query returned
+  // non-zero for in-progress sessions, so workedMinutes was rarely 0
+  // at mount; under the worked-seconds model, a freshly-stopped task
+  // legitimately reports its real worked time only after the async
+  // fetch completes.
+  useEffect(() => {
+    setWorked(workedMinutes > 0 ? workedMinutes.toString() : "");
+  }, [workedMinutes]);
+
   // Close popover on click outside
   // Sync local status if parent refreshes the task object.
   useEffect(() => {

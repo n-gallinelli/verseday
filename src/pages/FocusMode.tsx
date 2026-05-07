@@ -8,6 +8,7 @@ import {
   updateTaskNotes,
   updateTaskTitle,
   updateTaskEstimate,
+  updateTimeEntryWorkedSeconds,
   getSetting,
   getTasksForDate,
   getTaskStatusById,
@@ -710,23 +711,16 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     setBreakRemaining(0);
   }
 
-  // Total non-worked seconds for this session — fed to stopTimeEntry's
-  // break_seconds column so downstream worked-minutes queries
-  // (getWorkedMinutesForTaskIds) compute against actual work time.
-  // Combines Pomodoro break time (totalBreakTimeRef, FocusMode-local)
-  // with all paused time (closed pauses via focus.pausedAccumMs plus
-  // any open pause if the user is stopping while paused). M2.4 — the
-  // paused-time portion is new; pre-M2.4 it was implicitly counted as
-  // worked time, over-recording by however long the user paused.
+  // S.5 — Pomodoro break time only. The paused-time portion (M2.4) is
+  // gone: paused time isn't tracked via break_seconds anymore (the
+  // worked-seconds model freezes workedMs while paused, so paused
+  // time is naturally excluded from the recorded work). break_seconds
+  // remains an audit column populated from totalBreakTimeRef so a
+  // session's Pomodoro break duration is preserved on disk for
+  // reporting / debugging, but it's no longer read by the
+  // worked-minutes queries.
   function getBreakSeconds(): number {
-    let total = totalBreakTimeRef.current;
-    if (focus && focus.mode === "active") {
-      total += focus.pausedAccumMs;
-      if (focus.paused && focus.pausedAtMs !== null) {
-        total += Date.now() - focus.pausedAtMs;
-      }
-    }
-    return total / 1000;
+    return totalBreakTimeRef.current / 1000;
   }
 
   async function handleDone() {
@@ -737,7 +731,13 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       // minutes get baked in before the row flips to done. Preview
       // mode has no time entry — just mark the task done and roll
       // to the next one.
+      //
+      // S.5 — write worked_seconds before stopTimeEntry. The order
+      // matters: capture focus.workedMs from the closure before
+      // any stopFocus() can clear it.
       if (focus.mode === "active") {
+        const workedSeconds = Math.round(focus.workedMs / 1000);
+        await updateTimeEntryWorkedSeconds(focus.timeEntryId, workedSeconds);
         await stopTimeEntry(focus.timeEntryId, getBreakSeconds());
       }
       await updateTaskStatus(completedTaskId, "done");
@@ -772,8 +772,12 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   async function handleStop() {
     if (!focus) return;
     // Preview has no time entry to close — just clear the focus state.
+    // S.5 — write worked_seconds before stopTimeEntry; capture
+    // focus.workedMs from closure before stopFocus().
     if (focus.mode === "active") {
+      const workedSeconds = Math.round(focus.workedMs / 1000);
       try {
+        await updateTimeEntryWorkedSeconds(focus.timeEntryId, workedSeconds);
         await stopTimeEntry(focus.timeEntryId, getBreakSeconds());
       } catch {
         // Best effort

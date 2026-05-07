@@ -1,7 +1,7 @@
 # Worked-Seconds Simplification
 
-**Status:** Rev 3 — S.4/S.5 dual-write seam to avoid transitional-window `break_seconds` inconsistency
-(Rev 2 incorporated Verse review R1: orphan interaction, R2: minute-rounding preservation, R3: shim persistence explicitness)
+**Status:** Rev 4 addendum (this header) — after S.3 landed, the `adjustFocusElapsed` dual-write was pulled forward into S.3 (otherwise `applyActualMs` would be visibly broken once render switched to `workedMs`). That absorbed half of S.4's documented work. The other half — `togglePauseFocus` — never needed dual-write changes: it already maintains `pausedAtMs/pausedAccumMs` correctly per M2.1, and `tickFocus` is gated on `!paused`, so `workedMs` naturally freezes during pauses without `togglePauseFocus` touching it. **S.4 as a separate commit would have an empty diff. Skipped.** The next milestone after S.3 is the atomic cutover originally documented as S.5 (numbering-wise, may land as S.4 or S.5 depending on the commit author's preference; content unchanged).
+(Rev 3 — S.4/S.5 dual-write seam to avoid transitional-window `break_seconds` inconsistency. Rev 2 — Verse review R1: orphan interaction, R2: minute-rounding preservation, R3: shim persistence explicitness)
 **Date:** 2026-05-07
 **Author:** Terse
 **Branch:** `refactor/task-as-entity` (lands after the M2.5.1 → revert baseline)

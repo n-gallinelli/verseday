@@ -544,45 +544,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ currentPage: "focus", focus: restored });
   },
   togglePauseFocus: () => {
+    // S.5 — flag flip only. Under the worked-seconds model, pause is
+    // a flag; tickFocus is gated on !paused, so workedMs naturally
+    // freezes during pauses. The legacy pausedAtMs/pausedAccumMs
+    // accounting (M2.1) is no longer needed — wall-clock-derived
+    // queries are gone (this commit), the displayed counter reads
+    // focus.workedMs directly (S.3), and break_seconds no longer
+    // captures pause time (the paused-time portion of getBreakSeconds
+    // dropped this commit).
     const f = get().focus;
     if (!f || f.mode !== "active") return;
-    const now = Date.now();
-    const next: FocusState = f.paused
-      ? {
-          ...f,
-          paused: false,
-          pausedAtMs: null,
-          pausedAccumMs:
-            f.pausedAccumMs + (f.pausedAtMs !== null ? now - f.pausedAtMs : 0),
-        }
-      : {
-          ...f,
-          paused: true,
-          pausedAtMs: now,
-        };
+    const next: FocusState = { ...f, paused: !f.paused };
     persistFocus(next);
     set({ focus: next });
   },
   adjustFocusElapsed: (desiredElapsedMs) => {
+    // S.5 — workedMs write only. The legacy back-solve against
+    // pausedAccumMs is gone; wall-clock-derived queries are gone too.
+    // The displayed counter reads focus.workedMs.
     const f = get().focus;
     if (!f || f.mode !== "active") return;
-    // S.3 — dual-write. The displayed counter reads focus.workedMs
-    // directly (FocusMode S.3 wire-up), so the new path must update
-    // workedMs to the requested value. The legacy back-solve against
-    // pausedAccumMs stays alive too; wall-clock-derived DB queries
-    // still need it through the S.4/S.5 cutover. S.5 retires the
-    // legacy half.
-    //
-    // Reference for the back-solve: when paused, anchor to pausedAtMs
-    // so the recomputed accumulator yields exactly `desiredElapsedMs`
-    // when computeFocusElapsedMs runs. When running, use `now`.
-    // Mirrors the existing applyActualMs semantics from
-    // FocusMode.tsx:763.
-    const now = Date.now();
-    const reference = f.paused && f.pausedAtMs !== null ? f.pausedAtMs : now;
-    const newAccum = reference - f.startedAt - desiredElapsedMs;
-    const newWorkedMs = Math.max(0, desiredElapsedMs);
-    const next: FocusState = { ...f, pausedAccumMs: newAccum, workedMs: newWorkedMs };
+    const next: FocusState = { ...f, workedMs: Math.max(0, desiredElapsedMs) };
     persistFocus(next);
     set({ focus: next });
   },

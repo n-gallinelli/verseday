@@ -577,6 +577,38 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 23,
+            description: "worked-seconds simplification S.5 sweep: backfill any rows closed via legacy stopTimeEntry between v22 (S.1) and S.5",
+            // Between S.1 (v22 backfill of pre-existing closed rows) and
+            // S.5 (this commit's stop-side worked_seconds write), any
+            // session stopped via the legacy stopTimeEntry codepath had
+            // its end_time set but worked_seconds left at the v22
+            // default (0). This sweep catches those rows.
+            //
+            // Safe formula: under the dual-write S.4 (which never
+            // happened — S.3 absorbed the relevant write, see doc rev 4
+            // header), break_seconds continued to capture pause time
+            // exactly as M2.4 intended. So wall-seconds - break_seconds
+            // gives the right worked seconds for these transitional rows.
+            //
+            // The `worked_seconds = 0` predicate guarantees we only fill
+            // never-written rows — never clobbering the v22 backfill or
+            // any S.5 stop-side write (those are non-zero by
+            // construction; v22 only wrote 0 for legitimately
+            // zero-worked sessions, which the formula will also yield 0
+            // for, so re-running it is idempotent for that edge case).
+            sql: "
+                UPDATE time_entries
+                SET worked_seconds = MAX(
+                  0,
+                  CAST(ROUND((julianday(end_time) - julianday(start_time)) * 86400) AS INTEGER)
+                    - COALESCE(break_seconds, 0)
+                )
+                WHERE end_time IS NOT NULL AND worked_seconds = 0;
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

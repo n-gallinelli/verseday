@@ -239,15 +239,24 @@ function loadPersistedFocus(): LoadedFocus | null {
     const paused = active.paused ?? false;
     const startedAt = active.startedAt;
     const pausedAccumMs = active.pausedAccumMs ?? 0;
-    const pausedAtMs = active.pausedAtMs ?? null;
+    const persistedPausedAtMs = active.pausedAtMs ?? null;
     let workedMs = (active as Partial<Extract<FocusState, { mode: "active" }>>).workedMs;
     let derivedAndForcedPaused = false;
+    const now = Date.now();
     if (workedMs === undefined) {
-      const now = Date.now();
-      const openPause = paused && pausedAtMs !== null ? now - pausedAtMs : 0;
+      const openPause = paused && persistedPausedAtMs !== null ? now - persistedPausedAtMs : 0;
       workedMs = Math.max(0, now - startedAt - pausedAccumMs - openPause);
       derivedAndForcedPaused = !paused; // only force if was running
     }
+    // R4 — when force-pausing a previously-running session, set
+    // pausedAtMs = now so the wall-clock-derived display freezes
+    // correctly during the dual-write window (S.2-S.4). Without this,
+    // paused === true with pausedAtMs === null leaves openPause = 0
+    // in computeFocusElapsedMs, and the displayed counter keeps
+    // ticking up wall-clock-style despite the paused flag. S.5 retires
+    // the wall-clock derivation entirely; until then this invariant
+    // matters.
+    const finalPausedAtMs = derivedAndForcedPaused ? now : persistedPausedAtMs;
     return {
       focus: {
         mode: "active",
@@ -257,7 +266,7 @@ function loadPersistedFocus(): LoadedFocus | null {
         previousPage: active.previousPage ?? "daily",
         priorElapsedMs: active.priorElapsedMs ?? 0,
         paused: derivedAndForcedPaused ? true : paused,
-        pausedAtMs,
+        pausedAtMs: finalPausedAtMs,
         pausedAccumMs,
         workedMs,
       },

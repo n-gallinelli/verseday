@@ -389,6 +389,17 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   useEffect(() => {
     if (!focus || focus.mode !== "active") return;
 
+    // M2.5 — sync elapsed to the store-derived value before the
+    // interval starts. Required for the relaunch-while-paused case:
+    // when the persisted focus restores in paused state, the interval
+    // below early-returns on every tick (because focus.paused), so
+    // setElapsed would never fire and the on-screen counter would
+    // sit at the useState default of 0 (showing only priorElapsedMs).
+    // computeFocusElapsedMs handles the paused case correctly: the
+    // open-pause delta cancels the wall-clock advance, yielding the
+    // frozen value at the moment of pause.
+    setElapsed(computeFocusElapsedMs(focus, Date.now()) - focus.priorElapsedMs);
+
     const interval = setInterval(() => {
       if (focus.paused) return;
 

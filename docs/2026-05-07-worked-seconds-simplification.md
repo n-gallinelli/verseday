@@ -1,6 +1,6 @@
 # Worked-Seconds Simplification
 
-**Status:** Awaiting Verse review
+**Status:** Rev 2 — incorporated Verse review (R1: orphan interaction, R2: minute-rounding preservation, R3: shim persistence explicitness)
 **Date:** 2026-05-07
 **Author:** Terse
 **Branch:** `refactor/task-as-entity` (lands after the M2.5.1 → revert baseline)
@@ -192,6 +192,49 @@ if (focus.mode === "active" && (focus as any).workedMs === undefined) {
 
 This is the only place the old math survives. One-time conversion at the loader level; subsequent persists use the new shape. The shim removes in S.6 once we're confident no users have pre-S.2 persisted state (or kept for one release cycle as defensive).
 
+### Shim must persist immediately (R3)
+
+After deriving the new shape and before `set({ focus: convertedFocus })`, `restoreFocus` calls `persistFocus(convertedFocus)`. Without this, the next launch reloads the unchanged old-shape JSON from `localStorage` and re-runs the shim — wasted work and a perpetual derivation step on every boot. With the immediate persist, subsequent loads see the new shape; the shim becomes a no-op on every launch after the first post-upgrade boot.
+
+```ts
+focus = { /* new shape */ };
+persistFocus(focus);   // R3 — flush new shape to localStorage so the shim is one-shot
+```
+
+### Orphaned-entry-referenced-by-focus (R1)
+
+If `focus.timeEntryId` points at a `time_entries` row whose `end_time IS NOT NULL` at restore time — possible if `closeOrphanedTimeEntries` (the 4-hour cap path) closed it during a prior run, or if the app exited while focus referenced an already-stopped row — restoring the focus would let the user click Resume and accumulate `workedMs` against a closed DB row. A subsequent Stop would write to a closed row. Undefined behavior.
+
+Resolution at the loader (or top of `restoreFocus`):
+
+```ts
+const persistedEntry = await getTimeEntryById(focus.timeEntryId);  // new read-only query
+if (persistedEntry?.end_time !== null) {
+  // The DB row is closed. Land any locally-tracked work credit on the
+  // closed row (only if it currently has 0 worked_seconds — don't
+  // clobber a real backfill or a previously-written stop value), then
+  // clear focus so we don't dangle a reference.
+  if ((persistedEntry.worked_seconds ?? 0) === 0 && focus.workedMs > 0) {
+    await updateTimeEntryWorkedSeconds(
+      focus.timeEntryId,
+      Math.round(focus.workedMs / 1000),
+    );
+  }
+  persistFocus(null);
+  return;  // restoreFocus exits without setting focus
+}
+```
+
+The user keeps their work credit on the historical entry; no dangling focus reference; no write to a closed row from a future Stop. Two new tiny queries (`getTimeEntryById`, `updateTimeEntryWorkedSeconds`) — both read-only-by-id / single-row-update-by-id, parameterized.
+
+### Minute-rounding behavior preservation (R2)
+
+Existing `getWorkedMinutesForTask` (`src/db/queries.ts:1122`) and friends already use `Math.round(...)` on a fractional minutes value (the wall-clock formula produces fractional minutes via `julianday * 1440 - break_seconds / 60.0`). The new query produces a fractional minutes value the same way: `SUM(worked_seconds) / 60.0`. Behavior preserved — same `Math.round` wrapper, same fractional input, same output modulo sub-second precision noise from backfill `ROUND`-to-integer.
+
+The `Math.floor(finalElapsedMs / 60000)` from M2 capstone Test 6's "minute-rounding precision quirk" is a **separate site** — the optimistic UI computation in `DailyPlanner.tsx` (handleStartFocus swap path and dead handleStopFocus). Those sites compute from `focus` directly, not from the DB query. They're untouched by this milestone — they continue to read `Math.floor(displayedMs / 60000)` post-rewrite, just with `displayedMs` sourced from `workedMs + priorElapsedMs` instead of wall-clock math. Same `Math.floor` quirk preserved.
+
+**Don't fix the rounding precision in this milestone.** That's its own UX concern, out of scope.
+
 ---
 
 ## Test plan
@@ -204,7 +247,8 @@ Manual tests in `npm run tauri dev`. Each sub-milestone runs the relevant subset
 4. **Resume across quit.** Quit-while-running scenario above + click Resume. Counter resumes from `0:10` and ticks up. No "stuck at 0" iterated-quit failure.
 5. **Pause symmetry regression.** All M2 capstone tests still pass — 1, 2, 3, 4, 5, 7, 9. (Test 6 = paused-time-excluded; passes by construction. Test 8 = actual-time popover; `adjustFocusElapsed` rewrite preserves behavior.)
 6. **Migration backfill correctness.** Pick 3 closed `time_entries` rows from before the upgrade. Verify `worked_seconds` matches `(end_time - start_time)*86400 - break_seconds` within 1s of integer rounding.
-7. **In-flight state migration.** Simulate by manually injecting old-shape focus JSON into `localStorage` (via dev console), relaunching. Counter shows derived value, paused.
+7. **In-flight state migration.** Simulate by manually injecting old-shape focus JSON into `localStorage` (via dev console), relaunching. Counter shows derived value, paused. Verify `localStorage["verseday_focus"]` after relaunch contains the new shape (R3 — shim persisted immediately).
+8. **Orphan interaction (R1).** Simulate via dev console: write a focus JSON with a `timeEntryId` pointing at a closed `time_entries` row (set `end_time` to a real timestamp, `worked_seconds = 0`), include `workedMs > 0` in the focus blob, relaunch. Verify focus clears (no dangling reference); the closed row's `worked_seconds` matches `Math.round(workedMs / 1000)`. Re-run with `worked_seconds > 0` already set — verify the loader doesn't clobber the existing value.
 
 ---
 
@@ -236,6 +280,7 @@ Manual tests in `npm run tauri dev`. Each sub-milestone runs the relevant subset
 - **Persistence under crash.** If the app crashes between localStorage writes, lose up to N seconds of work credit (where N is the persist cadence). Acceptable trade-off — same risk as the current 30s checkpoint window, just smaller.
 - **Background tab throttling.** If the focus window is backgrounded (Tauri WKWebView under macOS), the tick may slow or pause entirely. **State the trade-off:** under the new model, backgrounded time wouldn't count as worked time. Under the M2.4 wall-clock model, backgrounded time *did* count as worked time (the `now - startedAt` math kept ticking regardless of foreground state). Net wash — the new model arguably more accurate ("I wasn't actually working when the laptop was asleep"). Track if user pushback materializes.
 - **No new IPC, no security surface, no budget impact.**
+- **Orphan rows now get 0 worked credit** (Verse rev 2 observation). Under the wall-clock model, an orphaned entry (`end_time` NULL → `closeOrphanedTimeEntries` cap of 4 hours) inflated worked totals by up to 4 hours of phantom credit per orphan. Under the new model, an orphan that never had a tick has `worked_seconds = 0` — no phantom credit. More conservative; less likely to inflate totals from forgotten/crashed sessions. Net improvement, not a regression.
 
 ---
 

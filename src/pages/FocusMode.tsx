@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
 import { useAppStore, selectFocusedTask } from "../stores/appStore";
-import { computeFocusElapsedMs } from "../utils/focusElapsed";
 import {
   stopTimeEntry,
   checkpointTimeEntry,
@@ -76,6 +75,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const { focus, stopFocus, setPage, setPendingDetailTask, previewFocus, activateFocus, updateFocusTask, currentPage } = useAppStore();
   const togglePauseFocus = useAppStore((s) => s.togglePauseFocus);
   const adjustFocusElapsed = useAppStore((s) => s.adjustFocusElapsed);
+  const tickFocus = useAppStore((s) => s.tickFocus);
   const focusedTask = useAppStore(selectFocusedTask);
   // M2.2 — derived pause flags. focus.paused only exists on the active
   // branch; `paused` reads here are widely-used legacy locals. Keeping
@@ -189,7 +189,9 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // = null`, `pausedAccumRef.current = 0`) are gone. Pause init now
   // lives in startFocus / activateFocus; the store owns those fields.
   useEffect(() => {
-    setElapsed(0);
+    // S.3 — elapsed is derived from focus.workedMs; no setElapsed(0)
+    // needed (workedMs already starts at 0 on a new active session
+    // via startFocus/activateFocus).
     totalBreakTimeRef.current = 0;
     workCycleStartRef.current = 0;
     setCompletedPomodoros(0);
@@ -336,11 +338,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 
   // Total elapsed (for time entry / display)
   const priorMs = focus?.priorElapsedMs ?? 0;
-  // Session-only elapsed (excludes priorElapsedMs). Driven by the tick
-  // effect below; the store holds the inputs (focus.startedAt, focus.paused,
-  // focus.pausedAtMs, focus.pausedAccumMs), this state just caches the
-  // last computed value so we don't re-run the math on every read.
-  const [elapsed, setElapsed] = useState(0);
+  // S.3 — session-only elapsed (excludes priorElapsedMs) is now derived
+  // directly from focus.workedMs. The tick effect below increments
+  // workedMs via tickFocus; subscribers re-render. No local elapsed
+  // state, no setElapsed, no wall-clock derivation here.
+  const elapsed = focus?.mode === "active" ? focus.workedMs : 0;
 
   // Pomodoro state
   const [phase, setPhase] = useState<FocusPhase>("work");
@@ -372,55 +374,46 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // Calculate work-only elapsed (total elapsed minus break time)
   const totalBreakTimeRef = useRef(0);
 
-  // M2.5.1 — sync elapsed to the store-derived value when the focus
-  // session changes (start, swap, pause toggle). Required for the
-  // relaunch-while-paused case: when persisted focus restores in
-  // paused state, the tick interval below early-returns on every
-  // tick, so the runtime setElapsed would never fire and the on-screen
-  // counter would sit at the useState default of 0 (showing only
-  // priorElapsedMs). computeFocusElapsedMs handles the paused case:
-  // the open-pause delta cancels wall-clock advance, yielding the
-  // frozen value at the moment of pause.
+  // S.3 — Timer tick. Runs only on active running sessions. The store
+  // owns workedMs; this effect's job is to call tickFocus(deltaMs) at
+  // 1Hz with wall-clock deltas (Date.now() - lastTickAt), and to drive
+  // the Pomodoro phase transitions.
   //
-  // This effect's deps are `[focus]` only — runs on focus *identity*
-  // change, never on the elapsed-driven dep churn that the tick
-  // effect's getWorkElapsed dep used to cause. Pre-M2.5.1 the seed
-  // lived inside the tick effect; combined with the
-  // `getWorkElapsed → useCallback([elapsed])` chain, every tick's
-  // setElapsed kicked the tick effect's deps and re-fired the seed
-  // before the 200ms interval could complete its first fire. The
-  // counter stalled at the seed value (0:00 for case-B post-resume).
-  // Splitting the seed out unblocks the interval.
+  // Effect deps don't include `focus` directly — that would re-fire on
+  // every workedMs mutation, killing the interval before it ticks.
+  // We extract `focus.taskId`, `focus.mode`, `focus.paused` as
+  // primitive deps; the effect re-fires only on identity / mode /
+  // pause-flag change. Pomodoro logic reads the live focus.workedMs
+  // via useAppStore.getState() inside the interval body.
+  //
+  // lastTickRef is reset on every effect re-fire. That handles the
+  // Verse-flagged pause-resume reset case: if the user resumes after
+  // a long pause, the focus reference changes (paused: true → false),
+  // the effect re-fires, lastTickRef = Date.now(); the first running
+  // tick measures from now, not from the pre-pause running tick.
+  const focusTaskId = focus?.taskId ?? null;
+  const focusMode = focus?.mode ?? null;
+  const isPaused = focus?.mode === "active" ? focus.paused : true;
+  const lastTickRef = useRef<number>(0);
   useEffect(() => {
-    if (!focus || focus.mode !== "active") return;
-    setElapsed(computeFocusElapsedMs(focus, Date.now()) - focus.priorElapsedMs);
-  }, [focus]);
-
-  // Timer tick — runs only on active sessions. Preview has no startedAt
-  // and no time to count.
-  //
-  // M2.2 — pause-state inputs come from the store (`focus.paused`,
-  // `focus.pausedAccumMs`, `focus.pausedAtMs`). When paused, the tick
-  // early-returns; the last `setElapsed` value (set by the seed effect
-  // above on focus change) stays on screen until resume.
-  //
-  // M2.5.1 — `getWorkElapsed` (formerly a useCallback wrapping
-  // `elapsed - totalBreakTimeRef.current`) was removed entirely. Its
-  // only call site (this effect's break-end branch) was already dead
-  // code — overwritten one line later by `raw - totalBreakTimeRef.current`.
-  // No render-side readers existed. Dropping the dep + the helper
-  // breaks the elapsed-driven re-fire loop that was starving the
-  // 200ms interval.
-  useEffect(() => {
-    if (!focus || focus.mode !== "active") return;
+    if (focusMode !== "active" || isPaused) return;
+    lastTickRef.current = Date.now();
 
     const interval = setInterval(() => {
-      if (focus.paused) return;
+      const current = useAppStore.getState().focus;
+      if (!current || current.mode !== "active" || current.paused) return;
 
       const now = Date.now();
-      const total = computeFocusElapsedMs(focus, now);
-      const raw = total - focus.priorElapsedMs;
-      setElapsed(raw);
+      const delta = now - lastTickRef.current;
+      lastTickRef.current = now;
+      if (delta > 0) tickFocus(delta);
+
+      // Read latest workedMs after the tick — `current` was sampled
+      // before tickFocus; for Pomodoro thresholds we want the
+      // post-tick value.
+      const latest = useAppStore.getState().focus;
+      if (!latest || latest.mode !== "active") return;
+      const raw = latest.workedMs;
 
       if (phase === "work") {
         const we = raw - totalBreakTimeRef.current;
@@ -463,10 +456,10 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           playChime();
         }
       }
-    }, 200);
+    }, 1000);
 
     return () => clearInterval(interval);
-  }, [focus, phase, completedPomodoros, breakDuration]);
+  }, [focusTaskId, focusMode, isPaused, phase, completedPomodoros, breakDuration, tickFocus]);
 
   // Checkpoint — active sessions only.
   useEffect(() => {
@@ -490,11 +483,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // Without this dep, the PiP would keep showing the stale title — the
   // exact regression the entity refactor exists to prevent.
   //
-  // Payload extends with pausedAtMs / pausedAccumMs so any future PiP
-  // consumer can compute its own elapsed via computeFocusElapsedMs;
-  // current FocusPip.tsx still consumes the precomputed `elapsed`
-  // (kept for back-compat — see the rev 3 doc's "Why we don't push
-  // the elapsed math to the PiP" note).
+  // S.3 — `elapsed` here is derived from focus.workedMs (the new
+  // tick-counter source of truth), not from wall-clock derivation.
+  // pausedAtMs / pausedAccumMs are still in the payload through the
+  // dual-write window (S.4) for any consumer that wants them; PiP
+  // doesn't currently use them, just renders the precomputed elapsed.
   useEffect(() => {
     if (!focus || focus.mode !== "active" || !focusedTask) {
       localStorage.removeItem(PIP_STATE_KEY);
@@ -833,10 +826,12 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     if (!focus || focus.mode !== "active") return;
     const newMs = Math.max(focus.priorElapsedMs, targetMs);
     const desiredElapsed = newMs - focus.priorElapsedMs;
-    // M2.2 — store action owns pausedAccumMs; reference selection
-    // (paused → pausedAtMs, running → now) lives in adjustFocusElapsed.
+    // S.3 — adjustFocusElapsed is now a dual-write: sets workedMs
+    // directly (which the displayed counter reads) AND back-solves
+    // pausedAccumMs (which wall-clock-derived queries still need
+    // through S.4/S.5). No local elapsed state to update — the
+    // store action's set() triggers the re-render via focus.workedMs.
     adjustFocusElapsed(desiredElapsed);
-    setElapsed(desiredElapsed);
   }
 
   // Parsing for the popover inputs.

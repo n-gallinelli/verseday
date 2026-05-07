@@ -521,16 +521,27 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
-    // S.2 R3 — if the loader's in-flight migration shim derived a
-    // workedMs value (i.e. the persisted shape lacked the field), the
-    // shim already set it on persisted.focus. Persist immediately so
-    // the next launch sees the new shape and the shim becomes a
-    // no-op. Without this flush, every boot re-runs the shim against
-    // unchanged old-shape JSON — wasted work and a perpetual
-    // derivation step.
-    persistFocus(persisted.focus);
+    // S.3 — auto-pause on relaunch (user mental model: "quit = paused").
+    // Under the worked-seconds model this is a free flag flip:
+    // workedMs was preserved correctly across the quit, so on
+    // relaunch we just force-pause and the user clicks Resume to
+    // continue. Already-paused sessions stay paused (the test below
+    // is idempotent). Unlike the wall-clock-era pause-on-relaunch
+    // milestone, no math is needed — no checkpoint lookup, no
+    // pausedAtMs computation, no orphan-cap clamp. Just the flag.
+    let restored = persisted.focus;
+    if (restored.mode === "active" && !restored.paused) {
+      restored = { ...restored, paused: true };
+    }
 
-    set({ currentPage: "focus", focus: persisted.focus });
+    // S.2 R3 — flush the (possibly migrated, possibly auto-paused)
+    // shape to localStorage immediately so the next launch sees the
+    // new shape and the migration shim becomes a no-op. Without
+    // this, every boot re-runs the shim against unchanged old-shape
+    // JSON.
+    persistFocus(restored);
+
+    set({ currentPage: "focus", focus: restored });
   },
   togglePauseFocus: () => {
     const f = get().focus;
@@ -555,14 +566,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   adjustFocusElapsed: (desiredElapsedMs) => {
     const f = get().focus;
     if (!f || f.mode !== "active") return;
-    // Reference: when paused, anchor to pausedAtMs so the recomputed
-    // accumulator yields exactly `desiredElapsedMs` when computeFocusElapsedMs
-    // runs. When running, use `now`. Mirrors the existing applyActualMs
-    // semantics from FocusMode.tsx:763.
+    // S.3 — dual-write. The displayed counter reads focus.workedMs
+    // directly (FocusMode S.3 wire-up), so the new path must update
+    // workedMs to the requested value. The legacy back-solve against
+    // pausedAccumMs stays alive too; wall-clock-derived DB queries
+    // still need it through the S.4/S.5 cutover. S.5 retires the
+    // legacy half.
+    //
+    // Reference for the back-solve: when paused, anchor to pausedAtMs
+    // so the recomputed accumulator yields exactly `desiredElapsedMs`
+    // when computeFocusElapsedMs runs. When running, use `now`.
+    // Mirrors the existing applyActualMs semantics from
+    // FocusMode.tsx:763.
     const now = Date.now();
     const reference = f.paused && f.pausedAtMs !== null ? f.pausedAtMs : now;
     const newAccum = reference - f.startedAt - desiredElapsedMs;
-    const next = { ...f, pausedAccumMs: newAccum };
+    const newWorkedMs = Math.max(0, desiredElapsedMs);
+    const next: FocusState = { ...f, pausedAccumMs: newAccum, workedMs: newWorkedMs };
     persistFocus(next);
     set({ focus: next });
   },

@@ -854,15 +854,46 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const list = await getTasksForDate(date);
       set((s) => {
+        // M3.2.a fix — propagate every loaded task across all three
+        // indices, not just the primary one. The primary slice
+        // (taskIdsByDate[date]) is set by replacement so the loaded
+        // SQL order is preserved and tasks no longer scheduled for
+        // this date drop out. The secondary indices
+        // (taskIdsByProject / taskIdsByWeek) are appended via
+        // indexAppend so cross-screen subscribers (b.2 Project
+        // surfaces, b.3 Weekly surfaces) see the task without
+        // requiring their own load. indexAppend is no-op-stable: if
+        // the id is already present it returns the same Map ref.
+        // Stale entries left in non-primary indices when a task moves
+        // buckets via the legacy SQL-direct path are debt-2 territory
+        // and get fixed in M3.2.b.5 when those paths route through
+        // store actions.
         const nextMap = new Map(s.tasksById);
+        let nextProjIdx = s.taskIdsByProject;
+        let nextWeekIdx = s.taskIdsByWeek;
         const ids: number[] = [];
         for (const t of list) {
           nextMap.set(t.id, t);
           ids.push(t.id);
+          if (t.project_id !== null) {
+            nextProjIdx = indexAppend(nextProjIdx, t.project_id, t.id);
+          }
+          if (t.date_scheduled !== null) {
+            nextWeekIdx = indexAppend(
+              nextWeekIdx,
+              weekStartFromDate(t.date_scheduled),
+              t.id,
+            );
+          }
         }
         const nextDateIdx = new Map(s.taskIdsByDate);
         nextDateIdx.set(date, ids);
-        return { tasksById: nextMap, taskIdsByDate: nextDateIdx };
+        return {
+          tasksById: nextMap,
+          taskIdsByDate: nextDateIdx,
+          taskIdsByProject: nextProjIdx,
+          taskIdsByWeek: nextWeekIdx,
+        };
       });
     } catch (err) {
       console.error("[appStore] loadTasksForDate failed", { date, err });
@@ -872,15 +903,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const list = await getTasksForProject(projectId);
       set((s) => {
+        // Same propagation pattern as loadTasksForDate. Primary slice
+        // is taskIdsByProject[projectId]; secondary indices append.
         const nextMap = new Map(s.tasksById);
+        let nextDateIdx = s.taskIdsByDate;
+        let nextWeekIdx = s.taskIdsByWeek;
         const ids: number[] = [];
         for (const t of list) {
           nextMap.set(t.id, t);
           ids.push(t.id);
+          if (t.date_scheduled !== null) {
+            nextDateIdx = indexAppend(nextDateIdx, t.date_scheduled, t.id);
+            nextWeekIdx = indexAppend(
+              nextWeekIdx,
+              weekStartFromDate(t.date_scheduled),
+              t.id,
+            );
+          }
         }
         const nextProjIdx = new Map(s.taskIdsByProject);
         nextProjIdx.set(projectId, ids);
-        return { tasksById: nextMap, taskIdsByProject: nextProjIdx };
+        return {
+          tasksById: nextMap,
+          taskIdsByDate: nextDateIdx,
+          taskIdsByProject: nextProjIdx,
+          taskIdsByWeek: nextWeekIdx,
+        };
       });
     } catch (err) {
       console.error("[appStore] loadTasksForProject failed", { projectId, err });
@@ -890,15 +938,30 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const list = await getTasksForWeek(weekStart, weekEndFromMonday(weekStart));
       set((s) => {
+        // Same propagation pattern as the other loaders. Primary
+        // slice is taskIdsByWeek[weekStart]; secondary indices append.
         const nextMap = new Map(s.tasksById);
+        let nextDateIdx = s.taskIdsByDate;
+        let nextProjIdx = s.taskIdsByProject;
         const ids: number[] = [];
         for (const t of list) {
           nextMap.set(t.id, t);
           ids.push(t.id);
+          if (t.date_scheduled !== null) {
+            nextDateIdx = indexAppend(nextDateIdx, t.date_scheduled, t.id);
+          }
+          if (t.project_id !== null) {
+            nextProjIdx = indexAppend(nextProjIdx, t.project_id, t.id);
+          }
         }
         const nextWeekIdx = new Map(s.taskIdsByWeek);
         nextWeekIdx.set(weekStart, ids);
-        return { tasksById: nextMap, taskIdsByWeek: nextWeekIdx };
+        return {
+          tasksById: nextMap,
+          taskIdsByDate: nextDateIdx,
+          taskIdsByProject: nextProjIdx,
+          taskIdsByWeek: nextWeekIdx,
+        };
       });
     } catch (err) {
       console.error("[appStore] loadTasksForWeek failed", { weekStart, err });

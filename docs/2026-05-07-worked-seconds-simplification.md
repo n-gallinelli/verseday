@@ -1,6 +1,7 @@
 # Worked-Seconds Simplification
 
-**Status:** Rev 2 — incorporated Verse review (R1: orphan interaction, R2: minute-rounding preservation, R3: shim persistence explicitness)
+**Status:** Rev 3 — S.4/S.5 dual-write seam to avoid transitional-window `break_seconds` inconsistency
+(Rev 2 incorporated Verse review R1: orphan interaction, R2: minute-rounding preservation, R3: shim persistence explicitness)
 **Date:** 2026-05-07
 **Author:** Terse
 **Branch:** `refactor/task-as-entity` (lands after the M2.5.1 → revert baseline)
@@ -315,19 +316,39 @@ Each is its own commit on `refactor/task-as-entity`. Stop for Verse review at ev
 - Wall-clock fields still on `FocusState` but no longer read by the UI.
 - **Stop.** Run the test plan items 1–5. M2 pause symmetry tests must still pass. Verse reviews.
 
-### S.4 — Action rewrites
+### S.4 — Action rewrites (dual-write seam)
 
-- `togglePauseFocus` becomes a flag flip + persist.
-- `adjustFocusElapsed` rewrites to set `workedMs` directly.
+**Rev 3 — Verse-required adjustment.** The naive S.4 ("stop writing wall-clock fields") creates a live correctness window: between S.4 and S.5, queries still read wall-clock-derived (`(end - start) - break_seconds`) but `pausedAccumMs` would no longer be feeding `break_seconds`, so any session paused during that window would over-credit worked time on stop. Worse than the dormant row-250 anomaly — a *live* bug.
+
+S.4 keeps the wall-clock fields alive alongside the new `workedMs` writes. Dual-write is the seam:
+
+- `togglePauseFocus` becomes a flag flip on `paused` + persist. **AND** continues to maintain `pausedAtMs` / `pausedAccumMs` exactly as before — the legacy pause accounting stays correct so `getBreakSeconds` (M2.4) still feeds `break_seconds` correctly on stop.
+- `adjustFocusElapsed` writes `workedMs` directly **AND** keeps the legacy back-solve against `pausedAccumMs` so wall-clock-derived queries see the correct adjusted elapsed.
 - `applyActualMs` adapts.
-- Wall-clock fields no longer written by anything.
+- `tickFocus` already only writes `workedMs` + `paused` flag; no wall-clock writes needed because `startedAt` was set once at session start and doesn't change.
+- **Wall-clock fields stay populated.** Queries are still wall-clock-derived; they keep working.
 - **Stop. Verse reviews.**
 
-### S.5 — DB query rewrite + stop-side `worked_seconds` write
+### S.5 — Atomic cutover (queries + stop-side write + drop wall-clock writes)
 
-- Eight worked-minutes queries switch to read `SUM(worked_seconds)`.
-- `stopTimeEntry` callers write `workedMs / 1000` to `worked_seconds` before calling `stopTimeEntry`. Drop the paused-time portion of `getBreakSeconds` (Pomodoro break time stays).
-- **Verify:** pick a few closed-via-this-codepath entries and compare `worked_seconds` to UI-displayed value.
+One commit. Nothing transitional. Five changes land together:
+
+1. `stopTimeEntry` callers write `workedMs / 1000` to `worked_seconds` before calling `stopTimeEntry`.
+2. Drop the paused-time portion of `getBreakSeconds` (Pomodoro break time stays).
+3. Flip the eight worked-minutes queries to read `SUM(worked_seconds)`.
+4. Stop writing wall-clock fields anywhere (`togglePauseFocus` drops the legacy pause accounting; `adjustFocusElapsed` drops the back-solve; `tickFocus` unchanged).
+5. **One-time sweep** to backfill any rows closed via the legacy `stopTimeEntry` path between S.1 and S.5 (e.g., row 250 from the S.1 verification, plus any session the user stopped during S.2/S.3/S.4):
+   ```sql
+   UPDATE time_entries
+   SET worked_seconds = MAX(
+     0,
+     CAST(ROUND((julianday(end_time) - julianday(start_time)) * 86400) AS INTEGER)
+       - COALESCE(break_seconds, 0)
+   )
+   WHERE end_time IS NOT NULL AND worked_seconds = 0;
+   ```
+   Safe to run because the dual-write S.4 kept `break_seconds` accurate (it captured pause time as before). Wall − break = correct worked seconds for every row this sweep touches. The `worked_seconds = 0` predicate ensures we only fill rows that haven't been written yet — never clobbering a real backfill or a real stop-time write.
+6. **Verify:** pick a few closed-via-this-codepath entries and compare `worked_seconds` to UI-displayed value. Run the sweep, then re-query: every closed row has a non-zero `worked_seconds` (modulo legitimately zero-worked sessions).
 - **Stop. Verse reviews.**
 
 ### S.6 — Cleanup

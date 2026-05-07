@@ -96,7 +96,48 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const [bootRetry, setBootRetry] = useState(0);
 
   useEffect(() => {
-    if (focus) return;
+    // Today-only policy: the focus screen surfaces today's open tasks
+    // and nothing else. If the existing focus session is on a task
+    // scheduled for a different date (e.g. a paused active session
+    // that survived a date change, or a preview pinned to a future
+    // task), close it and fall through to the boot logic below — which
+    // either picks today's next open task or shows the empty state
+    // ("nothing left, time to shut down"). Active sessions also write
+    // their accumulated worked-seconds to the time entry before
+    // clearing so no work is lost.
+    if (focus) {
+      const focusedTaskNow = useAppStore.getState().tasksById.get(focus.taskId);
+      const today = todayString();
+      if (focusedTaskNow && focusedTaskNow.date_scheduled !== today) {
+        if (focus.mode === "active") {
+          const { timeEntryId, workedMs } = focus;
+          // Fire-and-forget: best-effort persist. If it fails the
+          // closeOrphanedTimeEntries pass on next boot covers the row.
+          void (async () => {
+            try {
+              await updateTimeEntryWorkedSeconds(
+                timeEntryId,
+                Math.round(workedMs / 1000),
+              );
+              await stopTimeEntry(timeEntryId, 0);
+            } catch {
+              // ignore — orphan cleanup will catch this row
+            }
+          })();
+        }
+        // Drop the focus reference without navigating away — the user
+        // explicitly came TO focus; we want to land on today's next
+        // task or the empty state, not bounce them back.
+        useAppStore.setState({ focus: null });
+        try {
+          localStorage.removeItem("verseday_focus");
+        } catch {
+          // private mode / quota — non-fatal
+        }
+        return;
+      }
+      return;
+    }
     let cancelled = false;
     setBootStatus("loading");
     setBootError(null);

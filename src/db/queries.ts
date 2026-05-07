@@ -222,6 +222,15 @@ export async function getUnfinishedRolloverTasks(): Promise<Task[]> {
   );
 }
 
+export async function getTaskById(id: number): Promise<Task | null> {
+  const db = await getDb();
+  const rows: Task[] = await db.select(
+    "SELECT * FROM tasks WHERE id = $1 LIMIT 1",
+    [id]
+  );
+  return rows[0] ?? null;
+}
+
 export async function getTasksForDate(date: string): Promise<Task[]> {
   const db = await getDb();
   // recurrence IS NULL excludes recurring templates, which can leak into a

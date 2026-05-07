@@ -35,6 +35,25 @@ interface AppState {
   selectedProjectId: number | null;
   focus: FocusState | null;
   pendingDetailTask: Task | null;
+  /** ID of the task whose detail overlay is currently open. `null` = closed.
+   *  Read by the singleton TaskDetailOverlayHost mounted at the App shell.
+   *  Not persisted — overlay always closes on app restart (see plan §5.2). */
+  selectedTaskDetailId: number | null;
+  /** TRANSITIONAL — superseded by canonical tasksById in M3.2.
+   *  Populated opportunistically via cacheTasks() by screens that already
+   *  load tasks. The detail-overlay host reads from here with a getTaskById
+   *  fallback for cache misses. Search for `tasksByIdCache` to find the
+   *  bridge sites that M3.2 retires. */
+  tasksByIdCache: Map<number, Task>;
+  /** Open the singleton task detail overlay for `id`. */
+  openTaskDetail: (id: number) => void;
+  /** Close the singleton task detail overlay. */
+  closeTaskDetail: () => void;
+  /** Write-through cache update. Screens that load tasks call this so the
+   *  singleton overlay can resolve `selectedTaskDetailId` synchronously
+   *  without re-querying the DB. M3.2 retires this in favor of canonical
+   *  store-owned task loading actions. */
+  cacheTasks: (tasks: Task[]) => void;
   /** Persisted user preference for collapsed sidebar (non-focus pages). */
   sidebarCollapsed: boolean;
   /** Ephemeral expand override on focus screens — resets on remount. */
@@ -124,6 +143,16 @@ function loadPersistedFocus(): FocusState | null {
   }
 }
 
+/** Selector: resolves the open detail overlay's task from the transitional
+ *  cache. Returns null when the overlay is closed or the cache hasn't been
+ *  primed yet (the host falls back to a getTaskById fetch in that case).
+ *  M3.2 reroutes this to read from canonical tasksById. */
+export function selectTaskDetailTask(state: AppState): Task | null {
+  const id = state.selectedTaskDetailId;
+  if (id === null) return null;
+  return state.tasksByIdCache.get(id) ?? null;
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   currentPage: "daily",
   pageHistory: [],
@@ -132,6 +161,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedProjectId: null,
   focus: null,
   pendingDetailTask: null,
+  selectedTaskDetailId: null,
+  tasksByIdCache: new Map(),
   sidebarCollapsed: loadPersistedSidebarCollapsed(),
   sidebarFocusExpanded: false,
   weeklyPlannerTab: "plan",
@@ -263,6 +294,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   setPendingDetailTask: (task) => set({ pendingDetailTask: task }),
+  openTaskDetail: (id) => set({ selectedTaskDetailId: id }),
+  closeTaskDetail: () => set({ selectedTaskDetailId: null }),
+  cacheTasks: (tasks) => {
+    if (tasks.length === 0) return;
+    set((s) => {
+      // Build a fresh Map so Zustand subscribers see a new reference and
+      // re-evaluate. Mutating the existing Map would be invisible.
+      const next = new Map(s.tasksByIdCache);
+      for (const t of tasks) next.set(t.id, t);
+      return { tasksByIdCache: next };
+    });
+  },
   setWeeklyPlannerTab: (tab) => set({ weeklyPlannerTab: tab }),
   toggleSidebar: () => {
     const s = get();

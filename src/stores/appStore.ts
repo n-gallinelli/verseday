@@ -77,6 +77,27 @@ interface AppState {
    *  without re-querying the DB. M3.2 retires this in favor of canonical
    *  store-owned task loading actions. */
   cacheTasks: (tasks: Task[]) => void;
+  /** Open-state for the singleton SummaryOverlay (day-summary modal).
+   *  `null` = closed. Read by the singleton SummaryOverlayHost mounted at
+   *  the App shell. Not persisted — overlay always closes on app restart
+   *  (matches selectedTaskDetailId precedent). M3.1.a additive seam — no
+   *  callers wire this yet; per-screen useState mounts retire in M3.1.b. */
+  summaryOverlay:
+    | { kind: "daily"; anchorDate: string }
+    | { kind: "weekly"; anchorDate: string }
+    | null;
+  /** Open the singleton SummaryOverlay. */
+  openSummaryOverlay: (kind: "daily" | "weekly", anchorDate: string) => void;
+  /** Close the singleton SummaryOverlay. */
+  closeSummaryOverlay: () => void;
+  /** Open-state for the singleton SunsetOverlay (shutdown-completion
+   *  animation). Read by SunsetOverlayHost mounted at the App shell. Not
+   *  persisted. M3.1.a additive — wires up in M3.1.b. */
+  sunsetOverlayOpen: boolean;
+  /** Open the singleton SunsetOverlay. */
+  openSunsetOverlay: () => void;
+  /** Close the singleton SunsetOverlay. */
+  closeSunsetOverlay: () => void;
   /** Persisted user preference for collapsed sidebar (non-focus pages). */
   sidebarCollapsed: boolean;
   /** Ephemeral expand override on focus screens — resets on remount. */
@@ -316,6 +337,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedTaskDetailId: null,
   taskDetailAutoFocusTitle: false,
   tasksByIdCache: new Map(),
+  summaryOverlay: null,
+  sunsetOverlayOpen: false,
   sidebarCollapsed: loadPersistedSidebarCollapsed(),
   sidebarFocusExpanded: false,
   weeklyPlannerTab: "plan",
@@ -591,6 +614,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   closeTaskDetail: () =>
     set({ selectedTaskDetailId: null, taskDetailAutoFocusTitle: false }),
+  openSummaryOverlay: (kind, anchorDate) =>
+    set({ summaryOverlay: { kind, anchorDate } }),
+  closeSummaryOverlay: () => set({ summaryOverlay: null }),
+  openSunsetOverlay: () => set({ sunsetOverlayOpen: true }),
+  closeSunsetOverlay: () => set({ sunsetOverlayOpen: false }),
   cacheTasks: (tasks) => {
     if (tasks.length === 0) return;
     set((s) => {

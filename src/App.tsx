@@ -18,6 +18,8 @@ import Settings from "./pages/Settings";
 import PastShutdowns from "./pages/PastShutdowns";
 import WrapUpReminder from "./components/WrapUpReminder";
 import TaskDetailOverlayHost from "./components/TaskDetailOverlayHost";
+import SummaryOverlayHost from "./components/SummaryOverlayHost";
+import SunsetOverlayHost from "./components/SunsetOverlayHost";
 import { useAppStore } from "./stores/appStore";
 import {
   closeOrphanedTimeEntries,
@@ -393,6 +395,12 @@ function MainApp() {
           mounts are still in place; this host stays inert until M1.b
           rewires their callers to openTaskDetail. */}
       <TaskDetailOverlayHost />
+      {/* M3.1.a additive — singleton hosts for SummaryOverlay /
+          SunsetOverlay. Both stay inert until M3.1.b retires per-screen
+          showSummary / showSunset useState. Sunset mounts after Summary
+          so a concurrent sunset layers on top in DOM order. */}
+      <SummaryOverlayHost />
+      <SunsetOverlayHost />
     </ErrorBoundary>
   );
 }

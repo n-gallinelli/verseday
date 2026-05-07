@@ -46,6 +46,7 @@ import RichTextEditor from "../components/RichTextEditor";
 import SummaryOverlay from "../components/SummaryOverlay";
 import ProjectPicker from "../components/ProjectPicker";
 import DisclosureCaret from "../components/DisclosureCaret";
+import PillToggleIcon from "../components/PillToggleIcon";
 import { formatHoursMinutes, parseTimeFromTitle, getEmptyDayMessage } from "../utils/format";
 import { useCalendarAutoSync } from "../calendar/hooks";
 import { errorMessage } from "../utils/errors";
@@ -749,12 +750,15 @@ export default function DailyPlanner() {
         </div>
       )}
 
-      {/* Date Header */}
-      <div className="px-7 pt-5 pb-4">
+      {/* Date Header — top padding matches the sidebar's pt-4 so the
+          date arrows sit on the same horizontal axis as the sidebar's
+          collapse chevron, giving the page header a consistent baseline
+          across the two columns. */}
+      <div className="px-7 pt-4 pb-4">
         {/* Date row with stats right-aligned. Capped to the same column
             width as the task list below so everything stays on a single
             visual axis. */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 min-h-[32px]">
           <button
             onClick={() => changeDate(-1)}
             className="w-7 h-7 rounded-full flex items-center justify-center text-fg-muted cursor-pointer hover:bg-overlay-hover transition-colors duration-150 ease-out"
@@ -1231,14 +1235,13 @@ export default function DailyPlanner() {
           <button
             onClick={toggleRightPanel}
             title="Show projects panel"
-            className="w-6 h-6 rounded-md flex items-center justify-center text-fg-muted hover:bg-overlay-hover hover:text-fg-secondary cursor-pointer transition-colors"
+            className="cursor-pointer transition-opacity hover:opacity-80 inline-flex items-center justify-center"
           >
-            {/* Double chevron — distinguishes "expand this whole panel" from
-                the single-chevron disclosure carets used for tree expansion. */}
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 3.5L4 7l4 3.5" />
-              <path d="M12 3.5L8 7l4 3.5" />
-            </svg>
+            {/* Pill toggle — knob on the left + left-chevron means
+                "click to expand the panel leftward into view".
+                Same visual language as the sidebar collapse so panel
+                chrome reads consistently across the app. */}
+            <PillToggleIcon direction="left" />
           </button>
         </div>
       ) : (
@@ -1250,12 +1253,12 @@ export default function DailyPlanner() {
           <button
             onClick={toggleRightPanel}
             title="Hide panel"
-            className="w-5 h-5 -mr-1 rounded-md flex items-center justify-center text-fg-faded hover:bg-overlay-hover hover:text-fg-secondary cursor-pointer transition-colors"
+            className="cursor-pointer transition-opacity hover:opacity-80 inline-flex items-center justify-center"
           >
-            <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M2 3.5L6 7l-4 3.5" />
-              <path d="M6 3.5L10 7l-4 3.5" />
-            </svg>
+            {/* Pill toggle, mirror state — knob on the right +
+                right-chevron means "click to push the panel back to
+                the right wall". */}
+            <PillToggleIcon direction="right" />
           </button>
         </div>
 

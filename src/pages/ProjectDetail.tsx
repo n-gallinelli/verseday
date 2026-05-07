@@ -1247,39 +1247,14 @@ export default function ProjectDetail() {
                     );
                   }
 
-                  if (confirmDeleteId === task.id) {
-                    return (
-                      <div
-                        key={task.id}
-                        className="p-3 rounded-lg bg-elevated border border-line-soft flex items-center gap-3 mb-[5px]"
-                      >
-                        <span className="flex-1 text-[12px]">
-                          <span className="text-accent-destructive">
-                            Delete &ldquo;{task.title}&rdquo;?
-                          </span>{" "}
-                          <span className="text-accent-warning-soft-fg">
-                            Time entries will also be deleted.
-                          </span>
-                        </span>
-                        <button
-                          onClick={() => handleDeleteTask(task.id)}
-                          className="border border-accent-destructive/50 text-accent-destructive rounded-md px-3 py-1 text-[11px] font-medium cursor-pointer hover:border-accent-destructive hover:bg-accent-destructive/[0.08] transition-colors"
-                        >
-                          Delete
-                        </button>
-                        <button
-                          onClick={() => setConfirmDeleteId(null)}
-                          className="text-fg-faded text-[11px] cursor-pointer hover:text-fg-secondary"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    );
-                  }
-
+                  // Render the row + an overlay for the delete-confirm
+                  // prompt. Overlaying instead of replacing keeps the
+                  // row's height locked so confirming/cancelling
+                  // doesn't jump the rest of the list around.
+                  const isConfirming = confirmDeleteId === task.id;
                   return (
-                    <SortableTaskRow
-                      key={task.id}
+                    <div key={task.id} className="relative">
+                      <SortableTaskRow
                       task={task}
                       workedMinutes={workedMap.get(task.id) ?? 0}
                       onToggle={toggleTask}
@@ -1312,6 +1287,33 @@ export default function ProjectDetail() {
                           .catch((e) => setError(errorMessage(e, "Failed to set worked time")));
                       }}
                     />
+                      {isConfirming && (
+                        <div
+                          className="absolute inset-0 z-10 px-3 rounded-lg bg-elevated border border-line-soft flex items-center gap-3"
+                        >
+                          <span className="flex-1 text-[12px]">
+                            <span className="text-accent-destructive">
+                              Delete &ldquo;{task.title}&rdquo;?
+                            </span>{" "}
+                            <span className="text-accent-warning-soft-fg">
+                              Time entries will also be deleted.
+                            </span>
+                          </span>
+                          <button
+                            onClick={() => handleDeleteTask(task.id)}
+                            className="border border-accent-destructive/50 text-accent-destructive rounded-md px-3 py-1 text-[11px] font-medium cursor-pointer hover:border-accent-destructive hover:bg-accent-destructive/[0.08] transition-colors"
+                          >
+                            Delete
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="text-fg-faded text-[11px] cursor-pointer hover:text-fg-secondary"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   );
                 })
               )}
@@ -1319,8 +1321,10 @@ export default function ProjectDetail() {
         </div>
           </div>
 
-          {/* Right rail: dates + notes */}
-          <div className="flex-1 min-w-[200px] border-l border-line-hairline bg-rail p-8 overflow-y-auto space-y-8">
+          {/* Right rail: dates + notes + this-week. Flex column so the
+              week grid at the bottom can grow into available vertical
+              space instead of leaving an empty band beneath it. */}
+          <div className="flex-1 min-w-[200px] border-l border-line-hairline bg-rail p-8 overflow-y-auto flex flex-col gap-8">
             <div className="flex gap-3">
               <div>
                 <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1.5">
@@ -1364,12 +1368,15 @@ export default function ProjectDetail() {
             {/* This week — emphasized as the operational heart of the
                 rail. Real heading typography (not a tiny uppercase
                 label) and a hairline divider above to set it apart
-                from the dates / notes blocks. */}
-            <div className="pt-5 border-t border-line-hairline">
+                from the dates / notes blocks. flex-1 + min-h-0 lets
+                the section grow into the rail's remaining vertical
+                space; the grid inherits and the day cells stretch
+                vertically (grid items default to align-items: stretch). */}
+            <div className="pt-5 border-t border-line-hairline flex-1 min-h-0 flex flex-col">
               <h3 className="text-[15px] font-medium text-fg mb-3 font-display">
                 This week
               </h3>
-              <div className="grid grid-cols-5 gap-2">
+              <div className="grid grid-cols-5 gap-2 flex-1 min-h-0">
                 {weekDates.map((date, i) => (
                   <PdDayCell
                     key={date}

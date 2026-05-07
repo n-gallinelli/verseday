@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { useAppStore } from "../stores/appStore";
-import DisclosureCaret from "./DisclosureCaret";
 import VerseDayLogo from "./VerseDayLogo";
+import PillToggleIcon from "./PillToggleIcon";
 import type { Page } from "../types";
 
 interface NavItem {
@@ -236,6 +236,11 @@ export default function Sidebar() {
           <VerseDayLogo />
         </button>
 
+        {/* Rail layout mirrors the expanded sidebar's Planning/Manage
+            split — Manage items (Dashboard, Settings, Past) hug the
+            bottom of the rail near the expand-pill so frequently-used
+            Planning sits at top and "everything else" sits at the
+            bottom. */}
         <nav className="flex-1 flex flex-col items-center gap-2 mt-5 min-h-0 overflow-y-auto w-full py-1.5">
           <RailIconButton
             item={focusItem}
@@ -251,6 +256,7 @@ export default function Sidebar() {
               onSelect={setPage}
             />
           ))}
+          <div className="flex-1" />
           <RailDivider />
           {manageItems.map((it) => (
             <RailIconButton
@@ -262,16 +268,18 @@ export default function Sidebar() {
           ))}
         </nav>
 
-        {/* Expand chevron — bottom of the rail */}
+        {/* Expand sidebar — bottom of the rail. Pill toggle: knob on
+            the right with a right-chevron inside = "click to slide
+            the panel out". Coordinates per spec — pill 10×6 with rx=3
+            (fully capsule), knob r=2.2, chevron polyline mirrored
+            around the knob center. */}
         <button
           onClick={toggleCollapsed}
           title="Expand sidebar"
           aria-label="Expand sidebar"
-          className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover transition-colors mt-2"
+          className="cursor-pointer transition-opacity hover:opacity-80 mt-2 inline-flex items-center justify-center px-1 py-1"
         >
-          <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M5 4l4 3-4 3" />
-          </svg>
+          <PillToggleIcon direction="right" />
         </button>
       </aside>
     );
@@ -286,11 +294,10 @@ export default function Sidebar() {
           onClick={toggleCollapsed}
           title="Collapse sidebar"
           aria-label="Collapse sidebar"
-          className="ml-auto w-6 h-6 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover transition-colors"
+          className="ml-auto cursor-pointer transition-opacity hover:opacity-80 inline-flex items-center justify-center px-1 py-1"
         >
-          <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 4l-4 3 4 3" />
-          </svg>
+          {/* Pill toggle, mirror state — "click to push panel back". */}
+          <PillToggleIcon direction="left" />
         </button>
       </div>
       <nav className="flex-1 flex flex-col min-h-0">
@@ -316,6 +323,11 @@ export default function Sidebar() {
         <NavSection label="Planning" items={planningItems} activePage={activePage} onSelect={setPage} />
         <div className="flex-1" />
         <NavSection label="Manage" items={manageItems} activePage={activePage} onSelect={setPage} />
+        {/* Cushion between the Manage section and the Shortcuts row.
+            Without this, the last manage item (Past Shutdowns / Settings)
+            sits flush against the Shortcuts toggle and reads as part
+            of the same row. */}
+        <div className="h-4 shrink-0" />
       </nav>
 
       {/* Shortcut glossary — toggle row stays in flow; the list itself
@@ -349,8 +361,30 @@ export default function Sidebar() {
             </svg>
           </span>
           Shortcuts
+          {/* Vertical caret — points in the direction the panel will
+              move on click. Shortcuts open upward, so collapsed = ^
+              (click to expand up); expanded = v (click to collapse
+              back down). Distinct shape from the horizontal nav
+              chevrons (used for date/page navigation) so the gesture
+              reads correctly. */}
           <span className="ml-auto text-accent-orange-soft-fg/70 flex items-center">
-            <DisclosureCaret expanded={showShortcuts} rotateExpanded={-90} />
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 10 10"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{
+                transform: showShortcuts ? "rotate(180deg)" : "rotate(0deg)",
+                transition: "transform 150ms ease-out",
+              }}
+              aria-hidden
+            >
+              <path d="M2.5 6.5 L5 3.5 L7.5 6.5" />
+            </svg>
           </span>
         </button>
       </div>

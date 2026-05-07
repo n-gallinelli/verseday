@@ -39,6 +39,7 @@ import PlanProjectPanel from "./PlanProjectPanel";
 import ErrorBanner from "../../components/ErrorBanner";
 import TaskDetailOverlay from "../../components/TaskDetailOverlay";
 import { errorMessage } from "../../utils/errors";
+import { parseTimeFromTitle } from "../../utils/format";
 
 // Plan tab orchestrator — owns the data + selection state. Children
 // (rail / panel / summary) are presentational. Week navigation
@@ -276,12 +277,23 @@ export default function PlanTab() {
 
   async function handleCreateTask(title: string) {
     if (selectedId == null) return;
+    // Smart time parsing — pull a trailing "~12" / "30m" / "1h"
+    // off the title and use it as the estimate. Same behavior the
+    // Daily Plan + Project Detail screens use, so the gesture works
+    // consistently wherever the user adds a task.
+    let cleanTitle = title;
+    let est: number | null = null;
+    const parsed = parseTimeFromTitle(title);
+    if (parsed.minutes != null) {
+      cleanTitle = parsed.cleanTitle;
+      est = parsed.minutes;
+    }
     try {
       await createTask({
-        title,
+        title: cleanTitle,
         projectId: selectedId,
         dateScheduled: null,
-        estimatedMinutes: null,
+        estimatedMinutes: est,
       });
       await reloadTasks(selectedId);
     } catch (e) {

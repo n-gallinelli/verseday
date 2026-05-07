@@ -310,6 +310,17 @@ For each migrated screen group: rename / status-toggle / delete a task and confi
 
 ---
 
+## Verse review additions (2026-05-07)
+
+Folded in alongside the original test plan. APPROVED with the following:
+
+- **Mutation failure path is a hard requirement, not aspirational.** Every new action's doc comment must state: on DB write failure, (a) refetch the task and write truth back to the canonical map, (b) surface the error to the user (banner / toast / at minimum `console.error` with debug context). The host's silent-catch pattern is a known weakness — don't propagate it. New actions improve on it.
+- **M3.2.a verification — explicit `date_assigned` index test.** Rename a task's `date_assigned` via the overlay; confirm it disappears from the old day's list and appears on the new day's list, no manual refetch. Make this test explicit, not implicit. This is the case index-maintenance bugs hide in.
+- **M3.2.b.5 end-to-end addition.** Drag-drop a task to a different day while its `TaskDetailOverlay` is open in another surface; save from the overlay. The optimistic update + index maintenance + DB write + selector subscription chain should all converge. Surfaces order-of-operations bugs in `updateTask`.
+- **Doc-comment update for the rerouted selectors.** `selectFocusedTask` and `selectTaskDetailTask` are no longer "transitional cache + fallback" — they're canonical reads. Update their doc comments accordingly in M3.2.a.
+
+---
+
 ## Open questions for Verse
 
 1. **Six-commit cadence acceptable?** Rev-2 plan said two commits (seam + wire-up); I'm proposing five wire-up sub-commits because eleven files in one commit is too risky. If you want fewer commits, I can collapse Project + Weekly groups, or land the cache cleanup alongside the last migration.

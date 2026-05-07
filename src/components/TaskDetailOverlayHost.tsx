@@ -17,14 +17,14 @@ import type { Project, Task } from "../types";
 // Singleton host for TaskDetailOverlay (Verse rule 2 — one mount per
 // cross-screen surface). Mounted exactly once at the App shell. Reads
 // `selectedTaskDetailId` from the store; resolves the task via
-// selectTaskDetailTask (transitional `tasksByIdCache` in M1; canonical
-// `tasksById` after M3.2). Falls back to a one-shot getTaskById fetch
-// on cache miss so the overlay opens even when no screen has primed
-// the cache for that ID.
+// selectTaskDetailTask, which reads from the canonical tasksById map
+// (M3.2.a). Falls back to a one-shot getTaskById fetch when the map
+// hasn't been primed for this ID, so the overlay opens regardless of
+// which surface launched it.
 //
 // Mutations broadcast `verseday:task-updated` so per-screen lists can
-// refresh without prop drilling. M3.2 removes the event in favor of
-// store subscriptions.
+// refresh without prop drilling. M3.2.b.5 retires the event once
+// every screen has migrated to selector-driven reads.
 export default function TaskDetailOverlayHost() {
   const selectedTaskDetailId = useAppStore((s) => s.selectedTaskDetailId);
   const closeTaskDetail = useAppStore((s) => s.closeTaskDetail);

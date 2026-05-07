@@ -372,33 +372,47 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // Calculate work-only elapsed (total elapsed minus break time)
   const totalBreakTimeRef = useRef(0);
 
-  const getWorkElapsed = useCallback(() => {
-    return elapsed - totalBreakTimeRef.current;
-  }, [elapsed]);
+  // M2.5.1 — sync elapsed to the store-derived value when the focus
+  // session changes (start, swap, pause toggle). Required for the
+  // relaunch-while-paused case: when persisted focus restores in
+  // paused state, the tick interval below early-returns on every
+  // tick, so the runtime setElapsed would never fire and the on-screen
+  // counter would sit at the useState default of 0 (showing only
+  // priorElapsedMs). computeFocusElapsedMs handles the paused case:
+  // the open-pause delta cancels wall-clock advance, yielding the
+  // frozen value at the moment of pause.
+  //
+  // This effect's deps are `[focus]` only — runs on focus *identity*
+  // change, never on the elapsed-driven dep churn that the tick
+  // effect's getWorkElapsed dep used to cause. Pre-M2.5.1 the seed
+  // lived inside the tick effect; combined with the
+  // `getWorkElapsed → useCallback([elapsed])` chain, every tick's
+  // setElapsed kicked the tick effect's deps and re-fired the seed
+  // before the 200ms interval could complete its first fire. The
+  // counter stalled at the seed value (0:00 for case-B post-resume).
+  // Splitting the seed out unblocks the interval.
+  useEffect(() => {
+    if (!focus || focus.mode !== "active") return;
+    setElapsed(computeFocusElapsedMs(focus, Date.now()) - focus.priorElapsedMs);
+  }, [focus]);
 
   // Timer tick — runs only on active sessions. Preview has no startedAt
   // and no time to count.
   //
   // M2.2 — pause-state inputs come from the store (`focus.paused`,
   // `focus.pausedAccumMs`, `focus.pausedAtMs`). When paused, the tick
-  // early-returns; the last `setElapsed` value stays on screen until
-  // resume, which matches user expectation. computeFocusElapsedMs
-  // returns the *total* elapsed (including priorElapsedMs); this state
-  // tracks session-only elapsed for the Pomodoro logic below, so we
-  // subtract priorElapsedMs.
+  // early-returns; the last `setElapsed` value (set by the seed effect
+  // above on focus change) stays on screen until resume.
+  //
+  // M2.5.1 — `getWorkElapsed` (formerly a useCallback wrapping
+  // `elapsed - totalBreakTimeRef.current`) was removed entirely. Its
+  // only call site (this effect's break-end branch) was already dead
+  // code — overwritten one line later by `raw - totalBreakTimeRef.current`.
+  // No render-side readers existed. Dropping the dep + the helper
+  // breaks the elapsed-driven re-fire loop that was starving the
+  // 200ms interval.
   useEffect(() => {
     if (!focus || focus.mode !== "active") return;
-
-    // M2.5 — sync elapsed to the store-derived value before the
-    // interval starts. Required for the relaunch-while-paused case:
-    // when the persisted focus restores in paused state, the interval
-    // below early-returns on every tick (because focus.paused), so
-    // setElapsed would never fire and the on-screen counter would
-    // sit at the useState default of 0 (showing only priorElapsedMs).
-    // computeFocusElapsedMs handles the paused case correctly: the
-    // open-pause delta cancels the wall-clock advance, yielding the
-    // frozen value at the moment of pause.
-    setElapsed(computeFocusElapsedMs(focus, Date.now()) - focus.priorElapsedMs);
 
     const interval = setInterval(() => {
       if (focus.paused) return;
@@ -439,12 +453,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         setBreakRemaining(remaining);
 
         if (remaining <= 0) {
-          // Break is over — return to work
+          // Break is over — return to work. workCycleStart resets to
+          // current work elapsed (post-break-time deduction) so the
+          // next pomodoro cycle starts counting from here.
           totalBreakTimeRef.current += breakDuration;
-          workCycleStartRef.current = getWorkElapsed() + (breakDuration - (breakDuration + remaining));
-          // Recalculate: set workCycleStart to current workElapsed after accounting for break
-          const newWorkElapsed = raw - totalBreakTimeRef.current;
-          workCycleStartRef.current = newWorkElapsed;
+          workCycleStartRef.current = raw - totalBreakTimeRef.current;
           setPhase("work");
           setBreakRemaining(0);
           playChime();
@@ -453,7 +466,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     }, 200);
 
     return () => clearInterval(interval);
-  }, [focus, phase, completedPomodoros, breakDuration, getWorkElapsed]);
+  }, [focus, phase, completedPomodoros, breakDuration]);
 
   // Checkpoint — active sessions only.
   useEffect(() => {

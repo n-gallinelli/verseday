@@ -1,9 +1,10 @@
 # Tick Effect Resilience — Post-Resume Counter Stalls at 0:00
 
-**Status:** Awaiting Verse review
+**Status:** Rev 2 — Verse-approved design. Awaiting M2.5.1 implementation commit.
+**Decision:** Split — tick-fix lands first as M2.5.1, then pause-on-relaunch as a separate single-commit milestone. (Verse rationale: every commit green; conceptually distinct concerns; better commit-message provenance.)
 **Date:** 2026-05-07
 **Author:** Terse
-**Branch:** `refactor/task-as-entity` (uncommitted pause-on-relaunch implementation on disk; this fix bundles with it)
+**Branch:** `refactor/task-as-entity`. Pause-on-relaunch implementation stashed during M2.5.1 work.
 **Type:** Bug fix uncovered by pause-on-relaunch test plan. Architecturally a follow-up to M2.5; functionally a blocker for pause-on-relaunch closeout.
 
 ---
@@ -103,35 +104,41 @@ useEffect(() => {
 }, [focus]);
 ```
 
-### Part 2 — Drop `getWorkElapsed` from the tick effect deps; compute inline
+### Part 2 — Drop `getWorkElapsed` from the tick effect deps; delete it entirely
 
-`getWorkElapsed` is only referenced at one site inside the tick effect (line 444's break-end branch). Compute it inline using the just-set `raw` value:
+On closer inspection, `getWorkElapsed` had only **one** call site (line 444, the break-end branch), and that site was **already dead code**:
 
 ```ts
-useEffect(() => {
-  if (!focus || focus.mode !== "active") return;
-  const interval = setInterval(() => {
-    if (focus.paused) return;
-    const now = Date.now();
-    const raw = computeFocusElapsedMs(focus, now) - focus.priorElapsedMs;
-    setElapsed(raw);
-    // … pomodoro logic …
-    if (/* break ended */) {
-      const workElapsedNow = raw - totalBreakTimeRef.current;
-      workCycleStartRef.current = workElapsedNow;
-      // … (replaces `getWorkElapsed() + ...` formulation)
-    }
-  }, 200);
-  return () => clearInterval(interval);
-}, [focus, phase, completedPomodoros, breakDuration]);  // dropped getWorkElapsed
+workCycleStartRef.current = getWorkElapsed() + (breakDuration - (breakDuration + remaining));
+// Recalculate: set workCycleStart to current workElapsed after accounting for break
+const newWorkElapsed = raw - totalBreakTimeRef.current;
+workCycleStartRef.current = newWorkElapsed;  // ← overwrites the line above
 ```
 
-Together these eliminate the seed-vs-interval race:
+The "Recalculate" comment confirms the original author knew the line above was being clobbered. No render-side readers exist either (verified by grep). Cleanest fix: delete the `useCallback`, delete the dead line, drop the dep. The remaining branch becomes:
+
+```ts
+} else if (phase === "break") {
+  const breakElapsed = now - breakStartRef.current;
+  const remaining = breakDuration - breakElapsed;
+  setBreakRemaining(remaining);
+
+  if (remaining <= 0) {
+    totalBreakTimeRef.current += breakDuration;
+    workCycleStartRef.current = raw - totalBreakTimeRef.current;
+    setPhase("work");
+    setBreakRemaining(0);
+    playChime();
+  }
+}
+```
+
+Tick effect deps simplify to `[focus, phase, completedPomodoros, breakDuration]`.
+
+Together with Part 1, these eliminate the seed-vs-interval race:
 
 - The seed runs once per focus identity change, not on every tick re-render.
 - The tick effect's deps no longer churn on `elapsed` updates, so the interval gets its full 200ms first-fire window.
-
-`getWorkElapsed` (the `useCallback`) stays for any render-side reads that still need it. Its existence outside the tick effect is harmless.
 
 ## Risks & concerns
 
@@ -162,8 +169,4 @@ Plus a regression check on the M2 capstone Test #7 (already-paused relaunch show
 
 ## Implementation footprint
 
-Single file: `src/pages/FocusMode.tsx`. Two effect blocks restructured. Net diff: ~+15 / -8 lines. Bundles with the uncommitted pause-on-relaunch implementation into a single commit per Verse's preferred cadence, OR splits as a follow-up commit.
-
-If Verse prefers split: pause-on-relaunch implementation lands first with current test plan results, then this fix as M2.5.1 (or whatever numbering matches).
-
-If Verse prefers bundled: single commit covers both with consolidated test results.
+Single file: `src/pages/FocusMode.tsx`. Two effect blocks restructured. Net diff: ~+15 / -8 lines. Lands as M2.5.1 — its own commit, separate from pause-on-relaunch.

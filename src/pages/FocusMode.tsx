@@ -10,6 +10,7 @@ import {
   updateTaskEstimate,
   updateTimeEntryWorkedSeconds,
   getSetting,
+  getTaskById,
   getTasksForDate,
   getTaskStatusById,
   getWorkedMinutesForTask,
@@ -105,38 +106,56 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     // ("nothing left, time to shut down"). Active sessions also write
     // their accumulated worked-seconds to the time entry before
     // clearing so no work is lost.
+    //
+    // The validation has to fetch from DB rather than relying on
+    // tasksById alone — restoreFocus's async prime might still be in
+    // flight, or no screen has loaded that date yet, in which case
+    // the canonical map doesn't have the focused task. Falling through
+    // when the map has no entry would let the existing session render
+    // and defeat the policy.
     if (focus) {
-      const focusedTaskNow = useAppStore.getState().tasksById.get(focus.taskId);
-      const today = todayString();
-      if (focusedTaskNow && focusedTaskNow.date_scheduled !== today) {
-        if (focus.mode === "active") {
-          const { timeEntryId, workedMs } = focus;
-          // Fire-and-forget: best-effort persist. If it fails the
-          // closeOrphanedTimeEntries pass on next boot covers the row.
-          void (async () => {
+      let cancelledValidate = false;
+      (async () => {
+        const fromMap = useAppStore.getState().tasksById.get(focus.taskId);
+        let task = fromMap;
+        if (!task) {
+          try {
+            const fetched = await getTaskById(focus.taskId);
+            task = fetched ?? undefined;
+          } catch {
+            // DB fetch failed — leave the session alone; we'll re-
+            // validate on the next render that has `focus` set.
+            return;
+          }
+        }
+        if (cancelledValidate) return;
+        const today = todayString();
+        // Task missing → orphaned focus reference. Clear it.
+        // Task scheduled for a non-today date → policy violation. Clear it.
+        if (!task || task.date_scheduled !== today) {
+          if (focus.mode === "active") {
             try {
               await updateTimeEntryWorkedSeconds(
-                timeEntryId,
-                Math.round(workedMs / 1000),
+                focus.timeEntryId,
+                Math.round(focus.workedMs / 1000),
               );
-              await stopTimeEntry(timeEntryId, 0);
+              await stopTimeEntry(focus.timeEntryId, 0);
             } catch {
-              // ignore — orphan cleanup will catch this row
+              // orphan cleanup will catch
             }
-          })();
+          }
+          if (cancelledValidate) return;
+          useAppStore.setState({ focus: null });
+          try {
+            localStorage.removeItem("verseday_focus");
+          } catch {
+            // private mode / quota — non-fatal
+          }
         }
-        // Drop the focus reference without navigating away — the user
-        // explicitly came TO focus; we want to land on today's next
-        // task or the empty state, not bounce them back.
-        useAppStore.setState({ focus: null });
-        try {
-          localStorage.removeItem("verseday_focus");
-        } catch {
-          // private mode / quota — non-fatal
-        }
-        return;
-      }
-      return;
+      })();
+      return () => {
+        cancelledValidate = true;
+      };
     }
     let cancelled = false;
     setBootStatus("loading");

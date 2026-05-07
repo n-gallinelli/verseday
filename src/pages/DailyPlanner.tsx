@@ -734,22 +734,6 @@ export default function DailyPlanner() {
     const prevDate = original?.date_scheduled ?? null;
     try {
       await updateTaskDateScheduled(taskId, selectedDate);
-      // Band-aid for the race between the SQL-direct date write and
-      // loadData's loadTasksForDate (which is what eventually patches
-      // tasksById). Without this synchronous canonical-map patch, the
-      // sidebarUnscheduled memo's `t.date_scheduled === null` filter
-      // (47ab541) still passes for the just-pulled task, putting it in
-      // both pullable and recent → the project rail rendered the row
-      // twice.
-      // NOTE: secondary indices (taskIdsByDate / taskIdsByWeek) are
-      // intentionally NOT updated here — only the sidebar memo's race
-      // needs the synchronous patch. Main list and project rail
-      // subscribers tolerate the loadData-refresh latency because
-      // they're not co-rendering the same task in two places.
-      // M3.2.b.5 retires both this band-aid and the SQL-direct path
-      // when pullTaskToDay routes through a store action.
-      const cur = useAppStore.getState().tasksById.get(taskId);
-      if (cur) cacheTasks([{ ...cur, date_scheduled: selectedDate }]);
       loadData();
       if (original) {
         const existing = recentTimersRef.current.get(taskId);
@@ -782,12 +766,6 @@ export default function DailyPlanner() {
     recentTimersRef.current.delete(taskId);
     try {
       await updateTaskDateScheduled(taskId, entry.prevDate);
-      // Same band-aid as pullTaskToDay — flip the canonical map back
-      // to prevDate before loadData refreshes it, so the inverse race
-      // (task disappears from rail's recent section but lingers in
-      // today's main list) doesn't flicker.
-      const cur = useAppStore.getState().tasksById.get(taskId);
-      if (cur) cacheTasks([{ ...cur, date_scheduled: entry.prevDate }]);
       setRecentlyPulled((prev) => {
         const next = new Map(prev);
         next.delete(taskId);

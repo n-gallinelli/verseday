@@ -674,6 +674,20 @@ export async function stopTimeEntry(
   );
 }
 
+/** Read the end_time on a single time_entries row. Used by the
+ *  pause-on-relaunch flow in restoreFocus to set pausedAtMs to the
+ *  most recent checkpoint (≈last time the app was alive). Returns
+ *  null when end_time is unset (session started but no checkpoint
+ *  has fired yet — case B in docs/2026-05-07-pause-on-relaunch.md). */
+export async function getTimeEntryEndTime(id: number): Promise<string | null> {
+  const db = await getDb();
+  const rows: { end_time: string | null }[] = await db.select(
+    "SELECT end_time FROM time_entries WHERE id = $1 LIMIT 1",
+    [id]
+  );
+  return rows[0]?.end_time ?? null;
+}
+
 export async function checkpointTimeEntry(id: number): Promise<void> {
   const db = await getDb();
   await db.execute("UPDATE time_entries SET end_time = $1 WHERE id = $2", [

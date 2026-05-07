@@ -1,9 +1,9 @@
 # Pause on Relaunch + Quit-Time Correctness
 
-**Status:** Rev 2 — incorporated Verse review (orphan-cap guard + three minor notes folded in)
+**Status:** Rev 3 — adds the iterated-quit clamp per Verse decision after rev 2 implementation testing
 **Date:** 2026-05-07
 **Author:** Terse
-**Branch:** `refactor/task-as-entity` (lands after M2 closes; before merge to main)
+**Branch:** `refactor/task-as-entity` (lands after M2.5.1; M2 closes with this commit + the cadence cut)
 **Type:** Standalone milestone, parallel to entity-plan M3.x. Not numbered M2.7 per Verse — this is its own scope.
 
 ---
@@ -53,20 +53,23 @@ The checkpoint effect at `src/pages/FocusMode.tsx:443-450` already writes `time_
 19.      return
 20.   }
 21.   if (!focus.paused) {
-22.      let pausedAtMs: number
+22.      let candidate: number
 23.      try {
 24.         const endIso = await getTimeEntryEndTime(focus.timeEntryId)
-25.         if (endIso !== null) {
-26.            pausedAtMs = new Date(endIso).getTime()  // case A — checkpoint exists
-27.         } else {
-28.            pausedAtMs = focus.startedAt             // case B — no checkpoint yet
-29.         }
-30.      } catch {
-31.         pausedAtMs = Date.now()                     // case C — DB read failed
-32.      }
-33.      focus = { ...focus, paused: true, pausedAtMs }
-34.      persistFocus(focus)
-35.   }
+25.         candidate = endIso !== null
+26.                       ? new Date(endIso).getTime()  // case A — checkpoint exists
+27.                       : focus.startedAt              // case B — no checkpoint yet
+28.      } catch {
+29.         candidate = Date.now()                       // case C — DB read failed
+30.      }
+31.      // Clamp (rev 3): pausedAtMs must be >= startedAt + pausedAccumMs,
+32.      // otherwise iterated quits without a fresh checkpoint can land
+33.      // pausedAtMs before the math-implied earliest valid pause point,
+34.      // driving computeFocusElapsedMs negative.
+35.      const pausedAtMs = Math.max(candidate, focus.startedAt + focus.pausedAccumMs)
+36.      focus = { ...focus, paused: true, pausedAtMs }
+37.      persistFocus(focus)
+38.   }
 36. }
 37. set({ currentPage: "focus", focus })
 ```
@@ -76,6 +79,29 @@ The checkpoint effect at `src/pages/FocusMode.tsx:443-450` already writes `time_
 ISO parsing is `new Date(endIso).getTime()` — inline expression, no helper needed.
 
 `restoreFocus` becomes `async`. The single caller (`src/App.tsx:109`) is already inside `async function startup()`, so adding `await` is one-character. `closeOrphanedTimeEntries`, called immediately after, already uses `await`.
+
+### Clamp on `pausedAtMs` (rev 3 — Verse-approved)
+
+Line 26 actually computes:
+
+```ts
+pausedAtMs = Math.max(candidate, focus.startedAt + focus.pausedAccumMs);
+```
+
+where `candidate` is `new Date(endIso).getTime()` (case A) or `focus.startedAt` (case B) or `Date.now()` (case C).
+
+**Why:** without the clamp, an iterated quit cycle can drive `computeFocusElapsedMs` negative. Concrete failure mode discovered during implementation testing:
+
+1. Cycle 1: start at T0, work, checkpoint fires at T0+30s, Cmd-Q at T0+45s.
+2. Cycle 1 relaunch at T0+105s. Auto-pause: `pausedAtMs = T0+30`, `pausedAccumMs = 0`. Display 30s ✓
+3. User clicks Resume at T0+106s. `togglePauseFocus` advances `pausedAccumMs = 76` (= 106 - 30). `paused = false`.
+4. User works ~5s. T0+111s. **No new checkpoint fires** — the checkpoint interval restarted on focus change at T0+106s, would fire at T0+136s.
+5. Cycle 2 Cmd-Q at T0+111s. Persisted state has `pausedAccumMs = 76`, `paused = false`.
+6. Cycle 2 relaunch at T0+200s. Without the clamp, auto-pause sets `pausedAtMs = T0+30` (case A reads the still-stale end_time). `compute = 200 - 0 - 76 - (200 - 30) = -46ms` → `formatTime` clamps display to `0:00`. After Resume, `pausedAccumMs = 76 + (201 - 30) = 247`, `compute = 202 - 247 = -45ms` → counter stuck at `0:00` for ~46 seconds before turning positive.
+
+With the clamp at line 26: `pausedAtMs = max(30, 0 + 76) = 76`. `compute = 200 - 0 - 76 - (200 - 76) = 0` → display freezes at `0:00` (correct — case-B-like trade-off, the cycle-2 work credit is lost since no checkpoint captured it). After Resume, `pausedAccumMs = 76 + (201 - 76) = 201`, `compute = 202 - 201 = 1ms` → counter ticks from `0:00`. No stuck state.
+
+**Trade-off:** in iterated-quit cycles where no checkpoint fired between resume and the next quit, the work done in those cycles is lost from the displayed counter and from `break_seconds` at stop time. The DB-side `time_entries.start_time` / `end_time` is unaffected — the orphan-cap path or eventual checkpoint resolves it. Companion commit (cadence 30s → 1s) shrinks the lost-work window to ≤1 second, making this trade-off invisible in practice.
 
 ### New DB query
 
@@ -218,6 +244,10 @@ Start a session. Pause it (focus.paused = true). Cmd-Q. Relaunch.
 Start a session. Cmd-Q. Wait > 4 hours (or shorten `MAX_ORPHAN_HOURS` temporarily to test). Relaunch.
 *Pass:* No focus session on relaunch. The orphan-cap guard at lines 15–20 of the algorithm calls `persistFocus(null)` and returns without setting `focus` or `currentPage`, so the store stays at its initialized default (`currentPage: "daily"`, `focus: null`). `closeOrphanedTimeEntries` then closes the time entry on disk via the existing 4-hour cap. No reference to a closed `timeEntryId` survives in the store; no crash, no double-write.
 
+**Test (f) — iterated quit cycle (rev 3 — clamp regression test).**
+Start a session. Wait ≥30s for a checkpoint. Cmd-Q. Wait 60s. Relaunch (auto-paused). Click Resume. Work ~5 seconds (less than 30s — *don't* let another checkpoint fire). Cmd-Q again. Wait 60s. Relaunch. Click Resume.
+*Pass:* On the second relaunch, counter shows `0:00` frozen (clamp engaged — cycle-2 work credit lost, acceptable per case-B trade-off). After clicking Resume, the counter ticks up from `0:00` (visibly grows past `0:01` within seconds — NOT stuck at `0:00` for tens of seconds). Verifies the rev 3 clamp prevents the negative-compute scenario.
+
 ### 6. Daily Plan top-right pill (Finding A from M2.6)
 
 After M2.6 lands, the pill at `DailyPlanner.tsx:854` already gates on `focus?.mode === "active" && focus.paused`. Auto-pause-on-relaunch sets `focus.paused = true` through the same store action path that M2.3/M2.6 read. No additional pill work needed in this milestone — the rendering is correct for free.
@@ -252,6 +282,8 @@ If Verse prefers two commits (read-only query + auto-pause logic separately), ha
 
 ## Out of scope
 
-- Instrumenting the shutdown path (Tauri-side hooks for graceful Cmd-Q). The checkpoint heuristic gives us within-30-seconds accuracy without coupling to platform internals.
+- Instrumenting the shutdown path (Tauri-side hooks for graceful Cmd-Q). The checkpoint heuristic — once paired with the companion 30s→1s cadence cut — gives within-1-second accuracy without coupling to platform internals.
 - Per-task auto-pause notifications ("Your session was auto-paused due to app quit"). Could add later as a small UX toast; not load-bearing.
 - Crash recovery beyond the existing `closeOrphanedTimeEntries` 4-hour cap. Pre-existing safety net; orthogonal to this milestone.
+- **(rev 3)** 1-second self-correcting visual stutter observed during test (b) implementation runs (briefly showed an off-by-tens-of-seconds value before snapping to the correct frozen value). Likely a React Strict Mode dev-mode double-invoke artifact. Not user-impacting in practice. Track as a follow-up if it persists in production builds; not blocking M2 closeout.
+- **(rev 3)** Worked-seconds-as-truth refactor (storing actual worked time directly in `time_entries` rather than deriving from `start_time` + `end_time` − `break_seconds`). Architecturally cleaner, but a multi-day effort with a schema migration. Tracked as a future architectural milestone per Verse decision.

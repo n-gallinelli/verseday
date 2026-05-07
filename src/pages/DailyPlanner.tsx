@@ -42,7 +42,6 @@ import TaskCard from "../components/TaskCard";
 import DatePicker from "../components/DatePicker";
 import DurationPicker from "../components/DurationPicker";
 import RichTextEditor from "../components/RichTextEditor";
-import SummaryOverlay from "../components/SummaryOverlay";
 import ProjectPicker from "../components/ProjectPicker";
 import DisclosureCaret from "../components/DisclosureCaret";
 import PillToggleIcon from "../components/PillToggleIcon";
@@ -69,6 +68,7 @@ export default function DailyPlanner() {
   const selectedTaskDetailId = useAppStore((s) => s.selectedTaskDetailId);
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
   const cacheTasks = useAppStore((s) => s.cacheTasks);
+  const openSummaryOverlay = useAppStore((s) => s.openSummaryOverlay);
   // 1Hz tick while focus is active. Returns the elapsed ms or null when no
   // session. Only the focused row's TaskCard re-renders per tick — every
   // other card bails out via the custom React.memo comparator that ignores
@@ -139,9 +139,6 @@ export default function DailyPlanner() {
       return next;
     });
   }
-
-  // Task detail overlay
-  const [showSummary, setShowSummary] = useState(false);
 
   // Shutdown state (for localStorage check only)
   const initialLoadDone = useRef(false);
@@ -1248,7 +1245,7 @@ export default function DailyPlanner() {
                   weight so "Shutdown day" doesn't get drowned out by a
                   bolder "Summarize plan" link. */}
               <button
-                onClick={() => setShowSummary(true)}
+                onClick={() => openSummaryOverlay("daily", selectedDate)}
                 className="flex items-center gap-1 text-[12px] text-fg-faded cursor-pointer hover:text-fg-secondary transition-colors"
               >
                 <svg width="11" height="11" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
@@ -1550,14 +1547,6 @@ export default function DailyPlanner() {
           verseday:task-updated / verseday:task-deleted listeners below
           refresh local lists when the host commits changes. */}
 
-      {/* Plan summary overlay */}
-      {showSummary && (
-        <SummaryOverlay
-          type="daily"
-          anchorDate={selectedDate}
-          onClose={() => setShowSummary(false)}
-        />
-      )}
     </div>
   );
 }

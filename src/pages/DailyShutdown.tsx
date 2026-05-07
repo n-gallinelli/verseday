@@ -12,8 +12,6 @@ import {
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
 import { formatHoursMinutes } from "../utils/format";
-import SunsetOverlay from "../components/SunsetOverlay";
-import SummaryOverlay from "../components/SummaryOverlay";
 import MoodSelector from "../components/MoodSelector";
 import CalendarChip from "../components/CalendarChip";
 import type { Task, Project } from "../types";
@@ -52,6 +50,8 @@ export default function DailyShutdown() {
   const { selectedDate, setSelectedDate, setPage } = useAppStore();
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
   const cacheTasks = useAppStore((s) => s.cacheTasks);
+  const openSummaryOverlay = useAppStore((s) => s.openSummaryOverlay);
+  const openSunsetOverlay = useAppStore((s) => s.openSunsetOverlay);
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -65,10 +65,8 @@ export default function DailyShutdown() {
   });
   const [carriedIds, setCarriedIds] = useState<Set<number>>(new Set());
   const [isShutdown, setIsShutdown] = useState(false);
-  const [showSunset, setShowSunset] = useState(false);
   const [highlightIds, setHighlightIds] = useState<Set<number>>(new Set());
   const [workedPerTask, setWorkedPerTask] = useState<Map<number, number>>(new Map());
-  const [showSummary, setShowSummary] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -240,7 +238,7 @@ export default function DailyShutdown() {
     }
     localStorage.setItem(SHUTDOWN_KEY_PREFIX + selectedDate, "true");
     setIsShutdown(true);
-    setShowSunset(true);
+    openSunsetOverlay();
   }
 
   async function handleToggleHighlight(taskId: number) {
@@ -569,7 +567,7 @@ export default function DailyShutdown() {
                 Shutdown
               </button>
               <button
-                onClick={() => setShowSummary(true)}
+                onClick={() => openSummaryOverlay("daily", selectedDate)}
                 className="px-5 py-2.5 rounded-lg border border-line-soft text-fg-secondary text-[13px] font-medium cursor-pointer hover:bg-overlay-hover transition-colors"
               >
                 Summary
@@ -578,15 +576,6 @@ export default function DailyShutdown() {
           )}
         </div>
       </div>
-
-      {showSunset && <SunsetOverlay onDismiss={() => setShowSunset(false)} />}
-      {showSummary && (
-        <SummaryOverlay
-          type="daily"
-          anchorDate={selectedDate}
-          onClose={() => setShowSummary(false)}
-        />
-      )}
 
       {/* Task detail overlay — opened by clicking any row in step 1.
           Mirrors DailyPlanner's invocation so the detail view is

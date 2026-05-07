@@ -12,7 +12,6 @@ import {
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
 import { localDateIso, mondayOfWeek as getMondayOfWeek, weekdayDates as getWeekdayDates } from "../utils/dates";
-import SunsetOverlay from "../components/SunsetOverlay";
 import { formatHoursMinutes } from "../utils/format";
 import type { Task, Project } from "../types";
 
@@ -262,13 +261,13 @@ function PlanNextWeekPrompt({
 
 export default function WeeklyShutdown() {
   const { selectedWeek, setSelectedWeek, setPage } = useAppStore();
+  const openSunsetOverlay = useAppStore((s) => s.openSunsetOverlay);
 
   const [completedThisWeek, setCompletedThisWeek] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [workedByDay, setWorkedByDay] = useState<Map<string, Map<number, number>>>(new Map());
   const [workedPerTask, setWorkedPerTask] = useState<Map<number, number>>(new Map());
   const [error, setError] = useState<string | null>(null);
-  const [showSunset, setShowSunset] = useState(false);
   const [showPlanPrompt, setShowPlanPrompt] = useState(false);
 
   const selectedWeekRef = useRef(selectedWeek);
@@ -345,7 +344,7 @@ export default function WeeklyShutdown() {
 
   function finalizeShutdown() {
     localStorage.setItem(WEEKLY_SHUTDOWN_PREFIX + selectedWeek, "true");
-    setShowSunset(true);
+    openSunsetOverlay();
   }
 
   function handlePlanNextWeek() {
@@ -642,8 +641,6 @@ export default function WeeklyShutdown() {
           onCancel={() => setShowPlanPrompt(false)}
         />
       )}
-
-      {showSunset && <SunsetOverlay onDismiss={() => setShowSunset(false)} />}
     </div>
   );
 }

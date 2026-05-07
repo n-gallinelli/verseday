@@ -75,7 +75,7 @@ export default function DailyPlanner() {
   const focusElapsedMs = useFocusTick();
   // The focused task's id (if any), surfaced cleanly so the renderRow
   // closure can compare without indexing into focus.task each time.
-  const focusedTaskId = focus?.task.id ?? null;
+  const focusedTaskId = focus?.taskId ?? null;
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [plannedMinutes, setPlannedMinutes] = useState(0);
@@ -489,7 +489,7 @@ export default function DailyPlanner() {
   async function handleStartFocus(task: Task) {
     const current = useAppStore.getState().focus;
     // Clicking play on the already-focused task is a no-op.
-    if (current && current.task.id === task.id) return;
+    if (current && current.taskId === task.id) return;
     try {
       if (current && current.mode === "active") {
         // Swap from one *active* focused task to another. Phase 1: close
@@ -498,7 +498,7 @@ export default function DailyPlanner() {
         // cleanly with no flash.
         const finalElapsedMs = (Date.now() - current.startedAt) + current.priorElapsedMs;
         const finalMinutes = Math.floor(finalElapsedMs / 60000);
-        const oldTaskId = current.task.id;
+        const oldTaskId = current.taskId;
         await stopTimeEntry(current.timeEntryId, 0);
         setWorkedMap((prev) => {
           const next = new Map(prev);
@@ -559,7 +559,7 @@ export default function DailyPlanner() {
     // while loadData() refetches.
     const finalElapsedMs = (Date.now() - f.startedAt) + f.priorElapsedMs;
     const finalMinutes = Math.floor(finalElapsedMs / 60000);
-    const taskId = f.task.id;
+    const taskId = f.taskId;
     setWorkedMap((prev) => {
       const next = new Map(prev);
       next.set(taskId, finalMinutes);

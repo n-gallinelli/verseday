@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Page, Task } from "../types";
 import { todayString, mondayOfWeek } from "../utils/dates";
+import { getTaskById } from "../db/queries";
 
 const FOCUS_STORAGE_KEY = "verseday_focus";
 const SIDEBAR_COLLAPSED_KEY = "verseday_sidebar_collapsed";
@@ -11,35 +12,27 @@ const SIDEBAR_COLLAPSED_KEY = "verseday_sidebar_collapsed";
 // a real time entry). The mode tag lets TypeScript narrow timeEntryId /
 // startedAt accesses to the active branch and catch any code path that
 // touches them in preview by mistake.
-// M2.1 (rev 3) — `taskId: number` is the new canonical reference; `task: Task`
-// stays alongside as a TRANSITIONAL bridge so existing consumers
-// (FocusMode/PiP/TaskCard read sites, plus updateFocusTask, plus
-// setFocusPriorElapsedMs, plus PiP broadcast title resolution) keep
-// compiling at the seam boundary. M2.2 retargets every focus.task.X read
-// to selectFocusedTask, then deletes the field. Until then, every write
-// path keeps both fields in sync (see startFocus / previewFocus /
-// activateFocus / updateFocusTask / loader migration).
+// M2.2 — `taskId: number` is the canonical reference. The transitional
+// `task: Task` snapshot from M2.1 is retired; consumers read the live
+// task via selectFocusedTask (cache-backed) so a rename made elsewhere
+// in the app reflects on every focus surface within one render.
 export type FocusState =
   | {
       mode: "preview";
       taskId: number;
-      // TRANSITIONAL — removed in M2.2.
-      task: Task;
       previousPage: Page;
       priorElapsedMs: number;
     }
   | {
       mode: "active";
       taskId: number;
-      // TRANSITIONAL — removed in M2.2.
-      task: Task;
       timeEntryId: number;
       startedAt: number; // Date.now() timestamp
       previousPage: Page;
       priorElapsedMs: number;
-      // M2.1 (rev 2) — pause is a first-class concept on the active branch.
-      // Preview has no time entry, so pause is meaningless there.
-      // togglePauseFocus guards mode === "active".
+      // Pause is a first-class concept on the active branch. Preview has
+      // no time entry, so pause is meaningless there. togglePauseFocus
+      // guards mode === "active".
       paused: boolean;
       /** Wall-clock ms when current pause began; null when running. */
       pausedAtMs: number | null;
@@ -164,7 +157,13 @@ function persistFocus(focus: FocusState | null): void {
   }
 }
 
-function loadPersistedFocus(): FocusState | null {
+/** Loader shape includes the legacy `task: Task` snapshot so restoreFocus
+ *  can prime the cache from it on relaunch. The returned FocusState has
+ *  no `task` field (M2.2 retired it); the caller picks the snapshot off
+ *  this struct, primes the cache, then sets focus. */
+type LoadedFocus = { focus: FocusState; legacyTaskSnapshot: Task | null };
+
+function loadPersistedFocus(): LoadedFocus | null {
   try {
     const raw = localStorage.getItem(FOCUS_STORAGE_KEY);
     if (!raw) return null;
@@ -177,14 +176,12 @@ function loadPersistedFocus(): FocusState | null {
     // live session at upgrade time keep it.
     const mode = parsed.mode ?? "active";
 
-    // M2.1 (rev 3) migration: legacy shape only had `task: Task`. Backfill
-    // taskId from the snapshot. The transitional `task` field stays
-    // populated until M2.2 retires it; restoreFocus calls cacheTasks
-    // against the same snapshot so selectFocusedTask resolves on first
-    // read.
-    const task = parsed.task as Task | undefined;
-    const taskId = parsed.taskId ?? task?.id;
-    if (taskId === undefined || task === undefined) {
+    // Migration: legacy shape only had `task: Task`. Backfill taskId
+    // from the snapshot, hand the snapshot to restoreFocus to prime
+    // the cache, then drop it from the returned focus state.
+    const legacyTask = parsed.task as Task | undefined;
+    const taskId = parsed.taskId ?? legacyTask?.id;
+    if (taskId === undefined) {
       // Corrupt or pre-task-shape entry — drop it.
       localStorage.removeItem(FOCUS_STORAGE_KEY);
       return null;
@@ -192,11 +189,13 @@ function loadPersistedFocus(): FocusState | null {
 
     if (mode === "preview") {
       return {
-        mode: "preview",
-        taskId,
-        task,
-        previousPage: parsed.previousPage ?? "daily",
-        priorElapsedMs: parsed.priorElapsedMs ?? 0,
+        focus: {
+          mode: "preview",
+          taskId,
+          previousPage: parsed.previousPage ?? "daily",
+          priorElapsedMs: parsed.priorElapsedMs ?? 0,
+        },
+        legacyTaskSnapshot: legacyTask ?? null,
       };
     }
 
@@ -208,16 +207,18 @@ function loadPersistedFocus(): FocusState | null {
       return null;
     }
     return {
-      mode: "active",
-      taskId,
-      task,
-      timeEntryId: active.timeEntryId,
-      startedAt: active.startedAt,
-      previousPage: active.previousPage ?? "daily",
-      priorElapsedMs: active.priorElapsedMs ?? 0,
-      paused: active.paused ?? false,
-      pausedAtMs: active.pausedAtMs ?? null,
-      pausedAccumMs: active.pausedAccumMs ?? 0,
+      focus: {
+        mode: "active",
+        taskId,
+        timeEntryId: active.timeEntryId,
+        startedAt: active.startedAt,
+        previousPage: active.previousPage ?? "daily",
+        priorElapsedMs: active.priorElapsedMs ?? 0,
+        paused: active.paused ?? false,
+        pausedAtMs: active.pausedAtMs ?? null,
+        pausedAccumMs: active.pausedAccumMs ?? 0,
+      },
+      legacyTaskSnapshot: legacyTask ?? null,
     };
   } catch {
     localStorage.removeItem(FOCUS_STORAGE_KEY);
@@ -235,18 +236,18 @@ export function selectTaskDetailTask(state: AppState): Task | null {
   return state.tasksByIdCache.get(id) ?? null;
 }
 
-/** Selector: resolves the focused task. Prefers tasksByIdCache so a
- *  rename/edit made elsewhere in the app re-renders subscribers
- *  immediately. Falls back to focus.task (the M2.1 transitional snapshot)
- *  while M2.2 retargets focus.task.X reads. M2.2 deletes the fallback
- *  alongside the transitional field; M3.2 reroutes the cache lookup to
- *  canonical tasksById.
+/** Selector: resolves the focused task from tasksByIdCache so a rename
+ *  or edit made elsewhere in the app re-renders subscribers
+ *  immediately. M3.2 reroutes the lookup to canonical tasksById.
  *
- *  Returns null when there is no focus session. */
+ *  Returns null when there is no focus session, or briefly during the
+ *  cache-miss window after restoreFocus when the modern persisted shape
+ *  has only taskId (no embedded snapshot to prime from). FocusMode and
+ *  the PiP broadcast handle the null case. */
 export function selectFocusedTask(state: AppState): Task | null {
   const f = state.focus;
   if (!f) return null;
-  return state.tasksByIdCache.get(f.taskId) ?? f.task ?? null;
+  return state.tasksByIdCache.get(f.taskId) ?? null;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -308,13 +309,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     // The user transitions to active by hitting Play (FocusMode calls
     // activateFocus after creating the time entry).
     //
-    // M2.1 — also primes tasksByIdCache so selectFocusedTask resolves
-    // synchronously from any consumer; writes both `taskId` (canonical)
-    // and `task` (transitional) until M2.2 retires the latter.
+    // M2.2 — primes tasksByIdCache so selectFocusedTask resolves
+    // synchronously. The store no longer carries a task snapshot;
+    // consumers read live task data through the selector.
     const focus: FocusState = {
       mode: "preview",
       taskId: task.id,
-      task,
       previousPage,
       priorElapsedMs,
     };
@@ -325,13 +325,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   activateFocus: (timeEntryId) => {
     const f = get().focus;
     if (!f || f.mode !== "preview") return;
-    // M2.1 — pause fields init to false / null / 0 on every active-mode
+    // Pause fields init to false / null / 0 on every active-mode
     // transition (here from preview, and in startFocus below). Replaces
     // FocusMode's reset-on-task-change effect at :177-181.
     const next: FocusState = {
       mode: "active",
       taskId: f.taskId,
-      task: f.task,
       timeEntryId,
       startedAt: Date.now(),
       previousPage: f.previousPage,
@@ -344,19 +343,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ focus: next });
   },
   updateFocusTask: (patch) => {
-    // TRANSITIONAL — M2.2 retires this once consumers stop reading
-    // focus.task. Keeps `task` and `taskId` in sync so selectFocusedTask
-    // (which prefers cache, falls back to focus.task) still sees the
-    // patch even before the cache catches up. Cache is also primed
-    // here so any selector that reads from cache picks up the same
-    // values immediately.
+    // M2.2 — `task` is no longer on FocusState; this action is a thin
+    // cacheTasks wrapper that preserves the existing API for callers
+    // that want to splice an in-memory change to the focused task
+    // (FocusMode's notes/title/estimate auto-saves; TaskDetailOverlay's
+    // mirror writes). M3.2 may collapse this into the canonical
+    // `updateTask` action depending on whether the wrapper still earns
+    // its keep.
     const f = get().focus;
     if (!f) return;
-    const nextTask = { ...f.task, ...patch };
-    const next = { ...f, task: nextTask, taskId: nextTask.id } as FocusState;
+    const current = get().tasksByIdCache.get(f.taskId);
+    if (!current) return;
+    const nextTask = { ...current, ...patch };
     get().cacheTasks([nextTask]);
-    persistFocus(next);
-    set({ focus: next });
   },
   setFocusPriorElapsedMs: (taskId, priorMs) => {
     const f = get().focus;
@@ -377,12 +376,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     // previewFocus → activateFocus so the screen can render the task
     // before the time entry is created.
     //
-    // M2.1 — primes the cache and inits pause fields. Writes both
-    // `taskId` and `task` until M2.2 retires the snapshot.
+    // M2.2 — primes the cache so selectFocusedTask resolves
+    // synchronously. Initializes pause fields.
     const focus: FocusState = {
       mode: "active",
       taskId: task.id,
-      task,
       timeEntryId,
       startedAt: Date.now(),
       previousPage,
@@ -415,14 +413,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   restoreFocus: () => {
     const persisted = loadPersistedFocus();
-    if (persisted) {
-      // M2.1 — prime tasksByIdCache from the restored task snapshot so
-      // selectFocusedTask resolves on first read. Without this, a
-      // user who relaunches with an active focus would briefly see no
-      // task on the Focus screen until the cache filled from elsewhere.
-      get().cacheTasks([persisted.task]);
-      set({ currentPage: "focus", focus: persisted });
+    if (!persisted) return;
+    // Prime the cache so selectFocusedTask resolves on first render.
+    // Legacy persisted shape carries a Task snapshot — use it directly.
+    // Modern shape (post-M2.2) has only taskId; fall back to a one-shot
+    // getTaskById fetch and prime asynchronously. Until that resolves,
+    // FocusMode renders null (the cache-miss branch returns null), which
+    // is invisible — millisecond order. M3.2 replaces this with the
+    // canonical store-owned tasksById rehydration, removing the fetch.
+    if (persisted.legacyTaskSnapshot) {
+      get().cacheTasks([persisted.legacyTaskSnapshot]);
+    } else {
+      const { taskId } = persisted.focus;
+      void getTaskById(taskId)
+        .then((t) => {
+          if (t) get().cacheTasks([t]);
+        })
+        .catch(() => {
+          // Best effort — the host will refetch on first overlay open
+          // or list refresh anyway.
+        });
     }
+    set({ currentPage: "focus", focus: persisted.focus });
   },
   togglePauseFocus: () => {
     const f = get().focus;

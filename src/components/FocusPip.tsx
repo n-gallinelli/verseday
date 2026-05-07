@@ -22,6 +22,14 @@ const PIP_CMD_KEY = "verseday_pip_cmd";
 interface PipState {
   elapsed: number;
   paused: boolean;
+  // M2.2 — wall-clock when the current pause began (null if running)
+  // and the running total of paused time. The PiP itself doesn't compute
+  // elapsed from these (it consumes precomputed `elapsed` for display);
+  // they're forwarded so any future PiP consumer can run
+  // computeFocusElapsedMs locally without round-tripping to the main
+  // window.
+  pausedAtMs: number | null;
+  pausedAccumMs: number;
   phase: "work" | "break" | "prompt";
   breakRemaining: number;
   taskTitle: string;

@@ -1,12 +1,7 @@
 import { create } from "zustand";
 import type { Page, Task } from "../types";
 import { todayString, mondayOfWeek } from "../utils/dates";
-import { getTaskById, getTimeEntryEndTime } from "../db/queries";
-
-/** Mirrors closeOrphanedTimeEntries' MAX_ORPHAN_HOURS (db/queries.ts:692).
- *  Both values must stay in sync; if the orphan policy ever changes,
- *  the auto-pause guard below must change with it. */
-const ORPHAN_CAP_MS = 4 * 60 * 60 * 1000;
+import { getTaskById } from "../db/queries";
 
 const FOCUS_STORAGE_KEY = "verseday_focus";
 const SIDEBAR_COLLAPSED_KEY = "verseday_sidebar_collapsed";
@@ -113,7 +108,7 @@ interface AppState {
   setFocusPriorElapsedMs: (taskId: number, priorMs: number) => void;
   startFocus: (task: Task, timeEntryId: number, previousPage: Page, priorElapsedMs?: number) => void;
   stopFocus: () => Page;
-  restoreFocus: () => Promise<void>;
+  restoreFocus: () => void;
   /** Toggle pause on the active focus session. Manages pausedAtMs /
    *  pausedAccumMs internally. No-op if focus is null or in preview mode.
    *  M2.1 — wired from FocusMode/PiP/DailyPlan in M2.2/M2.3. */
@@ -416,7 +411,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     return prev;
   },
-  restoreFocus: async () => {
+  restoreFocus: () => {
     const persisted = loadPersistedFocus();
     if (!persisted) return;
     // Prime the cache so selectFocusedTask resolves on first render.
@@ -439,66 +434,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           // or list refresh anyway.
         });
     }
-
-    let focus = persisted.focus;
-
-    // Auto-pause-on-relaunch (docs/2026-05-07-pause-on-relaunch.md).
-    // Only applies to active sessions; preview is handled by setPage's
-    // "leaving focus discards preview" path.
-    if (focus.mode === "active") {
-      // Orphan-cap guard. If the session has been open longer than
-      // closeOrphanedTimeEntries' 4-hour cap, drop it entirely. The
-      // orphan path (called immediately after restoreFocus in
-      // App.tsx:111) closes the time entry on disk; auto-pausing first
-      // would leave focus pointing at a soon-to-be-closed timeEntryId,
-      // and a subsequent Resume → Stop would call stopTimeEntry on an
-      // already-closed row. Clearing focus matches the user's mental
-      // model — "I was gone too long, of course it's not running."
-      if (Date.now() - focus.startedAt > ORPHAN_CAP_MS) {
-        persistFocus(null);
-        return;
-      }
-
-      // For unpaused active sessions, force paused with pausedAtMs set
-      // to the most recent checkpoint (≈last time the app was alive).
-      // Wall-clock time during the quit window is excluded both from
-      // the displayed counter (computeFocusElapsedMs handles it via
-      // the open-pause subtraction) and from the eventual recorded
-      // worked minutes (M2.4 break_seconds picks it up when the user
-      // resumes-then-stops).
-      if (!focus.paused) {
-        let candidate: number;
-        try {
-          const endIso = await getTimeEntryEndTime(focus.timeEntryId);
-          if (endIso !== null) {
-            // Case A — checkpoint exists. Last-known-alive = endIso.
-            candidate = new Date(endIso).getTime();
-          } else {
-            // Case B — no checkpoint yet (quit < 30s after start).
-            // Loses up to 30s of credit on a freshly-quit session.
-            // Conservative; under-counts rather than over-counts.
-            candidate = focus.startedAt;
-          }
-        } catch {
-          // Case C — DB read failed. Auto-pause UX still lands; the
-          // quit-time correction degrades to no correction.
-          candidate = Date.now();
-        }
-        // Clamp (rev 3): pausedAtMs must be >= startedAt + pausedAccumMs,
-        // otherwise iterated quits without a fresh checkpoint can land
-        // pausedAtMs before the math-implied earliest-valid pause point,
-        // driving computeFocusElapsedMs negative. Walked-through example
-        // in docs/2026-05-07-pause-on-relaunch.md §"Clamp on pausedAtMs".
-        const pausedAtMs = Math.max(
-          candidate,
-          focus.startedAt + focus.pausedAccumMs,
-        );
-        focus = { ...focus, paused: true, pausedAtMs };
-        persistFocus(focus);
-      }
-    }
-
-    set({ currentPage: "focus", focus });
+    set({ currentPage: "focus", focus: persisted.focus });
   },
   togglePauseFocus: () => {
     const f = get().focus;

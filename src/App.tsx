@@ -106,7 +106,7 @@ function MainApp() {
         // Non-critical — sweep is a safety net, not load-bearing.
       }
 
-      await restoreFocus();
+      restoreFocus();
       const restored = useAppStore.getState().focus;
       if (!restored) {
         await closeOrphanedTimeEntries();

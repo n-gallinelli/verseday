@@ -8,11 +8,6 @@ import {
   upsertDailyShutdown,
   getProjects,
   toggleTaskHighlight,
-  updateTask,
-  setTaskStatusFromUI,
-  setManualWorkedMinutes,
-  deleteTask,
-  startTimeEntry,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
@@ -20,7 +15,6 @@ import { formatHoursMinutes } from "../utils/format";
 import SunsetOverlay from "../components/SunsetOverlay";
 import SummaryOverlay from "../components/SummaryOverlay";
 import MoodSelector from "../components/MoodSelector";
-import TaskDetailOverlay from "../components/TaskDetailOverlay";
 import CalendarChip from "../components/CalendarChip";
 import type { Task, Project } from "../types";
 
@@ -55,7 +49,9 @@ function serializeReflection(fields: ReflectionFields): string {
 }
 
 export default function DailyShutdown() {
-  const { selectedDate, setSelectedDate, setPage, startFocus } = useAppStore();
+  const { selectedDate, setSelectedDate, setPage } = useAppStore();
+  const openTaskDetail = useAppStore((s) => s.openTaskDetail);
+  const cacheTasks = useAppStore((s) => s.cacheTasks);
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -74,7 +70,6 @@ export default function DailyShutdown() {
   const [workedPerTask, setWorkedPerTask] = useState<Map<number, number>>(new Map());
   const [showSummary, setShowSummary] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
-  const [detailTask, setDetailTask] = useState<Task | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedDateRef = useRef(selectedDate);
@@ -90,6 +85,7 @@ export default function DailyShutdown() {
         getProjects(false),
       ]);
       setTasks(t);
+      cacheTasks(t);
       setProjects(p);
       setMood(dp?.mood ?? null);
       setReflectionFields(parseReflection(dp?.reflection ?? ""));
@@ -124,6 +120,21 @@ export default function DailyShutdown() {
   useEffect(() => {
     loadData();
     setStep(1);
+  }, [loadData]);
+
+  // M1.b — refetch when the singleton overlay commits a mutation.
+  // M3.2 retires this listener in favor of canonical store
+  // subscriptions; until then, the broadcast bridges the seam.
+  useEffect(() => {
+    function refresh() {
+      loadData();
+    }
+    window.addEventListener("verseday:task-updated", refresh);
+    window.addEventListener("verseday:task-deleted", refresh);
+    return () => {
+      window.removeEventListener("verseday:task-updated", refresh);
+      window.removeEventListener("verseday:task-deleted", refresh);
+    };
   }, [loadData]);
 
   // Auto-save mood + reflection
@@ -247,25 +258,6 @@ export default function DailyShutdown() {
     }
   }
 
-  async function handleDeleteTask(id: number) {
-    try {
-      await deleteTask(id);
-      setError(null);
-      loadData();
-    } catch (e) {
-      setError(errorMessage(e, "Failed to delete task"));
-    }
-  }
-
-  async function handleStartFocusFromOverlay(task: Task) {
-    try {
-      const priorMs = (workedPerTask.get(task.id) ?? 0) * 60 * 1000;
-      const entryId = await startTimeEntry(task.id, "tracked");
-      startFocus(task, entryId, "daily_shutdown", priorMs);
-    } catch (e) {
-      setError(errorMessage(e, "Failed to start timer"));
-    }
-  }
 
 
   const completedTasks = tasks.filter((t) => t.status === "done");
@@ -349,7 +341,7 @@ export default function DailyShutdown() {
                       return (
                         <div
                           key={task.id}
-                          onClick={() => setDetailTask(task)}
+                          onClick={() => openTaskDetail(task.id)}
                           className="px-3 py-3 rounded-md border border-line-soft bg-elevated/60 flex items-center gap-3 transition-colors hover:bg-overlay-hover cursor-pointer"
                         >
                           {/* Leading group — star + project dot + title
@@ -423,7 +415,7 @@ export default function DailyShutdown() {
                       return (
                         <div
                           key={task.id}
-                          onClick={() => setDetailTask(task)}
+                          onClick={() => openTaskDetail(task.id)}
                           className="group/row px-3 py-3 rounded-md border border-line-soft bg-elevated/60 flex items-center gap-3 transition-colors hover:bg-overlay-hover cursor-pointer"
                         >
                           {/* Leading group — priority indicator + dot
@@ -600,30 +592,10 @@ export default function DailyShutdown() {
           Mirrors DailyPlanner's invocation so the detail view is
           identical regardless of where it was opened from (trash icon,
           start-focus button, pre-filled worked-minutes). */}
-      {detailTask && (
-        <TaskDetailOverlay
-          key={detailTask.id}
-          task={detailTask}
-          projects={projects}
-          onClose={() => { setDetailTask(null); loadData(); }}
-          onSave={(updates) => updateTask(updates).then(() => loadData()).catch(() => {})}
-          onToggle={(t) => {
-            setTaskStatusFromUI(t.id, t.status === "done" ? "todo" : "done")
-              .then(() => loadData())
-              .catch(() => {});
-          }}
-          onDelete={(id) => { handleDeleteTask(id); setDetailTask(null); }}
-          onStartFocus={(t) => {
-            handleStartFocusFromOverlay(t);
-            setDetailTask(null);
-            setPage("focus");
-          }}
-          workedMinutes={workedPerTask.get(detailTask.id) ?? 0}
-          onSetWorkedMinutes={(id, mins) =>
-            setManualWorkedMinutes(id, mins).then(() => loadData()).catch(() => {})
-          }
-        />
-      )}
+      {/* TaskDetailOverlay is mounted as a singleton at App.tsx
+          (M1 — see TaskDetailOverlayHost). The verseday:task-updated /
+          task-deleted listeners below refresh local lists when the host
+          commits changes. */}
     </div>
   );
 }

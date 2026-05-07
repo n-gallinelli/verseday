@@ -24,12 +24,8 @@ import {
   getTasksForProject,
   createTask,
   updateTask,
-  setTaskStatusFromUI,
   updateTaskDateScheduled,
   deleteTask,
-  setManualWorkedMinutes,
-  startTimeEntry,
-  getWorkedMinutesForTask,
   getDefaultTaskEstimateMin,
   type WeeklyPlanProjectStatus,
 } from "../../db/queries";
@@ -37,7 +33,6 @@ import type { Project, Task } from "../../types";
 import PlanProjectRail from "./PlanProjectRail";
 import PlanProjectPanel from "./PlanProjectPanel";
 import ErrorBanner from "../../components/ErrorBanner";
-import TaskDetailOverlay from "../../components/TaskDetailOverlay";
 import { errorMessage } from "../../utils/errors";
 import { parseTimeFromTitle } from "../../utils/format";
 
@@ -46,7 +41,9 @@ import { parseTimeFromTitle } from "../../utils/format";
 // (arrows + "this week" pill) lives in WeeklyPlanner above this tab,
 // shared with Schedule.
 export default function PlanTab() {
-  const { selectedWeek, startFocus, setPage } = useAppStore();
+  const { selectedWeek } = useAppStore();
+  const openTaskDetail = useAppStore((s) => s.openTaskDetail);
+  const cacheTasks = useAppStore((s) => s.cacheTasks);
   const weekDates = weekdayDates(selectedWeek);
 
   const [projects, setProjects] = useState<Project[]>([]);
@@ -75,7 +72,6 @@ export default function PlanTab() {
 
   // Task-detail overlay — opening a chip on the day strip pops the
   // same overlay used by Schedule / Daily / Projects.
-  const [detailTask, setDetailTask] = useState<Task | null>(null);
 
   const dndSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -120,6 +116,21 @@ export default function PlanTab() {
     loadData();
   }, [loadData]);
 
+  // M1.b — refetch when the singleton overlay commits a mutation.
+  // M3.2 retires this listener in favor of canonical store
+  // subscriptions; until then, the broadcast bridges the seam.
+  useEffect(() => {
+    function refresh() {
+      loadData();
+    }
+    window.addEventListener("verseday:task-updated", refresh);
+    window.addEventListener("verseday:task-deleted", refresh);
+    return () => {
+      window.removeEventListener("verseday:task-updated", refresh);
+      window.removeEventListener("verseday:task-deleted", refresh);
+    };
+  }, [loadData]);
+
   // Load all (non-done) tasks for the currently selected project. The
   // panel renders unscheduled ones in the task list and the
   // scheduled-this-week ones as small chips under their day buttons —
@@ -132,6 +143,7 @@ export default function PlanTab() {
     try {
       const fresh = await getTasksForProject(projectId, false);
       setTasks(fresh);
+      cacheTasks(fresh);
     } catch (e) {
       setError(errorMessage(e, "Failed to load project tasks"));
     }
@@ -441,79 +453,6 @@ export default function PlanTab() {
     }
   }
 
-  // Detail-overlay save. The overlay edits any field on the task,
-  // including project_id (could move it out of the currently-selected
-  // project) — easiest to just refetch tasks for the selected project
-  // so the partition re-derives correctly.
-  async function handleDetailSave(updates: {
-    id: number;
-    title: string;
-    projectId: number | null;
-    estimatedMinutes: number | null;
-    priority: string;
-    notes: string | null;
-    dateScheduled: string | null;
-    dueDate: string | null;
-  }) {
-    try {
-      await updateTask(updates);
-      await reloadTasks(selectedId);
-    } catch (e) {
-      setError(errorMessage(e, "Failed to save task"));
-    }
-  }
-
-  async function handleToggleTaskFromOverlay(task: Task) {
-    try {
-      await setTaskStatusFromUI(task.id, task.status === "done" ? "todo" : "done");
-      await reloadTasks(selectedId);
-    } catch (e) {
-      setError(errorMessage(e, "Failed to update task"));
-    }
-  }
-
-  async function handleDeleteTaskFromOverlay(taskId: number) {
-    try {
-      await deleteTask(taskId);
-      setTasks((prev) => prev.filter((t) => t.id !== taskId));
-      setDetailTask(null);
-    } catch (e) {
-      setError(errorMessage(e, "Failed to delete task"));
-    }
-  }
-
-  // Mirrors ProjectDetail.handleStartFocus — start the timer, jump to
-  // the immersive focus screen. Plan tab is part of the "weekly" page
-  // so that's the previousPage we'll return to on session end.
-  async function handleStartFocus(task: Task) {
-    if (useAppStore.getState().focus) {
-      setError("A focus session is already active");
-      return;
-    }
-    try {
-      const priorMinutes = await getWorkedMinutesForTask(task.id);
-      const priorMs = priorMinutes * 60 * 1000;
-      const entryId = await startTimeEntry(task.id, "tracked");
-      startFocus(task, entryId, "weekly", priorMs);
-      setPage("focus");
-      setDetailTask(null);
-    } catch (e) {
-      setError(errorMessage(e, "Failed to start timer"));
-    }
-  }
-
-  async function handleSetWorkedMinutesFromOverlay(
-    taskId: number,
-    minutes: number
-  ) {
-    try {
-      await setManualWorkedMinutes(taskId, minutes);
-      await reloadTasks(selectedId);
-    } catch (e) {
-      setError(errorMessage(e, "Failed to update worked time"));
-    }
-  }
-
   const selected = projects.find((p) => p.id === selectedId) ?? null;
   const selectedStatus =
     selectedId != null ? statuses.get(selectedId) ?? null : null;
@@ -584,7 +523,7 @@ export default function PlanTab() {
           onCreateTask={handleCreateTask}
           onUpdateTaskTitle={handleUpdateTaskTitle}
           onDeleteTask={handleDeleteTask}
-          onOpenTaskDetail={setDetailTask}
+          onOpenTaskDetail={(t) => openTaskDetail(t.id)}
         />
       </div>
 
@@ -600,19 +539,10 @@ export default function PlanTab() {
       </DragOverlay>
       </DndContext>
 
-      {detailTask && (
-        <TaskDetailOverlay
-          key={detailTask.id}
-          task={detailTask}
-          projects={projects}
-          onClose={() => setDetailTask(null)}
-          onSave={handleDetailSave}
-          onToggle={handleToggleTaskFromOverlay}
-          onDelete={handleDeleteTaskFromOverlay}
-          onStartFocus={handleStartFocus}
-          onSetWorkedMinutes={handleSetWorkedMinutesFromOverlay}
-        />
-      )}
+      {/* TaskDetailOverlay is mounted as a singleton at App.tsx
+          (M1 — see TaskDetailOverlayHost). The verseday:task-updated /
+          task-deleted listeners refresh local state when the host
+          commits changes. */}
     </div>
   );
 }

@@ -39,14 +39,20 @@ interface AppState {
    *  Read by the singleton TaskDetailOverlayHost mounted at the App shell.
    *  Not persisted — overlay always closes on app restart (see plan §5.2). */
   selectedTaskDetailId: number | null;
+  /** Set by openTaskDetail when the caller wants the overlay to auto-focus
+   *  the title input on open (e.g., ScheduleTab's quick-add draft flow).
+   *  Cleared by closeTaskDetail. */
+  taskDetailAutoFocusTitle: boolean;
   /** TRANSITIONAL — superseded by canonical tasksById in M3.2.
    *  Populated opportunistically via cacheTasks() by screens that already
    *  load tasks. The detail-overlay host reads from here with a getTaskById
    *  fallback for cache misses. Search for `tasksByIdCache` to find the
    *  bridge sites that M3.2 retires. */
   tasksByIdCache: Map<number, Task>;
-  /** Open the singleton task detail overlay for `id`. */
-  openTaskDetail: (id: number) => void;
+  /** Open the singleton task detail overlay for `id`. Pass
+   *  `{ autoFocusTitle: true }` to focus the title input on open
+   *  (used by quick-add flows that create the task in draft state). */
+  openTaskDetail: (id: number, opts?: { autoFocusTitle?: boolean }) => void;
   /** Close the singleton task detail overlay. */
   closeTaskDetail: () => void;
   /** Write-through cache update. Screens that load tasks call this so the
@@ -162,6 +168,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   focus: null,
   pendingDetailTask: null,
   selectedTaskDetailId: null,
+  taskDetailAutoFocusTitle: false,
   tasksByIdCache: new Map(),
   sidebarCollapsed: loadPersistedSidebarCollapsed(),
   sidebarFocusExpanded: false,
@@ -294,8 +301,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   setPendingDetailTask: (task) => set({ pendingDetailTask: task }),
-  openTaskDetail: (id) => set({ selectedTaskDetailId: id }),
-  closeTaskDetail: () => set({ selectedTaskDetailId: null }),
+  openTaskDetail: (id, opts) =>
+    set({
+      selectedTaskDetailId: id,
+      taskDetailAutoFocusTitle: opts?.autoFocusTitle === true,
+    }),
+  closeTaskDetail: () =>
+    set({ selectedTaskDetailId: null, taskDetailAutoFocusTitle: false }),
   cacheTasks: (tasks) => {
     if (tasks.length === 0) return;
     set((s) => {

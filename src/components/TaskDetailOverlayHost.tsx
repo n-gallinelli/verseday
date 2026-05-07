@@ -8,6 +8,7 @@ import {
   getWorkedMinutesForTask,
   setManualWorkedMinutes,
   setTaskStatusFromUI,
+  startTimeEntry,
   updateTask,
 } from "../db/queries";
 import type { UpdateTaskInput } from "../db/queries";
@@ -28,8 +29,9 @@ export default function TaskDetailOverlayHost() {
   const selectedTaskDetailId = useAppStore((s) => s.selectedTaskDetailId);
   const closeTaskDetail = useAppStore((s) => s.closeTaskDetail);
   const cacheTasks = useAppStore((s) => s.cacheTasks);
-  const previewFocus = useAppStore((s) => s.previewFocus);
+  const startFocus = useAppStore((s) => s.startFocus);
   const setPage = useAppStore((s) => s.setPage);
+  const taskDetailAutoFocusTitle = useAppStore((s) => s.taskDetailAutoFocusTitle);
   const task = useAppStore(selectTaskDetailTask);
 
   const [projects, setProjects] = useState<Project[]>([]);
@@ -128,11 +130,17 @@ export default function TaskDetailOverlayHost() {
   }
 
   async function handleStartFocus(t: Task) {
+    // Mirrors the existing parent-screen pattern: create the time entry,
+    // start active focus, navigate to the immersive Focus page. Each
+    // parent (DailyPlanner/ProjectDetail/PlanTab/etc.) does this in its
+    // own `handleStartFocus`; the host owns it now so M1.b can drop
+    // those duplicates.
     closeTaskDetail();
     try {
       const priorMinutes = await getWorkedMinutesForTask(t.id);
+      const entryId = await startTimeEntry(t.id, "tracked");
       const prevPage = useAppStore.getState().currentPage;
-      previewFocus(t, prevPage, priorMinutes * 60 * 1000);
+      startFocus(t, entryId, prevPage, priorMinutes * 60 * 1000);
       setPage("focus");
     } catch {
       // silent — surfaces via existing error pathways
@@ -155,6 +163,7 @@ export default function TaskDetailOverlayHost() {
       key={task.id}
       task={task}
       projects={projects}
+      autoFocusTitle={taskDetailAutoFocusTitle}
       onClose={closeTaskDetail}
       onSave={handleSave}
       onToggle={handleToggle}

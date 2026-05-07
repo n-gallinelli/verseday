@@ -31,7 +31,6 @@ import {
   updateTaskDateScheduled,
   getWorkedMinutesForTaskIds,
   getWorkedMinutesForTask,
-  setManualWorkedMinutes,
   getProjectStats,
   generateRecurringInstances,
   rolloverUnfinishedTasks,
@@ -41,7 +40,6 @@ import ErrorBanner from "../components/ErrorBanner";
 import TaskCard from "../components/TaskCard";
 import DatePicker from "../components/DatePicker";
 import DurationPicker from "../components/DurationPicker";
-import TaskDetailOverlay from "../components/TaskDetailOverlay";
 import RichTextEditor from "../components/RichTextEditor";
 import SummaryOverlay from "../components/SummaryOverlay";
 import ProjectPicker from "../components/ProjectPicker";
@@ -67,6 +65,9 @@ const MAX_ESTIMATE_MINUTES = 480;
 
 export default function DailyPlanner() {
   const { selectedDate, setSelectedDate, startFocus, stopFocus, openProject, focus, setPage, pendingDetailTask, setPendingDetailTask } = useAppStore();
+  const selectedTaskDetailId = useAppStore((s) => s.selectedTaskDetailId);
+  const openTaskDetail = useAppStore((s) => s.openTaskDetail);
+  const cacheTasks = useAppStore((s) => s.cacheTasks);
   // 1Hz tick while focus is active. Returns the elapsed ms or null when no
   // session. Only the focused row's TaskCard re-renders per tick — every
   // other card bails out via the custom React.memo comparator that ignores
@@ -139,7 +140,6 @@ export default function DailyPlanner() {
   }
 
   // Task detail overlay
-  const [detailTask, setDetailTask] = useState<Task | null>(null);
   const [showSummary, setShowSummary] = useState(false);
 
   // Shutdown state (for localStorage check only)
@@ -198,7 +198,7 @@ export default function DailyPlanner() {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       if (isTypingTarget(document.activeElement)) return;
-      if (detailTask || confirmDeleteId !== null || editingId !== null) return;
+      if (selectedTaskDetailId !== null || confirmDeleteId !== null || editingId !== null) return;
 
       if (e.key === "a" || e.key === "A") {
         e.preventDefault();
@@ -227,7 +227,7 @@ export default function DailyPlanner() {
     // keeping the dep array narrow avoids re-binding the listener on
     // every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detailTask, confirmDeleteId, editingId, tasks]);
+  }, [selectedTaskDetailId, confirmDeleteId, editingId, tasks]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -288,6 +288,10 @@ export default function DailyPlanner() {
         getUnfinishedRolloverTasks(),
       ]);
       setTasks(t);
+      // Prime the singleton overlay's cache so opening detail on any of
+      // these tasks resolves synchronously. M3.2 retires this in favor
+      // of a canonical store-owned tasks map.
+      cacheTasks(t);
       setPlannedMinutes(pm);
       setWorkedMinutes(wm);
       setDailyPlan(dp);
@@ -305,6 +309,9 @@ export default function DailyPlanner() {
       setSidebarUnscheduled(sb.unscheduled);
       setSidebarOverdue(sb.overdue);
       setUnfinishedTasks(uf);
+      // Prime the cache for sidebar lists too — any of these can open
+      // the detail overlay via a click.
+      cacheTasks([...sb.unscheduled, ...sb.overdue, ...uf]);
       setDailyNotes(dp?.notes ?? "");
       setError(null);
       // Mark initial load done (for stagger animation)
@@ -332,6 +339,22 @@ export default function DailyPlanner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calendarLastResultAt]);
 
+  // M1.b — refetch when the singleton overlay commits a mutation.
+  // M3.2 retires this listener in favor of canonical store
+  // subscriptions; until then, the broadcast bridges the seam.
+  useEffect(() => {
+    function refresh() {
+      loadData();
+    }
+    window.addEventListener("verseday:task-updated", refresh);
+    window.addEventListener("verseday:task-deleted", refresh);
+    return () => {
+      window.removeEventListener("verseday:task-updated", refresh);
+      window.removeEventListener("verseday:task-deleted", refresh);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // M4 — slow-sync toast. Appears only after sync has been in flight
   // for ≥3s; auto-clears when sync resolves. Plan §5.
   useEffect(() => {
@@ -343,17 +366,19 @@ export default function DailyPlanner() {
     return () => clearTimeout(t);
   }, [calendarSyncing]);
 
-  // Consume pendingDetailTask handed off from another page (e.g. Escape from
-  // FocusMode) — open the detail overlay for that task. Don't
-  // clear pendingDetailTask here: App.tsx remounts this page when pageKey
-  // increments after the page transition, so the first instance would clear
-  // the slot before the second instance ever reads it. The slot gets cleared
-  // when the overlay actually closes (see onClose handler below).
+  // Consume pendingDetailTask handed off from another page (e.g. Escape
+  // from FocusMode) — open the singleton detail overlay for that task
+  // and clear the slot. Cache the task first so the host resolves it
+  // synchronously instead of falling back to a getTaskById fetch.
+  // Re-mounts triggered by App.tsx's pageKey increment see a cleared
+  // slot on the second pass and no-op.
   useEffect(() => {
     if (pendingDetailTask) {
-      setDetailTask(pendingDetailTask);
+      cacheTasks([pendingDetailTask]);
+      openTaskDetail(pendingDetailTask.id);
+      setPendingDetailTask(null);
     }
-  }, [pendingDetailTask]);
+  }, [pendingDetailTask, cacheTasks, openTaskDetail, setPendingDetailTask]);
 
   async function handleAddTask(e: React.FormEvent) {
     e.preventDefault();
@@ -600,10 +625,6 @@ export default function DailyPlanner() {
     } catch (e) {
       setError(errorMessage(e, "Failed to update task"));
     }
-  }
-
-  function handleDetailSave(updates: Parameters<typeof updateTask>[0]) {
-    updateTask(updates).then(() => loadData()).catch(() => {});
   }
 
   async function pullTaskToDay(taskId: number) {
@@ -1127,7 +1148,7 @@ export default function DailyPlanner() {
                         }
                         onStart={handleStartFocus}
                         onStop={handleStopFocus}
-                        onOpenDetail={setDetailTask}
+                        onOpenDetail={(t) => openTaskDetail(t.id)}
                         onOpenProject={openProject}
                         expandedNotes={expandedId === task.id}
                         workedMinutes={workedMap.get(task.id)}
@@ -1394,7 +1415,7 @@ export default function DailyPlanner() {
                     {backlog.map((task) => (
                       <button
                         key={task.id}
-                        onClick={() => setDetailTask(task)}
+                        onClick={() => openTaskDetail(task.id)}
                         className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-overlay-hover transition-colors group"
                       >
                         <span className="text-[11px] text-fg-secondary group-hover:text-fg flex-1 truncate transition-colors">{task.title}</span>
@@ -1480,28 +1501,11 @@ export default function DailyPlanner() {
       </div>
 
       {/* Task detail overlay */}
-      {detailTask && (
-        <TaskDetailOverlay
-          key={detailTask.id}
-          task={detailTask}
-          projects={projects}
-          onClose={() => { setDetailTask(null); setPendingDetailTask(null); }}
-          onSave={(updates) => handleDetailSave(updates)}
-          onToggle={(t) => { toggleTask(t).catch(() => {}); }}
-          onDelete={(id) => { handleDelete(id); setDetailTask(null); setPendingDetailTask(null); }}
-          onStartFocus={(t) => {
-            handleStartFocus(t);
-            setDetailTask(null);
-            setPendingDetailTask(null);
-            // Detail-overlay's start button is a "go focus on this task"
-            // gesture — navigate to the immersive Focus page rather than
-            // staying inline. Daily Plan's own play button stays inline.
-            setPage("focus");
-          }}
-          workedMinutes={workedMap.get(detailTask.id) ?? 0}
-          onSetWorkedMinutes={(id, mins) => setManualWorkedMinutes(id, mins).then(() => loadData()).catch(() => {})}
-        />
-      )}
+      {/* TaskDetailOverlay is mounted as a singleton at App.tsx
+          (M1 — see TaskDetailOverlayHost). This page calls openTaskDetail(id)
+          to open it; the host owns rendering and DB plumbing. The
+          verseday:task-updated / verseday:task-deleted listeners below
+          refresh local lists when the host commits changes. */}
 
       {/* Plan summary overlay */}
       {showSummary && (

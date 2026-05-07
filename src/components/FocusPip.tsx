@@ -375,9 +375,13 @@ export default function FocusPip() {
       <div className="flex items-center gap-2 pl-4 pr-2 py-2 w-full h-full">
         {/* Title + timer — purely informational; click-to-focus is
             handled by the outer container. Fades on hover so the icon
-            row can take the space without overlapping. */}
+            row can take the space without overlapping.
+            pr-12 reserves space for the absolute-positioned pause
+            button (w-9 + right-2 → ~44px from the right edge of the
+            pip) so a long title truncates *before* the pause icon
+            instead of running underneath it. */}
         <div
-          className="flex-1 min-w-0 transition-opacity duration-150"
+          className="flex-1 min-w-0 pr-12 transition-opacity duration-150"
           style={{ opacity: expanded ? 0 : 1, pointerEvents: expanded ? "none" : "auto" }}
         >
           <div className="text-[14px] font-medium text-fg truncate leading-snug">

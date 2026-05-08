@@ -234,8 +234,18 @@ function buildWeeklyPlainText(
 }
 
 export default function SummaryOverlay({ type, anchorDate, onClose }: SummaryOverlayProps) {
+  // Pre-M4 surfaces: SummaryOverlay's three task lists weren't
+  // migrated to canonical store during M3.2 (the entity plan §M3.2
+  // listed SummaryOverlay among the eleven files but it wasn't
+  // touched in b.1-b.5). Read-only summary modal — daily uses the
+  // selected date's tasks; weekly uses week ranges. Hybrid SQL →
+  // IDs → tasksById migration would close these. Track for
+  // follow-up cleanup.
+  // eslint-disable-next-line no-restricted-syntax -- pre-M4 M3 gap
   const [dailyTasks, setDailyTasks] = useState<Task[]>([]);
+  // eslint-disable-next-line no-restricted-syntax -- pre-M4 M3 gap
   const [weeklyDoneTasks, setWeeklyDoneTasks] = useState<Task[]>([]);
+  // eslint-disable-next-line no-restricted-syntax -- pre-M4 M3 gap
   const [weeklyNextTasks, setWeeklyNextTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);

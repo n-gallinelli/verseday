@@ -20,7 +20,6 @@ import {
   getProjects,
   createProject,
   getProjectStats,
-  getTasksForProject,
   updateProjectSortOrders,
   archiveProject,
   searchTasksByTitle,
@@ -94,7 +93,32 @@ export default function Projects() {
     localStorage.setItem("verseday_objectives_view", viewMode);
   }, [viewMode]);
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<number>>(new Set());
-  const [projectTasks, setProjectTasks] = useState<Map<number, Task[]>>(new Map());
+  // M4 — Project-list-expand inline display now derives from the
+  // canonical store (closes the M3.2.b.2 parking-lot item). Each
+  // expanded project's task list resolves via taskIdsByProject +
+  // tasksById; loadTasksForProject primes both. Replaces the local
+  // useState<Map<number, Task[]>> + getTasksForProject(true) flow.
+  const taskIdsByProject = useAppStore((s) => s.taskIdsByProject);
+  const tasksById = useAppStore((s) => s.tasksById);
+  const loadTasksForProject = useAppStore((s) => s.loadTasksForProject);
+  // Memoized per-project task list for the expanded-projects render.
+  // Subscribes to expandedProjectIds, taskIdsByProject, and tasksById;
+  // re-derives only when one of those changes. A status flip /
+  // rename / delete on a task in an expanded project flows through
+  // tasksById and re-runs the memo.
+  const projectTasksMap = useMemo(() => {
+    const result = new Map<number, Task[]>();
+    for (const projectId of expandedProjectIds) {
+      const ids = taskIdsByProject.get(projectId) ?? [];
+      const list: Task[] = [];
+      for (const id of ids) {
+        const t = tasksById.get(id);
+        if (t) list.push(t);
+      }
+      result.set(projectId, list);
+    }
+    return result;
+  }, [expandedProjectIds, taskIdsByProject, tasksById]);
   const [searchQuery, setSearchQuery] = useState("");
   // M3.2.b.2 — store IDs locally; resolve full Task data through the
   // canonical map at render time. Same hybrid pattern DailyPlanner's
@@ -103,7 +127,6 @@ export default function Projects() {
   // the detail overlay flows back here via the tasksById subscription
   // without re-running the SQL search.
   const [matchingTaskIds, setMatchingTaskIds] = useState<number[]>([]);
-  const tasksById = useAppStore((s) => s.tasksById);
   const matchingTasks = useMemo(() => {
     const out: Task[] = [];
     for (const id of matchingTaskIds) {
@@ -194,12 +217,11 @@ export default function Projects() {
         next.delete(projectId);
       } else {
         next.add(projectId);
-        if (!projectTasks.has(projectId)) {
-          getTasksForProject(projectId, true).then((tasks) => {
-            setProjectTasks((m) => new Map(m).set(projectId, tasks));
-            primeTasks(tasks);
-          }).catch(() => {});
-        }
+        // Always re-fetch on expand. loadTasksForProject is idempotent
+        // and refreshes any task whose state changed since the last
+        // load. Pre-M4 this gated on a local cache; canonical store
+        // makes that gate unnecessary.
+        void loadTasksForProject(projectId);
       }
       return next;
     });
@@ -497,7 +519,7 @@ export default function Projects() {
                   const isCompleted = !!project.completed;
                   const dueDate = project.target_date;
                   const isExpanded = expandedProjectIds.has(project.id);
-                  const tasks = projectTasks.get(project.id) ?? [];
+                  const tasks = projectTasksMap.get(project.id) ?? [];
 
                   const startDate = project.start_date;
                   const dueSoonOrPast = (() => {

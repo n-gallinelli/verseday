@@ -245,8 +245,16 @@ export default function DailyPlanner() {
     });
   }, [selectedDate, today]);
 
-  // Per-row undo for tasks pulled from the rail into today (10s window)
+  // Per-row undo for tasks pulled from the rail into today (10s window).
+  // recentlyPulled snapshots each pulled task's pre-pull state so the
+  // rail can render the row in `Undo` styling at its pre-pull
+  // position; once the 10s timer fires (or the user clicks Undo),
+  // the entry clears. Single-component scope, drag-preview-style
+  // ephemera (parallels activeDragTask in ScheduleTab); lifting to
+  // canonical store would create cross-screen visibility for
+  // single-rail UI state with no cross-screen consumer.
   const [recentlyPulled, setRecentlyPulled] = useState<
+    // eslint-disable-next-line no-restricted-syntax -- single-component undo state, see comment above
     Map<number, { task: Task; prevDate: string | null }>
   >(new Map());
   const recentTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(

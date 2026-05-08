@@ -127,6 +127,13 @@ export default function PastShutdownCard({
   projects,
 }: PastShutdownCardProps) {
   const [expanded, setExpanded] = useState(false);
+  // Pre-M4 surface: PastShutdownCard's completedTasks list wasn't
+  // migrated to canonical store during M3.2 (the entity plan §M3.2
+  // listed it under "pending Verse rev 2 verification gate" — never
+  // re-evaluated). Read-only display of a past shutdown's tasks; a
+  // hybrid SQL → IDs → tasksById migration would close this. Track
+  // for follow-up cleanup.
+  // eslint-disable-next-line no-restricted-syntax -- pre-M4 M3 gap
   const [completedTasks, setCompletedTasks] = useState<Task[] | null>(null);
   const [loadingTasks, setLoadingTasks] = useState(false);
 

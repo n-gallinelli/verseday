@@ -495,7 +495,12 @@ export default function ProjectDetail() {
 
   // UI state
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  // pendingDelete snapshots a task during the 5-second deletion-undo
+  // window so undoDelete can restore it without a refetch. Same
+  // single-component undo-state shape as DailyPlanner's
+  // recentlyPulled and ScheduleTab's activeDragTask.
   const [pendingDelete, setPendingDelete] = useState<{
+    // eslint-disable-next-line no-restricted-syntax -- single-component pending-delete undo state, see comment above
     task: Task;
     timeoutId: ReturnType<typeof setTimeout>;
   } | null>(null);

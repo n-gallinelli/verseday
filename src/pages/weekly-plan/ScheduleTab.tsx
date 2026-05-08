@@ -503,6 +503,13 @@ export default function ScheduleTab() {
     [],
   );
   const [error, setError] = useState<string | null>(null);
+  // activeDragTask is transient drag-preview UI scoped to this single
+  // component (handleDragStart → handleDragEnd lifecycle); lifting to
+  // canonical store would create cross-screen visibility for ephemera.
+  // The value drives only the <DragOverlay> chip following the cursor
+  // and is null outside the drag gesture. Verse-approved exception
+  // during M3.2.b.3.
+  // eslint-disable-next-line no-restricted-syntax -- see comment above
   const [activeDragTask, setActiveDragTask] = useState<Task | null>(null);
 
   const activeProjectIdSet = useMemo(

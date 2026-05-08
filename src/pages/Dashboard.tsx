@@ -157,6 +157,13 @@ function ProjectProgressRow({
 export default function Dashboard() {
   const { selectedWeek, setSelectedWeek } = useAppStore();
 
+  // Pre-M4 surfaces: Dashboard's task lists weren't migrated to
+  // canonical store during M3.2 (the entity plan §M3.2 listed
+  // Dashboard among the eleven files but it wasn't touched in
+  // b.1-b.5). weekTasks could migrate via selectTaskIdsByWeek;
+  // recentCompleted needs a small dedicated query. Track for
+  // follow-up cleanup.
+  // eslint-disable-next-line no-restricted-syntax -- pre-M4 M3 gap
   const [weekTasks, setWeekTasks] = useState<Task[]>([]);
   const [plannedByDay, setPlannedByDay] = useState<Map<string, number>>(
     new Map()
@@ -168,6 +175,7 @@ export default function Dashboard() {
     Map<number, { total: number; done: number; lastDate: string | null }>
   >(new Map());
   const [projects, setProjects] = useState<Project[]>([]);
+  // eslint-disable-next-line no-restricted-syntax -- pre-M4 M3 gap
   const [recentCompleted, setRecentCompleted] = useState<Task[]>([]);
   const [pastShutdowns, setPastShutdowns] = useState<CompletedShutdown[]>([]);
   const [error, setError] = useState<string | null>(null);

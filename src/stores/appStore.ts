@@ -2,10 +2,143 @@ import { create } from "zustand";
 import type { Page, Task } from "../types";
 import { todayString, mondayOfWeek } from "../utils/dates";
 import {
+  createTask as dbCreateTask,
+  deleteTask as dbDeleteTask,
   getTaskById,
+  getTasksForDate,
+  getTasksForProject,
+  getTasksForWeek,
   getTimeEntryById,
+  setManualWorkedMinutes as dbSetManualWorkedMinutes,
+  setTaskStatusFromUI,
+  updateTask as dbUpdateTask,
+  updateTaskDateScheduled as dbUpdateTaskDateScheduled,
+  updateTaskSortOrders as dbUpdateTaskSortOrders,
   updateTimeEntryWorkedSeconds,
 } from "../db/queries";
+import type { CreateTaskInput, UpdateTaskInput } from "../db/queries";
+
+/** Returns the local-tz Monday-ISO of the week containing `dateIso`.
+ *  Anchors on T00:00:00 to keep DST transitions from shifting the bucket. */
+function weekStartFromDate(dateIso: string): string {
+  return mondayOfWeek(new Date(dateIso + "T00:00:00"));
+}
+
+/** Returns the Sunday-ISO closing the week starting at `mondayIso`. */
+function weekEndFromMonday(mondayIso: string): string {
+  const d = new Date(mondayIso + "T00:00:00");
+  d.setDate(d.getDate() + 6);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Module-level stable empty list. Returning the same array reference for
+ *  every "no entry" lookup keeps subscribers from re-rendering on
+ *  unrelated store changes. */
+const EMPTY_ID_LIST: number[] = [];
+
+/** Append `id` to the index entry at `key` if not already present.
+ *  Returns a NEW Map only when the entry actually changed, so unchanged
+ *  loads don't churn subscriber identity. */
+function indexAppend<K>(idx: Map<K, number[]>, key: K, id: number): Map<K, number[]> {
+  const existing = idx.get(key);
+  if (existing && existing.includes(id)) return idx;
+  const next = new Map(idx);
+  next.set(key, existing ? [...existing, id] : [id]);
+  return next;
+}
+
+/** Remove `id` from the index entry at `key`. Returns a NEW Map only
+ *  when the id was actually present. */
+function indexRemove<K>(idx: Map<K, number[]>, key: K, id: number): Map<K, number[]> {
+  const existing = idx.get(key);
+  if (!existing || !existing.includes(id)) return idx;
+  const filtered = existing.filter((x) => x !== id);
+  const next = new Map(idx);
+  if (filtered.length === 0) next.delete(key);
+  else next.set(key, filtered);
+  return next;
+}
+
+/** State patch: insert `task` into tasksById and the relevant secondary
+ *  indices. Pure — caller passes to set((s) => ...). */
+function withTaskInserted(s: AppState, task: Task): Partial<AppState> {
+  const nextMap = new Map(s.tasksById);
+  nextMap.set(task.id, task);
+  let nextDateIdx = s.taskIdsByDate;
+  let nextWeekIdx = s.taskIdsByWeek;
+  let nextProjIdx = s.taskIdsByProject;
+  if (task.date_scheduled !== null) {
+    nextDateIdx = indexAppend(nextDateIdx, task.date_scheduled, task.id);
+    nextWeekIdx = indexAppend(nextWeekIdx, weekStartFromDate(task.date_scheduled), task.id);
+  }
+  if (task.project_id !== null) {
+    nextProjIdx = indexAppend(nextProjIdx, task.project_id, task.id);
+  }
+  return {
+    tasksById: nextMap,
+    taskIdsByDate: nextDateIdx,
+    taskIdsByWeek: nextWeekIdx,
+    taskIdsByProject: nextProjIdx,
+  };
+}
+
+/** State patch: drop `task` from tasksById and any index it appears in. */
+function withTaskRemoved(s: AppState, task: Task): Partial<AppState> {
+  const nextMap = new Map(s.tasksById);
+  nextMap.delete(task.id);
+  let nextDateIdx = s.taskIdsByDate;
+  let nextWeekIdx = s.taskIdsByWeek;
+  let nextProjIdx = s.taskIdsByProject;
+  if (task.date_scheduled !== null) {
+    nextDateIdx = indexRemove(nextDateIdx, task.date_scheduled, task.id);
+    nextWeekIdx = indexRemove(nextWeekIdx, weekStartFromDate(task.date_scheduled), task.id);
+  }
+  if (task.project_id !== null) {
+    nextProjIdx = indexRemove(nextProjIdx, task.project_id, task.id);
+  }
+  return {
+    tasksById: nextMap,
+    taskIdsByDate: nextDateIdx,
+    taskIdsByWeek: nextWeekIdx,
+    taskIdsByProject: nextProjIdx,
+  };
+}
+
+/** State patch: replace tasksById[id] with `after` and update any index
+ *  whose membership changed (date_scheduled or project_id moved between
+ *  buckets). The before/after framing is what makes this incremental
+ *  rather than rebuild-from-scratch. */
+function withTaskMutated(s: AppState, before: Task, after: Task): Partial<AppState> {
+  const nextMap = new Map(s.tasksById);
+  nextMap.set(after.id, after);
+  let nextDateIdx = s.taskIdsByDate;
+  let nextWeekIdx = s.taskIdsByWeek;
+  let nextProjIdx = s.taskIdsByProject;
+  if (before.date_scheduled !== after.date_scheduled) {
+    if (before.date_scheduled !== null) {
+      nextDateIdx = indexRemove(nextDateIdx, before.date_scheduled, after.id);
+      nextWeekIdx = indexRemove(nextWeekIdx, weekStartFromDate(before.date_scheduled), after.id);
+    }
+    if (after.date_scheduled !== null) {
+      nextDateIdx = indexAppend(nextDateIdx, after.date_scheduled, after.id);
+      nextWeekIdx = indexAppend(nextWeekIdx, weekStartFromDate(after.date_scheduled), after.id);
+    }
+  }
+  if (before.project_id !== after.project_id) {
+    if (before.project_id !== null) {
+      nextProjIdx = indexRemove(nextProjIdx, before.project_id, after.id);
+    }
+    if (after.project_id !== null) {
+      nextProjIdx = indexAppend(nextProjIdx, after.project_id, after.id);
+    }
+  }
+  return {
+    tasksById: nextMap,
+    taskIdsByDate: nextDateIdx,
+    taskIdsByWeek: nextWeekIdx,
+    taskIdsByProject: nextProjIdx,
+  };
+}
 
 const FOCUS_STORAGE_KEY = "verseday_focus";
 const SIDEBAR_COLLAPSED_KEY = "verseday_sidebar_collapsed";
@@ -20,8 +153,8 @@ const SIDEBAR_COLLAPSED_KEY = "verseday_sidebar_collapsed";
 // retired. workedMs is the sole source of truth for session-only
 // elapsed; tickFocus increments it while running, togglePauseFocus
 // flips a flag that gates the increment. taskId remains the canonical
-// task reference (M2.2); selectFocusedTask resolves task data from
-// tasksByIdCache (M3.2 reroutes to canonical tasksById).
+// task reference (M2.2); selectFocusedTask resolves task data from the
+// canonical tasksById map (M3.2.a).
 export type FocusState =
   | {
       mode: "preview";
@@ -60,23 +193,162 @@ interface AppState {
    *  the title input on open (e.g., ScheduleTab's quick-add draft flow).
    *  Cleared by closeTaskDetail. */
   taskDetailAutoFocusTitle: boolean;
-  /** TRANSITIONAL — superseded by canonical tasksById in M3.2.
-   *  Populated opportunistically via cacheTasks() by screens that already
-   *  load tasks. The detail-overlay host reads from here with a getTaskById
-   *  fallback for cache misses. Search for `tasksByIdCache` to find the
-   *  bridge sites that M3.2 retires. */
-  tasksByIdCache: Map<number, Task>;
+  /** Canonical store-owned task map (M3.2.a). Single source of truth
+   *  for task data in-memory; SQL is durable truth, this is the live
+   *  mirror. Populated by load* actions (and transitionally by
+   *  primeTasks for hybrid-pattern callers — see action docstring).
+   *  Per-row subscribers read
+   *  via selectTaskById; the detail-overlay host and focus screen
+   *  resolve their tasks from here via selectTaskDetailTask /
+   *  selectFocusedTask. */
+  tasksById: Map<number, Task>;
+  /** Secondary index: task IDs grouped by date_scheduled (NULL-scheduled
+   *  tasks are NOT in this index). Maintained on every load* / updateTask
+   *  / deleteTask / insertTask call. Read via selectTaskIdsByDate. */
+  taskIdsByDate: Map<string, number[]>;
+  /** Secondary index: task IDs grouped by project_id (NULL-project tasks
+   *  are NOT in this index — consumers that want them filter the canonical
+   *  map directly). Read via selectTaskIdsByProject. */
+  taskIdsByProject: Map<number, number[]>;
+  /** Secondary index: task IDs grouped by Monday-ISO of the week the
+   *  task is scheduled in. NULL-scheduled tasks are NOT in this index.
+   *  Read via selectTaskIdsByWeek. */
+  taskIdsByWeek: Map<string, number[]>;
   /** Open the singleton task detail overlay for `id`. Pass
    *  `{ autoFocusTitle: true }` to focus the title input on open
    *  (used by quick-add flows that create the task in draft state). */
   openTaskDetail: (id: number, opts?: { autoFocusTitle?: boolean }) => void;
   /** Close the singleton task detail overlay. */
   closeTaskDetail: () => void;
-  /** Write-through cache update. Screens that load tasks call this so the
-   *  singleton overlay can resolve `selectedTaskDetailId` synchronously
-   *  without re-querying the DB. M3.2 retires this in favor of canonical
-   *  store-owned task loading actions. */
-  cacheTasks: (tasks: Task[]) => void;
+  /** Write multiple tasks to the canonical `tasksById` map without
+   *  touching secondary indices. Used by the hybrid-pattern primes
+   *  (Projects search, ScheduleTab cross-cutting queries, WeeklyShutdown
+   *  completed list, DailyPlanner sidebar) where the caller's local ID
+   *  list is the primary membership truth and tasksById is the live
+   *  rendered-data source.
+   *
+   *  Distinct from the load* actions (which own a bucket and replace its
+   *  primary index slice) and from insertTask (which owns a single
+   *  newly-created row and propagates to all three indices via
+   *  withTaskInserted). Intended specifically for the hybrid pattern.
+   *
+   *  Renamed from cacheTasks in M3.2.b.5.a (the M1 transitional bridge
+   *  is gone; the action's purpose is hybrid-pattern priming). */
+  primeTasks: (tasks: Task[]) => void;
+  /** Load tasks for a specific date. Writes each task to tasksById
+   *  and replaces taskIdsByDate[date] with the loaded ID list. Idempotent.
+   *  On DB failure: leaves prior state intact and surfaces error via
+   *  console.error (UI surfaces error banners through their own paths). */
+  loadTasksForDate: (date: string) => Promise<void>;
+  /** Load tasks for a project, including done tasks. ProjectDetail
+   *  filters by `showDone` at render time — same status-filter pattern
+   *  DailyPlanner uses for its day-list. Loading the full set keeps
+   *  the toggle from triggering a re-query. Failure-path: prior state
+   *  intact + console.error. */
+  loadTasksForProject: (projectId: number) => Promise<void>;
+  /** Load tasks for a week (Monday-ISO key). Failure-path: prior state
+   *  intact + console.error. */
+  loadTasksForWeek: (weekStart: string) => Promise<void>;
+  /** Optimistic patch + DB write. Updates tasksById and any affected
+   *  secondary indices, then writes through to SQL.
+   *
+   *  Failure path (Verse req): on DB write rejection, the action
+   *  refetches the task via getTaskById and writes truth back to the
+   *  canonical map (and re-derives index membership). It also
+   *  console.error's with the original patch and the error so the
+   *  failure is debuggable. Callers should still surface user-visible
+   *  errors via their own paths until banner/toast infra exists. */
+  updateTask: (patch: UpdateTaskInput) => Promise<void>;
+  /** Optimistic delete + DB write. Failure path: refetch the task; if
+   *  it still exists, restore it to the map and indices; if not (race
+   *  with another delete), leave deleted. console.error on any
+   *  unexpected exception. */
+  deleteTaskAction: (id: number) => Promise<void>;
+  /** Status-change with the existing UI-broadcast side-effect (FocusMode
+   *  listens to verseday:task-status-changed for cross-surface
+   *  auto-stop). Optimistic map write; failure-path refetches truth and
+   *  console.error's. */
+  setTaskStatus: (id: number, status: Task["status"]) => Promise<void>;
+  /** Set manual worked minutes on a task. The DB query inserts/updates
+   *  a synthetic time_entries row; nothing about the task row itself
+   *  changes, so the canonical map only needs a touch (refetch) on
+   *  failure. console.error on failure. */
+  setTaskWorkedMinutesAction: (id: number, minutes: number) => Promise<void>;
+  /** Insert a freshly-created task into tasksById and the relevant
+   *  secondary indices. Called by code paths that create tasks
+   *  (quick-add, schedule-tab drag-create, etc.). Pure in-memory
+   *  side-effect — caller has already DB-inserted. */
+  insertTask: (task: Task) => void;
+  /** Optimistic date_scheduled write + DB. Wraps updateTaskDateScheduled
+   *  and routes through withTaskMutated so date and week index slices
+   *  transition atomically (the M3.2.b.5.a replacement for the
+   *  legacy SQL-direct path used by pullTaskToDay / undoPull /
+   *  ScheduleTab drag-end).
+   *
+   *  Failure path: refetch via getTaskById, write truth back to the
+   *  canonical map; console.error with debug context. */
+  setTaskDateScheduled: (id: number, date: string | null) => Promise<void>;
+  /** Atomic re-order for a single bucket. Caller passes the bucket
+   *  (date or project) and the complete ordered ID list for that
+   *  bucket. Action writes sort_order updates to SQL, patches each
+   *  affected task's sort_order in tasksById, and replaces the
+   *  bucket's secondary-index slice with `orderedIds`.
+   *
+   *  Bucket parameter is explicit (not inferred from task.date_scheduled
+   *  / project_id) — Verse review M3.2.b.5: implicit inference would
+   *  be brittle since callers already know which bucket they're
+   *  reordering.
+   *
+   *  Non-optimistic — SQL writes before the map update; dnd-kit's
+   *  drop animation covers the round-trip latency. Avoids the
+   *  rollback path that an optimistic write would need on partial
+   *  failure (other actions in this surface ARE optimistic; the
+   *  asymmetry is deliberate).
+   *
+   *  Failure path: refetch the bucket via loadTasksForDate /
+   *  loadTasksForProject (the load action's primary-slice replacement
+   *  restores SQL truth). console.error with debug context. */
+  setTaskSortOrders: (
+    bucket:
+      | { kind: "date"; date: string }
+      | { kind: "project"; projectId: number },
+    orderedIds: number[],
+  ) => Promise<void>;
+  /** SQL-insert + canonical-map insert in one action. Wraps
+   *  createTask SQL, fetches the new row via getTaskById, applies
+   *  withTaskInserted (writes tasksById + propagates to date / project
+   *  / week indices), and returns the new id.
+   *
+   *  Return-valued-with-side-effects is intentional — quick-add and
+   *  drag-create both need the new id immediately to open the detail
+   *  overlay or play the entrance animation. Mirrors stopFocus(): Page
+   *  precedent.
+   *
+   *  Failure path: SQL error rejects; caller's catch fires. No
+   *  optimistic write to roll back. console.error on any unexpected
+   *  exception (e.g. getTaskById failing after a successful insert). */
+  createTaskAction: (input: CreateTaskInput) => Promise<number>;
+  /** Open-state for the singleton SummaryOverlay (day-summary modal).
+   *  `null` = closed. Read by the singleton SummaryOverlayHost mounted at
+   *  the App shell. Not persisted — overlay always closes on app restart
+   *  (matches selectedTaskDetailId precedent). M3.1.a additive seam — no
+   *  callers wire this yet; per-screen useState mounts retire in M3.1.b. */
+  summaryOverlay:
+    | { kind: "daily"; anchorDate: string }
+    | { kind: "weekly"; anchorDate: string }
+    | null;
+  /** Open the singleton SummaryOverlay. */
+  openSummaryOverlay: (kind: "daily" | "weekly", anchorDate: string) => void;
+  /** Close the singleton SummaryOverlay. */
+  closeSummaryOverlay: () => void;
+  /** Open-state for the singleton SunsetOverlay (shutdown-completion
+   *  animation). Read by SunsetOverlayHost mounted at the App shell. Not
+   *  persisted. M3.1.a additive — wires up in M3.1.b. */
+  sunsetOverlayOpen: boolean;
+  /** Open the singleton SunsetOverlay. */
+  openSunsetOverlay: () => void;
+  /** Close the singleton SunsetOverlay. */
+  closeSunsetOverlay: () => void;
   /** Persisted user preference for collapsed sidebar (non-focus pages). */
   sidebarCollapsed: boolean;
   /** Ephemeral expand override on focus screens — resets on remount. */
@@ -281,28 +553,54 @@ function loadPersistedFocus(): LoadedFocus | null {
   }
 }
 
-/** Selector: resolves the open detail overlay's task from the transitional
- *  cache. Returns null when the overlay is closed or the cache hasn't been
- *  primed yet (the host falls back to a getTaskById fetch in that case).
- *  M3.2 reroutes this to read from canonical tasksById. */
+/** Selector: resolves the open detail overlay's task from the canonical
+ *  tasksById map (M3.2.a). Returns null when the overlay is closed or
+ *  the canonical map hasn't been primed for this id yet — the host's
+ *  cache-miss effect issues a one-shot getTaskById fetch in that case
+ *  to populate the map. */
 export function selectTaskDetailTask(state: AppState): Task | null {
   const id = state.selectedTaskDetailId;
   if (id === null) return null;
-  return state.tasksByIdCache.get(id) ?? null;
+  return state.tasksById.get(id) ?? null;
 }
 
-/** Selector: resolves the focused task from tasksByIdCache so a rename
- *  or edit made elsewhere in the app re-renders subscribers
- *  immediately. M3.2 reroutes the lookup to canonical tasksById.
+/** Selector: resolves the focused task from canonical tasksById so a
+ *  rename or edit made elsewhere in the app re-renders subscribers
+ *  immediately (M3.2.a).
  *
  *  Returns null when there is no focus session, or briefly during the
- *  cache-miss window after restoreFocus when the modern persisted shape
- *  has only taskId (no embedded snapshot to prime from). FocusMode and
- *  the PiP broadcast handle the null case. */
+ *  load window after restoreFocus when the modern persisted shape has
+ *  only taskId (no embedded snapshot to prime from). FocusMode and the
+ *  PiP broadcast handle the null case. */
 export function selectFocusedTask(state: AppState): Task | null {
   const f = state.focus;
   if (!f) return null;
-  return state.tasksByIdCache.get(f.taskId) ?? null;
+  return state.tasksById.get(f.taskId) ?? null;
+}
+
+/** Selector: per-row task lookup. Stable reference — the same `Task`
+ *  identity flows out across renders unless the entry was rewritten.
+ *  Used by TaskCard's per-row subscription (M3.2.b.4). */
+export function selectTaskById(state: AppState, id: number): Task | undefined {
+  return state.tasksById.get(id);
+}
+
+/** Selector: ordered task IDs scheduled on `date`. Returns the stable
+ *  module-level empty list when no entry has been loaded for that date,
+ *  so subscribers don't churn on unrelated mutations. */
+export function selectTaskIdsByDate(state: AppState, date: string): number[] {
+  return state.taskIdsByDate.get(date) ?? EMPTY_ID_LIST;
+}
+
+/** Selector: ordered task IDs for `projectId`. */
+export function selectTaskIdsByProject(state: AppState, projectId: number): number[] {
+  return state.taskIdsByProject.get(projectId) ?? EMPTY_ID_LIST;
+}
+
+/** Selector: ordered task IDs scheduled in the week starting at
+ *  `weekStart` (Monday-ISO). */
+export function selectTaskIdsByWeek(state: AppState, weekStart: string): number[] {
+  return state.taskIdsByWeek.get(weekStart) ?? EMPTY_ID_LIST;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -315,7 +613,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingDetailTask: null,
   selectedTaskDetailId: null,
   taskDetailAutoFocusTitle: false,
-  tasksByIdCache: new Map(),
+  tasksById: new Map(),
+  taskIdsByDate: new Map(),
+  taskIdsByProject: new Map(),
+  taskIdsByWeek: new Map(),
+  summaryOverlay: null,
+  sunsetOverlayOpen: false,
   sidebarCollapsed: loadPersistedSidebarCollapsed(),
   sidebarFocusExpanded: false,
   weeklyPlannerTab: "plan",
@@ -364,16 +667,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     // The user transitions to active by hitting Play (FocusMode calls
     // activateFocus after creating the time entry).
     //
-    // M2.2 — primes tasksByIdCache so selectFocusedTask resolves
-    // synchronously. The store no longer carries a task snapshot;
-    // consumers read live task data through the selector.
+    // M2.2 — primes the canonical tasksById map so selectFocusedTask
+    // resolves synchronously. The store no longer carries a task
+    // snapshot; consumers read live task data through the selector.
     const focus: FocusState = {
       mode: "preview",
       taskId: task.id,
       previousPage,
       priorElapsedMs,
     };
-    get().cacheTasks([task]);
+    get().primeTasks([task]);
     persistFocus(focus);
     set({ focus });
   },
@@ -397,7 +700,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   updateFocusTask: (patch) => {
     // M2.2 — `task` is no longer on FocusState; this action is a thin
-    // cacheTasks wrapper that preserves the existing API for callers
+    // primeTasks wrapper that preserves the existing API for callers
     // that want to splice an in-memory change to the focused task
     // (FocusMode's notes/title/estimate auto-saves; TaskDetailOverlay's
     // mirror writes). M3.2 may collapse this into the canonical
@@ -405,10 +708,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     // its keep.
     const f = get().focus;
     if (!f) return;
-    const current = get().tasksByIdCache.get(f.taskId);
+    const current = get().tasksById.get(f.taskId);
     if (!current) return;
     const nextTask = { ...current, ...patch };
-    get().cacheTasks([nextTask]);
+    get().primeTasks([nextTask]);
   },
   setFocusPriorElapsedMs: (taskId, priorMs) => {
     const f = get().focus;
@@ -440,7 +743,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       paused: false,
       workedMs: 0,
     };
-    get().cacheTasks([task]);
+    get().primeTasks([task]);
     persistFocus(focus);
     set({ focus });
   },
@@ -473,12 +776,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     // is invisible — millisecond order. M3.2 replaces this with the
     // canonical store-owned tasksById rehydration, removing the fetch.
     if (persisted.legacyTaskSnapshot) {
-      get().cacheTasks([persisted.legacyTaskSnapshot]);
+      get().primeTasks([persisted.legacyTaskSnapshot]);
     } else {
       const { taskId } = persisted.focus;
       void getTaskById(taskId)
         .then((t) => {
-          if (t) get().cacheTasks([t]);
+          if (t) get().primeTasks([t]);
         })
         .catch(() => {
           // Best effort — the host will refetch on first overlay open
@@ -591,15 +894,339 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
   closeTaskDetail: () =>
     set({ selectedTaskDetailId: null, taskDetailAutoFocusTitle: false }),
-  cacheTasks: (tasks) => {
+  openSummaryOverlay: (kind, anchorDate) =>
+    set({ summaryOverlay: { kind, anchorDate } }),
+  closeSummaryOverlay: () => set({ summaryOverlay: null }),
+  openSunsetOverlay: () => set({ sunsetOverlayOpen: true }),
+  closeSunsetOverlay: () => set({ sunsetOverlayOpen: false }),
+  primeTasks: (tasks) => {
     if (tasks.length === 0) return;
     set((s) => {
-      // Build a fresh Map so Zustand subscribers see a new reference and
-      // re-evaluate. Mutating the existing Map would be invisible.
-      const next = new Map(s.tasksByIdCache);
-      for (const t of tasks) next.set(t.id, t);
-      return { tasksByIdCache: next };
+      // M3.2.b.5.a — bulk write to canonical tasksById without
+      // touching secondary indices. Hybrid-pattern callers own their
+      // own ID list; the index propagation that load* actions do
+      // would bloat secondary indices with hybrid-only data.
+      const nextMap = new Map(s.tasksById);
+      for (const t of tasks) nextMap.set(t.id, t);
+      return { tasksById: nextMap };
     });
+  },
+  loadTasksForDate: async (date) => {
+    try {
+      const list = await getTasksForDate(date);
+      set((s) => {
+        // M3.2.a fix — propagate every loaded task across all three
+        // indices, not just the primary one. The primary slice
+        // (taskIdsByDate[date]) is set by replacement so the loaded
+        // SQL order is preserved and tasks no longer scheduled for
+        // this date drop out. The secondary indices
+        // (taskIdsByProject / taskIdsByWeek) are appended via
+        // indexAppend so cross-screen subscribers (b.2 Project
+        // surfaces, b.3 Weekly surfaces) see the task without
+        // requiring their own load. indexAppend is no-op-stable: if
+        // the id is already present it returns the same Map ref.
+        // Stale entries left in non-primary indices when a task moves
+        // buckets via the legacy SQL-direct path are debt-2 territory
+        // and get fixed in M3.2.b.5 when those paths route through
+        // store actions.
+        const nextMap = new Map(s.tasksById);
+        let nextProjIdx = s.taskIdsByProject;
+        let nextWeekIdx = s.taskIdsByWeek;
+        const ids: number[] = [];
+        for (const t of list) {
+          nextMap.set(t.id, t);
+          ids.push(t.id);
+          if (t.project_id !== null) {
+            nextProjIdx = indexAppend(nextProjIdx, t.project_id, t.id);
+          }
+          if (t.date_scheduled !== null) {
+            nextWeekIdx = indexAppend(
+              nextWeekIdx,
+              weekStartFromDate(t.date_scheduled),
+              t.id,
+            );
+          }
+        }
+        const nextDateIdx = new Map(s.taskIdsByDate);
+        nextDateIdx.set(date, ids);
+        return {
+          tasksById: nextMap,
+          taskIdsByDate: nextDateIdx,
+          taskIdsByProject: nextProjIdx,
+          taskIdsByWeek: nextWeekIdx,
+        };
+      });
+    } catch (err) {
+      console.error("[appStore] loadTasksForDate failed", { date, err });
+    }
+  },
+  loadTasksForProject: async (projectId) => {
+    try {
+      // includeDone = true so ProjectDetail's showDone toggle is a
+      // pure render-time filter rather than a re-query. SQL LIMIT 500
+      // caps the worst case.
+      const list = await getTasksForProject(projectId, true);
+      set((s) => {
+        // Same propagation pattern as loadTasksForDate. Primary slice
+        // is taskIdsByProject[projectId]; secondary indices append.
+        const nextMap = new Map(s.tasksById);
+        let nextDateIdx = s.taskIdsByDate;
+        let nextWeekIdx = s.taskIdsByWeek;
+        const ids: number[] = [];
+        for (const t of list) {
+          nextMap.set(t.id, t);
+          ids.push(t.id);
+          if (t.date_scheduled !== null) {
+            nextDateIdx = indexAppend(nextDateIdx, t.date_scheduled, t.id);
+            nextWeekIdx = indexAppend(
+              nextWeekIdx,
+              weekStartFromDate(t.date_scheduled),
+              t.id,
+            );
+          }
+        }
+        const nextProjIdx = new Map(s.taskIdsByProject);
+        nextProjIdx.set(projectId, ids);
+        return {
+          tasksById: nextMap,
+          taskIdsByDate: nextDateIdx,
+          taskIdsByProject: nextProjIdx,
+          taskIdsByWeek: nextWeekIdx,
+        };
+      });
+    } catch (err) {
+      console.error("[appStore] loadTasksForProject failed", { projectId, err });
+    }
+  },
+  loadTasksForWeek: async (weekStart) => {
+    try {
+      const list = await getTasksForWeek(weekStart, weekEndFromMonday(weekStart));
+      set((s) => {
+        // Same propagation pattern as the other loaders. Primary
+        // slice is taskIdsByWeek[weekStart]; secondary indices append.
+        const nextMap = new Map(s.tasksById);
+        let nextDateIdx = s.taskIdsByDate;
+        let nextProjIdx = s.taskIdsByProject;
+        const ids: number[] = [];
+        for (const t of list) {
+          nextMap.set(t.id, t);
+          ids.push(t.id);
+          if (t.date_scheduled !== null) {
+            nextDateIdx = indexAppend(nextDateIdx, t.date_scheduled, t.id);
+          }
+          if (t.project_id !== null) {
+            nextProjIdx = indexAppend(nextProjIdx, t.project_id, t.id);
+          }
+        }
+        const nextWeekIdx = new Map(s.taskIdsByWeek);
+        nextWeekIdx.set(weekStart, ids);
+        return {
+          tasksById: nextMap,
+          taskIdsByDate: nextDateIdx,
+          taskIdsByProject: nextProjIdx,
+          taskIdsByWeek: nextWeekIdx,
+        };
+      });
+    } catch (err) {
+      console.error("[appStore] loadTasksForWeek failed", { weekStart, err });
+    }
+  },
+  updateTask: async (patch) => {
+    const current = get().tasksById.get(patch.id);
+    // No current entry → caller is racing a delete. Run the DB write
+    // anyway (caller's intent stands) but don't mutate the map; on
+    // success we leave the map empty for this id, which is correct
+    // (the task isn't currently visible anywhere).
+    try {
+      if (current) {
+        const next: Task = {
+          ...current,
+          title: patch.title,
+          project_id: patch.projectId,
+          estimated_minutes: patch.estimatedMinutes,
+          priority: patch.priority,
+          notes: patch.notes,
+          date_scheduled: patch.dateScheduled,
+          due_date: patch.dueDate === undefined ? current.due_date : patch.dueDate,
+        };
+        // Optimistic in-memory write before the DB call so the UI updates
+        // before the await completes.
+        set((s) => withTaskMutated(s, current, next));
+      }
+      await dbUpdateTask(patch);
+    } catch (err) {
+      console.error("[appStore] updateTask failed — refetching truth", {
+        patch,
+        err,
+      });
+      // Failure path (Verse req): refetch and write truth back.
+      try {
+        const fresh = await getTaskById(patch.id);
+        const before = get().tasksById.get(patch.id);
+        if (fresh) {
+          if (before) set((s) => withTaskMutated(s, before, fresh));
+          else set((s) => withTaskInserted(s, fresh));
+        } else if (before) {
+          set((s) => withTaskRemoved(s, before));
+        }
+      } catch (refetchErr) {
+        console.error("[appStore] updateTask refetch also failed", refetchErr);
+      }
+    }
+  },
+  deleteTaskAction: async (id) => {
+    const current = get().tasksById.get(id);
+    if (current) set((s) => withTaskRemoved(s, current));
+    try {
+      await dbDeleteTask(id);
+    } catch (err) {
+      console.error("[appStore] deleteTask failed — refetching truth", { id, err });
+      try {
+        const fresh = await getTaskById(id);
+        if (fresh) set((s) => withTaskInserted(s, fresh));
+      } catch (refetchErr) {
+        console.error("[appStore] deleteTask refetch also failed", refetchErr);
+      }
+    }
+  },
+  setTaskStatus: async (id, status) => {
+    const current = get().tasksById.get(id);
+    if (current) {
+      const next: Task = { ...current, status };
+      set((s) => withTaskMutated(s, current, next));
+    }
+    try {
+      // Delegates to the existing UI-broadcast helper so FocusMode's
+      // verseday:task-status-changed listener keeps firing — that
+      // event is OUT OF SCOPE for M3.2 retirement (only -updated and
+      // -deleted are retired in M3.2.b.5).
+      await setTaskStatusFromUI(id, status);
+    } catch (err) {
+      console.error("[appStore] setTaskStatus failed — refetching truth", {
+        id,
+        status,
+        err,
+      });
+      try {
+        const fresh = await getTaskById(id);
+        const before = get().tasksById.get(id);
+        if (fresh && before) set((s) => withTaskMutated(s, before, fresh));
+      } catch (refetchErr) {
+        console.error("[appStore] setTaskStatus refetch also failed", refetchErr);
+      }
+    }
+  },
+  setTaskWorkedMinutesAction: async (id, minutes) => {
+    try {
+      await dbSetManualWorkedMinutes(id, minutes);
+      // The query mutates time_entries, not the tasks row — the canonical
+      // Task entry doesn't change. workedMinutes-by-task is M3.3 territory.
+    } catch (err) {
+      console.error("[appStore] setTaskWorkedMinutes failed", { id, minutes, err });
+    }
+  },
+  insertTask: (task) => {
+    set((s) => withTaskInserted(s, task));
+  },
+  setTaskDateScheduled: async (id, date) => {
+    const current = get().tasksById.get(id);
+    if (current) {
+      // Optimistic mutation. withTaskMutated handles the date and
+      // week-bucket transitions atomically (and clears the project
+      // bucket nothing here since project_id is unchanged).
+      const next: Task = { ...current, date_scheduled: date };
+      set((s) => withTaskMutated(s, current, next));
+    }
+    try {
+      await dbUpdateTaskDateScheduled(id, date);
+    } catch (err) {
+      console.error("[appStore] setTaskDateScheduled failed — refetching truth", {
+        id,
+        date,
+        err,
+      });
+      try {
+        const fresh = await getTaskById(id);
+        const before = get().tasksById.get(id);
+        if (fresh) {
+          if (before) set((s) => withTaskMutated(s, before, fresh));
+          else set((s) => withTaskInserted(s, fresh));
+        } else if (before) {
+          set((s) => withTaskRemoved(s, before));
+        }
+      } catch (refetchErr) {
+        console.error(
+          "[appStore] setTaskDateScheduled refetch also failed",
+          refetchErr,
+        );
+      }
+    }
+  },
+  setTaskSortOrders: async (bucket, orderedIds) => {
+    // Update SQL first — sort_order is a per-task column, the DB query
+    // takes the {id, sortOrder}[] payload and writes them in one
+    // batched UPDATE. If it succeeds, patch the canonical map and
+    // replace the bucket's secondary index slice.
+    try {
+      const updates = orderedIds.map((id, i) => ({ id, sortOrder: i }));
+      await dbUpdateTaskSortOrders(updates);
+      set((s) => {
+        const nextMap = new Map(s.tasksById);
+        for (const { id, sortOrder } of updates) {
+          const t = nextMap.get(id);
+          if (t) nextMap.set(id, { ...t, sort_order: sortOrder });
+        }
+        if (bucket.kind === "date") {
+          const nextDateIdx = new Map(s.taskIdsByDate);
+          nextDateIdx.set(bucket.date, orderedIds);
+          return { tasksById: nextMap, taskIdsByDate: nextDateIdx };
+        } else {
+          const nextProjIdx = new Map(s.taskIdsByProject);
+          nextProjIdx.set(bucket.projectId, orderedIds);
+          return { tasksById: nextMap, taskIdsByProject: nextProjIdx };
+        }
+      });
+    } catch (err) {
+      console.error("[appStore] setTaskSortOrders failed — refetching bucket", {
+        bucket,
+        err,
+      });
+      // Recovery: refetch the affected bucket via the load action,
+      // which replaces the primary slice with SQL truth.
+      try {
+        if (bucket.kind === "date") {
+          await get().loadTasksForDate(bucket.date);
+        } else {
+          await get().loadTasksForProject(bucket.projectId);
+        }
+      } catch (refetchErr) {
+        console.error(
+          "[appStore] setTaskSortOrders bucket refetch also failed",
+          refetchErr,
+        );
+      }
+    }
+  },
+  createTaskAction: async (input) => {
+    // SQL insert returns the new id. Fetch the row back to populate
+    // the canonical map with the full Task struct (createTask returns
+    // just the id; getTaskById is the source of truth for the row's
+    // post-insert state, including DB-applied defaults like
+    // rollover_count, sort_order, etc.).
+    const id = await dbCreateTask(input);
+    try {
+      const fresh = await getTaskById(id);
+      if (fresh) set((s) => withTaskInserted(s, fresh));
+    } catch (err) {
+      // The DB insert succeeded; only the post-insert read failed.
+      // The next loadTasksFor* covering this row will sync the
+      // canonical map. Surface for debugging.
+      console.error(
+        "[appStore] createTaskAction post-insert getTaskById failed",
+        { id, err },
+      );
+    }
+    return id;
   },
   setWeeklyPlannerTab: (tab) => set({ weeklyPlannerTab: tab }),
   toggleSidebar: () => {

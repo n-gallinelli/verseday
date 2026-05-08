@@ -345,7 +345,7 @@ export default function TaskDetailOverlay({
   // Cross-screen sync: when this overlay edits the task that's currently
   // focused, mirror the change into the cache so FocusMode (and any other
   // surface reading via selectFocusedTask) sees the new values
-  // immediately. M2.2 — `updateFocusTask` is now a thin cacheTasks
+  // immediately. M2.2 — `updateFocusTask` is now a thin primeTasks
   // wrapper; signature unchanged for callers.
   const { focus, updateFocusTask, setFocusPriorElapsedMs } = useAppStore();
   const isFocusedTask = focus?.taskId === task.id;

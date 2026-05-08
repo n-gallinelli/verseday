@@ -1,7 +1,6 @@
-import { useEffect, useState, useCallback, useRef } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { selectTaskIdsByDate, useAppStore } from "../stores/appStore";
 import {
-  getTasksForDate,
   getDailyPlan,
   getWorkedMinutesForTaskIds,
   updateTaskDateScheduled,
@@ -12,8 +11,6 @@ import {
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
 import { formatHoursMinutes } from "../utils/format";
-import SunsetOverlay from "../components/SunsetOverlay";
-import SummaryOverlay from "../components/SummaryOverlay";
 import MoodSelector from "../components/MoodSelector";
 import CalendarChip from "../components/CalendarChip";
 import type { Task, Project } from "../types";
@@ -51,9 +48,23 @@ function serializeReflection(fields: ReflectionFields): string {
 export default function DailyShutdown() {
   const { selectedDate, setSelectedDate, setPage } = useAppStore();
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
-  const cacheTasks = useAppStore((s) => s.cacheTasks);
+  const openSummaryOverlay = useAppStore((s) => s.openSummaryOverlay);
+  const openSunsetOverlay = useAppStore((s) => s.openSunsetOverlay);
+  // M3.2.b.3 — task list flows through the canonical store. Includes
+  // both done and not-done tasks for the day; render code already
+  // partitions by status, no top-level filter needed here.
+  const dayTaskIds = useAppStore((s) => selectTaskIdsByDate(s, selectedDate));
+  const tasksById = useAppStore((s) => s.tasksById);
+  const loadTasksForDate = useAppStore((s) => s.loadTasksForDate);
+  const tasks = useMemo(() => {
+    const out: Task[] = [];
+    for (const id of dayTaskIds) {
+      const t = tasksById.get(id);
+      if (t) out.push(t);
+    }
+    return out;
+  }, [dayTaskIds, tasksById]);
 
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,10 +76,8 @@ export default function DailyShutdown() {
   });
   const [carriedIds, setCarriedIds] = useState<Set<number>>(new Set());
   const [isShutdown, setIsShutdown] = useState(false);
-  const [showSunset, setShowSunset] = useState(false);
   const [highlightIds, setHighlightIds] = useState<Set<number>>(new Set());
   const [workedPerTask, setWorkedPerTask] = useState<Map<number, number>>(new Map());
-  const [showSummary, setShowSummary] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -79,13 +88,12 @@ export default function DailyShutdown() {
 
   const loadData = useCallback(async () => {
     try {
-      const [t, dp, p] = await Promise.all([
-        getTasksForDate(selectedDate),
+      const [_, dp, p] = await Promise.all([
+        loadTasksForDate(selectedDate),
         getDailyPlan(selectedDate),
         getProjects(false),
       ]);
-      setTasks(t);
-      cacheTasks(t);
+      void _;
       setProjects(p);
       setMood(dp?.mood ?? null);
       setReflectionFields(parseReflection(dp?.reflection ?? ""));
@@ -93,10 +101,21 @@ export default function DailyShutdown() {
         localStorage.getItem(SHUTDOWN_KEY_PREFIX + selectedDate) === "true"
       );
       setCarriedIds(new Set());
-      setHighlightIds(new Set(t.filter((x) => x.is_highlight).map((x) => x.id)));
-      const taskIds = t.map((x) => x.id);
-      if (taskIds.length > 0) {
-        const wpt = await getWorkedMinutesForTaskIds(taskIds);
+      // Read fresh task data from the canonical map after loadTasksForDate
+      // resolved — taskIds in the React closure may still point at the
+      // prior render.
+      const freshIds =
+        useAppStore.getState().taskIdsByDate.get(selectedDate) ?? [];
+      const freshTasks: Task[] = [];
+      for (const id of freshIds) {
+        const t = useAppStore.getState().tasksById.get(id);
+        if (t) freshTasks.push(t);
+      }
+      setHighlightIds(
+        new Set(freshTasks.filter((x) => x.is_highlight).map((x) => x.id)),
+      );
+      if (freshIds.length > 0) {
+        const wpt = await getWorkedMinutesForTaskIds(freshIds);
         setWorkedPerTask(wpt);
       } else {
         setWorkedPerTask(new Map());
@@ -105,7 +124,7 @@ export default function DailyShutdown() {
     } catch (e) {
       setError(errorMessage(e, "Failed to load data"));
     }
-  }, [selectedDate]);
+  }, [selectedDate, loadTasksForDate]);
 
   // Shutdown is always for today — if the user got here with selectedDate
   // pointing at another day (e.g., they were paging through a past Daily
@@ -122,20 +141,10 @@ export default function DailyShutdown() {
     setStep(1);
   }, [loadData]);
 
-  // M1.b — refetch when the singleton overlay commits a mutation.
-  // M3.2 retires this listener in favor of canonical store
-  // subscriptions; until then, the broadcast bridges the seam.
-  useEffect(() => {
-    function refresh() {
-      loadData();
-    }
-    window.addEventListener("verseday:task-updated", refresh);
-    window.addEventListener("verseday:task-deleted", refresh);
-    return () => {
-      window.removeEventListener("verseday:task-updated", refresh);
-      window.removeEventListener("verseday:task-deleted", refresh);
-    };
-  }, [loadData]);
+  // M3.2.b.5.b — verseday:task-updated/-deleted listener retired.
+  // Task-data flows through selectTaskIdsByDate + tasksById. Worked-
+  // minute aggregates accept stale-until-mount in this window per
+  // the M3.2.b.5 audit (M3.3 territory).
 
   // Auto-save mood + reflection
   function debouncedSave(newMood: string | null, newFields: ReflectionFields) {
@@ -240,7 +249,7 @@ export default function DailyShutdown() {
     }
     localStorage.setItem(SHUTDOWN_KEY_PREFIX + selectedDate, "true");
     setIsShutdown(true);
-    setShowSunset(true);
+    openSunsetOverlay();
   }
 
   async function handleToggleHighlight(taskId: number) {
@@ -569,7 +578,7 @@ export default function DailyShutdown() {
                 Shutdown
               </button>
               <button
-                onClick={() => setShowSummary(true)}
+                onClick={() => openSummaryOverlay("daily", selectedDate)}
                 className="px-5 py-2.5 rounded-lg border border-line-soft text-fg-secondary text-[13px] font-medium cursor-pointer hover:bg-overlay-hover transition-colors"
               >
                 Summary
@@ -579,23 +588,14 @@ export default function DailyShutdown() {
         </div>
       </div>
 
-      {showSunset && <SunsetOverlay onDismiss={() => setShowSunset(false)} />}
-      {showSummary && (
-        <SummaryOverlay
-          type="daily"
-          anchorDate={selectedDate}
-          onClose={() => setShowSummary(false)}
-        />
-      )}
-
       {/* Task detail overlay — opened by clicking any row in step 1.
           Mirrors DailyPlanner's invocation so the detail view is
           identical regardless of where it was opened from (trash icon,
           start-focus button, pre-filled worked-minutes). */}
       {/* TaskDetailOverlay is mounted as a singleton at App.tsx
-          (M1 — see TaskDetailOverlayHost). The verseday:task-updated /
-          task-deleted listeners below refresh local lists when the host
-          commits changes. */}
+          (M1 — see TaskDetailOverlayHost). After M3.2.b.5.b, host
+          mutations route through store actions — task-list rows
+          re-render via canonical-map subscriptions automatically. */}
     </div>
   );
 }

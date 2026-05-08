@@ -10,6 +10,7 @@ import {
   updateTaskEstimate,
   updateTimeEntryWorkedSeconds,
   getSetting,
+  getTaskById,
   getTasksForDate,
   getTaskStatusById,
   getWorkedMinutesForTask,
@@ -96,7 +97,66 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const [bootRetry, setBootRetry] = useState(0);
 
   useEffect(() => {
-    if (focus) return;
+    // Today-only policy: the focus screen surfaces today's open tasks
+    // and nothing else. If the existing focus session is on a task
+    // scheduled for a different date (e.g. a paused active session
+    // that survived a date change, or a preview pinned to a future
+    // task), close it and fall through to the boot logic below — which
+    // either picks today's next open task or shows the empty state
+    // ("nothing left, time to shut down"). Active sessions also write
+    // their accumulated worked-seconds to the time entry before
+    // clearing so no work is lost.
+    //
+    // The validation has to fetch from DB rather than relying on
+    // tasksById alone — restoreFocus's async prime might still be in
+    // flight, or no screen has loaded that date yet, in which case
+    // the canonical map doesn't have the focused task. Falling through
+    // when the map has no entry would let the existing session render
+    // and defeat the policy.
+    if (focus) {
+      let cancelledValidate = false;
+      (async () => {
+        const fromMap = useAppStore.getState().tasksById.get(focus.taskId);
+        let task = fromMap;
+        if (!task) {
+          try {
+            const fetched = await getTaskById(focus.taskId);
+            task = fetched ?? undefined;
+          } catch {
+            // DB fetch failed — leave the session alone; we'll re-
+            // validate on the next render that has `focus` set.
+            return;
+          }
+        }
+        if (cancelledValidate) return;
+        const today = todayString();
+        // Task missing → orphaned focus reference. Clear it.
+        // Task scheduled for a non-today date → policy violation. Clear it.
+        if (!task || task.date_scheduled !== today) {
+          if (focus.mode === "active") {
+            try {
+              await updateTimeEntryWorkedSeconds(
+                focus.timeEntryId,
+                Math.round(focus.workedMs / 1000),
+              );
+              await stopTimeEntry(focus.timeEntryId, 0);
+            } catch {
+              // orphan cleanup will catch
+            }
+          }
+          if (cancelledValidate) return;
+          useAppStore.setState({ focus: null });
+          try {
+            localStorage.removeItem("verseday_focus");
+          } catch {
+            // private mode / quota — non-fatal
+          }
+        }
+      })();
+      return () => {
+        cancelledValidate = true;
+      };
+    }
     let cancelled = false;
     setBootStatus("loading");
     setBootError(null);
@@ -212,7 +272,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       // Mirror into the store so the cache stays fresh — navigating
       // away and coming back will seed the editor from this updated
       // value instead of the original session-start snapshot. After
-      // M2.2 retires focus.task, updateFocusTask is a thin cacheTasks
+      // M2.2 retires focus.task, updateFocusTask is a thin primeTasks
       // wrapper (still works for callers).
       updateFocusTask({ notes: value || null });
       // Broadcast so other surfaces displaying this task's notes

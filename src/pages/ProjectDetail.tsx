@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -19,24 +19,16 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useAppStore } from "../stores/appStore";
+import { selectTaskIdsByProject, useAppStore } from "../stores/appStore";
 import {
   getProjectById,
-  getTasksForProject,
   updateProject,
-  createTask,
-  updateTask,
-  setTaskStatusFromUI,
-  updateTaskDateScheduled,
-  updateTaskSortOrders,
-  deleteTask,
   startTimeEntry,
   completeProject,
   deleteProject,
   archiveProject,
   getWorkedMinutesForTask,
   getWorkedMinutesForTaskIds,
-  setManualWorkedMinutes,
   PRESET_COLORS,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
@@ -442,9 +434,25 @@ function SortableTaskRow({
 export default function ProjectDetail() {
   const { selectedProjectId, openProject, startFocus, goBack, setPage } = useAppStore();
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
-  const cacheTasks = useAppStore((s) => s.cacheTasks);
+  const primeTasks = useAppStore((s) => s.primeTasks);
+  // M3.2.b.2 — task list now flows through the canonical store. The
+  // selector returns ID list for the project; resolution against
+  // tasksById happens in a memo below. Per-row TaskCard subscription
+  // lands in M3.2.b.4 — until then the parent re-renders on any task
+  // mutation but with no DB roundtrip.
+  const projectTaskIds = useAppStore((s) =>
+    selectedProjectId !== null ? selectTaskIdsByProject(s, selectedProjectId) : null,
+  );
+  const tasksById = useAppStore((s) => s.tasksById);
+  const loadTasksForProject = useAppStore((s) => s.loadTasksForProject);
+  const updateTaskAction = useAppStore((s) => s.updateTask);
+  const deleteTaskAction = useAppStore((s) => s.deleteTaskAction);
+  const setTaskStatusAction = useAppStore((s) => s.setTaskStatus);
+  const setTaskWorkedMinutesAction = useAppStore((s) => s.setTaskWorkedMinutesAction);
+  const setTaskDateScheduledAction = useAppStore((s) => s.setTaskDateScheduled);
+  const setTaskSortOrdersAction = useAppStore((s) => s.setTaskSortOrders);
+  const createTaskAction = useAppStore((s) => s.createTaskAction);
   const [project, setProject] = useState<Project | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [workedMap, setWorkedMap] = useState<Map<number, number>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(true);
@@ -499,16 +507,44 @@ export default function ProjectDetail() {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
-  // Refresh task list only — safe to call during edits
+  // M3.2.b.2 — derive the project's tasks from the canonical map.
+  // Memoized so the array ref is stable across renders that don't
+  // change inputs. Includes done tasks; the `visibleTasks` memo
+  // below filters by showDone for the rendered list. Stats also
+  // honor a pendingDelete filter so the 5-second optimistic hide
+  // matches what the user sees in the list.
+  const tasks = useMemo(() => {
+    if (projectTaskIds === null) return [] as Task[];
+    const out: Task[] = [];
+    const hiddenId = pendingDelete?.task.id ?? -1;
+    for (const id of projectTaskIds) {
+      if (id === hiddenId) continue;
+      const t = tasksById.get(id);
+      if (t) out.push(t);
+    }
+    return out;
+  }, [projectTaskIds, tasksById, pendingDelete]);
+
+  // List-render slice — applies the showDone toggle. The drag-reorder
+  // handler uses this same slice so reorder operates on what the
+  // user actually sees.
+  const visibleTasks = useMemo(
+    () => (showDone ? tasks : tasks.filter((t) => t.status !== "done")),
+    [tasks, showDone],
+  );
+
+  // Refresh task list only — safe to call during edits. Goes through
+  // the store's load action (writes to canonical map + indices). The
+  // worked-minutes refresh stays here because it's M3.3 territory.
   const refreshTasks = useCallback(async () => {
-    if (!selectedProjectId) return;
+    if (selectedProjectId === null) return;
     try {
-      const t = await getTasksForProject(selectedProjectId, showDone);
-      setTasks(t);
-      cacheTasks(t);
+      await loadTasksForProject(selectedProjectId);
       setError(null);
+      const ids =
+        useAppStore.getState().taskIdsByProject.get(selectedProjectId) ?? [];
       try {
-        const wmap = await getWorkedMinutesForTaskIds(t.map((task) => task.id));
+        const wmap = await getWorkedMinutesForTaskIds(ids);
         setWorkedMap(wmap);
       } catch {
         setWorkedMap(new Map());
@@ -516,21 +552,21 @@ export default function ProjectDetail() {
     } catch (e) {
       setError(errorMessage(e, "Failed to load tasks"));
     }
-  }, [selectedProjectId, showDone]);
+  }, [selectedProjectId, loadTasksForProject]);
 
-  // Full load — resets edit fields (only on mount / project switch)
+  // Full load — resets edit fields (only on mount / project switch).
   const loadData = useCallback(async () => {
-    if (!selectedProjectId) return;
+    if (selectedProjectId === null) return;
     try {
-      const [p, t] = await Promise.all([
+      const [p] = await Promise.all([
         getProjectById(selectedProjectId),
-        getTasksForProject(selectedProjectId, showDone),
+        loadTasksForProject(selectedProjectId),
       ]);
       setProject(p);
-      setTasks(t);
-      cacheTasks(t);
+      const ids =
+        useAppStore.getState().taskIdsByProject.get(selectedProjectId) ?? [];
       try {
-        const wmap = await getWorkedMinutesForTaskIds(t.map((task) => task.id));
+        const wmap = await getWorkedMinutesForTaskIds(ids);
         setWorkedMap(wmap);
       } catch {
         setWorkedMap(new Map());
@@ -552,13 +588,13 @@ export default function ProjectDetail() {
     } catch (e) {
       setError(errorMessage(e, "Failed to load project"));
     }
-  }, [selectedProjectId, showDone]);
+  }, [selectedProjectId, loadTasksForProject]);
 
   useEffect(() => {
     // Finalize any pending delete when switching projects
     if (pendingDelete) {
       clearTimeout(pendingDelete.timeoutId);
-      deleteTask(pendingDelete.task.id).catch(() => {});
+      deleteTaskAction(pendingDelete.task.id).catch(() => {});
       setPendingDelete(null);
     }
     loadData();
@@ -566,20 +602,10 @@ export default function ProjectDetail() {
     setConfirmDeleteId(null);
   }, [loadData]);
 
-  // M1.b — refetch when the singleton overlay commits a mutation.
-  // M3.2 retires this listener in favor of canonical store
-  // subscriptions; until then, the broadcast bridges the seam.
-  useEffect(() => {
-    function refresh() {
-      refreshTasks();
-    }
-    window.addEventListener("verseday:task-updated", refresh);
-    window.addEventListener("verseday:task-deleted", refresh);
-    return () => {
-      window.removeEventListener("verseday:task-updated", refresh);
-      window.removeEventListener("verseday:task-deleted", refresh);
-    };
-  }, [refreshTasks]);
+  // M3.2.b.5.b — verseday:task-updated/-deleted listener retired.
+  // Task-data reactivity flows through selectTaskIdsByProject +
+  // tasksById subscriptions. workedMap aggregates are M3.3 territory
+  // and accept stale-until-mount in this window.
 
   // ── Project auto-save (debounced) ─────────────────────────────────────
 
@@ -779,7 +805,7 @@ export default function ProjectDetail() {
       }
     }
     try {
-      await createTask({
+      await createTaskAction({
         title,
         projectId: selectedProjectId,
         dateScheduled: newTaskDate || null,
@@ -811,7 +837,7 @@ export default function ProjectDetail() {
       est = parsed.minutes;
     }
     try {
-      await createTask({
+      await createTaskAction({
         title,
         projectId: selectedProjectId,
         dateScheduled: date,
@@ -828,7 +854,7 @@ export default function ProjectDetail() {
 
   async function toggleTask(task: Task) {
     try {
-      await setTaskStatusFromUI(task.id, task.status === "done" ? "todo" : "done");
+      await setTaskStatusAction(task.id, task.status === "done" ? "todo" : "done");
       refreshTasks();
     } catch (e) {
       setError(errorMessage(e, "Failed to update task"));
@@ -886,7 +912,7 @@ export default function ProjectDetail() {
       }
     }
     try {
-      await updateTask({
+      await updateTaskAction({
         id: editingTaskId,
         title,
         projectId: selectedProjectId,
@@ -908,19 +934,19 @@ export default function ProjectDetail() {
     const taskToDelete = tasks.find((t) => t.id === id);
     if (!taskToDelete) return;
 
-    // Cancel any existing pending delete
+    // Cancel any existing pending delete — finalize via the store action.
     if (pendingDelete) {
       clearTimeout(pendingDelete.timeoutId);
-      // Finalize the previous pending delete
-      deleteTask(pendingDelete.task.id).catch(() => {});
+      deleteTaskAction(pendingDelete.task.id).catch(() => {});
     }
 
     setConfirmDeleteId(null);
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-
+    // Optimistic hide — the `tasks` memo above filters out
+    // pendingDelete.task.id, so the row vanishes from the list
+    // without a direct setTasks call.
     const timeoutId = setTimeout(async () => {
       try {
-        await deleteTask(id);
+        await deleteTaskAction(id);
       } catch (e) {
         setError(errorMessage(e, "Failed to delete task"));
       }
@@ -965,7 +991,7 @@ export default function ProjectDetail() {
         : Number(activeId);
       if (Number.isNaN(taskId)) return;
       try {
-        await updateTaskDateScheduled(taskId, dateIso);
+        await setTaskDateScheduledAction(taskId, dateIso);
         refreshTasks();
       } catch (e) {
         setError(errorMessage(e, "Failed to schedule task"));
@@ -977,16 +1003,35 @@ export default function ProjectDetail() {
     // the sortable lookup below (their ids aren't in `tasks`).
     if (activeId.startsWith(PD_DAY_TASK_PREFIX)) return;
 
-    // Otherwise: sortable reorder within the task list.
+    // Otherwise: sortable reorder within the rendered (visible) list.
     if (active.id === over.id) return;
-    const oldIndex = tasks.findIndex((t) => t.id === active.id);
-    const newIndex = tasks.findIndex((t) => t.id === over.id);
+    const oldIndex = visibleTasks.findIndex((t) => t.id === active.id);
+    const newIndex = visibleTasks.findIndex((t) => t.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
-    const reordered = arrayMove(tasks, oldIndex, newIndex);
-    setTasks(reordered);
+    // M3.2.b.5.b — store action handles SQL batch + canonical map
+    // sort_order patches + index slice replacement atomically. The
+    // bucket parameter is the project bucket (not date) since this
+    // is the project-task list reorder. Note: visibleTasks excludes
+    // done tasks if showDone=false, but the bucket replacement
+    // expects the COMPLETE ordered ID list. To preserve done tasks'
+    // relative order, we reorder the visible portion in-place
+    // within the full bucket and pass that.
+    const reorderedVisible = arrayMove(visibleTasks, oldIndex, newIndex);
+    const visibleIdSet = new Set(visibleTasks.map((t) => t.id));
+    const reorderedVisibleIter = reorderedVisible[Symbol.iterator]();
+    const orderedIds: number[] = [];
+    for (const t of tasks) {
+      if (visibleIdSet.has(t.id)) {
+        const next = reorderedVisibleIter.next();
+        if (!next.done) orderedIds.push(next.value.id);
+      } else {
+        orderedIds.push(t.id);
+      }
+    }
     try {
-      await updateTaskSortOrders(
-        reordered.map((t, i) => ({ id: t.id, sortOrder: i }))
+      await setTaskSortOrdersAction(
+        { kind: "project", projectId: selectedProjectId! },
+        orderedIds,
       );
     } catch (e) {
       setError(errorMessage(e, "Failed to reorder"));
@@ -1184,15 +1229,15 @@ export default function ProjectDetail() {
             {/* Task list — scrollable region */}
             <div className="overflow-y-auto px-8 pb-5 flex-1 min-h-0">
             <SortableContext
-              items={tasks.map((t) => t.id)}
+              items={visibleTasks.map((t) => t.id)}
               strategy={verticalListSortingStrategy}
             >
-              {tasks.length === 0 ? (
+              {visibleTasks.length === 0 ? (
                 <p className="text-center text-fg-faded py-8 text-[13px]">
                   No tasks yet. Add one above.
                 </p>
               ) : (
-                tasks.map((task) => {
+                visibleTasks.map((task) => {
                   if (editingTaskId === task.id) {
                     return (
                       <div
@@ -1271,14 +1316,14 @@ export default function ProjectDetail() {
                       onDelete={(id) => setConfirmDeleteId(id)}
                       onStart={handleStartFocus}
                       onSetDate={(id, date) => {
-                        updateTaskDateScheduled(id, date || null)
+                        setTaskDateScheduledAction(id, date || null)
                           .then(() => refreshTasks())
                           .catch((e) => setError(errorMessage(e, "Failed to set date")));
                       }}
                       onSetEstimate={(id, minutes) => {
                         const t = tasks.find((x) => x.id === id);
                         if (!t) return;
-                        updateTask({
+                        updateTaskAction({
                           id,
                           title: t.title,
                           projectId: t.project_id,
@@ -1291,7 +1336,7 @@ export default function ProjectDetail() {
                           .catch((e) => setError(errorMessage(e, "Failed to set estimate")));
                       }}
                       onSetWorked={(id, minutes) => {
-                        setManualWorkedMinutes(id, minutes)
+                        setTaskWorkedMinutesAction(id, minutes)
                           .then(() => refreshTasks())
                           .catch((e) => setError(errorMessage(e, "Failed to set worked time")));
                       }}
@@ -1445,9 +1490,9 @@ export default function ProjectDetail() {
         </div>
 
       {/* TaskDetailOverlay is mounted as a singleton at App.tsx
-          (M1 — see TaskDetailOverlayHost). The verseday:task-updated /
-          task-deleted listeners refresh local state when the host
-          commits changes. */}
+          (M1 — see TaskDetailOverlayHost). After M3.2.b.5.b, host
+          mutations route through store actions — task-list rows
+          re-render via canonical-map subscriptions automatically. */}
 
       {/* Quick-add modal — pops up when a "This week" day cell is clicked */}
       {quickAddDate && (

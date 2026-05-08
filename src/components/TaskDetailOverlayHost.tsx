@@ -2,14 +2,10 @@ import { useEffect, useState } from "react";
 import TaskDetailOverlay from "./TaskDetailOverlay";
 import { selectTaskDetailTask, useAppStore } from "../stores/appStore";
 import {
-  deleteTask,
   getProjects,
   getTaskById,
   getWorkedMinutesForTask,
-  setManualWorkedMinutes,
-  setTaskStatusFromUI,
   startTimeEntry,
-  updateTask,
 } from "../db/queries";
 import type { UpdateTaskInput } from "../db/queries";
 import type { Project, Task } from "../types";
@@ -17,29 +13,36 @@ import type { Project, Task } from "../types";
 // Singleton host for TaskDetailOverlay (Verse rule 2 — one mount per
 // cross-screen surface). Mounted exactly once at the App shell. Reads
 // `selectedTaskDetailId` from the store; resolves the task via
-// selectTaskDetailTask (transitional `tasksByIdCache` in M1; canonical
-// `tasksById` after M3.2). Falls back to a one-shot getTaskById fetch
-// on cache miss so the overlay opens even when no screen has primed
-// the cache for that ID.
+// selectTaskDetailTask, which reads from the canonical tasksById map
+// (M3.2.a). Falls back to a one-shot getTaskById fetch when the map
+// hasn't been primed for this ID, so the overlay opens regardless of
+// which surface launched it.
 //
-// Mutations broadcast `verseday:task-updated` so per-screen lists can
-// refresh without prop drilling. M3.2 removes the event in favor of
-// store subscriptions.
+// M3.2.b.5.b — all four mutation handlers (handleSave, handleToggle,
+// handleDelete, handleSetWorkedMinutes) flow through store actions
+// that own canonical-map updates. The verseday:task-updated/-deleted
+// dispatches and the refreshCache helper retired with this commit:
+// store actions write to tasksById atomically; subscribers re-render
+// via Zustand reactivity without a custom event bus.
 export default function TaskDetailOverlayHost() {
   const selectedTaskDetailId = useAppStore((s) => s.selectedTaskDetailId);
   const closeTaskDetail = useAppStore((s) => s.closeTaskDetail);
-  const cacheTasks = useAppStore((s) => s.cacheTasks);
+  const primeTasks = useAppStore((s) => s.primeTasks);
   const startFocus = useAppStore((s) => s.startFocus);
   const setPage = useAppStore((s) => s.setPage);
   const taskDetailAutoFocusTitle = useAppStore((s) => s.taskDetailAutoFocusTitle);
+  const updateTaskAction = useAppStore((s) => s.updateTask);
+  const deleteTaskAction = useAppStore((s) => s.deleteTaskAction);
+  const setTaskStatusAction = useAppStore((s) => s.setTaskStatus);
+  const setTaskWorkedMinutesAction = useAppStore((s) => s.setTaskWorkedMinutesAction);
   const task = useAppStore(selectTaskDetailTask);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [workedMinutes, setWorkedMinutes] = useState(0);
 
-  // Cache-miss fallback. If a screen hasn't primed the cache for this id
-  // (e.g., the overlay is opened from a context where the task wasn't
-  // loaded into the page's local state), pull it directly.
+  // Cache-miss fallback. If a screen hasn't primed the canonical map
+  // for this id (e.g., the overlay is opened from a context where the
+  // task wasn't loaded into any screen's view), pull it directly.
   useEffect(() => {
     if (selectedTaskDetailId === null) return;
     if (task && task.id === selectedTaskDetailId) return;
@@ -47,13 +50,13 @@ export default function TaskDetailOverlayHost() {
     getTaskById(selectedTaskDetailId)
       .then((t) => {
         if (cancelled || !t) return;
-        cacheTasks([t]);
+        primeTasks([t]);
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [selectedTaskDetailId, task, cacheTasks]);
+  }, [selectedTaskDetailId, task, primeTasks]);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,33 +88,18 @@ export default function TaskDetailOverlayHost() {
 
   if (!task) return null;
 
-  function emitUpdated(taskId: number) {
-    window.dispatchEvent(
-      new CustomEvent("verseday:task-updated", { detail: { taskId } })
-    );
-  }
-
-  async function refreshCache(id: number) {
-    const fresh = await getTaskById(id).catch(() => null);
-    if (fresh) cacheTasks([fresh]);
-  }
-
   async function handleSave(updates: UpdateTaskInput) {
     try {
-      await updateTask(updates);
-      await refreshCache(updates.id);
-      emitUpdated(updates.id);
+      await updateTaskAction(updates);
     } catch {
       // silent — surfaces via existing error pathways
     }
   }
 
   async function handleToggle(t: Task) {
-    const nextStatus = t.status === "done" ? "today" : "done";
+    const nextStatus = t.status === "done" ? "todo" : "done";
     try {
-      await setTaskStatusFromUI(t.id, nextStatus);
-      await refreshCache(t.id);
-      emitUpdated(t.id);
+      await setTaskStatusAction(t.id, nextStatus);
     } catch {
       // silent — surfaces via existing error pathways
     }
@@ -119,10 +107,7 @@ export default function TaskDetailOverlayHost() {
 
   async function handleDelete(taskId: number) {
     try {
-      await deleteTask(taskId);
-      window.dispatchEvent(
-        new CustomEvent("verseday:task-deleted", { detail: { taskId } })
-      );
+      await deleteTaskAction(taskId);
       closeTaskDetail();
     } catch {
       // silent — surfaces via existing error pathways
@@ -149,10 +134,8 @@ export default function TaskDetailOverlayHost() {
 
   async function handleSetWorkedMinutes(id: number, minutes: number) {
     try {
-      await setManualWorkedMinutes(id, minutes);
+      await setTaskWorkedMinutesAction(id, minutes);
       setWorkedMinutes(minutes);
-      await refreshCache(id);
-      emitUpdated(id);
     } catch {
       // silent — surfaces via existing error pathways
     }

@@ -203,25 +203,6 @@ export async function rolloverUnfinishedTasks(today: string): Promise<void> {
   );
 }
 
-/**
- * Get all unfinished tasks that have been rolling over (rollover_count 1–4).
- * Includes tasks currently scheduled for today and tasks that expired to unscheduled.
- */
-export async function getUnfinishedRolloverTasks(): Promise<Task[]> {
-  const db = await getDb();
-  // external_source IS NULL excludes calendar-imported rows from the
-  // rollover surface — they don't roll forward (see rolloverUnfinishedTasks).
-  return db.select(
-    `SELECT * FROM tasks
-     WHERE status != 'done'
-       AND rollover_count > 0
-       AND rollover_count <= 4
-       AND external_source IS NULL
-     ORDER BY rollover_count DESC, sort_order
-     LIMIT 50`
-  );
-}
-
 export async function getTaskById(id: number): Promise<Task | null> {
   const db = await getDb();
   const rows: Task[] = await db.select(
@@ -1244,23 +1225,39 @@ export async function updateTaskEstimate(
   await db.execute("UPDATE tasks SET estimated_minutes = $1 WHERE id = $2", [minutes, id]);
 }
 
-// Sidebar tasks (unscheduled + overdue, capped at 14 days back)
-export async function getSidebarTasks(
-  today: string
-): Promise<{ unscheduled: Task[]; overdue: Task[] }> {
+// R.2 — Sidebar rebuild's membership pool. Returns a single flat
+// Task[] union of:
+//   - unscheduled: date_scheduled IS NULL AND status != 'done'
+//   - overdue: 3+ days back from `today`, capped at 14 days (sanity
+//     belt — older tasks are stale; user can find them via Projects).
+// Excludes calendar-imported tasks (external_dismissal_reason IS NULL)
+// since those aren't user-managed.
+//
+// `today` is the real-world current date (todayString()), NOT
+// DailyPlanner's selectedDate. The overdue cutoff is anchored on
+// real-world today; passing selectedDate would let the user "create
+// overdue" by paging Daily Plan into the future.
+export async function getSidebarPoolTasks(today: string): Promise<Task[]> {
   const db = await getDb();
-  const fourteenDaysAgo = new Date(today + "T00:00:00");
-  fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-  const cutoff = fourteenDaysAgo.toISOString().split("T")[0];
-
-  const unscheduled: Task[] = await db.select(
-    "SELECT * FROM tasks WHERE date_scheduled IS NULL AND status != 'done' ORDER BY sort_order LIMIT 50"
+  const overdueCutoff = new Date(today + "T00:00:00");
+  overdueCutoff.setDate(overdueCutoff.getDate() - 3);
+  const overdueCutoffIso = overdueCutoff
+    .toISOString()
+    .split("T")[0];
+  const hardFloor = new Date(today + "T00:00:00");
+  hardFloor.setDate(hardFloor.getDate() - 14);
+  const hardFloorIso = hardFloor.toISOString().split("T")[0];
+  return db.select(
+    `SELECT * FROM tasks
+       WHERE status != 'done'
+         AND external_dismissal_reason IS NULL
+         AND (
+           date_scheduled IS NULL
+           OR (date_scheduled <= $1 AND date_scheduled >= $2)
+         )
+       LIMIT 200`,
+    [overdueCutoffIso, hardFloorIso]
   );
-  const overdue: Task[] = await db.select(
-    "SELECT * FROM tasks WHERE date_scheduled < $1 AND date_scheduled >= $2 AND status != 'done' AND external_dismissal_reason IS NULL ORDER BY date_scheduled DESC, sort_order LIMIT 50",
-    [today, cutoff]
-  );
-  return { unscheduled, overdue };
 }
 
 // Weekly Plan Projects (project timelines)

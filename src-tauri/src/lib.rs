@@ -639,6 +639,7 @@ pub fn run() {
             commands::generate_summary,
             commands::capture_previous_app,
             commands::dismiss_quick_add,
+            commands::enable_window_mouse_moved_events,
             #[cfg(target_os = "macos")]
             calendar::calendar_check_permission,
             #[cfg(target_os = "macos")]

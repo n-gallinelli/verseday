@@ -1021,7 +1021,7 @@ export default function TaskDetailOverlay({
             <>
               <span className="flex-1 text-[12px]">
                 <span className="text-accent-destructive">Delete this task?</span>{" "}
-                <span className="text-accent-warning-soft-fg">Time entries will also be deleted.</span>
+                <span className="text-fg-faded">Time entries will also be deleted.</span>
               </span>
               <button
                 onClick={() => {

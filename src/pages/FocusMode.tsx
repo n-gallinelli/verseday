@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
+import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, selectFocusedTask } from "../stores/appStore";
 import {
   stopTimeEntry,
@@ -328,6 +329,10 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 
   // PiP mini window
   const pipRef = useRef<WebviewWindow | null>(null);
+  // Unlisten handle for the pip's onMoved listener. Drives
+  // invalidate_pip_hover_rect when the user drags the pip so the
+  // global hover monitor's cached rect stays correct.
+  const pipMoveUnlistenRef = useRef<(() => void) | null>(null);
   // Set to true when the user clicks the hide-pip icon. Resets when
   // FocusMode unmounts, so a new focus session gets a fresh pip.
   const pipHiddenRef = useRef(false);
@@ -389,7 +394,26 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         if (cancelled) {
           pip.close().catch(() => {});
           pipRef.current = null;
+          return;
         }
+
+        // ── Hover-without-focus monitor (macOS) ─────────────────────
+        // Start the global mouse-moved monitor that watches whether
+        // the cursor is over the pip's screen rect. The Rust side
+        // emits "pip-hover" {over: bool} on rising/falling edges; the
+        // pip page (FocusPip) listens and ORs the result with its own
+        // CSS hover state to drive the icon fan-out.
+        //
+        // The rect is cached on start; we invalidate on the pip's
+        // move event so a dragged pip stays correctly tracked.
+        // No-op on non-macOS.
+        await pip.once("tauri://created", () => {
+          void invoke("start_pip_hover_monitor", { label: "focus-pip" });
+        });
+        const unlistenMove = await pip.onMoved(() => {
+          void invoke("invalidate_pip_hover_rect", { label: "focus-pip" });
+        });
+        pipMoveUnlistenRef.current = unlistenMove;
       } catch {
         // PiP creation failed — not critical
       }
@@ -397,6 +421,13 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 
     return () => {
       cancelled = true;
+      // Stop the hover monitor before closing the window. Order
+      // doesn't strictly matter (the monitor is detached from the
+      // window object) but stop-first leaves no race where a final
+      // mouseMoved fires against a half-closed window.
+      void invoke("stop_pip_hover_monitor", { label: "focus-pip" }).catch(() => {});
+      pipMoveUnlistenRef.current?.();
+      pipMoveUnlistenRef.current = null;
       // Close PiP when leaving focus mode
       pipRef.current?.close().catch(() => {});
       pipRef.current = null;

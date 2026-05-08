@@ -92,6 +92,264 @@ mod platform {
     pub fn activate_app_by_bundle_id(_: &str) {}
 }
 
+// ── PiP hover-without-focus ────────────────────────────────────────────
+// macOS gates WKWebView's DOM hover dispatch on the window being key.
+// To make the focus pip's icon fan-out fire when the cursor crosses the
+// pip from another app, we bypass DOM hover entirely: an NSEvent global
+// mouse-moved monitor checks cursor against the pip's cached frame on
+// the main thread, and edge-triggered "pip-hover" events drive an
+// `isExternallyHovered` boolean in JS that ORs with the regular CSS
+// hover state.
+//
+// Cache + invalidate (vs. read frame per event): per Verse review —
+// invalidate on `tauri://move`/resize via the JS-side
+// `invalidate_pip_hover_rect` command. Cheap, bounded staleness during
+// drags, and during a drag the cursor is on the drag handle so fan-out
+// behavior is irrelevant in that window.
+//
+// No-op on non-macOS platforms (struct exists for `manage()` symmetry).
+
+#[cfg(target_os = "macos")]
+mod pip_hover {
+    use std::sync::Mutex;
+    use std::ptr::NonNull;
+    use serde::Serialize;
+    use tauri::{AppHandle, Emitter, Manager, Runtime};
+    use objc2::{class, msg_send};
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{NSPoint, NSRect};
+    use block2::RcBlock;
+
+    // 1 << NSEventTypeMouseMoved (5) — see AppKit/NSEvent.h.
+    const NS_EVENT_MASK_MOUSE_MOVED: u64 = 1u64 << 5;
+
+    struct Entry {
+        // Retained NSObject pointer (id) returned by
+        // addGlobalMonitorForEventsMatchingMask:. Stored as usize so the
+        // surrounding state is Send; we only ever deref on the main
+        // thread.
+        monitor_handle_ptr: usize,
+        cached_rect: Option<NSRect>,
+        last_over: bool,
+    }
+
+    pub struct State {
+        inner: Mutex<Option<Entry>>,
+    }
+
+    impl State {
+        pub fn new() -> Self {
+            Self { inner: Mutex::new(None) }
+        }
+    }
+
+    #[derive(Serialize, Clone)]
+    struct PipHoverPayload { over: bool }
+
+    /// Read NSWindow.frame() — MUST be called on main thread.
+    /// SAFETY: caller must guarantee `ptr` is a valid NSWindow pointer
+    /// for the duration of the call.
+    unsafe fn read_frame(ptr: usize) -> NSRect {
+        let obj = &*(ptr as *const AnyObject);
+        msg_send![obj, frame]
+    }
+
+    fn ns_window_ptr<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<usize, String> {
+        let window = app
+            .get_webview_window(label)
+            .ok_or_else(|| format!("window not found: {}", label))?;
+        let ptr = window
+            .ns_window()
+            .map_err(|e| format!("ns_window() failed: {}", e))?;
+        Ok(ptr as usize)
+    }
+
+    pub fn start<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), String> {
+        // Stop any existing monitor first — stale entries can occur if the
+        // pip is recreated without an explicit JS-side stop call.
+        let _ = stop(app, label);
+
+        let win_ptr = ns_window_ptr(app, label)?;
+        let app_for_block = app.clone();
+        let label_for_block = label.to_string();
+
+        let (tx, rx) = std::sync::mpsc::channel::<Result<(usize, NSRect), String>>();
+        app.run_on_main_thread(move || {
+            let initial_frame = unsafe { read_frame(win_ptr) };
+
+            // The monitor's handler block. Captures the AppHandle (Clone)
+            // and label (String). On each mouseMoved, fetches the cached
+            // rect via state, compares cursor, and emits on edges only.
+            let app_for_handler = app_for_block.clone();
+            let label_for_handler = label_for_block.clone();
+            let block = RcBlock::new(move |_event: NonNull<AnyObject>| {
+                let cls = class!(NSEvent);
+                // [NSEvent mouseLocation] and NSWindow.frame() are both in
+                // global screen coords, origin bottom-left — no Y flip.
+                // Multi-screen: both APIs span all displays in a single
+                // global coord space, so pip-on-secondary + cursor-on-
+                // secondary works through the same intersection without
+                // per-display logic.
+                let cursor: NSPoint = unsafe { msg_send![cls, mouseLocation] };
+
+                let state = app_for_handler.state::<super::PipHoverState>();
+                let mut guard = match state.inner.lock() {
+                    Ok(g) => g,
+                    Err(_) => return,
+                };
+                let Some(entry) = guard.as_mut() else { return; };
+                let Some(rect) = entry.cached_rect else { return; };
+
+                let over = cursor.x >= rect.origin.x
+                    && cursor.x <= rect.origin.x + rect.size.width
+                    && cursor.y >= rect.origin.y
+                    && cursor.y <= rect.origin.y + rect.size.height;
+
+                if over != entry.last_over {
+                    entry.last_over = over;
+                    let payload = PipHoverPayload { over };
+                    let label = label_for_handler.clone();
+                    let app = app_for_handler.clone();
+                    drop(guard);
+                    let _ = app.emit_to(label, "pip-hover", payload);
+                }
+            });
+
+            let cls = class!(NSEvent);
+            let mask: u64 = NS_EVENT_MASK_MOUSE_MOVED;
+            let monitor: *mut AnyObject = unsafe {
+                msg_send![cls, addGlobalMonitorForEventsMatchingMask: mask, handler: &*block]
+            };
+
+            if monitor.is_null() {
+                let _ = tx.send(Err(
+                    "addGlobalMonitorForEventsMatchingMask returned nil".to_string(),
+                ));
+                return;
+            }
+            // Returned object is autoreleased — retain so it survives the
+            // pool drain. We release in stop().
+            unsafe {
+                let _: *mut AnyObject = msg_send![monitor, retain];
+            }
+            // The block must outlive the monitor. AppKit holds its own
+            // reference to the block (independent retain count) and
+            // releases it during removeMonitor:. Our std::mem::forget
+            // creates a one-block-per-session leak in OUR process —
+            // not in AppKit's bookkeeping — so this is not a use-after-
+            // free; it's just an orphaned ~100-byte block per focus
+            // session. Reversible later via a SendableRcBlock newtype
+            // stored in Entry if it ever shows up in profiling.
+            std::mem::forget(block);
+
+            let _ = tx.send(Ok((monitor as usize, initial_frame)));
+        })
+        .map_err(|e| format!("main-thread dispatch failed: {}", e))?;
+
+        let (monitor_ptr, frame) = rx
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .map_err(|e| format!("monitor registration timed out: {}", e))??;
+
+        let state = app.state::<super::PipHoverState>();
+        let mut guard = state
+            .inner
+            .lock()
+            .map_err(|_| "pip-hover state poisoned".to_string())?;
+        *guard = Some(Entry {
+            monitor_handle_ptr: monitor_ptr,
+            cached_rect: Some(frame),
+            last_over: false,
+        });
+        Ok(())
+    }
+
+    pub fn stop<R: Runtime>(app: &AppHandle<R>, _label: &str) -> Result<(), String> {
+        let state = app.state::<super::PipHoverState>();
+        let entry = {
+            let mut guard = state
+                .inner
+                .lock()
+                .map_err(|_| "pip-hover state poisoned".to_string())?;
+            guard.take()
+        };
+        if let Some(e) = entry {
+            let h = e.monitor_handle_ptr;
+            // removeMonitor: must be on the main thread; same goes for
+            // release. Fire and forget — the caller doesn't need to wait.
+            let _ = app.run_on_main_thread(move || unsafe {
+                let cls = class!(NSEvent);
+                let _: () = msg_send![cls, removeMonitor: h as *mut AnyObject];
+                let obj = h as *mut AnyObject;
+                let _: () = msg_send![obj, release];
+            });
+        }
+        Ok(())
+    }
+
+    pub fn invalidate<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), String> {
+        let win_ptr = ns_window_ptr(app, label)?;
+        let (tx, rx) = std::sync::mpsc::channel::<NSRect>();
+        app.run_on_main_thread(move || {
+            let frame = unsafe { read_frame(win_ptr) };
+            let _ = tx.send(frame);
+        })
+        .map_err(|e| format!("main-thread dispatch failed: {}", e))?;
+        let frame = rx
+            .recv_timeout(std::time::Duration::from_millis(200))
+            .map_err(|e| format!("frame read timed out: {}", e))?;
+
+        let state = app.state::<super::PipHoverState>();
+        let mut guard = state
+            .inner
+            .lock()
+            .map_err(|_| "pip-hover state poisoned".to_string())?;
+        if let Some(entry) = guard.as_mut() {
+            entry.cached_rect = Some(frame);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+mod pip_hover {
+    use tauri::{AppHandle, Runtime};
+
+    pub struct State;
+    impl State {
+        pub fn new() -> Self { Self }
+    }
+
+    pub fn start<R: Runtime>(_: &AppHandle<R>, _: &str) -> Result<(), String> { Ok(()) }
+    pub fn stop<R: Runtime>(_: &AppHandle<R>, _: &str) -> Result<(), String> { Ok(()) }
+    pub fn invalidate<R: Runtime>(_: &AppHandle<R>, _: &str) -> Result<(), String> { Ok(()) }
+}
+
+pub use pip_hover::State as PipHoverState;
+
+#[tauri::command]
+pub fn start_pip_hover_monitor(
+    app_handle: tauri::AppHandle,
+    label: String,
+) -> Result<(), String> {
+    pip_hover::start(&app_handle, &label)
+}
+
+#[tauri::command]
+pub fn stop_pip_hover_monitor(
+    app_handle: tauri::AppHandle,
+    label: String,
+) -> Result<(), String> {
+    pip_hover::stop(&app_handle, &label)
+}
+
+#[tauri::command]
+pub fn invalidate_pip_hover_rect(
+    app_handle: tauri::AppHandle,
+    label: String,
+) -> Result<(), String> {
+    pip_hover::invalidate(&app_handle, &label)
+}
+
 #[derive(Deserialize)]
 struct ContentBlock {
     text: Option<String>,

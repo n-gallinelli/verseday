@@ -158,7 +158,16 @@ const ORPHAN_TIMEOUT_MS = 2000;
 
 export default function FocusPip() {
   const [state, setState] = useState<PipState | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  // CSS-driven hover (cursor over the right-edge hover wrapper while
+  // the pip IS the key window). Drives the icon fan-out for in-app
+  // hover.
+  const [cssHovered, setCssHovered] = useState(false);
+  // External hover (cursor over the pip's screen rect detected by the
+  // Rust-side global mouseMoved monitor). Set true/false by edge-
+  // triggered "pip-hover" events. Drives the fan-out when the pip
+  // ISN'T key and DOM hover dispatch is suppressed by macOS.
+  const [externallyHovered, setExternallyHovered] = useState(false);
+  const expanded = cssHovered || externallyHovered;
   const orphanStartRef = useRef<number | null>(null);
   // Transient acknowledgment text — shown for ~1.2s after the user
   // clicks Snooze ("5 more minutes") or No ("Continue working") on
@@ -249,13 +258,30 @@ export default function FocusPip() {
     return () => clearInterval(interval);
   }, []);
 
-  function handleMouseEnter() {
-    setExpanded(true);
-  }
-
-  function handleMouseLeave() {
-    setExpanded(false);
-  }
+  // Listen for the Rust-side hover monitor. Edge-triggered events
+  // (one per cursor-cross-the-pip-rect transition) flip
+  // externallyHovered, which ORs with cssHovered to drive expanded.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        unlisten = await getCurrentWebviewWindow().listen<{ over: boolean }>(
+          "pip-hover",
+          (evt) => {
+            if (cancelled) return;
+            setExternallyHovered(evt.payload.over);
+          }
+        );
+      } catch {
+        // No-op on failure — falls back to cssHovered alone.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   if (!state) {
     return null;
@@ -409,8 +435,8 @@ export default function FocusPip() {
             sliding leftward across icons. Buttons inside stop click
             propagation so the outer focus-on-click doesn't fire. */}
         <div
-          onMouseEnter={() => setExpanded(true)}
-          onMouseLeave={() => setExpanded(false)}
+          onMouseEnter={() => setCssHovered(true)}
+          onMouseLeave={() => setCssHovered(false)}
           className="absolute top-0 bottom-0 right-0 transition-[left] duration-150 ease-out"
           style={{ left: expanded ? 8 : 156 }}
         >

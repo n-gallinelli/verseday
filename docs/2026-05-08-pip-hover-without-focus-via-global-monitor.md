@@ -127,20 +127,99 @@ Rust command + minus the old JS invoke + plus the small
    failure is "monitor doesn't fire" or "rect math is wrong," both
    diagnosable from inline `eprintln!` in Rust if needed.
 
-## Open questions for Verse
+## Verse review — design approved 2026-05-08
 
-1. **Monitor lifetime.** Should the monitor live for the duration of
-   the pip window, or only while the pip is non-key? (Latter is
-   marginally more efficient; former is simpler.) Recommendation:
-   former — simpler, cost is negligible.
+### Three answers
 
-2. **Drag handling.** Cache + invalidate on `tauri://move` is the
-   plan. Alternative: query `outer_position()` on every event. Latter
-   is simpler but does an IPC-equivalent on every cursor movement.
-   Recommendation: cache + invalidate.
+1. **Monitor lifetime — full pip lifetime.** Switching on/off based on
+   key state requires hooking window key/main notifications, which
+   adds complexity for marginal savings. Per-event cost is one rect
+   intersection (microseconds); when the window IS key, the external
+   signal piles on harmlessly via `isExternallyHovered || isCssHovered`.
+2. **Drag handling — cache + invalidate.** `outer_position()` per
+   event would be hundreds of cross-thread calls per second.
+   Stale-rect window only exists during the drag itself, and during
+   drag the cursor is on the drag handle (not the icon area), so
+   fan-out behavior is irrelevant in that window.
+3. **`acceptFirstMouse:true` survives.** Independent ergonomic win,
+   already landed as the opening commit (`67c4163`).
 
-3. **`acceptFirstMouse:true` survives.** Confirming this is fine to
-   keep as the opening commit even though the hover work above is
-   independent.
+### Four implementation notes folded in
 
-Standing by for review.
+1. **Monitor handle lifecycle.** `addGlobalMonitorForEventsMatchingMask:`
+   returns an opaque retained monitor object that must be removed via
+   `[NSEvent removeMonitor:handle]` to stop firing. Hold the handle
+   in a Rust-side `Mutex<Option<usize>>` (handle as ptr-as-usize;
+   AnyObject pointers are `!Send`). Remove on pip close — otherwise
+   the monitor leaks across pip recreations and keeps firing against
+   a stale rect.
+2. **Window events for cache invalidation.** Drag (window-moved) is
+   the obvious one. Resize and DPI/screen changes also affect
+   `outer_position`. Subscribe to whichever Tauri 2 events cover
+   those; the cheap path is to invalidate on any window event that
+   could move the frame and re-read `outer_position()` lazily on the
+   next monitor fire.
+3. **Multi-screen.** macOS cursor coordinates and `outer_position()`
+   are both in global screen space. Pip-on-secondary + cursor-on-
+   secondary "just works" with the rect intersection — no special
+   logic.
+4. **Pip-close cleanup.** Hook the close path to call
+   `removeMonitor:`. Without this, the monitor keeps firing after the
+   pip is gone (harmless but unclean).
+
+## Implementation shape
+
+**Rust (`src-tauri/src/commands.rs` + `lib.rs`):**
+
+- `PipHoverState`: `Mutex<Option<PipHoverEntry>>` in app state.
+  Entry holds:
+  - `monitor_handle: usize` (the `NSEvent` monitor handle, ptr cast)
+  - `cached_rect: Option<(f64, f64, f64, f64)>` (origin x, origin y,
+    width, height in global screen coords)
+  - `last_over: bool` (for edge detection)
+- `start_pip_hover_monitor(label: String)` Tauri command:
+  1. Resolve the pip window via `Manager`.
+  2. Compute initial cached rect from `outer_position()` +
+     `outer_size()` (cross-thread convert as needed).
+  3. Hop to main thread (Cocoa rule).
+  4. Build a closure that on each `NSEvent.MouseMoved`:
+     - Reads cursor location (`NSEvent::mouseLocation`).
+     - Tests cursor ∈ cached rect.
+     - If transition vs `last_over`, emit `pip-hover { over: bool }`
+       to the pip window via `app.emit_to`.
+  5. `addGlobalMonitorForEventsMatchingMask:NSEventMaskMouseMoved
+     handler:closure`. Store returned handle.
+- `stop_pip_hover_monitor` Tauri command:
+  - `removeMonitor:` on the stored handle. Clear state entry.
+- Cache invalidation: a separate Tauri command
+  `invalidate_pip_hover_rect(label)` that JS calls from a
+  `tauri://move` listener (and resize listener if applicable). Re-
+  reads `outer_position` + `outer_size` and stores. Cheap.
+
+**JS (`src/pages/FocusMode.tsx` + `src/components/FocusPip.tsx`):**
+
+- After pip creation: `void invoke("start_pip_hover_monitor", { label: "focus-pip" })`.
+- On pip's `tauri://move` (and `tauri://resize` if it exists in
+  Tauri 2): `void invoke("invalidate_pip_hover_rect", { label: "focus-pip" })`.
+- On pip cleanup (close path): `void invoke("stop_pip_hover_monitor", { label: "focus-pip" })`.
+- Inside the pip page, listen for `pip-hover` event:
+  ```ts
+  const unlisten = await getCurrent().listen<{ over: boolean }>(
+    "pip-hover",
+    (evt) => setIsExternallyHovered(evt.payload.over)
+  );
+  ```
+- Render: `const expanded = isCssHovered || isExternallyHovered`,
+  drives the existing fan-out animation.
+
+## Order of operations from here
+
+1. ✅ Revert failed attempts.
+2. ✅ **Verse design review** — approved.
+3. ⏳ Implementation per the shape above.
+4. Heads-up paragraph before commit (discipline rule).
+5. Verify with trace: focus session → background → hover from another
+   app → fan-out fires → cursor leaves → fan-out retracts.
+6. If it works: merge to main, push.
+7. If not: failure modes are narrow (monitor doesn't fire, rect math,
+   edge detection) — diagnose with single inline `eprintln!`s.

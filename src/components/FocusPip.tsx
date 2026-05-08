@@ -158,7 +158,16 @@ const ORPHAN_TIMEOUT_MS = 2000;
 
 export default function FocusPip() {
   const [state, setState] = useState<PipState | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  // CSS-driven hover (cursor over the right-edge hover wrapper while
+  // the pip IS the key window). Drives the icon fan-out for in-app
+  // hover.
+  const [cssHovered, setCssHovered] = useState(false);
+  // External hover (cursor over the pip's screen rect detected by the
+  // Rust-side global mouseMoved monitor). Set true/false by edge-
+  // triggered "pip-hover" events. Drives the fan-out when the pip
+  // ISN'T key and DOM hover dispatch is suppressed by macOS.
+  const [externallyHovered, setExternallyHovered] = useState(false);
+  const expanded = cssHovered || externallyHovered;
   const orphanStartRef = useRef<number | null>(null);
   // Transient acknowledgment text — shown for ~1.2s after the user
   // clicks Snooze ("5 more minutes") or No ("Continue working") on
@@ -249,13 +258,59 @@ export default function FocusPip() {
     return () => clearInterval(interval);
   }, []);
 
-  function handleMouseEnter() {
-    setExpanded(true);
-  }
-
-  function handleMouseLeave() {
-    setExpanded(false);
-  }
+  // Listen for the Rust-side hover monitor. Edge-triggered events
+  // (one per cursor-cross-the-pip-rect transition) flip
+  // externallyHovered, which ORs with cssHovered to drive expanded.
+  //
+  // Residual behavior, intentional: NSEvent's global mouse monitor
+  // only fires for events delivered to OTHER apps. While VerseDay is
+  // frontmost (main window or pip), mouseMoved events route to us and
+  // the monitor doesn't run, so we never get the over=false edge that
+  // drives retraction. Result: drag-then-release-then-move-cursor-
+  // away inside our app leaves icons visible until the user switches
+  // focus to another app, at which point the next mouseMoved fires
+  // our monitor, geometry says off-pip, edge fires, retraction
+  // happens. Matches macOS HUD conventions (Spotlight, color picker,
+  // font panel — they retract on context switch, not on within-app
+  // cursor moves). Closing the gap would require adding a LOCAL
+  // NSEvent monitor alongside the global one — doubles the surface
+  // area for a nuance most users won't notice. Don't.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        unlisten = await getCurrentWebviewWindow().listen<{ over: boolean }>(
+          "pip-hover",
+          (evt) => {
+            if (cancelled) return;
+            setExternallyHovered(evt.payload.over);
+            // When Rust's geometry check says the cursor is no longer
+            // over the pip rect, force cssHovered false too. Rust's
+            // NSEvent monitor reads NSWindow.frame() inline and is the
+            // source of truth for "cursor is over the pip"; native
+            // drags + click-to-make-key transitions can leave
+            // WKWebView's tracking area desynced so the inner-div
+            // mouseLeave doesn't always fire when cursor exits the
+            // pip. If Rust says off-pip, neither hover state should
+            // be true. The reverse asymmetry is intentional — Rust
+            // saying over=true doesn't fake CSS hover, since cursor
+            // can be over the pip rect but not over the sub-region
+            // where the icon-fanout hover-zone actually lives.
+            if (!evt.payload.over) {
+              setCssHovered(false);
+            }
+          }
+        );
+      } catch {
+        // No-op on failure — falls back to cssHovered alone.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   if (!state) {
     return null;
@@ -361,21 +416,20 @@ export default function FocusPip() {
   // ── ACTIVE / PAUSED ────────────────────────────────────────────────
   // Hover model: only the right-edge "pause zone" triggers the icon
   // expansion — hovering anywhere else on the pip is just hover, not
-  // a control reveal. Clicking anywhere except a button focuses the
-  // main VerseDay window. The hover zone widens when expanded so a
-  // mouse moving leftward across the icons stays inside it.
+  // a control reveal. Clicking the pip body itself does nothing —
+  // only the explicit VerseDay logo button (in the icon strip)
+  // focuses the main window. The hover zone widens when expanded so
+  // a mouse moving leftward across the icons stays inside it.
   return (
     <div
       data-tauri-drag-region
-      className="select-none overflow-hidden relative cursor-pointer"
+      className="select-none overflow-hidden relative"
       style={{ background: PIP_BG, borderRadius: 18, border: "0.5px solid var(--focus-pip-border)" }}
-      onClick={focusMainWindow}
       onMouseDown={handlePipMouseDown}
     >
       <div className="flex items-center gap-2 pl-4 pr-2 py-2 w-full h-full">
-        {/* Title + timer — purely informational; click-to-focus is
-            handled by the outer container. Fades on hover so the icon
-            row can take the space without overlapping.
+        {/* Title + timer — purely informational. Fades on hover so the
+            icon row can take the space without overlapping.
             pr-12 reserves space for the absolute-positioned pause
             button (w-9 + right-2 → ~44px from the right edge of the
             pip) so a long title truncates *before* the pause icon
@@ -409,8 +463,8 @@ export default function FocusPip() {
             sliding leftward across icons. Buttons inside stop click
             propagation so the outer focus-on-click doesn't fire. */}
         <div
-          onMouseEnter={() => setExpanded(true)}
-          onMouseLeave={() => setExpanded(false)}
+          onMouseEnter={() => setCssHovered(true)}
+          onMouseLeave={() => setCssHovered(false)}
           className="absolute top-0 bottom-0 right-0 transition-[left] duration-150 ease-out"
           style={{ left: expanded ? 8 : 156 }}
         >

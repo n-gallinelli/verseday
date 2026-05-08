@@ -621,6 +621,7 @@ pub fn run() {
         .manage(commands::QuickAddState {
             previous_app: std::sync::Mutex::new(String::new()),
         })
+        .manage(commands::PipHoverState::new())
         .manage({
             #[cfg(target_os = "macos")]
             {
@@ -639,7 +640,8 @@ pub fn run() {
             commands::generate_summary,
             commands::capture_previous_app,
             commands::dismiss_quick_add,
-            commands::enable_window_mouse_moved_events,
+            commands::start_pip_hover_monitor,
+            commands::stop_pip_hover_monitor,
             #[cfg(target_os = "macos")]
             calendar::calendar_check_permission,
             #[cfg(target_os = "macos")]

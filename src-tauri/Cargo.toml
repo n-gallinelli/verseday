@@ -38,6 +38,9 @@ objc2-foundation = { version = "0.3", features = [
     "NSPredicate",
     "NSError",
     "NSURL",
+    # NSGeometry: NSPoint/NSSize/NSRect, used by the focus-pip global
+    # mouse-moved monitor (commands::pip_hover) for cursor-vs-rect tests.
+    "NSGeometry",
 ] }
 objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSRunningApplication"] }
 # G3 (plan v3): pinned to ~0.3 minor line; bump intentionally and

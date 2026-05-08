@@ -371,26 +371,14 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           // alwaysOnTop already keeps the pip visible without needing
           // window focus.
           focus: false,
-          // Engage on the first click rather than just activating the
-          // pip's window — combined with the mouse-moved-events fix
-          // below, the user can hover-and-click without first having
-          // to focus the pip from another app.
+          // macOS: engage on the first click rather than just
+          // activating the pip's window. Without this, clicking the
+          // pip from another app routes the click into "make me key"
+          // and the button doesn't respond until a second click. With
+          // it, hover-and-click lands in one motion.
           acceptFirstMouse: true,
           x: 20,
           y: 20,
-        });
-        // macOS: opt the pip's underlying NSWindow into receiving
-        // mouseMoved events even when it isn't the key window. By
-        // default non-key windows don't get those events, so CSS
-        // :hover wouldn't fire when the user brings the cursor over
-        // the pip from another app — meaning the icon fan-out would
-        // require a click first. The Tauri command sets
-        // setAcceptsMouseMovedEvents:YES on the NSWindow; no-op on
-        // non-macOS platforms.
-        pip.once("tauri://created", () => {
-          void invoke("enable_window_mouse_moved_events", {
-            label: "focus-pip",
-          });
         });
         // Per Verse F1: assign first, then re-check cancelled. The
         // window between `if (cancelled)` and the assignment is small
@@ -402,7 +390,19 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         if (cancelled) {
           pip.close().catch(() => {});
           pipRef.current = null;
+          return;
         }
+
+        // ── Hover-without-focus monitor (macOS) ─────────────────────
+        // Start the NSEvent global mouse-moved monitor that detects
+        // when the cursor is over the pip's screen rect. The Rust
+        // side reads the pip's NSWindow.frame() inline on every fire
+        // and emits "pip-hover" {over} edge transitions; FocusPip
+        // listens and ORs the result with its CSS :hover state to
+        // drive the icon fan-out. No-op on non-macOS.
+        await pip.once("tauri://created", () => {
+          void invoke("start_pip_hover_monitor", { label: "focus-pip" });
+        });
       } catch {
         // PiP creation failed — not critical
       }
@@ -410,6 +410,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 
     return () => {
       cancelled = true;
+      // Stop the hover monitor before closing the window. Order
+      // doesn't strictly matter (the monitor is detached from the
+      // window object) but stop-first leaves no race where a final
+      // mouseMoved fires against a half-closed window.
+      void invoke("stop_pip_hover_monitor", { label: "focus-pip" }).catch(() => {});
       // Close PiP when leaving focus mode
       pipRef.current?.close().catch(() => {});
       pipRef.current = null;

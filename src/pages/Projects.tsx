@@ -76,7 +76,7 @@ function formatDate(iso: string): string {
 export default function Projects() {
   const { openProject } = useAppStore();
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
-  const cacheTasks = useAppStore((s) => s.cacheTasks);
+  const primeTasks = useAppStore((s) => s.primeTasks);
   const [projects, setProjects] = useState<Project[]>([]);
   const [statsMap, setStatsMap] = useState<
     Map<number, { total: number; done: number; lastDate: string | null }>
@@ -167,13 +167,13 @@ export default function Projects() {
         .then((results) => {
           // Prime the canonical map first so the render below resolves
           // each id via tasksById without a flash of empty rows.
-          cacheTasks(results);
+          primeTasks(results);
           setMatchingTaskIds(results.map((t) => t.id));
         })
         .catch(() => setMatchingTaskIds([]));
     }, 120);
     return () => clearTimeout(timer);
-  }, [searchQuery, cacheTasks]);
+  }, [searchQuery, primeTasks]);
 
   async function handleCreate(name: string, color: string) {
     try {
@@ -206,7 +206,7 @@ export default function Projects() {
         if (!projectTasks.has(projectId)) {
           getTasksForProject(projectId, true).then((tasks) => {
             setProjectTasks((m) => new Map(m).set(projectId, tasks));
-            cacheTasks(tasks);
+            primeTasks(tasks);
           }).catch(() => {});
         }
       }

@@ -28,7 +28,7 @@ import type { Project, Task } from "../types";
 export default function TaskDetailOverlayHost() {
   const selectedTaskDetailId = useAppStore((s) => s.selectedTaskDetailId);
   const closeTaskDetail = useAppStore((s) => s.closeTaskDetail);
-  const cacheTasks = useAppStore((s) => s.cacheTasks);
+  const primeTasks = useAppStore((s) => s.primeTasks);
   const startFocus = useAppStore((s) => s.startFocus);
   const setPage = useAppStore((s) => s.setPage);
   const taskDetailAutoFocusTitle = useAppStore((s) => s.taskDetailAutoFocusTitle);
@@ -47,13 +47,13 @@ export default function TaskDetailOverlayHost() {
     getTaskById(selectedTaskDetailId)
       .then((t) => {
         if (cancelled || !t) return;
-        cacheTasks([t]);
+        primeTasks([t]);
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [selectedTaskDetailId, task, cacheTasks]);
+  }, [selectedTaskDetailId, task, primeTasks]);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,7 +93,7 @@ export default function TaskDetailOverlayHost() {
 
   async function refreshCache(id: number) {
     const fresh = await getTaskById(id).catch(() => null);
-    if (fresh) cacheTasks([fresh]);
+    if (fresh) primeTasks([fresh]);
   }
 
   async function handleSave(updates: UpdateTaskInput) {

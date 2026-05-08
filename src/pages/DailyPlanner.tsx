@@ -63,7 +63,7 @@ export default function DailyPlanner() {
   const { selectedDate, setSelectedDate, startFocus, stopFocus, openProject, focus, setPage, pendingDetailTask, setPendingDetailTask } = useAppStore();
   const selectedTaskDetailId = useAppStore((s) => s.selectedTaskDetailId);
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
-  const cacheTasks = useAppStore((s) => s.cacheTasks);
+  const primeTasks = useAppStore((s) => s.primeTasks);
   const openSummaryOverlay = useAppStore((s) => s.openSummaryOverlay);
   // M3.2.b.1 — main task list comes from the canonical store. The
   // selector returns the ordered ID list for selectedDate; we resolve
@@ -379,8 +379,8 @@ export default function DailyPlanner() {
       }
       // Sidebar lists: prime the canonical map with the full Task data
       // so per-row reads resolve, then store IDs locally. M3.2.b.5 retires
-      // the cacheTasks call.
-      cacheTasks([...sb.unscheduled, ...sb.overdue, ...uf]);
+      // the primeTasks call.
+      primeTasks([...sb.unscheduled, ...sb.overdue, ...uf]);
       setSidebarUnscheduledIds(sb.unscheduled.map((t) => t.id));
       setSidebarOverdueIds(sb.overdue.map((t) => t.id));
       setUnfinishedTaskIds(uf.map((t) => t.id));
@@ -446,11 +446,11 @@ export default function DailyPlanner() {
   // slot on the second pass and no-op.
   useEffect(() => {
     if (pendingDetailTask) {
-      cacheTasks([pendingDetailTask]);
+      primeTasks([pendingDetailTask]);
       openTaskDetail(pendingDetailTask.id);
       setPendingDetailTask(null);
     }
-  }, [pendingDetailTask, cacheTasks, openTaskDetail, setPendingDetailTask]);
+  }, [pendingDetailTask, primeTasks, openTaskDetail, setPendingDetailTask]);
 
   async function handleAddTask(e: React.FormEvent) {
     e.preventDefault();

@@ -437,7 +437,7 @@ function SortableTaskRow({
 export default function ProjectDetail() {
   const { selectedProjectId, openProject, startFocus, goBack, setPage } = useAppStore();
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
-  const cacheTasks = useAppStore((s) => s.cacheTasks);
+  const primeTasks = useAppStore((s) => s.primeTasks);
   // M3.2.b.2 — task list now flows through the canonical store. The
   // selector returns ID list for the project; resolution against
   // tasksById happens in a memo below. Per-row TaskCard subscription

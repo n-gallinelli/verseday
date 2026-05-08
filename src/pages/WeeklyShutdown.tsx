@@ -262,7 +262,7 @@ function PlanNextWeekPrompt({
 export default function WeeklyShutdown() {
   const { selectedWeek, setSelectedWeek, setPage } = useAppStore();
   const openSunsetOverlay = useAppStore((s) => s.openSunsetOverlay);
-  const cacheTasks = useAppStore((s) => s.cacheTasks);
+  const primeTasks = useAppStore((s) => s.primeTasks);
   const tasksById = useAppStore((s) => s.tasksById);
   // M3.2.b.3 — completedThisWeek is hybrid: query is completed_at-based
   // (a task scheduled in week X but completed in week Y belongs to Y).
@@ -313,7 +313,7 @@ export default function WeeklyShutdown() {
       ]);
       // Prime canonical map first so the render below resolves each
       // id without a flash of empty rows.
-      cacheTasks(completed);
+      primeTasks(completed);
       setCompletedTaskIds(completed.map((t) => t.id));
       setProjects(p);
       setWorkedByDay(perDay);

@@ -272,7 +272,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       // Mirror into the store so the cache stays fresh — navigating
       // away and coming back will seed the editor from this updated
       // value instead of the original session-start snapshot. After
-      // M2.2 retires focus.task, updateFocusTask is a thin cacheTasks
+      // M2.2 retires focus.task, updateFocusTask is a thin primeTasks
       // wrapper (still works for callers).
       updateFocusTask({ notes: value || null });
       // Broadcast so other surfaces displaying this task's notes

@@ -470,7 +470,7 @@ function DayTasksModal({
 export default function ScheduleTab() {
   const { selectedWeek, openProject, setSchedulePlannedMinutes } = useAppStore();
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
-  const cacheTasks = useAppStore((s) => s.cacheTasks);
+  const primeTasks = useAppStore((s) => s.primeTasks);
   const selectedTaskDetailId = useAppStore((s) => s.selectedTaskDetailId);
   const loadTasksForWeek = useAppStore((s) => s.loadTasksForWeek);
   const setTaskStatusAction = useAppStore((s) => s.setTaskStatus);
@@ -575,7 +575,7 @@ export default function ScheduleTab() {
     try {
       // loadTasksForWeek populates the canonical map for the week
       // selector. Sibling queries stay direct DB; their results prime
-      // the canonical map via cacheTasks before IDs are stored.
+      // the canonical map via primeTasks before IDs are stored.
       const [_, p, unscheduled] = await Promise.all([
         loadTasksForWeek(selectedWeek),
         getProjects(),
@@ -583,7 +583,7 @@ export default function ScheduleTab() {
       ]);
       void _;
       const unscheduledOnlyOrphans = unscheduled.filter((t) => t.project_id === null);
-      cacheTasks(unscheduledOnlyOrphans);
+      primeTasks(unscheduledOnlyOrphans);
       setUnscheduledUnassignedIds(unscheduledOnlyOrphans.map((t) => t.id));
 
       // Auto-show all active, non-completed projects
@@ -604,7 +604,7 @@ export default function ScheduleTab() {
       }
 
       const projectTasks = await getAllTasksForProjectIds(activeIds);
-      cacheTasks(projectTasks);
+      primeTasks(projectTasks);
       setAllProjectTaskIds(projectTasks.map((t) => t.id));
       setActiveProjectIds(activeIds);
       setProjects(p);
@@ -621,7 +621,7 @@ export default function ScheduleTab() {
     } catch (e) {
       setError(errorMessage(e, "Failed to load weekly data"));
     }
-  }, [selectedWeek, loadTasksForWeek, cacheTasks]);
+  }, [selectedWeek, loadTasksForWeek, primeTasks]);
 
   useEffect(() => {
     loadData();

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Page, Task } from "../types";
 import { todayString, mondayOfWeek } from "../utils/dates";
 import {
+  createTask as dbCreateTask,
   deleteTask as dbDeleteTask,
   getTaskById,
   getTasksForDate,
@@ -11,9 +12,11 @@ import {
   setManualWorkedMinutes as dbSetManualWorkedMinutes,
   setTaskStatusFromUI,
   updateTask as dbUpdateTask,
+  updateTaskDateScheduled as dbUpdateTaskDateScheduled,
+  updateTaskSortOrders as dbUpdateTaskSortOrders,
   updateTimeEntryWorkedSeconds,
 } from "../db/queries";
-import type { UpdateTaskInput } from "../db/queries";
+import type { CreateTaskInput, UpdateTaskInput } from "../db/queries";
 
 /** Returns the local-tz Monday-ISO of the week containing `dateIso`.
  *  Anchors on T00:00:00 to keep DST transitions from shifting the bucket. */
@@ -193,7 +196,8 @@ interface AppState {
   /** Canonical store-owned task map (M3.2.a). Single source of truth
    *  for task data in-memory; SQL is durable truth, this is the live
    *  mirror. Populated by load* actions (and transitionally by
-   *  cacheTasks until M3.2.b.5 retires it). Per-row subscribers read
+   *  primeTasks for hybrid-pattern callers — see action docstring).
+   *  Per-row subscribers read
    *  via selectTaskById; the detail-overlay host and focus screen
    *  resolve their tasks from here via selectTaskDetailTask /
    *  selectFocusedTask. */
@@ -216,13 +220,21 @@ interface AppState {
   openTaskDetail: (id: number, opts?: { autoFocusTitle?: boolean }) => void;
   /** Close the singleton task detail overlay. */
   closeTaskDetail: () => void;
-  /** Write-through primer for the canonical map. Screens that already
-   *  hold a `Task[]` from a manual SQL fetch call this to make the
-   *  detail-overlay host's resolution synchronous. M3.2.b.5 retires
-   *  this in favor of the load* actions; until then, every `cacheTasks`
-   *  call also rebuilds any affected secondary-index entries it can
-   *  derive (M3.2.a — see implementation). */
-  cacheTasks: (tasks: Task[]) => void;
+  /** Write multiple tasks to the canonical `tasksById` map without
+   *  touching secondary indices. Used by the hybrid-pattern primes
+   *  (Projects search, ScheduleTab cross-cutting queries, WeeklyShutdown
+   *  completed list, DailyPlanner sidebar) where the caller's local ID
+   *  list is the primary membership truth and tasksById is the live
+   *  rendered-data source.
+   *
+   *  Distinct from the load* actions (which own a bucket and replace its
+   *  primary index slice) and from insertTask (which owns a single
+   *  newly-created row and propagates to all three indices via
+   *  withTaskInserted). Intended specifically for the hybrid pattern.
+   *
+   *  Renamed from cacheTasks in M3.2.b.5.a (the M1 transitional bridge
+   *  is gone; the action's purpose is hybrid-pattern priming). */
+  primeTasks: (tasks: Task[]) => void;
   /** Load tasks for a specific date. Writes each task to tasksById
    *  and replaces taskIdsByDate[date] with the loaded ID list. Idempotent.
    *  On DB failure: leaves prior state intact and surfaces error via
@@ -267,6 +279,49 @@ interface AppState {
    *  (quick-add, schedule-tab drag-create, etc.). Pure in-memory
    *  side-effect — caller has already DB-inserted. */
   insertTask: (task: Task) => void;
+  /** Optimistic date_scheduled write + DB. Wraps updateTaskDateScheduled
+   *  and routes through withTaskMutated so date and week index slices
+   *  transition atomically (the M3.2.b.5.a replacement for the
+   *  legacy SQL-direct path used by pullTaskToDay / undoPull /
+   *  ScheduleTab drag-end).
+   *
+   *  Failure path: refetch via getTaskById, write truth back to the
+   *  canonical map; console.error with debug context. */
+  setTaskDateScheduled: (id: number, date: string | null) => Promise<void>;
+  /** Atomic re-order for a single bucket. Caller passes the bucket
+   *  (date or project) and the complete ordered ID list for that
+   *  bucket. Action writes sort_order updates to SQL, patches each
+   *  affected task's sort_order in tasksById, and replaces the
+   *  bucket's secondary-index slice with `orderedIds`.
+   *
+   *  Bucket parameter is explicit (not inferred from task.date_scheduled
+   *  / project_id) — Verse review M3.2.b.5: implicit inference would
+   *  be brittle since callers already know which bucket they're
+   *  reordering.
+   *
+   *  Failure path: refetch the bucket via loadTasksForDate /
+   *  loadTasksForProject (the load action's primary-slice replacement
+   *  restores SQL truth). console.error with debug context. */
+  setTaskSortOrders: (
+    bucket:
+      | { kind: "date"; date: string }
+      | { kind: "project"; projectId: number },
+    orderedIds: number[],
+  ) => Promise<void>;
+  /** SQL-insert + canonical-map insert in one action. Wraps
+   *  createTask SQL, fetches the new row via getTaskById, applies
+   *  withTaskInserted (writes tasksById + propagates to date / project
+   *  / week indices), and returns the new id.
+   *
+   *  Return-valued-with-side-effects is intentional — quick-add and
+   *  drag-create both need the new id immediately to open the detail
+   *  overlay or play the entrance animation. Mirrors stopFocus(): Page
+   *  precedent.
+   *
+   *  Failure path: SQL error rejects; caller's catch fires. No
+   *  optimistic write to roll back. console.error on any unexpected
+   *  exception (e.g. getTaskById failing after a successful insert). */
+  createTaskAction: (input: CreateTaskInput) => Promise<number>;
   /** Open-state for the singleton SummaryOverlay (day-summary modal).
    *  `null` = closed. Read by the singleton SummaryOverlayHost mounted at
    *  the App shell. Not persisted — overlay always closes on app restart
@@ -615,7 +670,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       previousPage,
       priorElapsedMs,
     };
-    get().cacheTasks([task]);
+    get().primeTasks([task]);
     persistFocus(focus);
     set({ focus });
   },
@@ -639,7 +694,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   updateFocusTask: (patch) => {
     // M2.2 — `task` is no longer on FocusState; this action is a thin
-    // cacheTasks wrapper that preserves the existing API for callers
+    // primeTasks wrapper that preserves the existing API for callers
     // that want to splice an in-memory change to the focused task
     // (FocusMode's notes/title/estimate auto-saves; TaskDetailOverlay's
     // mirror writes). M3.2 may collapse this into the canonical
@@ -650,7 +705,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const current = get().tasksById.get(f.taskId);
     if (!current) return;
     const nextTask = { ...current, ...patch };
-    get().cacheTasks([nextTask]);
+    get().primeTasks([nextTask]);
   },
   setFocusPriorElapsedMs: (taskId, priorMs) => {
     const f = get().focus;
@@ -682,7 +737,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       paused: false,
       workedMs: 0,
     };
-    get().cacheTasks([task]);
+    get().primeTasks([task]);
     persistFocus(focus);
     set({ focus });
   },
@@ -715,12 +770,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     // is invisible — millisecond order. M3.2 replaces this with the
     // canonical store-owned tasksById rehydration, removing the fetch.
     if (persisted.legacyTaskSnapshot) {
-      get().cacheTasks([persisted.legacyTaskSnapshot]);
+      get().primeTasks([persisted.legacyTaskSnapshot]);
     } else {
       const { taskId } = persisted.focus;
       void getTaskById(taskId)
         .then((t) => {
-          if (t) get().cacheTasks([t]);
+          if (t) get().primeTasks([t]);
         })
         .catch(() => {
           // Best effort — the host will refetch on first overlay open
@@ -838,15 +893,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   closeSummaryOverlay: () => set({ summaryOverlay: null }),
   openSunsetOverlay: () => set({ sunsetOverlayOpen: true }),
   closeSunsetOverlay: () => set({ sunsetOverlayOpen: false }),
-  cacheTasks: (tasks) => {
+  primeTasks: (tasks) => {
     if (tasks.length === 0) return;
     set((s) => {
-      // M3.2.a — writes to the canonical tasksById map. Until M3.2.b.5
-      // retires this action entirely, callers can keep priming the map
-      // opportunistically. Index entries are NOT touched here — load*
-      // and update* are the canonical maintainers; cacheTasks is just
-      // a fast path that lets the detail-overlay host resolve tasks
-      // before screens migrate to selectors.
+      // M3.2.b.5.a — bulk write to canonical tasksById without
+      // touching secondary indices. Hybrid-pattern callers own their
+      // own ID list; the index propagation that load* actions do
+      // would bloat secondary indices with hybrid-only data.
       const nextMap = new Map(s.tasksById);
       for (const t of tasks) nextMap.set(t.id, t);
       return { tasksById: nextMap };
@@ -1068,6 +1121,106 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   insertTask: (task) => {
     set((s) => withTaskInserted(s, task));
+  },
+  setTaskDateScheduled: async (id, date) => {
+    const current = get().tasksById.get(id);
+    if (current) {
+      // Optimistic mutation. withTaskMutated handles the date and
+      // week-bucket transitions atomically (and clears the project
+      // bucket nothing here since project_id is unchanged).
+      const next: Task = { ...current, date_scheduled: date };
+      set((s) => withTaskMutated(s, current, next));
+    }
+    try {
+      await dbUpdateTaskDateScheduled(id, date);
+    } catch (err) {
+      console.error("[appStore] setTaskDateScheduled failed — refetching truth", {
+        id,
+        date,
+        err,
+      });
+      try {
+        const fresh = await getTaskById(id);
+        const before = get().tasksById.get(id);
+        if (fresh) {
+          if (before) set((s) => withTaskMutated(s, before, fresh));
+          else set((s) => withTaskInserted(s, fresh));
+        } else if (before) {
+          set((s) => withTaskRemoved(s, before));
+        }
+      } catch (refetchErr) {
+        console.error(
+          "[appStore] setTaskDateScheduled refetch also failed",
+          refetchErr,
+        );
+      }
+    }
+  },
+  setTaskSortOrders: async (bucket, orderedIds) => {
+    // Update SQL first — sort_order is a per-task column, the DB query
+    // takes the {id, sortOrder}[] payload and writes them in one
+    // batched UPDATE. If it succeeds, patch the canonical map and
+    // replace the bucket's secondary index slice.
+    try {
+      const updates = orderedIds.map((id, i) => ({ id, sortOrder: i }));
+      await dbUpdateTaskSortOrders(updates);
+      set((s) => {
+        const nextMap = new Map(s.tasksById);
+        for (const { id, sortOrder } of updates) {
+          const t = nextMap.get(id);
+          if (t) nextMap.set(id, { ...t, sort_order: sortOrder });
+        }
+        if (bucket.kind === "date") {
+          const nextDateIdx = new Map(s.taskIdsByDate);
+          nextDateIdx.set(bucket.date, orderedIds);
+          return { tasksById: nextMap, taskIdsByDate: nextDateIdx };
+        } else {
+          const nextProjIdx = new Map(s.taskIdsByProject);
+          nextProjIdx.set(bucket.projectId, orderedIds);
+          return { tasksById: nextMap, taskIdsByProject: nextProjIdx };
+        }
+      });
+    } catch (err) {
+      console.error("[appStore] setTaskSortOrders failed — refetching bucket", {
+        bucket,
+        err,
+      });
+      // Recovery: refetch the affected bucket via the load action,
+      // which replaces the primary slice with SQL truth.
+      try {
+        if (bucket.kind === "date") {
+          await get().loadTasksForDate(bucket.date);
+        } else {
+          await get().loadTasksForProject(bucket.projectId);
+        }
+      } catch (refetchErr) {
+        console.error(
+          "[appStore] setTaskSortOrders bucket refetch also failed",
+          refetchErr,
+        );
+      }
+    }
+  },
+  createTaskAction: async (input) => {
+    // SQL insert returns the new id. Fetch the row back to populate
+    // the canonical map with the full Task struct (createTask returns
+    // just the id; getTaskById is the source of truth for the row's
+    // post-insert state, including DB-applied defaults like
+    // rollover_count, sort_order, etc.).
+    const id = await dbCreateTask(input);
+    try {
+      const fresh = await getTaskById(id);
+      if (fresh) set((s) => withTaskInserted(s, fresh));
+    } catch (err) {
+      // The DB insert succeeded; only the post-insert read failed.
+      // The next loadTasksFor* covering this row will sync the
+      // canonical map. Surface for debugging.
+      console.error(
+        "[appStore] createTaskAction post-insert getTaskById failed",
+        { id, err },
+      );
+    }
+    return id;
   },
   setWeeklyPlannerTab: (tab) => set({ weeklyPlannerTab: tab }),
   toggleSidebar: () => {

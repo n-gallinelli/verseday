@@ -261,6 +261,20 @@ export default function FocusPip() {
   // Listen for the Rust-side hover monitor. Edge-triggered events
   // (one per cursor-cross-the-pip-rect transition) flip
   // externallyHovered, which ORs with cssHovered to drive expanded.
+  //
+  // Residual behavior, intentional: NSEvent's global mouse monitor
+  // only fires for events delivered to OTHER apps. While VerseDay is
+  // frontmost (main window or pip), mouseMoved events route to us and
+  // the monitor doesn't run, so we never get the over=false edge that
+  // drives retraction. Result: drag-then-release-then-move-cursor-
+  // away inside our app leaves icons visible until the user switches
+  // focus to another app, at which point the next mouseMoved fires
+  // our monitor, geometry says off-pip, edge fires, retraction
+  // happens. Matches macOS HUD conventions (Spotlight, color picker,
+  // font panel — they retract on context switch, not on within-app
+  // cursor moves). Closing the gap would require adding a LOCAL
+  // NSEvent monitor alongside the global one — doubles the surface
+  // area for a nuance most users won't notice. Don't.
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     let cancelled = false;

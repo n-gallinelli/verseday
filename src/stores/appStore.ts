@@ -4,6 +4,7 @@ import { todayString, mondayOfWeek } from "../utils/dates";
 import {
   createTask as dbCreateTask,
   deleteTask as dbDeleteTask,
+  getSidebarPoolTasks,
   getTaskById,
   getTasksForDate,
   getTasksForProject,
@@ -250,6 +251,18 @@ interface AppState {
   /** Load tasks for a week (Monday-ISO key). Failure-path: prior state
    *  intact + console.error. */
   loadTasksForWeek: (weekStart: string) => Promise<void>;
+  /** R.2 — Right sidebar rebuild. Fetches the rail's membership
+   *  pool (unscheduled-open + overdue 3+ days back, 14-day floor)
+   *  via getSidebarPoolTasks and primes canonical via primeTasks.
+   *  No secondary-index propagation — the rail's selectors filter
+   *  tasksById directly with bucket predicates.
+   *
+   *  Idempotent. Re-running on every loadData() call is mostly
+   *  redundant (canonical reactivity covers most updates between
+   *  calls) but harmless.
+   *
+   *  Failure-path: prior state intact + console.error. */
+  loadSidebarPool: () => Promise<void>;
   /** Optimistic patch + DB write. Updates tasksById and any affected
    *  secondary indices, then writes through to SQL.
    *
@@ -611,6 +624,97 @@ export function selectTaskIdsByProject(state: AppState, projectId: number): numb
  *  `weekStart` (Monday-ISO). */
 export function selectTaskIdsByWeek(state: AppState, weekStart: string): number[] {
   return state.taskIdsByWeek.get(weekStart) ?? EMPTY_ID_LIST;
+}
+
+/** R.2 — Right sidebar rebuild. Map of projectId → Task[] for
+ *  projects that have at least one unscheduled, open task in the
+ *  canonical map. Tasks within each project are sorted by
+ *  `created_at DESC` (newest first per the rail's spec). Projects
+ *  with zero matching tasks (or with project_id === null tasks,
+ *  which belong to the orphan list instead) don't appear as keys.
+ *
+ *  Bucket-filter discipline: predicates re-validate `tasksById`
+ *  membership at the call site, so a task whose status flips to
+ *  done or whose date_scheduled gets set drops from the rail
+ *  immediately without waiting for the next loadSidebarPool
+ *  refresh.
+ *
+ *  This selector returns a NEW Map reference on every call. Wrap
+ *  with useMemo at the consumer (R.3) keyed on `state.tasksById`
+ *  so subscriber re-renders don't churn on unrelated store changes. */
+export function selectUnscheduledTasksByProject(
+  state: AppState,
+): Map<number, Task[]> {
+  const result = new Map<number, Task[]>();
+  for (const t of state.tasksById.values()) {
+    if (t.status === "done") continue;
+    if (t.date_scheduled !== null) continue;
+    if (t.project_id === null) continue;
+    const list = result.get(t.project_id);
+    if (list) list.push(t);
+    else result.set(t.project_id, [t]);
+  }
+  for (const list of result.values()) {
+    list.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  }
+  return result;
+}
+
+/** R.2 — Right sidebar rebuild. Flat list of "things to pull into
+ *  today" — orphans (no project, no date) and overdue tasks (3+ days
+ *  back from `today`, with a 14-day floor matching getSidebarPoolTasks).
+ *
+ *  `today` is the real-world current date (`todayString()`), NOT
+ *  DailyPlanner's `selectedDate`. The overdue cutoff is anchored on
+ *  real-world today; passing selectedDate would let the user "create
+ *  overdue" by paging Daily Plan into the future. R.3's caller is
+ *  responsible for passing the right value.
+ *
+ *  Sort order (per R.1 design + Verse confirmation): overdue first
+ *  (date_scheduled DESC — most-recently-overdue at the top, since
+ *  those are the most likely re-schedule candidates), then orphans
+ *  (created_at DESC).
+ *
+ *  Returns a new array reference on every call. Wrap with useMemo
+ *  at the consumer keyed on (tasksById, today). */
+export function selectOrphanAndOverdueTasks(
+  state: AppState,
+  today: string,
+): Task[] {
+  const overdueCutoffDate = new Date(today + "T00:00:00");
+  overdueCutoffDate.setDate(overdueCutoffDate.getDate() - 3);
+  const overdueCutoffIso = `${overdueCutoffDate.getFullYear()}-${String(
+    overdueCutoffDate.getMonth() + 1,
+  ).padStart(2, "0")}-${String(overdueCutoffDate.getDate()).padStart(2, "0")}`;
+  const hardFloorDate = new Date(today + "T00:00:00");
+  hardFloorDate.setDate(hardFloorDate.getDate() - 14);
+  const hardFloorIso = `${hardFloorDate.getFullYear()}-${String(
+    hardFloorDate.getMonth() + 1,
+  ).padStart(2, "0")}-${String(hardFloorDate.getDate()).padStart(2, "0")}`;
+  const orphans: Task[] = [];
+  const overdue: Task[] = [];
+  for (const t of state.tasksById.values()) {
+    if (t.status === "done") continue;
+    if (t.external_dismissal_reason !== null) continue;
+    if (t.date_scheduled === null && t.project_id === null) {
+      orphans.push(t);
+    } else if (
+      t.date_scheduled !== null &&
+      t.date_scheduled <= overdueCutoffIso &&
+      t.date_scheduled >= hardFloorIso
+    ) {
+      overdue.push(t);
+    }
+  }
+  overdue.sort((a, b) => {
+    // Both date_scheduled non-null per the filter above.
+    const ad = a.date_scheduled as string;
+    const bd = b.date_scheduled as string;
+    if (ad !== bd) return ad < bd ? 1 : -1;
+    return a.sort_order - b.sort_order;
+  });
+  orphans.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  return [...overdue, ...orphans];
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -1039,6 +1143,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
     } catch (err) {
       console.error("[appStore] loadTasksForWeek failed", { weekStart, err });
+    }
+  },
+  loadSidebarPool: async () => {
+    try {
+      const list = await getSidebarPoolTasks(todayString());
+      // Pure prime — no secondary-index touch. The rail's selectors
+      // (selectUnscheduledTasksByProject + selectOrphanAndOverdueTasks)
+      // scan tasksById with bucket predicates, so the canonical map
+      // is the only state that needs the rail's pool merged in.
+      get().primeTasks(list);
+    } catch (err) {
+      console.error("[appStore] loadSidebarPool failed", { err });
     }
   },
   updateTask: async (patch) => {

@@ -1263,6 +1263,42 @@ export async function getSidebarTasks(
   return { unscheduled, overdue };
 }
 
+// R.2 — Sidebar rebuild's membership pool. Single query consolidating
+// the unscheduled + overdue dual-fetch in getSidebarTasks. Returns a
+// flat Task[] union of:
+//   - unscheduled: date_scheduled IS NULL AND status != 'done'
+//   - overdue: 3+ days back from `today`, capped at 14 days (sanity
+//     belt — older tasks are stale; user can find them via Projects).
+// Excludes calendar-imported tasks (external_dismissal_reason IS NULL)
+// since those aren't user-managed.
+//
+// `today` is the real-world current date (todayString()), NOT
+// DailyPlanner's selectedDate. The overdue cutoff is anchored on
+// real-world today; passing selectedDate would let the user "create
+// overdue" by paging Daily Plan into the future.
+export async function getSidebarPoolTasks(today: string): Promise<Task[]> {
+  const db = await getDb();
+  const overdueCutoff = new Date(today + "T00:00:00");
+  overdueCutoff.setDate(overdueCutoff.getDate() - 3);
+  const overdueCutoffIso = overdueCutoff
+    .toISOString()
+    .split("T")[0];
+  const hardFloor = new Date(today + "T00:00:00");
+  hardFloor.setDate(hardFloor.getDate() - 14);
+  const hardFloorIso = hardFloor.toISOString().split("T")[0];
+  return db.select(
+    `SELECT * FROM tasks
+       WHERE status != 'done'
+         AND external_dismissal_reason IS NULL
+         AND (
+           date_scheduled IS NULL
+           OR (date_scheduled <= $1 AND date_scheduled >= $2)
+         )
+       LIMIT 200`,
+    [overdueCutoffIso, hardFloorIso]
+  );
+}
+
 // Weekly Plan Projects (project timelines)
 const WEEK_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 

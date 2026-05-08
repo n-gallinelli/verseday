@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useAppStore } from "../stores/appStore";
 import {
   getWeeklyShutdown,
@@ -262,8 +262,24 @@ function PlanNextWeekPrompt({
 export default function WeeklyShutdown() {
   const { selectedWeek, setSelectedWeek, setPage } = useAppStore();
   const openSunsetOverlay = useAppStore((s) => s.openSunsetOverlay);
-
-  const [completedThisWeek, setCompletedThisWeek] = useState<Task[]>([]);
+  const cacheTasks = useAppStore((s) => s.cacheTasks);
+  const tasksById = useAppStore((s) => s.tasksById);
+  // M3.2.b.3 — completedThisWeek is hybrid: query is completed_at-based
+  // (a task scheduled in week X but completed in week Y belongs to Y).
+  // No secondary index covers that, so the SQL stays authoritative for
+  // membership; canonical map drives the rendered Task data so renames
+  // flow through without a re-query. The bucket filter (status === "done")
+  // re-validates membership at the memo so a flip done→todo drops the
+  // row immediately.
+  const [completedTaskIds, setCompletedTaskIds] = useState<number[]>([]);
+  const completedThisWeek = useMemo(() => {
+    const out: Task[] = [];
+    for (const id of completedTaskIds) {
+      const t = tasksById.get(id);
+      if (t && t.status === "done") out.push(t);
+    }
+    return out;
+  }, [completedTaskIds, tasksById]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [workedByDay, setWorkedByDay] = useState<Map<string, Map<number, number>>>(new Map());
   const [workedPerTask, setWorkedPerTask] = useState<Map<number, number>>(new Map());
@@ -295,7 +311,10 @@ export default function WeeklyShutdown() {
         getProjects(true), // include archived; tasks may belong to archived projects
         getWorkedMinutesPerProjectPerDay(selectedWeek, fridayIso),
       ]);
-      setCompletedThisWeek(completed);
+      // Prime canonical map first so the render below resolves each
+      // id without a flash of empty rows.
+      cacheTasks(completed);
+      setCompletedTaskIds(completed.map((t) => t.id));
       setProjects(p);
       setWorkedByDay(perDay);
       if (completed.length > 0) {

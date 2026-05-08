@@ -1,7 +1,6 @@
-import { useEffect, useState, useCallback, useRef } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { selectTaskIdsByDate, useAppStore } from "../stores/appStore";
 import {
-  getTasksForDate,
   getDailyPlan,
   getWorkedMinutesForTaskIds,
   updateTaskDateScheduled,
@@ -49,11 +48,23 @@ function serializeReflection(fields: ReflectionFields): string {
 export default function DailyShutdown() {
   const { selectedDate, setSelectedDate, setPage } = useAppStore();
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
-  const cacheTasks = useAppStore((s) => s.cacheTasks);
   const openSummaryOverlay = useAppStore((s) => s.openSummaryOverlay);
   const openSunsetOverlay = useAppStore((s) => s.openSunsetOverlay);
+  // M3.2.b.3 — task list flows through the canonical store. Includes
+  // both done and not-done tasks for the day; render code already
+  // partitions by status, no top-level filter needed here.
+  const dayTaskIds = useAppStore((s) => selectTaskIdsByDate(s, selectedDate));
+  const tasksById = useAppStore((s) => s.tasksById);
+  const loadTasksForDate = useAppStore((s) => s.loadTasksForDate);
+  const tasks = useMemo(() => {
+    const out: Task[] = [];
+    for (const id of dayTaskIds) {
+      const t = tasksById.get(id);
+      if (t) out.push(t);
+    }
+    return out;
+  }, [dayTaskIds, tasksById]);
 
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,13 +88,12 @@ export default function DailyShutdown() {
 
   const loadData = useCallback(async () => {
     try {
-      const [t, dp, p] = await Promise.all([
-        getTasksForDate(selectedDate),
+      const [_, dp, p] = await Promise.all([
+        loadTasksForDate(selectedDate),
         getDailyPlan(selectedDate),
         getProjects(false),
       ]);
-      setTasks(t);
-      cacheTasks(t);
+      void _;
       setProjects(p);
       setMood(dp?.mood ?? null);
       setReflectionFields(parseReflection(dp?.reflection ?? ""));
@@ -91,10 +101,21 @@ export default function DailyShutdown() {
         localStorage.getItem(SHUTDOWN_KEY_PREFIX + selectedDate) === "true"
       );
       setCarriedIds(new Set());
-      setHighlightIds(new Set(t.filter((x) => x.is_highlight).map((x) => x.id)));
-      const taskIds = t.map((x) => x.id);
-      if (taskIds.length > 0) {
-        const wpt = await getWorkedMinutesForTaskIds(taskIds);
+      // Read fresh task data from the canonical map after loadTasksForDate
+      // resolved — taskIds in the React closure may still point at the
+      // prior render.
+      const freshIds =
+        useAppStore.getState().taskIdsByDate.get(selectedDate) ?? [];
+      const freshTasks: Task[] = [];
+      for (const id of freshIds) {
+        const t = useAppStore.getState().tasksById.get(id);
+        if (t) freshTasks.push(t);
+      }
+      setHighlightIds(
+        new Set(freshTasks.filter((x) => x.is_highlight).map((x) => x.id)),
+      );
+      if (freshIds.length > 0) {
+        const wpt = await getWorkedMinutesForTaskIds(freshIds);
         setWorkedPerTask(wpt);
       } else {
         setWorkedPerTask(new Map());
@@ -103,7 +124,7 @@ export default function DailyShutdown() {
     } catch (e) {
       setError(errorMessage(e, "Failed to load data"));
     }
-  }, [selectedDate]);
+  }, [selectedDate, loadTasksForDate]);
 
   // Shutdown is always for today — if the user got here with selectedDate
   // pointing at another day (e.g., they were paging through a past Daily

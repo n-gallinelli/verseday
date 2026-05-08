@@ -15,7 +15,7 @@ Four files, with mixed loading patterns:
 
 | File | State | Current loader | Migration shape |
 |---|---|---|---|
-| `weekly-plan/PlanTab.tsx:56` | `tasks: Task[]` | `getTasksForWeek(monday, friday)` | `selectTaskIdsByWeek` + `tasksById` |
+| `weekly-plan/PlanTab.tsx:56` | `tasks: Task[]` | `getTasksForProject(selectedId, false)` (open project's tasks, not week-wide) | `selectTaskIdsByProject` + `tasksById` (corrected from initial draft) |
 | `weekly-plan/ScheduleTab.tsx:479` | `weekTasks: Task[]` | `getTasksForWeek(monday, friday)` | `selectTaskIdsByWeek` + `tasksById` |
 | `weekly-plan/ScheduleTab.tsx:481` | `allProjectTasks: Task[]` | `getAllTasksForProjectIds([...])` | hybrid SQL → ID list → canonical (cross-cutting query) |
 | `weekly-plan/ScheduleTab.tsx:485` | `unscheduledUnassigned: Task[]` | `getUnscheduledTasks()` | hybrid SQL → ID list → canonical (cross-cutting query) |
@@ -42,22 +42,26 @@ For these three, the hybrid pattern (Projects.tsx search precedent): keep the SQ
 
 ### `weekly-plan/PlanTab.tsx`
 
-Direct selector subscription pattern, mirroring DailyPlanner's b.1 and ProjectDetail's b.2.
+**Correction from initial draft:** PlanTab's `tasks` array holds tasks for the *currently-selected project* (loaded via `getTasksForProject(selectedId, false)`), not week-wide tasks. The selector pattern is `selectTaskIdsByProject(state, selectedId)` — same as ProjectDetail's b.2 — with a render-time filter to hide done (mirroring how the original `false` arg excluded them in SQL).
 
 ```tsx
-const taskIds = useAppStore((s) => selectTaskIdsByWeek(s, selectedWeek));
+const projectTaskIds = useAppStore((s) =>
+  selectedId !== null ? selectTaskIdsByProject(s, selectedId) : null,
+);
 const tasksById = useAppStore((s) => s.tasksById);
 const tasks = useMemo(() => {
+  if (projectTaskIds === null) return [] as Task[];
   const out: Task[] = [];
-  for (const id of taskIds) {
+  for (const id of projectTaskIds) {
     const t = tasksById.get(id);
-    if (t) out.push(t);
+    // PlanTab only shows non-done tasks (legacy SQL passed includeDone=false).
+    if (t && t.status !== "done") out.push(t);
   }
   return out;
-}, [taskIds, tasksById]);
+}, [projectTaskIds, tasksById]);
 ```
 
-`loadData` calls `loadTasksForWeek(selectedWeek)`. Mutations:
+`reloadTasks(projectId)` calls `loadTasksForProject(projectId)` instead of `getTasksForProject` + `setTasks`. Mutations:
 - `updateTask` (db) → `updateTask` (store action) at the two existing call sites.
 - `deleteTask` (db) → `deleteTaskAction` at the existing call site.
 
@@ -124,6 +128,51 @@ const completedThisWeek = useMemo(/* resolve via tasksById */, [completedTaskIds
 A rename of a task in the detail overlay flows back to the WeeklyShutdown row immediately (via the `tasksById` subscription). A task whose `status` flips to/from `done` mid-shutdown WON'T add/remove itself from the list until the next loadData refresh — same as today's behavior.
 
 No mutations originate from WeeklyShutdown.
+
+---
+
+## Hybrid memo filters (Verse-required)
+
+Hybrid lists capture point-in-time SQL membership. If a task mutates between the query and the next refetch, the bucket semantics drift. Mirror the 47ab541 sidebar-bucket pattern: re-validate the bucket at the memo against current canonical state. Cheap (one `tasksById.get` + a property check per ID); prevents stale-membership rendering.
+
+**`completedThisWeek` (WeeklyShutdown):**
+```ts
+const completedThisWeek = useMemo(() => {
+  const out: Task[] = [];
+  for (const id of completedTaskIds) {
+    const t = tasksById.get(id);
+    if (t && t.status === "done") out.push(t);
+  }
+  return out;
+}, [completedTaskIds, tasksById]);
+```
+Status flip done→todo drops the row immediately. Status flip todo→done won't appear until the next refetch — acceptable for a "what got done" report.
+
+**`unscheduledUnassigned` (ScheduleTab):**
+```ts
+if (
+  t &&
+  t.date_scheduled === null &&
+  t.project_id === null &&
+  t.status !== "done"
+) out.push(t);
+```
+Bucket: NULL date AND NULL project AND not done. Any flip drops it.
+
+**`allProjectTasks` (ScheduleTab):**
+```ts
+const activeProjectIdSet = useMemo(
+  () => new Set(activeProjects.map((p) => p.id)),
+  [activeProjects],
+);
+// in the resolution memo:
+if (t && t.project_id !== null && activeProjectIdSet.has(t.project_id)) {
+  out.push(t);
+}
+```
+Bucket: project_id is in the active set. A project change to a non-active project drops the task.
+
+The pattern is consolidating across DailyPlanner sidebar (47ab541), WeeklyShutdown, and ScheduleTab — three sites by end of b.3. Worth documenting as "the hybrid bucket-filter pattern" in M3.2.b.5's design doc as the post-cleanup architectural shape.
 
 ---
 

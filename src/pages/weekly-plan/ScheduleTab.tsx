@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -10,17 +10,14 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { useAppStore } from "../../stores/appStore";
+import { selectTaskIdsByWeek, useAppStore } from "../../stores/appStore";
 import {
-  getTasksForWeek,
   getProjects,
   createTask,
-  setTaskStatusFromUI,
   updateTaskDateScheduled,
   getAllTasksForProjectIds,
   getUnscheduledTasks,
   getWeeklyShutdown,
-  deleteTask,
 } from "../../db/queries";
 import ErrorBanner from "../../components/ErrorBanner";
 import { errorMessage } from "../../utils/errors";
@@ -475,16 +472,70 @@ export default function ScheduleTab() {
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
   const cacheTasks = useAppStore((s) => s.cacheTasks);
   const selectedTaskDetailId = useAppStore((s) => s.selectedTaskDetailId);
+  const loadTasksForWeek = useAppStore((s) => s.loadTasksForWeek);
+  const setTaskStatusAction = useAppStore((s) => s.setTaskStatus);
+  const deleteTaskAction = useAppStore((s) => s.deleteTaskAction);
+  const tasksById = useAppStore((s) => s.tasksById);
 
-  const [weekTasks, setWeekTasks] = useState<Task[]>([]);
+  // M3.2.b.3 — weekTasks flow through the canonical store via the
+  // selector subscription. The day-grid groups tasks by date_scheduled
+  // at render time below.
+  const weekTaskIds = useAppStore((s) => selectTaskIdsByWeek(s, selectedWeek));
+  const weekTasks = useMemo(() => {
+    const out: Task[] = [];
+    for (const id of weekTaskIds) {
+      const t = tasksById.get(id);
+      if (t) out.push(t);
+    }
+    return out;
+  }, [weekTaskIds, tasksById]);
+
   const [projects, setProjects] = useState<Project[]>([]);
-  const [allProjectTasks, setAllProjectTasks] = useState<Task[]>([]);
-  // Truly floating tasks: no project AND not yet scheduled to a day.
-  // Drives the "Unassigned" rail. Loaded separately from weekTasks so
-  // anything already placed on the calendar doesn't double-render here.
-  const [unscheduledUnassigned, setUnscheduledUnassigned] = useState<Task[]>([]);
+  // Hybrid lists — SQL stays authoritative for membership (cross-cutting
+  // queries don't fit any secondary index); IDs are stored locally;
+  // canonical map drives the rendered Task data so renames flow back
+  // without a re-query. Bucket filters (Verse-required) re-validate
+  // membership at the memo so a status/date/project flip drops the row
+  // immediately.
+  const [allProjectTaskIds, setAllProjectTaskIds] = useState<number[]>([]);
+  const [activeProjectIds, setActiveProjectIds] = useState<number[]>([]);
+  const [unscheduledUnassignedIds, setUnscheduledUnassignedIds] = useState<number[]>(
+    [],
+  );
   const [error, setError] = useState<string | null>(null);
   const [activeDragTask, setActiveDragTask] = useState<Task | null>(null);
+
+  const activeProjectIdSet = useMemo(
+    () => new Set(activeProjectIds),
+    [activeProjectIds],
+  );
+  // Bucket filter: project_id must be in the active set (and non-null).
+  const allProjectTasks = useMemo(() => {
+    const out: Task[] = [];
+    for (const id of allProjectTaskIds) {
+      const t = tasksById.get(id);
+      if (t && t.project_id !== null && activeProjectIdSet.has(t.project_id)) {
+        out.push(t);
+      }
+    }
+    return out;
+  }, [allProjectTaskIds, tasksById, activeProjectIdSet]);
+  // Bucket filter: NULL date AND NULL project AND not done.
+  const unscheduledUnassigned = useMemo(() => {
+    const out: Task[] = [];
+    for (const id of unscheduledUnassignedIds) {
+      const t = tasksById.get(id);
+      if (
+        t &&
+        t.date_scheduled === null &&
+        t.project_id === null &&
+        t.status !== "done"
+      ) {
+        out.push(t);
+      }
+    }
+    return out;
+  }, [unscheduledUnassignedIds, tasksById]);
 
   // Undo banner for date moves (drag-drop between days)
   const [pendingMove, setPendingMove] = useState<{
@@ -522,30 +573,41 @@ export default function ScheduleTab() {
 
   const loadData = useCallback(async () => {
     try {
-      const [wt, p, unscheduled] = await Promise.all([
-        getTasksForWeek(selectedWeek, fridayIso),
+      // loadTasksForWeek populates the canonical map for the week
+      // selector. Sibling queries stay direct DB; their results prime
+      // the canonical map via cacheTasks before IDs are stored.
+      const [_, p, unscheduled] = await Promise.all([
+        loadTasksForWeek(selectedWeek),
         getProjects(),
         getUnscheduledTasks(),
       ]);
-      setUnscheduledUnassigned(unscheduled.filter((t) => t.project_id === null));
+      void _;
+      const unscheduledOnlyOrphans = unscheduled.filter((t) => t.project_id === null);
+      cacheTasks(unscheduledOnlyOrphans);
+      setUnscheduledUnassignedIds(unscheduledOnlyOrphans.map((t) => t.id));
 
       // Auto-show all active, non-completed projects
       const activeProjects = p.filter((proj) => !proj.archived && !proj.completed);
       const activeIds = activeProjects.map((proj) => proj.id);
 
-      // Also include any project IDs from this week's tasks (even if archived/completed)
-      for (const t of wt) {
-        if (t.project_id != null && !activeIds.includes(t.project_id)) {
+      // Also include any project IDs from this week's tasks (even if
+      // archived/completed). Read fresh from canonical after loadTasksForWeek
+      // resolved so we don't miss a task whose project is currently
+      // archived but is scheduled this week.
+      const freshWeekIds =
+        useAppStore.getState().taskIdsByWeek.get(selectedWeek) ?? [];
+      for (const id of freshWeekIds) {
+        const t = useAppStore.getState().tasksById.get(id);
+        if (t && t.project_id != null && !activeIds.includes(t.project_id)) {
           activeIds.push(t.project_id);
         }
       }
 
       const projectTasks = await getAllTasksForProjectIds(activeIds);
-
-      setWeekTasks(wt);
-      setAllProjectTasks(projectTasks);
+      cacheTasks(projectTasks);
+      setAllProjectTaskIds(projectTasks.map((t) => t.id));
+      setActiveProjectIds(activeIds);
       setProjects(p);
-      cacheTasks([...wt, ...projectTasks, ...unscheduled]);
 
       // Load carry forward from previous week's shutdown
       const prevMonday = new Date(selectedWeek + "T00:00:00");
@@ -559,7 +621,7 @@ export default function ScheduleTab() {
     } catch (e) {
       setError(errorMessage(e, "Failed to load weekly data"));
     }
-  }, [selectedWeek, fridayIso]);
+  }, [selectedWeek, loadTasksForWeek, cacheTasks]);
 
   useEffect(() => {
     loadData();
@@ -584,8 +646,7 @@ export default function ScheduleTab() {
 
   async function toggleTask(task: Task) {
     try {
-      await setTaskStatusFromUI(task.id, task.status === "done" ? "todo" : "done");
-      loadData();
+      await setTaskStatusAction(task.id, task.status === "done" ? "todo" : "done");
     } catch (e) {
       setError(errorMessage(e, "Failed to update task"));
     }
@@ -600,14 +661,9 @@ export default function ScheduleTab() {
         estimatedMinutes: null,
       });
       draftTaskIds.current.add(id);
-      // Refetch so the singleton overlay's cache resolves the new row.
-      const fresh = await getTasksForWeek(selectedWeek, fridayIso);
-      const newTask = fresh.find((t) => t.id === id);
-      setWeekTasks(fresh);
-      if (newTask) {
-        cacheTasks([newTask]);
-        openTaskDetail(newTask.id, { autoFocusTitle: true });
-      }
+      // Refresh canonical map so the new row resolves through tasksById.
+      await loadTasksForWeek(selectedWeek);
+      openTaskDetail(id, { autoFocusTitle: true });
     } catch (e) {
       setError(errorMessage(e, "Failed to add task"));
     }
@@ -630,14 +686,15 @@ export default function ScheduleTab() {
       if (draftTaskIds.current.has(closingId)) {
         draftTaskIds.current.delete(closingId);
         (async () => {
-          try {
-            const fresh = await getTasksForWeek(selectedWeek, fridayIso);
-            const updated = fresh.find((t) => t.id === closingId);
-            if (updated && !updated.title.trim()) {
-              await deleteTask(closingId);
+          // Read from the canonical map — overlay save flowed through
+          // updateTask/setTaskStatus actions which already wrote there.
+          const updated = useAppStore.getState().tasksById.get(closingId);
+          if (updated && !updated.title.trim()) {
+            try {
+              await deleteTaskAction(closingId);
+            } catch {
+              // best effort — leave the row if the cleanup query fails
             }
-          } catch {
-            // best effort — leave the row if the cleanup query fails
           }
           loadData();
         })();
@@ -645,7 +702,7 @@ export default function ScheduleTab() {
         loadData();
       }
     }
-  }, [selectedTaskDetailId, selectedWeek, fridayIso, loadData]);
+  }, [selectedTaskDetailId, selectedWeek, fridayIso, loadData, deleteTaskAction]);
 
 
   function navigateToProject(id: number) {

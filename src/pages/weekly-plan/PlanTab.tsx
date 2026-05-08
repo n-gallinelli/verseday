@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -8,7 +8,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { useAppStore } from "../../stores/appStore";
+import { selectTaskIdsByProject, useAppStore } from "../../stores/appStore";
 import { weekdayDates } from "../../utils/dates";
 import { snapCenterToCursor } from "../../utils/dnd";
 import { PLAN_TASK_DRAG_PREFIX } from "./PlanTaskList";
@@ -21,11 +21,7 @@ import {
   getWeeklyPlanCommitments,
   setWeeklyPlanCommitment,
   clearWeeklyPlanCommitment,
-  getTasksForProject,
   createTask,
-  updateTask,
-  updateTaskDateScheduled,
-  deleteTask,
   getDefaultTaskEstimateMin,
   type WeeklyPlanProjectStatus,
 } from "../../db/queries";
@@ -43,7 +39,10 @@ import { parseTimeFromTitle } from "../../utils/format";
 export default function PlanTab() {
   const { selectedWeek } = useAppStore();
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
-  const cacheTasks = useAppStore((s) => s.cacheTasks);
+  const loadTasksForProject = useAppStore((s) => s.loadTasksForProject);
+  const updateTaskAction = useAppStore((s) => s.updateTask);
+  const deleteTaskAction = useAppStore((s) => s.deleteTaskAction);
+  const tasksById = useAppStore((s) => s.tasksById);
   const weekDates = weekdayDates(selectedWeek);
 
   const [projects, setProjects] = useState<Project[]>([]);
@@ -53,8 +52,22 @@ export default function PlanTab() {
   const [commitments, setCommitments] = useState<
     Map<number, Map<number, number>>
   >(new Map());
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  // M3.2.b.3 — tasks for the currently-selected project flow through
+  // the canonical store. Render filter excludes done tasks (PlanTab
+  // shows non-done only — legacy SQL passed includeDone=false).
+  const projectTaskIds = useAppStore((s) =>
+    selectedId !== null ? selectTaskIdsByProject(s, selectedId) : null,
+  );
+  const tasks = useMemo(() => {
+    if (projectTaskIds === null) return [] as Task[];
+    const out: Task[] = [];
+    for (const id of projectTaskIds) {
+      const t = tasksById.get(id);
+      if (t && t.status !== "done") out.push(t);
+    }
+    return out;
+  }, [projectTaskIds, tasksById]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -131,23 +144,19 @@ export default function PlanTab() {
     };
   }, [loadData]);
 
-  // Load all (non-done) tasks for the currently selected project. The
-  // panel renders unscheduled ones in the task list and the
-  // scheduled-this-week ones as small chips under their day buttons —
-  // partitioning happens at render time below.
+  // Load tasks for the currently-selected project into the canonical
+  // store. The selector subscription above re-renders the list when
+  // tasksById updates. Render filter (status !== "done") replaces the
+  // legacy SQL includeDone=false. Partitioning between unscheduled
+  // and scheduled-this-week happens at render time below.
   const reloadTasks = useCallback(async (projectId: number | null) => {
-    if (projectId == null) {
-      setTasks([]);
-      return;
-    }
+    if (projectId == null) return;
     try {
-      const fresh = await getTasksForProject(projectId, false);
-      setTasks(fresh);
-      cacheTasks(fresh);
+      await loadTasksForProject(projectId);
     } catch (e) {
       setError(errorMessage(e, "Failed to load project tasks"));
     }
-  }, []);
+  }, [loadTasksForProject]);
 
   useEffect(() => {
     reloadTasks(selectedId);
@@ -317,7 +326,9 @@ export default function PlanTab() {
     const existing = tasks.find((t) => t.id === id);
     if (!existing) return;
     try {
-      await updateTask({
+      // Store action is itself optimistic — no need for a separate
+      // setTasks patch.
+      await updateTaskAction({
         id,
         title,
         projectId: existing.project_id,
@@ -327,10 +338,6 @@ export default function PlanTab() {
         dateScheduled: existing.date_scheduled,
         dueDate: existing.due_date,
       });
-      // Optimistic local update — avoids a full refetch flicker.
-      setTasks((prev) =>
-        prev.map((t) => (t.id === id ? { ...t, title } : t))
-      );
     } catch (e) {
       setError(errorMessage(e, "Failed to update task"));
     }
@@ -364,40 +371,21 @@ export default function PlanTab() {
     }
 
     try {
-      await updateTaskDateScheduled(taskId, dateIso);
-
-      if (needsDefaultEstimate) {
-        // Persist the defaulted estimate. Mirrors PlanTaskList.handleUpdateTaskTitle's
-        // pattern of spreading existing fields so we don't accidentally
-        // null out priority / notes / due_date.
-        await updateTask({
-          id: task.id,
-          title: task.title,
-          projectId: task.project_id,
-          estimatedMinutes: estimate,
-          priority: task.priority,
-          notes: task.notes,
-          dateScheduled: dateIso,
-          dueDate: task.due_date,
-        });
-      }
-
-      // Optimistic local update — flip date_scheduled in place. The
-      // render-time partition shifts the task between PlanTaskList
-      // (unscheduled) and the day's chip rail.
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === taskId
-            ? {
-                ...t,
-                date_scheduled: dateIso,
-                estimated_minutes: needsDefaultEstimate
-                  ? estimate
-                  : t.estimated_minutes,
-              }
-            : t
-        )
-      );
+      // M3.2.b.3 — single store-action call covers BOTH the date
+      // change and the default-estimate persist. updateTask routes
+      // through withTaskMutated which handles the date+week index
+      // transitions atomically. Replaces the legacy
+      // updateTaskDateScheduled + conditional updateTask sequence.
+      await updateTaskAction({
+        id: task.id,
+        title: task.title,
+        projectId: task.project_id,
+        estimatedMinutes: needsDefaultEstimate ? estimate : task.estimated_minutes,
+        priority: task.priority,
+        notes: task.notes,
+        dateScheduled: dateIso,
+        dueDate: task.due_date,
+      });
 
       // Commitment delta — transfer the task's estimate. Dropping a
       // 45-min task on Tuesday adds 45 to Tuesday's commitment;
@@ -446,8 +434,7 @@ export default function PlanTab() {
 
   async function handleDeleteTask(id: number) {
     try {
-      await deleteTask(id);
-      setTasks((prev) => prev.filter((t) => t.id !== id));
+      await deleteTaskAction(id);
     } catch (e) {
       setError(errorMessage(e, "Failed to delete task"));
     }

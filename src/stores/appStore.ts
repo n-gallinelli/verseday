@@ -11,6 +11,7 @@ import {
   getTimeEntryById,
   setManualWorkedMinutes as dbSetManualWorkedMinutes,
   setTaskStatusFromUI,
+  toggleTaskHighlight as dbToggleTaskHighlight,
   updateTask as dbUpdateTask,
   updateTaskDateScheduled as dbUpdateTaskDateScheduled,
   updateTaskSortOrders as dbUpdateTaskSortOrders,
@@ -269,6 +270,15 @@ interface AppState {
    *  auto-stop). Optimistic map write; failure-path refetches truth and
    *  console.error's. */
   setTaskStatus: (id: number, status: Task["status"]) => Promise<void>;
+  /** Toggle the is_highlight flag on a task. Optimistic map patch +
+   *  DB. is_highlight isn't keyed by any secondary index, so no
+   *  withTaskMutated bucket transition is needed — a shallow
+   *  tasksById entry rewrite is sufficient. Failure-path refetches
+   *  via getTaskById and writes truth back; console.error with
+   *  debug context. M3.5 cleanup: replaces the legacy direct-DB
+   *  toggleTaskHighlight call from DailyShutdown that left the
+   *  canonical map stale until the next loadData. */
+  setTaskHighlight: (id: number, isHighlight: boolean) => Promise<void>;
   /** Set manual worked minutes on a task. The DB query inserts/updates
    *  a synthetic time_entries row; nothing about the task row itself
    *  changes, so the canonical map only needs a touch (refetch) on
@@ -1113,6 +1123,46 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (fresh && before) set((s) => withTaskMutated(s, before, fresh));
       } catch (refetchErr) {
         console.error("[appStore] setTaskStatus refetch also failed", refetchErr);
+      }
+    }
+  },
+  setTaskHighlight: async (id, isHighlight) => {
+    const current = get().tasksById.get(id);
+    if (current) {
+      // Optimistic shallow patch — is_highlight is stored as 0/1 on
+      // the row, matching the SQL helper's serialization. No
+      // secondary index touches it, so withTaskMutated isn't needed.
+      const next: Task = { ...current, is_highlight: isHighlight ? 1 : 0 };
+      set((s) => {
+        const nextMap = new Map(s.tasksById);
+        nextMap.set(id, next);
+        return { tasksById: nextMap };
+      });
+    }
+    try {
+      await dbToggleTaskHighlight(id, isHighlight);
+    } catch (err) {
+      console.error("[appStore] setTaskHighlight failed — refetching truth", {
+        id,
+        isHighlight,
+        err,
+      });
+      try {
+        const fresh = await getTaskById(id);
+        const before = get().tasksById.get(id);
+        if (fresh) {
+          if (before) {
+            set((s) => {
+              const nextMap = new Map(s.tasksById);
+              nextMap.set(id, fresh);
+              return { tasksById: nextMap };
+            });
+          } else {
+            set((s) => withTaskInserted(s, fresh));
+          }
+        }
+      } catch (refetchErr) {
+        console.error("[appStore] setTaskHighlight refetch also failed", refetchErr);
       }
     }
   },

@@ -644,53 +644,6 @@ export default function DailyPlanner() {
     }
   }
 
-  // M2.3 — unreferenced after the row's onStop binding was retired.
-  // Kept in place for M3.5 cleanup per Verse review (don't delete in
-  // M2.3, that's scope creep). Full-stop is now only available via PiP
-  // and the Focus screen; the row's pause/resume button toggles via
-  // togglePauseFocus instead.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async function handleStopFocus(_task: Task) {
-    const f = useAppStore.getState().focus;
-    if (!f) return;
-    if (f.mode !== "active") {
-      // Preview has no time entry to close — just clear it.
-      stopFocus();
-      return;
-    }
-    // Capture the final elapsed before tearing down the session — this
-    // value seeds the optimistic workedMap update so the time pill flips
-    // from live → static without flashing through 0m or a stale value
-    // while loadData() refetches.
-    //
-    // M2.4 — paused time excluded from both the optimistic value and the
-    // DB break_seconds so the displayed and recorded minutes match.
-    // (Function is currently dead code per M3.5 cleanup target; updated
-    // for correctness in case it's ever rewired.)
-    //
-    // S.5 — workedMs is the truth.
-    const finalElapsedMs = f.workedMs + f.priorElapsedMs;
-    const finalMinutes = Math.floor(finalElapsedMs / 60000);
-    const taskId = f.taskId;
-    const workedSeconds = Math.round(f.workedMs / 1000);
-    setWorkedMap((prev) => {
-      const next = new Map(prev);
-      next.set(taskId, finalMinutes);
-      return next;
-    });
-    try {
-      await updateTimeEntryWorkedSeconds(f.timeEntryId, workedSeconds);
-      await stopTimeEntry(f.timeEntryId, 0);
-      stopFocus();
-      // Synchronous-feeling refresh: loadData replaces the optimistic
-      // value with the authoritative one from time_entries; should match
-      // within rounding so the user sees no jump.
-      await loadData();
-    } catch (e) {
-      setError(errorMessage(e, "Failed to stop focus"));
-    }
-  }
-
   function startEdit(task: Task) {
     setEditingId(task.id);
     setEditTitle(task.title);

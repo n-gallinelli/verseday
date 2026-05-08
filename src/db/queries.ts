@@ -713,19 +713,28 @@ export async function checkpointTimeEntry(id: number): Promise<void> {
   ]);
 }
 
-export async function closeOrphanedTimeEntries(): Promise<number> {
+export async function closeOrphanedTimeEntries(
+  excludeId: number | null = null,
+): Promise<number> {
   const db = await getDb();
   // Cap orphaned entries at 4 hours from their start_time. If the app was
   // force-quit / asleep for days, naively setting end_time = now would
   // attribute that entire wall-clock gap as "worked time" — see the
   // 166h-on-a-15m-task bug. 4 hours is the longest plausible single
   // unbroken focus session.
+  //
+  // M3.5 — excludeId lets the caller skip a known-active time entry
+  // (e.g. the persisted focus session restored on app boot) so that
+  // older orphans from prior crashes still get cleaned up. Without
+  // this, an app where every launch restores a focus would leave
+  // those older orphans permanently open.
   const MAX_ORPHAN_HOURS = 4;
   const result = await db.execute(
     `UPDATE time_entries
      SET end_time = datetime(start_time, '+' || $1 || ' hours')
-     WHERE end_time IS NULL`,
-    [MAX_ORPHAN_HOURS]
+     WHERE end_time IS NULL
+       AND (CAST($2 AS INTEGER) IS NULL OR id != $2)`,
+    [MAX_ORPHAN_HOURS, excludeId]
   );
   return result.rowsAffected;
 }

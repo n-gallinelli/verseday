@@ -109,10 +109,16 @@ function MainApp() {
       }
 
       await restoreFocus();
+      // M3.5 — always run orphan cleanup, but exclude the active
+      // session's time entry so the persisted focus's open row
+      // isn't capped to 4h on every launch. Pre-M3.5 the gate
+      // skipped cleanup entirely whenever a focus restored, which
+      // left older orphans (from prior crashes between sessions)
+      // permanently open.
       const restored = useAppStore.getState().focus;
-      if (!restored) {
-        await closeOrphanedTimeEntries();
-      }
+      const activeEntryId =
+        restored?.mode === "active" ? restored.timeEntryId : null;
+      await closeOrphanedTimeEntries(activeEntryId);
 
       // Global quick-add shortcut — toggles the quick-add window.
       // When showing: captures the frontmost app first so dismiss can

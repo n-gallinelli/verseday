@@ -6,7 +6,6 @@ import {
   updateTaskDateScheduled,
   upsertDailyShutdown,
   getProjects,
-  toggleTaskHighlight,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
@@ -56,6 +55,7 @@ export default function DailyShutdown() {
   const dayTaskIds = useAppStore((s) => selectTaskIdsByDate(s, selectedDate));
   const tasksById = useAppStore((s) => s.tasksById);
   const loadTasksForDate = useAppStore((s) => s.loadTasksForDate);
+  const setTaskHighlightAction = useAppStore((s) => s.setTaskHighlight);
   const tasks = useMemo(() => {
     const out: Task[] = [];
     for (const id of dayTaskIds) {
@@ -255,7 +255,11 @@ export default function DailyShutdown() {
   async function handleToggleHighlight(taskId: number) {
     const isCurrently = highlightIds.has(taskId);
     try {
-      await toggleTaskHighlight(taskId, !isCurrently);
+      // M3.5 — store action handles canonical-map patch + DB. The
+      // local highlightIds Set still drives the rendered checkmark
+      // (it's UI-derived from the loaded tasks' is_highlight flags);
+      // keep mirroring the toggle so the visual flips immediately.
+      await setTaskHighlightAction(taskId, !isCurrently);
       setHighlightIds((prev) => {
         const next = new Set(prev);
         if (isCurrently) next.delete(taskId);

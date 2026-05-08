@@ -242,6 +242,18 @@ export default function DailyPlanner() {
     return entries.map((e) => e.projectId);
   }, [tasksByProject]);
 
+  // Hover hint label for rail rows. When selectedDate === today,
+  // says "Add to today". Otherwise the weekday short form (matches
+  // the date-header style in the page chrome). Makes the row's
+  // primary click action explicit; complements the hover chevron
+  // (secondary detail-open action).
+  const pullTargetLabel = useMemo(() => {
+    if (selectedDate === today) return "today";
+    return new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", {
+      weekday: "short",
+    });
+  }, [selectedDate, today]);
+
   // Per-row undo for tasks pulled from the rail into today (10s window)
   const [recentlyPulled, setRecentlyPulled] = useState<
     Map<number, { task: Task; prevDate: string | null }>
@@ -1463,7 +1475,7 @@ export default function DailyPlanner() {
                                 if (isRecent) undoPull(task.id);
                                 else pullTaskToDay(task.id);
                               }}
-                              title={isRecent ? "Undo (within 10s)" : "Add to selected day"}
+                              title={isRecent ? "Undo (within 10s)" : `Add to ${pullTargetLabel}`}
                               className="flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-left"
                             >
                               <span
@@ -1473,6 +1485,11 @@ export default function DailyPlanner() {
                               >
                                 {task.title}
                               </span>
+                              {!isRecent && (
+                                <span className="text-[10px] text-accent-blue opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 font-medium whitespace-nowrap">
+                                  Add to {pullTargetLabel}
+                                </span>
+                              )}
                             </button>
                             {isRecent ? (
                               <span className="text-[10px] text-accent-blue-soft-fg font-medium flex-shrink-0">
@@ -1577,7 +1594,7 @@ export default function DailyPlanner() {
                               if (isRecent) undoPull(task.id);
                               else pullTaskToDay(task.id);
                             }}
-                            title={isRecent ? "Undo (within 10s)" : "Add to selected day"}
+                            title={isRecent ? "Undo (within 10s)" : `Add to ${pullTargetLabel}`}
                             className="flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-left"
                           >
                             <span
@@ -1587,6 +1604,11 @@ export default function DailyPlanner() {
                             >
                               {task.title}
                             </span>
+                            {!isRecent && (
+                              <span className="text-[10px] text-accent-blue opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 font-medium whitespace-nowrap">
+                                Add to {pullTargetLabel}
+                              </span>
+                            )}
                           </button>
                           {isRecent ? (
                             <span className="text-[10px] text-accent-blue-soft-fg font-medium flex-shrink-0">

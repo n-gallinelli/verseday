@@ -639,14 +639,18 @@ export function selectTaskIdsByWeek(state: AppState, weekStart: string): number[
  *  immediately without waiting for the next loadSidebarPool
  *  refresh.
  *
- *  This selector returns a NEW Map reference on every call. Wrap
- *  with useMemo at the consumer (R.3) keyed on `state.tasksById`
- *  so subscriber re-renders don't churn on unrelated store changes. */
+ *  Takes `tasksById` directly rather than the full AppState (R.4
+ *  cleanup): this selector returns a fresh Map per call so it
+ *  can't be used with Zustand's useAppStore subscription pattern
+ *  (would re-render on every store change); consumers wrap with
+ *  useMemo keyed on `tasksById`, which is the only input the body
+ *  reads. Direct-input signature makes the dependency explicit
+ *  and removes the `state as AppState` cast at the call site. */
 export function selectUnscheduledTasksByProject(
-  state: AppState,
+  tasksById: Map<number, Task>,
 ): Map<number, Task[]> {
   const result = new Map<number, Task[]>();
-  for (const t of state.tasksById.values()) {
+  for (const t of tasksById.values()) {
     if (t.status === "done") continue;
     if (t.date_scheduled !== null) continue;
     if (t.project_id === null) continue;
@@ -675,10 +679,11 @@ export function selectUnscheduledTasksByProject(
  *  those are the most likely re-schedule candidates), then orphans
  *  (created_at DESC).
  *
- *  Returns a new array reference on every call. Wrap with useMemo
- *  at the consumer keyed on (tasksById, today). */
+ *  Takes `tasksById` directly rather than the full AppState (R.4
+ *  cleanup) — see selectUnscheduledTasksByProject for the rationale.
+ *  Wrap with useMemo at the consumer keyed on (tasksById, today). */
 export function selectOrphanAndOverdueTasks(
-  state: AppState,
+  tasksById: Map<number, Task>,
   today: string,
 ): Task[] {
   const overdueCutoffDate = new Date(today + "T00:00:00");
@@ -693,7 +698,7 @@ export function selectOrphanAndOverdueTasks(
   ).padStart(2, "0")}-${String(hardFloorDate.getDate()).padStart(2, "0")}`;
   const orphans: Task[] = [];
   const overdue: Task[] = [];
-  for (const t of state.tasksById.values()) {
+  for (const t of tasksById.values()) {
     if (t.status === "done") continue;
     if (t.external_dismissal_reason !== null) continue;
     if (t.date_scheduled === null && t.project_id === null) {

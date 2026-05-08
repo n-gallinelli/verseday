@@ -203,23 +203,14 @@ export default function DailyPlanner() {
   // automatically (selectors apply bucket-filter discipline at the
   // call site).
   const today = todayString();
-  // Selectors take state: AppState by convention; they only read
-  // state.tasksById. Cast a partial-state object — memoization
-  // contract is keyed on tasksById ref directly, so the cast is
-  // never observed at runtime.
+  // R.4 — selectors take tasksById directly (focused input shape),
+  // no double-cast. Memoization contract: same Map ref → same return.
   const tasksByProject = useMemo(
-    () =>
-      selectUnscheduledTasksByProject(
-        { tasksById } as unknown as Parameters<typeof selectUnscheduledTasksByProject>[0],
-      ),
+    () => selectUnscheduledTasksByProject(tasksById),
     [tasksById],
   );
   const orphanAndOverdueItems = useMemo(
-    () =>
-      selectOrphanAndOverdueTasks(
-        { tasksById } as unknown as Parameters<typeof selectOrphanAndOverdueTasks>[0],
-        today,
-      ),
+    () => selectOrphanAndOverdueTasks(tasksById, today),
     [tasksById, today],
   );
   // Project ordering proxy: max(task.created_at) per project across

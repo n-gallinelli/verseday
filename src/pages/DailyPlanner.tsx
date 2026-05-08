@@ -736,6 +736,23 @@ export default function DailyPlanner() {
       // sidebar IDs from the cross-cutting query). Could be narrowed
       // to non-task-data refresh in M3.3; for now keep the simple call.
       loadData();
+      // Brief entrance animation on the destination row in today's
+      // main list — visual confirmation that the task moved. Reuses
+      // the existing `animate-task-added` keyframe applied via
+      // addedIds, same pattern as handleAddTask.
+      setAddedIds((prev) => {
+        const next = new Set(prev);
+        next.add(taskId);
+        return next;
+      });
+      setTimeout(() => {
+        setAddedIds((prev) => {
+          if (!prev.has(taskId)) return prev;
+          const next = new Set(prev);
+          next.delete(taskId);
+          return next;
+        });
+      }, 400);
       if (original) {
         const existing = recentTimersRef.current.get(taskId);
         if (existing) clearTimeout(existing);
@@ -1427,12 +1444,19 @@ export default function DailyPlanner() {
               const baseTasks = tasksByProject.get(projectId) ?? [];
               // Interleave recently-pulled tasks for this project so
               // the row stays put with isRecent styling for 10s.
+              // Merge + sort by created_at DESC so the pulled row
+              // lands in its pre-pull position (rather than at the
+              // end), letting the user undo from the same place
+              // they clicked. The recent task's snapshot has the
+              // same created_at it had before the pull.
               const recentForProject = Array.from(recentlyPulled.values())
                 .map((r) => r.task)
                 .filter((t) => t.project_id === projectId);
               const baseIds = new Set(baseTasks.map((t) => t.id));
               const recentOnly = recentForProject.filter((t) => !baseIds.has(t.id));
-              const allInList = [...baseTasks, ...recentOnly];
+              const allInList = [...baseTasks, ...recentOnly].sort(
+                (a, b) => (a.created_at < b.created_at ? 1 : -1),
+              );
               const isExpanded = expandedProjectIds.has(projectId);
               return (
                 <div key={projectId} className="rounded-md bg-elevated/40 overflow-hidden">
@@ -1540,30 +1564,37 @@ export default function DailyPlanner() {
             for the 10s undo window. Section disappears when the list
             is empty (no header, no placeholder). */}
         {(() => {
-          const recentBottom = Array.from(recentlyPulled.values())
-            .map((r) => r.task)
-            .filter(
-              // Orphan recents: project_id null AND date null at pull time.
-              // Overdue recents: any task that was pulled from the rail
-              // that had date < today-3 (the original entry's prevDate is
-              // captured pre-mutation, so the task's project_id alone
-              // doesn't tell us if it's an orphan vs overdue source).
-              // Simplest correct rule: include any recently-pulled task
-              // whose original task.project_id is null OR whose recent's
-              // task.id wasn't already produced by selectUnscheduled
-              // (top-section handles its own recents). Approximate:
-              // include every recent and let dedup below filter.
-              (t) => t !== null && t !== undefined,
-            );
-          const baseIds = new Set(orphanAndOverdueItems.map((t) => t.id));
-          const recentOnly = recentBottom.filter(
-            (t) =>
-              !baseIds.has(t.id) &&
-              // Exclude project-rail recents (those already render
-              // in the top section under their project header).
-              t.project_id === null,
+          const recentBottom = Array.from(recentlyPulled.values()).map(
+            (r) => r.task,
           );
-          const items = [...orphanAndOverdueItems, ...recentOnly];
+          const baseIds = new Set(orphanAndOverdueItems.map((t) => t.id));
+          // Project-rail recents render in the top section under
+          // their project header, so exclude them here. The recent's
+          // task snapshot has its pre-pull project_id, which is the
+          // right discriminator regardless of post-pull canonical state.
+          const recentOnly = recentBottom.filter(
+            (t) => !baseIds.has(t.id) && t.project_id === null,
+          );
+          // Merge and re-sort using the selector's logic so the
+          // pulled row lands in its pre-pull position.
+          // - overdue (date_scheduled !== null) first, by
+          //   date_scheduled DESC with sort_order tiebreak
+          // - orphans (date_scheduled === null) next, by created_at DESC
+          const items = [...orphanAndOverdueItems, ...recentOnly].sort(
+            (a, b) => {
+              const aOverdue = a.date_scheduled !== null;
+              const bOverdue = b.date_scheduled !== null;
+              if (aOverdue && !bOverdue) return -1;
+              if (!aOverdue && bOverdue) return 1;
+              if (aOverdue) {
+                const ad = a.date_scheduled as string;
+                const bd = b.date_scheduled as string;
+                if (ad !== bd) return ad < bd ? 1 : -1;
+                return a.sort_order - b.sort_order;
+              }
+              return a.created_at < b.created_at ? 1 : -1;
+            },
+          );
           if (items.length === 0) return null;
           return (
             <div className="px-2 mt-2">

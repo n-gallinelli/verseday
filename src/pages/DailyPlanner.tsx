@@ -511,6 +511,11 @@ export default function DailyPlanner() {
       setNewTaskEstimate(null);
       setNewTaskProjectId("");
       setNewTaskHighPriority(false);
+      // Collapse the add-task affordance after a successful add —
+      // single-add is the typical flow; staying expanded would leave
+      // a focused empty input that the user has to dismiss manually.
+      // The `A` hotkey + the inline Add button still re-open it.
+      setTaskInputExpanded(false);
       setError(null);
       await loadData();
       requestAnimationFrame(() => animateRowShifts(oldPositions));

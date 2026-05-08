@@ -228,9 +228,11 @@ interface AppState {
    *  On DB failure: leaves prior state intact and surfaces error via
    *  console.error (UI surfaces error banners through their own paths). */
   loadTasksForDate: (date: string) => Promise<void>;
-  /** Load tasks for a project. Failure-path: prior state intact +
-   *  console.error. Refilters `external_dismissal_reason IS NULL` per
-   *  the underlying query. */
+  /** Load tasks for a project, including done tasks. ProjectDetail
+   *  filters by `showDone` at render time — same status-filter pattern
+   *  DailyPlanner uses for its day-list. Loading the full set keeps
+   *  the toggle from triggering a re-query. Failure-path: prior state
+   *  intact + console.error. */
   loadTasksForProject: (projectId: number) => Promise<void>;
   /** Load tasks for a week (Monday-ISO key). Failure-path: prior state
    *  intact + console.error. */
@@ -901,7 +903,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   loadTasksForProject: async (projectId) => {
     try {
-      const list = await getTasksForProject(projectId);
+      // includeDone = true so ProjectDetail's showDone toggle is a
+      // pure render-time filter rather than a re-query. SQL LIMIT 500
+      // caps the worst case.
+      const list = await getTasksForProject(projectId, true);
       set((s) => {
         // Same propagation pattern as loadTasksForDate. Primary slice
         // is taskIdsByProject[projectId]; secondary indices append.

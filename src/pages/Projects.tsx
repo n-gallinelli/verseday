@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   DndContext,
   closestCenter,
@@ -96,7 +96,22 @@ export default function Projects() {
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<number>>(new Set());
   const [projectTasks, setProjectTasks] = useState<Map<number, Task[]>>(new Map());
   const [searchQuery, setSearchQuery] = useState("");
-  const [matchingTasks, setMatchingTasks] = useState<Task[]>([]);
+  // M3.2.b.2 — store IDs locally; resolve full Task data through the
+  // canonical map at render time. Same hybrid pattern DailyPlanner's
+  // sidebar uses: cross-cutting query produces an ID list,
+  // tasksById is the live source for the rendered rows. A rename in
+  // the detail overlay flows back here via the tasksById subscription
+  // without re-running the SQL search.
+  const [matchingTaskIds, setMatchingTaskIds] = useState<number[]>([]);
+  const tasksById = useAppStore((s) => s.tasksById);
+  const matchingTasks = useMemo(() => {
+    const out: Task[] = [];
+    for (const id of matchingTaskIds) {
+      const t = tasksById.get(id);
+      if (t) out.push(t);
+    }
+    return out;
+  }, [matchingTaskIds, tasksById]);
   const [archivedUndo, setArchivedUndo] = useState<{ id: number; name: string } | null>(null);
   const archiveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -144,19 +159,21 @@ export default function Projects() {
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) {
-      setMatchingTasks([]);
+      setMatchingTaskIds([]);
       return;
     }
     const timer = setTimeout(() => {
       searchTasksByTitle(q)
-        .then((tasks) => {
-          setMatchingTasks(tasks);
-          cacheTasks(tasks);
+        .then((results) => {
+          // Prime the canonical map first so the render below resolves
+          // each id via tasksById without a flash of empty rows.
+          cacheTasks(results);
+          setMatchingTaskIds(results.map((t) => t.id));
         })
-        .catch(() => setMatchingTasks([]));
+        .catch(() => setMatchingTaskIds([]));
     }, 120);
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchQuery, cacheTasks]);
 
   async function handleCreate(name: string, color: string) {
     try {

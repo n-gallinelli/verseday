@@ -12,11 +12,16 @@ import {
 import RichTextEditor from "./RichTextEditor";
 import CalendarChip from "./CalendarChip";
 import { formatHoursMinutes } from "../utils/format";
-import { useAppStore } from "../stores/appStore";
+import { selectTaskById, useAppStore } from "../stores/appStore";
 import type { Task, Project, Link } from "../types";
 
 interface TaskCardProps {
-  task: Task;
+  // M3.2.b.4 — TaskCard subscribes to its own task data via the
+  // canonical store. Parent passes the id; the row pulls. This
+  // inverts the responsibility for "row's data changed" from the
+  // memo comparator (which still gates parent-driven re-renders)
+  // to the internal store hook.
+  taskId: number;
   project: Project | undefined;
   onToggle: (task: Task) => void;
   onEdit: (task: Task) => void;
@@ -88,7 +93,7 @@ function TrashButton({ onDelete }: { onDelete: () => void }) {
 }
 
 function TaskCardImpl({
-  task,
+  taskId,
   project,
   onToggle,
   onEdit,
@@ -106,6 +111,12 @@ function TaskCardImpl({
   isPaused = false,
   onOpenProject,
 }: TaskCardProps) {
+  // M3.2.b.4 — internal subscription. Returns the same Task ref
+  // across renders unless this row's entry was rewritten in the
+  // canonical map; selector + Zustand referential-equality
+  // short-circuit means non-changing rows skip re-renders without
+  // help from the memo comparator below.
+  const task = useAppStore((s) => selectTaskById(s, taskId));
   // M2.3 — pause toggle subscribes through the store so the Daily Plan
   // row, PiP, and Focus screen share the same action. Pre-rev-3 the
   // row's "pause" button fully stopped the session via onStop; that
@@ -119,7 +130,7 @@ function TaskCardImpl({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: task.id });
+  } = useSortable({ id: taskId });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -127,7 +138,10 @@ function TaskCardImpl({
     opacity: isDragging ? 0.5 : 1,
   };
 
-  const [notes, setNotes] = useState(task.notes ?? "");
+  // M3.2.b.4 — task may be transiently undefined in the legacy
+  // SQL-direct path window; useState initializer uses ?. and the
+  // sync useEffect below catches the late arrival.
+  const [notes, setNotes] = useState(task?.notes ?? "");
   const [links, setLinks] = useState<Link[]>([]);
   const [newUrl, setNewUrl] = useState("");
 
@@ -203,31 +217,45 @@ function TaskCardImpl({
   }, [projTooltip !== null, measureProjTooltip]);
 
 
-  // Track status transition for one-shot done animation
-  const prevStatusRef = useRef(task.status);
-  const justCompleted = task.status === "done" && prevStatusRef.current !== "done";
-  useEffect(() => { prevStatusRef.current = task.status; }, [task.status]);
+  // Track status transition for one-shot done animation. Uses ?. so
+  // a transiently-undefined task doesn't crash the ref initializer.
+  const prevStatusRef = useRef(task?.status);
+  const justCompleted = task?.status === "done" && prevStatusRef.current !== "done";
+  useEffect(() => { prevStatusRef.current = task?.status; }, [task?.status]);
 
   // Sync notes when task changes
   useEffect(() => {
-    setNotes(task.notes ?? "");
-  }, [task.notes]);
+    setNotes(task?.notes ?? "");
+  }, [task?.notes]);
 
-  // Load links when expanded
+  // Load links when expanded. Dep is `taskId` (primitive prop, stable
+  // across renders) rather than `task.id` so a re-render that changes
+  // the Task ref but not the id doesn't re-trigger the fetch.
   useEffect(() => {
     if (expandedNotes) {
-      getLinksForEntity("task", task.id)
+      getLinksForEntity("task", taskId)
         .then(setLinks)
         .catch(() => {});
     }
-  }, [expandedNotes, task.id]);
+  }, [expandedNotes, taskId]);
 
+
+  // M3.2.b.4 — defensive null guard. Under current architecture
+  // (M3.2.a's atomic withTaskRemoved/withTaskInserted patches +
+  // loadTasksFor* atomic sets), the parent's id list and tasksById
+  // are kept consistent within a single state transition, so this
+  // path is theoretical. Kept as a one-line guard against any future
+  // legacy SQL-direct slip that adds an id to a secondary index
+  // without writing tasksById.
+  if (!task) return null;
 
   async function saveNotes(valueToSave: string = notes) {
     const trimmed = valueToSave.trim() || null;
-    if (trimmed === task.notes) return;
+    // task! — function declaration is hoisted so TS doesn't carry
+    // narrowing from the early-return above into this body.
+    if (trimmed === task!.notes) return;
     try {
-      await updateTaskNotes(task.id, trimmed);
+      await updateTaskNotes(taskId, trimmed);
     } catch {
       // silent
     }
@@ -238,9 +266,9 @@ function TaskCardImpl({
     const url = newUrl.trim();
     if (!url) return;
     try {
-      await createLink("task", task.id, url, null);
+      await createLink("task", taskId, url, null);
       setNewUrl("");
-      const updated = await getLinksForEntity("task", task.id);
+      const updated = await getLinksForEntity("task", taskId);
       setLinks(updated);
     } catch {
       // silent
@@ -628,33 +656,36 @@ function TaskCardImpl({
 /**
  * Custom React.memo comparator. Returns `true` to skip re-render.
  *
- * Function props (onToggle/onEdit/onDelete/onToggleNotes/onStart/onStop/
- * onOpenDetail) are intentionally NOT compared — DailyPlanner passes
- * inline arrow functions on every render, so reference comparison would
- * always invalidate the memo. The callbacks are safe to ignore because
- * they all read state via setState callback form or useAppStore.getState()
- * — no captured-stale-state hazards. (Approach 2 from the #8 plan.)
+ * M3.2.b.4 architectural inversion: the comparator is no longer
+ * responsible for "this row's data changed." TaskCard's internal
+ * `useAppStore((s) => selectTaskById(s, taskId))` subscription is.
+ * The comparator's only job now is to gate parent-driven re-renders
+ * that don't affect this row. A render that mutates this row's task
+ * data triggers a re-render via the store hook regardless of what
+ * the comparator returns.
  *
- * The expensive case this guards against is the 1Hz tick in useFocusTick:
- * when DailyPlanner re-renders every second, every TaskCard re-evaluates.
- * With this comparator, only the focused row (whose liveWorkedMinutes
- * changes per tick) re-renders; every other card returns true from this
- * comparator and bails out.
+ * Function props (onToggle/onEdit/onDelete/onToggleNotes/onStart/
+ * onOpenDetail) are intentionally NOT compared — DailyPlanner passes
+ * inline arrow functions on every render, so reference comparison
+ * would always invalidate the memo. Callbacks are safe to ignore
+ * because they read state via setState callback form or
+ * useAppStore.getState() — no captured-stale-state hazards.
+ *
+ * The expensive case this still guards against is the 1Hz tick from
+ * useFocusTick: when DailyPlanner re-renders every second, every
+ * TaskCard re-evaluates. The comparator's primitive checks all pass
+ * for non-focused rows; only the focused row's liveElapsedMs differs,
+ * so only it re-renders.
  */
 function taskCardPropsEqual(prev: TaskCardProps, next: TaskCardProps): boolean {
-  // Custom comparator. Function props (onToggle/onEdit/onDelete/...) are
-  // intentionally NOT compared — DailyPlanner passes inline arrow
-  // functions on every render, so reference comparison would always
-  // invalidate the memo. Callbacks are safe to ignore because they read
-  // state via setState callback form or useAppStore.getState() — no
-  // captured-stale-state hazards. The expensive case this guards is the
-  // 1Hz tick from useFocusTick: only the focused row's liveElapsedMs
-  // changes per tick; every other card's data props are referentially
-  // equal across renders and the comparator returns true → memo skip.
   if (prev.liveElapsedMs !== next.liveElapsedMs) return false;
   if (prev.isFocused !== next.isFocused) return false;
   if (prev.isPaused !== next.isPaused) return false;
-  if (prev.task !== next.task) return false;
+  // M3.2.b.4 — primitive id check replaces the prior `task` ref check.
+  // A different taskId means we're rendering a different row entirely
+  // (parent reordered or the row was replaced) and the row needs to
+  // re-render to re-subscribe.
+  if (prev.taskId !== next.taskId) return false;
   if (prev.project !== next.project) return false;
   if (prev.expandedNotes !== next.expandedNotes) return false;
   if (prev.showProject !== next.showProject) return false;

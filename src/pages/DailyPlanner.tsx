@@ -1261,7 +1261,7 @@ export default function DailyPlanner() {
                     return (
                       <TaskCard
                         key={task.id}
-                        task={task}
+                        taskId={task.id}
                         project={projectMap.get(task.project_id ?? -1)}
                         onToggle={toggleTask}
                         onEdit={startEdit}

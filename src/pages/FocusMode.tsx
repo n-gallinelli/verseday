@@ -370,6 +370,12 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           // alwaysOnTop already keeps the pip visible without needing
           // window focus.
           focus: false,
+          // macOS: engage on the first click rather than just
+          // activating the pip's window. Without this, clicking the
+          // pip from another app routes the click into "make me key"
+          // and the button doesn't respond until a second click. With
+          // it, hover-and-click lands in one motion.
+          acceptFirstMouse: true,
           x: 20,
           y: 20,
         });

@@ -642,7 +642,6 @@ pub fn run() {
             commands::dismiss_quick_add,
             commands::start_pip_hover_monitor,
             commands::stop_pip_hover_monitor,
-            commands::invalidate_pip_hover_rect,
             #[cfg(target_os = "macos")]
             calendar::calendar_check_permission,
             #[cfg(target_os = "macos")]

@@ -96,16 +96,24 @@ mod platform {
 // macOS gates WKWebView's DOM hover dispatch on the window being key.
 // To make the focus pip's icon fan-out fire when the cursor crosses the
 // pip from another app, we bypass DOM hover entirely: an NSEvent global
-// mouse-moved monitor checks cursor against the pip's cached frame on
-// the main thread, and edge-triggered "pip-hover" events drive an
-// `isExternallyHovered` boolean in JS that ORs with the regular CSS
-// hover state.
+// mouse-moved monitor compares the cursor position against the pip's
+// NSWindow.frame() on each fire and emits edge-triggered "pip-hover"
+// events that drive an `isExternallyHovered` boolean in JS, which ORs
+// with the regular CSS :hover state.
 //
-// Cache + invalidate (vs. read frame per event): per Verse review —
-// invalidate on `tauri://move`/resize via the JS-side
-// `invalidate_pip_hover_rect` command. Cheap, bounded staleness during
-// drags, and during a drag the cursor is on the drag handle so fan-out
-// behavior is irrelevant in that window.
+// Frame is read inline per fire (no cache + invalidate). The original
+// design cached the frame and invalidated on tauri://move via a JS
+// roundtrip. That's wrong: NSEvent monitor handlers run ON the main
+// thread already, so msg_send![ns_window, frame] inside the block is
+// direct memory access — no IPC. The cached approach also raced with
+// drag (invalidate is async) and left the rect stale, breaking
+// hover-leave detection after a drag. Reading inline is simpler AND
+// correct.
+//
+// We also setAcceptsMouseMovedEvents:YES on the pip's NSWindow at
+// start so DOM mousemove fires after the user clicks the pip and it
+// becomes key — without this, clicking a button leaves the icons
+// stuck visible because the inner-div mouseLeave never triggers.
 //
 // No-op on non-macOS platforms (struct exists for `manage()` symmetry).
 
@@ -129,7 +137,6 @@ mod pip_hover {
         // surrounding state is Send; we only ever deref on the main
         // thread.
         monitor_handle_ptr: usize,
-        cached_rect: Option<NSRect>,
         last_over: bool,
     }
 
@@ -173,13 +180,23 @@ mod pip_hover {
         let app_for_block = app.clone();
         let label_for_block = label.to_string();
 
-        let (tx, rx) = std::sync::mpsc::channel::<Result<(usize, NSRect), String>>();
+        let (tx, rx) = std::sync::mpsc::channel::<Result<usize, String>>();
         app.run_on_main_thread(move || {
-            let initial_frame = unsafe { read_frame(win_ptr) };
+            // Opt the pip's NSWindow into receiving mouseMoved events.
+            // Without this, after the pip becomes key (e.g., user clicks
+            // a button), DOM mousemove events stop firing, the inner-div
+            // mouseLeave never triggers, and cssHovered gets stuck true
+            // — leaving icons frozen visible. Setting it once at start
+            // is enough; the property persists for the window's life.
+            unsafe {
+                let win = &*(win_ptr as *const AnyObject);
+                let _: () = msg_send![win, setAcceptsMouseMovedEvents: true];
+            }
 
-            // The monitor's handler block. Captures the AppHandle (Clone)
-            // and label (String). On each mouseMoved, fetches the cached
-            // rect via state, compares cursor, and emits on edges only.
+            // The monitor's handler block. Reads the pip's frame inline
+            // on every fire (this block runs on the main thread, so the
+            // msg_send is direct memory access — not IPC). Compares
+            // cursor to frame and emits on edge transitions only.
             let app_for_handler = app_for_block.clone();
             let label_for_handler = label_for_block.clone();
             let block = RcBlock::new(move |_event: NonNull<AnyObject>| {
@@ -191,6 +208,12 @@ mod pip_hover {
                 // secondary works through the same intersection without
                 // per-display logic.
                 let cursor: NSPoint = unsafe { msg_send![cls, mouseLocation] };
+                let rect: NSRect = unsafe { read_frame(win_ptr) };
+
+                let over = cursor.x >= rect.origin.x
+                    && cursor.x <= rect.origin.x + rect.size.width
+                    && cursor.y >= rect.origin.y
+                    && cursor.y <= rect.origin.y + rect.size.height;
 
                 let state = app_for_handler.state::<super::PipHoverState>();
                 let mut guard = match state.inner.lock() {
@@ -198,12 +221,6 @@ mod pip_hover {
                     Err(_) => return,
                 };
                 let Some(entry) = guard.as_mut() else { return; };
-                let Some(rect) = entry.cached_rect else { return; };
-
-                let over = cursor.x >= rect.origin.x
-                    && cursor.x <= rect.origin.x + rect.size.width
-                    && cursor.y >= rect.origin.y
-                    && cursor.y <= rect.origin.y + rect.size.height;
 
                 if over != entry.last_over {
                     entry.last_over = over;
@@ -242,11 +259,11 @@ mod pip_hover {
             // stored in Entry if it ever shows up in profiling.
             std::mem::forget(block);
 
-            let _ = tx.send(Ok((monitor as usize, initial_frame)));
+            let _ = tx.send(Ok(monitor as usize));
         })
         .map_err(|e| format!("main-thread dispatch failed: {}", e))?;
 
-        let (monitor_ptr, frame) = rx
+        let monitor_ptr = rx
             .recv_timeout(std::time::Duration::from_millis(500))
             .map_err(|e| format!("monitor registration timed out: {}", e))??;
 
@@ -257,7 +274,6 @@ mod pip_hover {
             .map_err(|_| "pip-hover state poisoned".to_string())?;
         *guard = Some(Entry {
             monitor_handle_ptr: monitor_ptr,
-            cached_rect: Some(frame),
             last_over: false,
         });
         Ok(())
@@ -286,28 +302,6 @@ mod pip_hover {
         Ok(())
     }
 
-    pub fn invalidate<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), String> {
-        let win_ptr = ns_window_ptr(app, label)?;
-        let (tx, rx) = std::sync::mpsc::channel::<NSRect>();
-        app.run_on_main_thread(move || {
-            let frame = unsafe { read_frame(win_ptr) };
-            let _ = tx.send(frame);
-        })
-        .map_err(|e| format!("main-thread dispatch failed: {}", e))?;
-        let frame = rx
-            .recv_timeout(std::time::Duration::from_millis(200))
-            .map_err(|e| format!("frame read timed out: {}", e))?;
-
-        let state = app.state::<super::PipHoverState>();
-        let mut guard = state
-            .inner
-            .lock()
-            .map_err(|_| "pip-hover state poisoned".to_string())?;
-        if let Some(entry) = guard.as_mut() {
-            entry.cached_rect = Some(frame);
-        }
-        Ok(())
-    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -321,7 +315,6 @@ mod pip_hover {
 
     pub fn start<R: Runtime>(_: &AppHandle<R>, _: &str) -> Result<(), String> { Ok(()) }
     pub fn stop<R: Runtime>(_: &AppHandle<R>, _: &str) -> Result<(), String> { Ok(()) }
-    pub fn invalidate<R: Runtime>(_: &AppHandle<R>, _: &str) -> Result<(), String> { Ok(()) }
 }
 
 pub use pip_hover::State as PipHoverState;
@@ -340,14 +333,6 @@ pub fn stop_pip_hover_monitor(
     label: String,
 ) -> Result<(), String> {
     pip_hover::stop(&app_handle, &label)
-}
-
-#[tauri::command]
-pub fn invalidate_pip_hover_rect(
-    app_handle: tauri::AppHandle,
-    label: String,
-) -> Result<(), String> {
-    pip_hover::invalidate(&app_handle, &label)
 }
 
 #[derive(Deserialize)]

@@ -271,6 +271,21 @@ export default function FocusPip() {
           (evt) => {
             if (cancelled) return;
             setExternallyHovered(evt.payload.over);
+            // When Rust's geometry check says the cursor is no longer
+            // over the pip rect, force cssHovered false too. Rust's
+            // NSEvent monitor reads NSWindow.frame() inline and is the
+            // source of truth for "cursor is over the pip"; native
+            // drags + click-to-make-key transitions can leave
+            // WKWebView's tracking area desynced so the inner-div
+            // mouseLeave doesn't always fire when cursor exits the
+            // pip. If Rust says off-pip, neither hover state should
+            // be true. The reverse asymmetry is intentional — Rust
+            // saying over=true doesn't fake CSS hover, since cursor
+            // can be over the pip rect but not over the sub-region
+            // where the icon-fanout hover-zone actually lives.
+            if (!evt.payload.over) {
+              setCssHovered(false);
+            }
           }
         );
       } catch {
@@ -387,21 +402,20 @@ export default function FocusPip() {
   // ── ACTIVE / PAUSED ────────────────────────────────────────────────
   // Hover model: only the right-edge "pause zone" triggers the icon
   // expansion — hovering anywhere else on the pip is just hover, not
-  // a control reveal. Clicking anywhere except a button focuses the
-  // main VerseDay window. The hover zone widens when expanded so a
-  // mouse moving leftward across the icons stays inside it.
+  // a control reveal. Clicking the pip body itself does nothing —
+  // only the explicit VerseDay logo button (in the icon strip)
+  // focuses the main window. The hover zone widens when expanded so
+  // a mouse moving leftward across the icons stays inside it.
   return (
     <div
       data-tauri-drag-region
-      className="select-none overflow-hidden relative cursor-pointer"
+      className="select-none overflow-hidden relative"
       style={{ background: PIP_BG, borderRadius: 18, border: "0.5px solid var(--focus-pip-border)" }}
-      onClick={focusMainWindow}
       onMouseDown={handlePipMouseDown}
     >
       <div className="flex items-center gap-2 pl-4 pr-2 py-2 w-full h-full">
-        {/* Title + timer — purely informational; click-to-focus is
-            handled by the outer container. Fades on hover so the icon
-            row can take the space without overlapping.
+        {/* Title + timer — purely informational. Fades on hover so the
+            icon row can take the space without overlapping.
             pr-12 reserves space for the absolute-positioned pause
             button (w-9 + right-2 → ~44px from the right edge of the
             pip) so a long title truncates *before* the pause icon

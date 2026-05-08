@@ -12,7 +12,12 @@ import {
   verticalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { selectTaskIdsByDate, useAppStore } from "../stores/appStore";
+import {
+  selectOrphanAndOverdueTasks,
+  selectTaskIdsByDate,
+  selectUnscheduledTasksByProject,
+  useAppStore,
+} from "../stores/appStore";
 import {
   getProjects,
   startTimeEntry,
@@ -21,14 +26,13 @@ import {
   getTotalWorkedMinutes,
   getDailyPlan,
   upsertDailyPlan,
-  getSidebarTasks,
   getWorkedMinutesForTaskIds,
   getWorkedMinutesForTask,
   getProjectStats,
   generateRecurringInstances,
   rolloverUnfinishedTasks,
-  getUnfinishedRolloverTasks,
 } from "../db/queries";
+import { todayString } from "../utils/dates";
 import ErrorBanner from "../components/ErrorBanner";
 import TaskCard from "../components/TaskCard";
 import DatePicker from "../components/DatePicker";
@@ -71,6 +75,7 @@ export default function DailyPlanner() {
   const taskIds = useAppStore((s) => selectTaskIdsByDate(s, selectedDate));
   const tasksById = useAppStore((s) => s.tasksById);
   const loadTasksForDate = useAppStore((s) => s.loadTasksForDate);
+  const loadSidebarPool = useAppStore((s) => s.loadSidebarPool);
   const updateTaskAction = useAppStore((s) => s.updateTask);
   const deleteTaskAction = useAppStore((s) => s.deleteTaskAction);
   const setTaskStatusAction = useAppStore((s) => s.setTaskStatus);
@@ -164,10 +169,18 @@ export default function DailyPlanner() {
   const newTaskInputRef = useRef<HTMLInputElement>(null);
   const datePickerAnchorRef = useRef<HTMLButtonElement>(null);
 
-  // Right panel — expandable projects + unfinished + unscheduled
+  // Right panel — R.3 (sidebar rebuild). Two collapsible sections:
+  //   - Top: per-project disclosure (expandedProjectIds tracks which
+  //     project headers are open). Trade-off ack'd in R.3 commit:
+  //     project ids stay in this Set even after their tasks drain
+  //     (project drops out of the rail). Set entry is dormant until
+  //     the project repopulates; harmless. Track for R.4 polish if
+  //     pruning ever surfaces.
+  //   - Bottom: unified mixed-list disclosure (orphans + overdue),
+  //     collapsed by default. Renamed from unscheduledExpanded in
+  //     R.3 since the bottom is no longer orphans-only.
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<number>>(new Set());
-  const [unfinishedExpanded, setUnfinishedExpanded] = useState(false);
-  const [unscheduledExpanded, setUnscheduledExpanded] = useState(false);
+  const [bottomSectionExpanded, setBottomSectionExpanded] = useState(false);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState<boolean>(() => {
     return localStorage.getItem("dailyPlanner.rightPanelCollapsed") === "1";
   });
@@ -183,53 +196,51 @@ export default function DailyPlanner() {
   // Shutdown state (for localStorage check only)
   const initialLoadDone = useRef(false);
 
-  // Sidebar state — IDs only; full Task data resolves through tasksById
-  // at render time so cross-screen renames re-render rows without a
-  // refetch (M3.2.b.1). Sidebar queries (getSidebarTasks /
-  // getUnfinishedRolloverTasks) span dates and don't fit a per-date
-  // selector, so the IDs themselves stay screen-local.
-  const [sidebarUnscheduledIds, setSidebarUnscheduledIds] = useState<number[]>([]);
-  const [sidebarOverdueIds, setSidebarOverdueIds] = useState<number[]>([]);
-  const [unfinishedTaskIds, setUnfinishedTaskIds] = useState<number[]>([]);
-  // Resolve to full Task arrays once per render. Memoized to keep refs
-  // stable across renders that don't change inputs. The bucket
-  // semantics are enforced HERE rather than trusted from the ID list
-  // because the canonical map can update faster than the local ID
-  // arrays during a pull (loadTasksForDate writes the new
-  // date_scheduled before getSidebarTasks's setSidebarUnscheduledIds
-  // fires). Without these filters a freshly-pulled task briefly
-  // appears in both `pullable` and `recent`, producing a duplicate
-  // row in the project rail.
-  const todayIsoForSidebar = new Date().toISOString().split("T")[0];
-  const sidebarUnscheduled = useMemo(() => {
-    const out: Task[] = [];
-    for (const id of sidebarUnscheduledIds) {
-      const t = tasksById.get(id);
-      if (t && t.date_scheduled === null) out.push(t);
+  // R.3 — Right sidebar derives from canonical tasksById via the
+  // selectors added in R.2. The sidebar's membership pool is loaded
+  // once per loadData via loadSidebarPool (called in Promise.all
+  // below); reactivity flows through tasksById subscriptions
+  // automatically (selectors apply bucket-filter discipline at the
+  // call site).
+  const today = todayString();
+  // Selectors take state: AppState by convention; they only read
+  // state.tasksById. Cast a partial-state object — memoization
+  // contract is keyed on tasksById ref directly, so the cast is
+  // never observed at runtime.
+  const tasksByProject = useMemo(
+    () =>
+      selectUnscheduledTasksByProject(
+        { tasksById } as unknown as Parameters<typeof selectUnscheduledTasksByProject>[0],
+      ),
+    [tasksById],
+  );
+  const orphanAndOverdueItems = useMemo(
+    () =>
+      selectOrphanAndOverdueTasks(
+        { tasksById } as unknown as Parameters<typeof selectOrphanAndOverdueTasks>[0],
+        today,
+      ),
+    [tasksById, today],
+  );
+  // Project ordering proxy: max(task.created_at) per project across
+  // its open unscheduled tasks. Projects rank by recency of new task
+  // creation, the closest "touched" timestamp we have without per-task
+  // updated_at tracking. Verse R.1 review tracked this for R.3
+  // verification — swap to task.updated_at / project.updated_at /
+  // time_entries-based recency if the order feels surprising in
+  // practice.
+  const projectOrder = useMemo(() => {
+    const entries: Array<{ projectId: number; maxCreatedAt: string }> = [];
+    for (const [projectId, tasks] of tasksByProject) {
+      const max = tasks.reduce(
+        (acc, t) => (t.created_at > acc ? t.created_at : acc),
+        "",
+      );
+      entries.push({ projectId, maxCreatedAt: max });
     }
-    return out;
-  }, [sidebarUnscheduledIds, tasksById]);
-  const sidebarOverdue = useMemo(() => {
-    const out: Task[] = [];
-    for (const id of sidebarOverdueIds) {
-      const t = tasksById.get(id);
-      if (t && t.date_scheduled !== null && t.date_scheduled < todayIsoForSidebar) {
-        out.push(t);
-      }
-    }
-    return out;
-  }, [sidebarOverdueIds, tasksById, todayIsoForSidebar]);
-  const unfinishedTasks = useMemo(() => {
-    const out: Task[] = [];
-    for (const id of unfinishedTaskIds) {
-      const t = tasksById.get(id);
-      // Backlog rows mirror the original query — keep entries even if
-      // status flips to done mid-render; the existing render filter
-      // strips done before display.
-      if (t) out.push(t);
-    }
-    return out;
-  }, [unfinishedTaskIds, tasksById]);
+    entries.sort((a, b) => (a.maxCreatedAt < b.maxCreatedAt ? 1 : -1));
+    return entries.map((e) => e.projectId);
+  }, [tasksByProject]);
 
   // Per-row undo for tasks pulled from the rail into today (10s window)
   const [recentlyPulled, setRecentlyPulled] = useState<
@@ -359,20 +370,22 @@ export default function DailyPlanner() {
       if (selectedDate === todayIso) {
         await rolloverUnfinishedTasks(todayIso);
       }
-      // M3.2.b.1 — main task list goes through the store. loadTasksForDate
-      // populates tasksById and sets taskIdsByDate[selectedDate]; the
-      // selector subscription above re-renders the list automatically.
-      // Other parallel data still uses direct queries — they're not
-      // task-shape and have no canonical-map analogue.
-      const [_, wm, dp, p, sb, uf] = await Promise.all([
+      // M3.2.b.1 — main task list goes through the store via
+      // loadTasksForDate; the selector subscription re-renders the
+      // list automatically. R.3 — right sidebar's pool primed via
+      // loadSidebarPool (replaces the legacy getSidebarTasks +
+      // getUnfinishedRolloverTasks dual-fetch and the
+      // primeTasks/setSidebar*Ids state plumbing — sidebar reads
+      // through canonical store selectors now).
+      const [_lt, wm, dp, p, _sp] = await Promise.all([
         loadTasksForDate(selectedDate),
         getTotalWorkedMinutes(selectedDate),
         getDailyPlan(selectedDate),
         getProjects(),
-        getSidebarTasks(todayIso),
-        getUnfinishedRolloverTasks(),
+        loadSidebarPool(),
       ]);
-      void _;
+      void _lt;
+      void _sp;
       setWorkedMinutes(wm);
       setDailyPlan(dp);
       setProjects(p);
@@ -391,13 +404,6 @@ export default function DailyPlanner() {
       } else {
         setWorkedMap(new Map());
       }
-      // Sidebar lists: prime the canonical map with the full Task data
-      // so per-row reads resolve, then store IDs locally. M3.2.b.5 retires
-      // the primeTasks call.
-      primeTasks([...sb.unscheduled, ...sb.overdue, ...uf]);
-      setSidebarUnscheduledIds(sb.unscheduled.map((t) => t.id));
-      setSidebarOverdueIds(sb.overdue.map((t) => t.id));
-      setUnfinishedTaskIds(uf.map((t) => t.id));
       setDailyNotes(dp?.notes ?? "");
       setError(null);
       // Mark initial load done (for stagger animation)
@@ -699,14 +705,11 @@ export default function DailyPlanner() {
   }
 
   async function pullTaskToDay(taskId: number) {
-    // Capture original task + prev date for the undo window. Look in every
-    // rail-side source so undo works regardless of which section it came from.
-    const candidates: Task[] = [
-      ...sidebarUnscheduled,
-      ...sidebarOverdue,
-      ...unfinishedTasks,
-    ];
-    const original = candidates.find((t) => t.id === taskId);
+    // Capture original task + prev date for the undo window. R.3 —
+    // resolves through canonical tasksById; the rail's selectors are
+    // derived from the same map, so any task the user can see in the
+    // rail is in tasksById by definition.
+    const original = tasksById.get(taskId);
     const prevDate = original?.date_scheduled ?? null;
     try {
       // M3.2.b.5.b — store action handles canonical-map mutation +
@@ -1397,182 +1400,85 @@ export default function DailyPlanner() {
           </button>
         </div>
 
-        {/* Project list — only projects with at least one open pullable task
-            (or a recently-pulled task still in its undo window) */}
-        <div className="px-2 space-y-1.5">
-        {(() => {
-          const activeProjects = projects.filter((p) => !p.completed);
-          const projectSections = activeProjects
-            .map((p) => {
-              const unscheduled = sidebarUnscheduled.filter(
-                (t) => t.project_id === p.id && t.status !== "done"
-              );
-              const overdue = sidebarOverdue.filter(
-                (t) => t.project_id === p.id && t.status !== "done"
-              );
-              const recent = Array.from(recentlyPulled.values())
+        {/* R.3 — Top section: projects with unscheduled-open tasks.
+            Project ordering by max(task.created_at) DESC (recency
+            proxy). Tasks within each project ordered by created_at
+            DESC. Recently-pulled rows interleaved at natural position
+            during their 10s undo window. Section disappears entirely
+            when no project has matching tasks (no header, no
+            placeholder — Nick's "quiet empty space" call). */}
+        {projectOrder.length > 0 && (
+          <div className="px-2 space-y-1.5">
+            {projectOrder.map((projectId) => {
+              const project = projectMap.get(projectId);
+              if (!project) return null;
+              const baseTasks = tasksByProject.get(projectId) ?? [];
+              // Interleave recently-pulled tasks for this project so
+              // the row stays put with isRecent styling for 10s.
+              const recentForProject = Array.from(recentlyPulled.values())
                 .map((r) => r.task)
-                .filter((t) => t.project_id === p.id);
-              const pullable = [...unscheduled, ...overdue];
-              return { project: p, pullable, recent };
-            })
-            .filter((s) => s.pullable.length > 0 || s.recent.length > 0);
-
-          if (projectSections.length === 0) {
-            return (
-              <p className="px-2 py-4 text-[11px] text-fg-faded text-center">
-                Nothing left to pull in
-              </p>
-            );
-          }
-
-          return projectSections.map(({ project: p, pullable, recent }) => {
-            const isExpanded = expandedProjectIds.has(p.id);
-            const allInList = [...pullable, ...recent];
-            return (
-              <div key={p.id} className="rounded-md bg-elevated/40 overflow-hidden">
-                {/* Project header */}
-                <button
-                  onClick={() => {
-                    setExpandedProjectIds((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(p.id)) next.delete(p.id);
-                      else next.add(p.id);
-                      return next;
-                    });
-                  }}
-                  className="w-full flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-overlay-hover transition-colors text-left cursor-pointer"
-                >
-                  <span className="w-3 flex items-center justify-center text-accent-orange-soft-fg/70 flex-shrink-0">
-                    <DisclosureCaret expanded={isExpanded} />
-                  </span>
-                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
-                  <span className="text-[11.5px] text-fg truncate flex-1">{p.name}</span>
-                  <span className="text-[10px] text-fg-disabled tabular-nums">{pullable.length}</span>
-                </button>
-
-                {/* Expanded task list */}
-                {isExpanded && (
-                  <div className="px-1.5 pb-1.5 space-y-px">
-                    {allInList.map((task) => {
-                      const isRecent = recentlyPulled.has(task.id);
-                      return (
-                        <button
-                          key={task.id}
-                          onClick={() => {
-                            if (isRecent) undoPull(task.id);
-                            else pullTaskToDay(task.id);
-                          }}
-                          title={isRecent ? "Undo (within 10s)" : "Add to today"}
-                          className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer transition-colors group ${
-                            isRecent ? "bg-accent-blue/[0.07]" : "hover:bg-overlay-hover"
-                          }`}
-                        >
-                          <span
-                            className={`text-[11px] flex-1 truncate ${
-                              isRecent ? "text-fg-faded" : "text-fg"
+                .filter((t) => t.project_id === projectId);
+              const baseIds = new Set(baseTasks.map((t) => t.id));
+              const recentOnly = recentForProject.filter((t) => !baseIds.has(t.id));
+              const allInList = [...baseTasks, ...recentOnly];
+              const isExpanded = expandedProjectIds.has(projectId);
+              return (
+                <div key={projectId} className="rounded-md bg-elevated/40 overflow-hidden">
+                  <button
+                    onClick={() => {
+                      setExpandedProjectIds((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(projectId)) next.delete(projectId);
+                        else next.add(projectId);
+                        return next;
+                      });
+                    }}
+                    className="w-full flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-overlay-hover transition-colors text-left cursor-pointer"
+                  >
+                    <span className="w-3 flex items-center justify-center text-accent-orange-soft-fg/70 flex-shrink-0">
+                      <DisclosureCaret expanded={isExpanded} />
+                    </span>
+                    <div
+                      className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: project.color }}
+                    />
+                    <span className="text-[11.5px] text-fg truncate flex-1">{project.name}</span>
+                    <span className="text-[10px] text-fg-disabled tabular-nums">
+                      {baseTasks.length}
+                    </span>
+                  </button>
+                  {isExpanded && (
+                    <div className="px-1.5 pb-1.5 space-y-px">
+                      {allInList.map((task) => {
+                        const isRecent = recentlyPulled.has(task.id);
+                        return (
+                          <div
+                            key={task.id}
+                            className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors group relative ${
+                              isRecent ? "bg-accent-blue/[0.07]" : "hover:bg-overlay-hover"
                             }`}
                           >
-                            {task.title}
-                          </span>
-                          {task.estimated_minutes != null && task.estimated_minutes > 0 && !isRecent && (
-                            <span className="text-[9px] text-fg-disabled">{formatHoursMinutes(task.estimated_minutes)}</span>
-                          )}
-                          {isRecent ? (
-                            <span className="text-[10px] text-accent-blue-soft-fg font-medium">
-                              Undo
-                            </span>
-                          ) : (
-                            <svg
-                              width="13" height="13" viewBox="0 0 14 14" fill="none"
-                              stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"
-                              className="text-accent-blue opacity-40 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                            <button
+                              onClick={() => {
+                                if (isRecent) undoPull(task.id);
+                                else pullTaskToDay(task.id);
+                              }}
+                              title={isRecent ? "Undo (within 10s)" : "Add to selected day"}
+                              className="flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-left"
                             >
-                              <path d="M7 3v8M3 7h8" />
-                            </svg>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          });
-        })()}
-        </div>
-
-        {/* Spacer — push backlog + unscheduled to bottom */}
-        <div className="flex-1 min-h-[40px]" />
-
-        {/* Task backlog — tasks rolling over up to 4 days. Header + list share
-            one shaded container so the section reads as a distinct group from
-            the active project list above.
-            Click pulls the task to today (mirroring the project + unscheduled
-            rails). The detail overlay is reachable via a hover-revealed icon
-            on the right. recentlyPulled rows are merged in for the 10s undo
-            window so the row stays put with "Undo" affordance after pull,
-            even though loadData's refresh has already removed it from
-            unfinishedTaskIds. */}
-        {(() => {
-          const backlogBase = unfinishedTasks.filter(
-            (t) => t.status !== "done" && t.date_scheduled !== selectedDate,
-          );
-          const recentBacklog = Array.from(recentlyPulled.values())
-            .map((r) => r.task)
-            .filter((t) => t.rollover_count > 0);
-          const baseIds = new Set(backlogBase.map((t) => t.id));
-          const recentOnly = recentBacklog.filter((t) => !baseIds.has(t.id));
-          const backlog = [...backlogBase, ...recentOnly];
-          if (backlog.length === 0) return null;
-          return (
-            <div className="px-2 mt-2">
-              <div className="rounded-md bg-overlay-hover/60 overflow-hidden">
-                <button
-                  onClick={() => setUnfinishedExpanded((v) => !v)}
-                  className="w-full flex items-center gap-1.5 px-2.5 py-2 cursor-pointer text-left hover:bg-overlay-hover transition-colors"
-                >
-                  <span className="w-3 flex items-center justify-center text-accent-orange-soft-fg/70 flex-shrink-0">
-                    <DisclosureCaret expanded={unfinishedExpanded} />
-                  </span>
-                  <span className="text-[11px] text-fg-muted flex-1">Task backlog</span>
-                  <span className="text-[10px] text-fg-disabled tabular-nums">{backlog.length}</span>
-                </button>
-                {unfinishedExpanded && (
-                  <div className="px-1.5 pb-1.5 space-y-px">
-                    {backlog.map((task) => {
-                      const isRecent = recentlyPulled.has(task.id);
-                      return (
-                        <div
-                          key={task.id}
-                          className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors group relative ${
-                            isRecent ? "bg-accent-blue/[0.07]" : "hover:bg-overlay-hover"
-                          }`}
-                        >
-                          <button
-                            onClick={() => {
-                              if (isRecent) undoPull(task.id);
-                              else pullTaskToDay(task.id);
-                            }}
-                            title={isRecent ? "Undo (within 10s)" : "Add to today"}
-                            className="flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-left"
-                          >
-                            <span
-                              className={`text-[11px] flex-1 truncate transition-colors ${
-                                isRecent ? "text-fg-faded" : "text-fg-secondary group-hover:text-fg"
-                              }`}
-                            >
-                              {task.title}
-                            </span>
-                          </button>
-                          {isRecent ? (
-                            <span className="text-[10px] text-accent-blue-soft-fg font-medium flex-shrink-0">
-                              Undo
-                            </span>
-                          ) : (
-                            <>
-                              {/* Hover-revealed detail-open shortcut — replaces
-                                  the now-absent click-to-detail on the row. */}
+                              <span
+                                className={`text-[11px] flex-1 truncate transition-colors ${
+                                  isRecent ? "text-fg-faded" : "text-fg group-hover:text-fg"
+                                }`}
+                              >
+                                {task.title}
+                              </span>
+                            </button>
+                            {isRecent ? (
+                              <span className="text-[10px] text-accent-blue-soft-fg font-medium flex-shrink-0">
+                                Undo
+                              </span>
+                            ) : (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -1594,10 +1500,120 @@ export default function DailyPlanner() {
                                   <path d="M5.5 3l4 4-4 4" />
                                 </svg>
                               </button>
-                              <span className="text-[9px] text-accent-warning-soft-fg/70 tabular-nums flex-shrink-0">
-                                {task.rollover_count}d
-                              </span>
-                            </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Spacer — push bottom section to bottom */}
+        <div className="flex-1 min-h-[40px]" />
+
+        {/* R.3 — Bottom section: orphans + overdue (3+ days back, 14-day
+            floor) under one collapsed-by-default disclosure. Sorted
+            overdue-first by date_scheduled DESC, then orphans by
+            created_at DESC (selector handles the sort). recentlyPulled
+            rows merged in so the row stays put with isRecent styling
+            for the 10s undo window. Section disappears when the list
+            is empty (no header, no placeholder). */}
+        {(() => {
+          const recentBottom = Array.from(recentlyPulled.values())
+            .map((r) => r.task)
+            .filter(
+              // Orphan recents: project_id null AND date null at pull time.
+              // Overdue recents: any task that was pulled from the rail
+              // that had date < today-3 (the original entry's prevDate is
+              // captured pre-mutation, so the task's project_id alone
+              // doesn't tell us if it's an orphan vs overdue source).
+              // Simplest correct rule: include any recently-pulled task
+              // whose original task.project_id is null OR whose recent's
+              // task.id wasn't already produced by selectUnscheduled
+              // (top-section handles its own recents). Approximate:
+              // include every recent and let dedup below filter.
+              (t) => t !== null && t !== undefined,
+            );
+          const baseIds = new Set(orphanAndOverdueItems.map((t) => t.id));
+          const recentOnly = recentBottom.filter(
+            (t) =>
+              !baseIds.has(t.id) &&
+              // Exclude project-rail recents (those already render
+              // in the top section under their project header).
+              t.project_id === null,
+          );
+          const items = [...orphanAndOverdueItems, ...recentOnly];
+          if (items.length === 0) return null;
+          return (
+            <div className="px-2 mt-2">
+              <div className="rounded-md bg-overlay-hover/60 overflow-hidden">
+                <button
+                  onClick={() => setBottomSectionExpanded((v) => !v)}
+                  className="w-full flex items-center gap-1.5 px-2.5 py-2 cursor-pointer text-left hover:bg-overlay-hover transition-colors"
+                >
+                  <span className="w-3 flex items-center justify-center text-accent-orange-soft-fg/70 flex-shrink-0">
+                    <DisclosureCaret expanded={bottomSectionExpanded} />
+                  </span>
+                  <span className="text-[11px] text-fg-muted flex-1">Unscheduled & overdue</span>
+                  <span className="text-[10px] text-fg-disabled tabular-nums">{items.length}</span>
+                </button>
+                {bottomSectionExpanded && (
+                  <div className="px-1.5 pb-1.5 space-y-px">
+                    {items.map((task) => {
+                      const isRecent = recentlyPulled.has(task.id);
+                      return (
+                        <div
+                          key={task.id}
+                          className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors group relative ${
+                            isRecent ? "bg-accent-blue/[0.07]" : "hover:bg-overlay-hover"
+                          }`}
+                        >
+                          <button
+                            onClick={() => {
+                              if (isRecent) undoPull(task.id);
+                              else pullTaskToDay(task.id);
+                            }}
+                            title={isRecent ? "Undo (within 10s)" : "Add to selected day"}
+                            className="flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-left"
+                          >
+                            <span
+                              className={`text-[11px] flex-1 truncate transition-colors ${
+                                isRecent ? "text-fg-faded" : "text-fg-secondary group-hover:text-fg"
+                              }`}
+                            >
+                              {task.title}
+                            </span>
+                          </button>
+                          {isRecent ? (
+                            <span className="text-[10px] text-accent-blue-soft-fg font-medium flex-shrink-0">
+                              Undo
+                            </span>
+                          ) : (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openTaskDetail(task.id);
+                              }}
+                              title="Open details"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-fg-faded hover:text-fg"
+                            >
+                              <svg
+                                width="13"
+                                height="13"
+                                viewBox="0 0 14 14"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.6"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M5.5 3l4 4-4 4" />
+                              </svg>
+                            </button>
                           )}
                         </div>
                       );
@@ -1605,74 +1621,6 @@ export default function DailyPlanner() {
                   </div>
                 )}
               </div>
-            </div>
-          );
-        })()}
-
-        {/* Unscheduled — orphan tasks with no project */}
-        {(() => {
-          const orphanUnscheduled = sidebarUnscheduled.filter(
-            (t) => t.project_id === null && t.status !== "done"
-          );
-          const orphanOverdue = sidebarOverdue.filter(
-            (t) => t.project_id === null && t.status !== "done"
-          );
-          const orphanRecent = Array.from(recentlyPulled.values())
-            .map((r) => r.task)
-            .filter((t) => t.project_id === null);
-          const unscheduledAll = [...orphanUnscheduled, ...orphanOverdue];
-          const allInList = [...unscheduledAll, ...orphanRecent];
-          if (allInList.length === 0) return null;
-          return (
-            <div className="px-2 mt-1.5 mb-2">
-              <button
-                onClick={() => setUnscheduledExpanded((v) => !v)}
-                className="w-full flex items-center gap-1.5 px-1 py-1.5 cursor-pointer text-left"
-              >
-                <span className="w-3 flex items-center justify-center text-accent-orange-soft-fg/70 flex-shrink-0">
-                  <DisclosureCaret expanded={unscheduledExpanded} />
-                </span>
-                <span className="text-[11px] text-fg-muted flex-1">Unscheduled</span>
-                <span className="text-[10px] text-fg-disabled tabular-nums">{unscheduledAll.length}</span>
-              </button>
-              {unscheduledExpanded && (
-                <div className="rounded-md bg-elevated/40 px-1.5 py-1.5 space-y-px">
-                  {allInList.map((task) => {
-                    const isRecent = recentlyPulled.has(task.id);
-                    return (
-                      <button
-                        key={task.id}
-                        onClick={() => {
-                          if (isRecent) undoPull(task.id);
-                          else pullTaskToDay(task.id);
-                        }}
-                        title={isRecent ? "Undo (within 10s)" : "Add to today"}
-                        className={`w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-left cursor-pointer transition-colors group ${
-                          isRecent ? "bg-accent-blue/[0.07]" : "hover:bg-overlay-hover"
-                        }`}
-                      >
-                        <span
-                          className={`text-[11px] flex-1 truncate ${
-                            isRecent ? "text-fg-faded" : "text-fg"
-                          }`}
-                        >
-                          {task.title}
-                        </span>
-                        {task.estimated_minutes != null && task.estimated_minutes > 0 && !isRecent && (
-                          <span className="text-[9px] text-fg-disabled">{formatHoursMinutes(task.estimated_minutes)}</span>
-                        )}
-                        {isRecent ? (
-                          <span className="text-[10px] text-accent-blue-soft-fg font-medium">
-                            Undo
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-accent-blue opacity-0 group-hover:opacity-100 transition-opacity">+</span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           );
         })()}

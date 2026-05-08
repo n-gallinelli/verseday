@@ -1417,10 +1417,15 @@ export default function DailyPlanner() {
         </div>
       ) : (
       <div className="w-[220px] flex-shrink-0 flex flex-col overflow-y-auto">
-        {/* Collapse handle (no top label — goal is "what to add to today").
-            pt-[24px] aligns the button center with the Start focusing button
-            in the main column's header (pt-5 + half of a 28px-tall button). */}
-        <div className="flex items-center justify-end px-3 pt-[24px] pb-1">
+        {/* Collapse handle + rail label. pt-[24px] aligns the button
+            center with the Start focusing button in the main column's
+            header (pt-5 + half of a 28px-tall button). Label uses the
+            same uppercase var-driven treatment as "Daily notes" for
+            section-label consistency. */}
+        <div className="flex items-center justify-between px-3 pt-[24px] pb-1">
+          <label className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded">
+            Add to today
+          </label>
           <button
             onClick={toggleRightPanel}
             title="Hide panel"

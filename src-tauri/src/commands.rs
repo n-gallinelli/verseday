@@ -112,56 +112,6 @@ struct ApiErrorResponse {
     error: ApiErrorDetail,
 }
 
-/// macOS only — set `acceptsMouseMovedEvents = YES` on the underlying
-/// NSWindow for the named webview window. By default, non-key windows
-/// don't receive `mouseMoved:` events on macOS, which means CSS
-/// `:hover` doesn't fire on the WkWebView's content when another app
-/// is in front. The focus-pip wants to show its hover-revealed icon
-/// fan-out even when the user is in another window, so we opt in
-/// explicitly.
-///
-/// No-op on non-macOS platforms.
-#[tauri::command]
-pub fn enable_window_mouse_moved_events(
-    app_handle: tauri::AppHandle,
-    label: String,
-) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        let window = app_handle
-            .get_webview_window(&label)
-            .ok_or_else(|| format!("window not found: {}", label))?;
-        let ns_window_ptr = window
-            .ns_window()
-            .map_err(|e| format!("ns_window() failed: {}", e))?;
-        // Pass the pointer through as a usize — *mut c_void is !Send,
-        // but we need to hop to the main thread (Cocoa requires it).
-        let ptr_addr = ns_window_ptr as usize;
-        let (tx, rx) = std::sync::mpsc::channel::<()>();
-        app_handle
-            .run_on_main_thread(move || {
-                use objc2::msg_send;
-                use objc2::runtime::AnyObject;
-                // SAFETY: ns_window() returns a valid NSWindow pointer
-                // for the lifetime of the window. The selector exists
-                // on NSWindow. We're on the main thread (Cocoa rule).
-                let obj = unsafe { &*(ptr_addr as *const AnyObject) };
-                unsafe {
-                    let _: () = msg_send![obj, setAcceptsMouseMovedEvents: true];
-                }
-                let _ = tx.send(());
-            })
-            .map_err(|e| format!("main-thread dispatch failed: {}", e))?;
-        let _ = rx.recv_timeout(std::time::Duration::from_millis(200));
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = app_handle;
-        let _ = label;
-    }
-    Ok(())
-}
-
 #[tauri::command]
 pub async fn generate_summary(
     api_key: String,

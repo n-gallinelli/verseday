@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
-import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, selectFocusedTask } from "../stores/appStore";
 import {
   stopTimeEntry,
@@ -371,26 +370,8 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           // alwaysOnTop already keeps the pip visible without needing
           // window focus.
           focus: false,
-          // Engage on the first click rather than just activating the
-          // pip's window — combined with the mouse-moved-events fix
-          // below, the user can hover-and-click without first having
-          // to focus the pip from another app.
-          acceptFirstMouse: true,
           x: 20,
           y: 20,
-        });
-        // macOS: opt the pip's underlying NSWindow into receiving
-        // mouseMoved events even when it isn't the key window. By
-        // default non-key windows don't get those events, so CSS
-        // :hover wouldn't fire when the user brings the cursor over
-        // the pip from another app — meaning the icon fan-out would
-        // require a click first. The Tauri command sets
-        // setAcceptsMouseMovedEvents:YES on the NSWindow; no-op on
-        // non-macOS platforms.
-        pip.once("tauri://created", () => {
-          void invoke("enable_window_mouse_moved_events", {
-            label: "focus-pip",
-          });
         });
         // Per Verse F1: assign first, then re-check cancelled. The
         // window between `if (cancelled)` and the assignment is small

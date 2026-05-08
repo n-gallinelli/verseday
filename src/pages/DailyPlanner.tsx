@@ -15,17 +15,13 @@ import {
 import { selectTaskIdsByDate, useAppStore } from "../stores/appStore";
 import {
   getProjects,
-  createTask,
-  updateTaskSortOrders,
   startTimeEntry,
   stopTimeEntry,
   updateTimeEntryWorkedSeconds,
-  getTotalPlannedMinutes,
   getTotalWorkedMinutes,
   getDailyPlan,
   upsertDailyPlan,
   getSidebarTasks,
-  updateTaskDateScheduled,
   getWorkedMinutesForTaskIds,
   getWorkedMinutesForTask,
   getProjectStats,
@@ -78,6 +74,9 @@ export default function DailyPlanner() {
   const updateTaskAction = useAppStore((s) => s.updateTask);
   const deleteTaskAction = useAppStore((s) => s.deleteTaskAction);
   const setTaskStatusAction = useAppStore((s) => s.setTaskStatus);
+  const setTaskDateScheduledAction = useAppStore((s) => s.setTaskDateScheduled);
+  const setTaskSortOrdersAction = useAppStore((s) => s.setTaskSortOrders);
+  const createTaskAction = useAppStore((s) => s.createTaskAction);
   // 1Hz tick while focus is active. Returns the elapsed ms or null when no
   // session. Only the focused row's TaskCard re-renders per tick — every
   // other card bails out via the custom React.memo comparator that ignores
@@ -103,7 +102,24 @@ export default function DailyPlanner() {
     return out;
   }, [taskIds, tasksById]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [plannedMinutes, setPlannedMinutes] = useState(0);
+  // M3.2.b.5.b — derived from canonical tasks. Pre-cutover this was
+  // refetched via getTotalPlannedMinutes on every loadData call; the
+  // verseday listener kept it fresh on cross-screen mutations. After
+  // listener removal, the SQL refetch wouldn't fire on remote
+  // mutations, leaving the total stale ("user adds a 30-min task →
+  // total doesn't budge until next navigation"). Memo derivation
+  // closes that gap reactively. Excludes done tasks because the
+  // pre-cutover SUM did the same (the SQL query filters status !=
+  // 'done').
+  const plannedMinutes = useMemo(
+    () =>
+      tasks.reduce(
+        (sum, t) =>
+          t.status !== "done" ? sum + (t.estimated_minutes ?? 0) : sum,
+        0,
+      ),
+    [tasks],
+  );
   const [workedMinutes, setWorkedMinutes] = useState(0);
   const [dailyPlan, setDailyPlan] = useState<DailyPlan | null>(null);
   const [workedMap, setWorkedMap] = useState<Map<number, number>>(new Map());
@@ -348,9 +364,8 @@ export default function DailyPlanner() {
       // selector subscription above re-renders the list automatically.
       // Other parallel data still uses direct queries — they're not
       // task-shape and have no canonical-map analogue.
-      const [_, pm, wm, dp, p, sb, uf] = await Promise.all([
+      const [_, wm, dp, p, sb, uf] = await Promise.all([
         loadTasksForDate(selectedDate),
-        getTotalPlannedMinutes(selectedDate),
         getTotalWorkedMinutes(selectedDate),
         getDailyPlan(selectedDate),
         getProjects(),
@@ -358,7 +373,6 @@ export default function DailyPlanner() {
         getUnfinishedRolloverTasks(),
       ]);
       void _;
-      setPlannedMinutes(pm);
       setWorkedMinutes(wm);
       setDailyPlan(dp);
       setProjects(p);
@@ -411,21 +425,14 @@ export default function DailyPlanner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calendarLastResultAt]);
 
-  // M1.b — refetch when the singleton overlay commits a mutation.
-  // M3.2 retires this listener in favor of canonical store
-  // subscriptions; until then, the broadcast bridges the seam.
-  useEffect(() => {
-    function refresh() {
-      loadData();
-    }
-    window.addEventListener("verseday:task-updated", refresh);
-    window.addEventListener("verseday:task-deleted", refresh);
-    return () => {
-      window.removeEventListener("verseday:task-updated", refresh);
-      window.removeEventListener("verseday:task-deleted", refresh);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // M3.2.b.5.b — verseday:task-updated/-deleted listener retired.
+  // Task-data reactivity flows through the canonical tasksById
+  // subscription (the `tasks` memo above re-runs when the map
+  // changes). Non-task-data here that the listener used to refresh
+  // (planned minutes, project stats, sidebar lists, worked minutes)
+  // is either now derived from tasks (plannedMinutes memo) or
+  // accepts stale-until-mount per the M3.2.b.5 audit (worked
+  // minutes are M3.3 territory).
 
   // M4 — slow-sync toast. Appears only after sync has been in flight
   // for ≥3s; auto-clears when sync resolves. Plan §5.
@@ -475,7 +482,7 @@ export default function DailyPlanner() {
     // down to make room rather than jumping.
     const oldPositions = captureRowPositions();
     try {
-      const newId = await createTask({
+      const newId = await createTaskAction({
         title,
         projectId: newTaskProjectId ? parseInt(newTaskProjectId) : null,
         dateScheduled: selectedDate,
@@ -524,12 +531,28 @@ export default function DailyPlanner() {
       // Find the max sort_order among other incomplete tasks for this
       // date and set the unchecked task's sort_order one higher.
       if (wasDone) {
-        const maxOther = tasks
-          .filter((t) => t.status !== "done" && t.id !== task.id)
-          .reduce((max, t) => Math.max(max, t.sort_order), -1);
-        await updateTaskSortOrders([
-          { id: task.id, sortOrder: maxOther + 1 },
-        ]);
+        // M3.2.b.5.b — route through the store's setTaskSortOrders.
+        // The store action expects the complete ordered ID list for
+        // the bucket; reconstruct it with the just-unchecked task
+        // appended to the end of incomplete (where it should now
+        // appear, per the existing UX). `tasks` here is the closure-
+        // captured array from before setTaskStatusAction's optimistic
+        // write reached this render, so task.id is still in the
+        // status === "done" partition; build the new order from that
+        // pre-toggle view.
+        const oldIncomplete = tasks
+          .filter((t) => t.status !== "done")
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map((t) => t.id);
+        const oldDone = tasks
+          .filter((t) => t.status === "done" && t.id !== task.id)
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map((t) => t.id);
+        const orderedIds = [...oldIncomplete, task.id, ...oldDone];
+        await setTaskSortOrdersAction(
+          { kind: "date", date: selectedDate },
+          orderedIds,
+        );
       }
       setError(null);
       // Wait for the refreshed tasks list before flipping the arrival flag.
@@ -733,7 +756,17 @@ export default function DailyPlanner() {
     const original = candidates.find((t) => t.id === taskId);
     const prevDate = original?.date_scheduled ?? null;
     try {
-      await updateTaskDateScheduled(taskId, selectedDate);
+      // M3.2.b.5.b — store action handles canonical-map mutation +
+      // index transitions (date+week buckets) atomically via
+      // withTaskMutated. The dup-flicker race that 47ab541 and
+      // a81c1a1 wrestled with closes by construction here: the
+      // sidebar's bucket filter sees the task's date_scheduled flip
+      // in the same set as the index update, so it never appears in
+      // both pullable and recent simultaneously.
+      await setTaskDateScheduledAction(taskId, selectedDate);
+      // loadData still runs to refresh non-task-data (worked-minutes,
+      // sidebar IDs from the cross-cutting query). Could be narrowed
+      // to non-task-data refresh in M3.3; for now keep the simple call.
       loadData();
       if (original) {
         const existing = recentTimersRef.current.get(taskId);
@@ -765,7 +798,7 @@ export default function DailyPlanner() {
     if (timer) clearTimeout(timer);
     recentTimersRef.current.delete(taskId);
     try {
-      await updateTaskDateScheduled(taskId, entry.prevDate);
+      await setTaskDateScheduledAction(taskId, entry.prevDate);
       setRecentlyPulled((prev) => {
         const next = new Map(prev);
         next.delete(taskId);
@@ -797,16 +830,17 @@ export default function DailyPlanner() {
     const newIndex = tasks.findIndex((t) => t.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
     const reordered = arrayMove(tasks, oldIndex, newIndex);
-    // M3.2.b.1 — `tasks` is selector-derived; the optimistic local
-    // setTasks call is gone. DB write commits the new order, then
-    // loadTasksForDate refreshes the index so the selector returns the
-    // new order. dnd-kit handles the drop animation locally; the brief
-    // gap between drop and refresh is the DB roundtrip.
+    // M3.2.b.5.b — store action handles the SQL batch + canonical
+    // map sort_order patches + index slice replacement in one
+    // atomic set. dnd-kit's drop animation covers the round-trip;
+    // the bucket-replacement semantic preserves the SQL-loaded
+    // ordering for any tasks not in the rendered list (none in this
+    // case since DailyPlanner renders the full date bucket).
     try {
-      await updateTaskSortOrders(
-        reordered.map((t, i) => ({ id: t.id, sortOrder: i }))
+      await setTaskSortOrdersAction(
+        { kind: "date", date: selectedDate },
+        reordered.map((t) => t.id),
       );
-      await loadTasksForDate(selectedDate);
     } catch (e) {
       setError(errorMessage(e, "Failed to reorder tasks"));
       loadData();
@@ -1696,9 +1730,10 @@ export default function DailyPlanner() {
       {/* Task detail overlay */}
       {/* TaskDetailOverlay is mounted as a singleton at App.tsx
           (M1 — see TaskDetailOverlayHost). This page calls openTaskDetail(id)
-          to open it; the host owns rendering and DB plumbing. The
-          verseday:task-updated / verseday:task-deleted listeners below
-          refresh local lists when the host commits changes. */}
+          to open it; the host owns rendering and DB plumbing. After
+          M3.2.b.5.b, host mutations write through store actions —
+          per-screen task lists re-render via canonical-map
+          subscriptions, no event-bus refresh needed. */}
 
     </div>
   );

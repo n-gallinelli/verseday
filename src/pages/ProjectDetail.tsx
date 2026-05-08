@@ -23,9 +23,6 @@ import { selectTaskIdsByProject, useAppStore } from "../stores/appStore";
 import {
   getProjectById,
   updateProject,
-  createTask,
-  updateTaskDateScheduled,
-  updateTaskSortOrders,
   startTimeEntry,
   completeProject,
   deleteProject,
@@ -452,6 +449,9 @@ export default function ProjectDetail() {
   const deleteTaskAction = useAppStore((s) => s.deleteTaskAction);
   const setTaskStatusAction = useAppStore((s) => s.setTaskStatus);
   const setTaskWorkedMinutesAction = useAppStore((s) => s.setTaskWorkedMinutesAction);
+  const setTaskDateScheduledAction = useAppStore((s) => s.setTaskDateScheduled);
+  const setTaskSortOrdersAction = useAppStore((s) => s.setTaskSortOrders);
+  const createTaskAction = useAppStore((s) => s.createTaskAction);
   const [project, setProject] = useState<Project | null>(null);
   const [workedMap, setWorkedMap] = useState<Map<number, number>>(new Map());
   const [error, setError] = useState<string | null>(null);
@@ -602,20 +602,10 @@ export default function ProjectDetail() {
     setConfirmDeleteId(null);
   }, [loadData]);
 
-  // M1.b — refetch when the singleton overlay commits a mutation.
-  // M3.2 retires this listener in favor of canonical store
-  // subscriptions; until then, the broadcast bridges the seam.
-  useEffect(() => {
-    function refresh() {
-      refreshTasks();
-    }
-    window.addEventListener("verseday:task-updated", refresh);
-    window.addEventListener("verseday:task-deleted", refresh);
-    return () => {
-      window.removeEventListener("verseday:task-updated", refresh);
-      window.removeEventListener("verseday:task-deleted", refresh);
-    };
-  }, [refreshTasks]);
+  // M3.2.b.5.b — verseday:task-updated/-deleted listener retired.
+  // Task-data reactivity flows through selectTaskIdsByProject +
+  // tasksById subscriptions. workedMap aggregates are M3.3 territory
+  // and accept stale-until-mount in this window.
 
   // ── Project auto-save (debounced) ─────────────────────────────────────
 
@@ -815,7 +805,7 @@ export default function ProjectDetail() {
       }
     }
     try {
-      await createTask({
+      await createTaskAction({
         title,
         projectId: selectedProjectId,
         dateScheduled: newTaskDate || null,
@@ -847,7 +837,7 @@ export default function ProjectDetail() {
       est = parsed.minutes;
     }
     try {
-      await createTask({
+      await createTaskAction({
         title,
         projectId: selectedProjectId,
         dateScheduled: date,
@@ -1001,7 +991,7 @@ export default function ProjectDetail() {
         : Number(activeId);
       if (Number.isNaN(taskId)) return;
       try {
-        await updateTaskDateScheduled(taskId, dateIso);
+        await setTaskDateScheduledAction(taskId, dateIso);
         refreshTasks();
       } catch (e) {
         setError(errorMessage(e, "Failed to schedule task"));
@@ -1018,16 +1008,31 @@ export default function ProjectDetail() {
     const oldIndex = visibleTasks.findIndex((t) => t.id === active.id);
     const newIndex = visibleTasks.findIndex((t) => t.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
-    // M3.2.b.2 — selector-derived `tasks` means we can't mutate the
-    // list optimistically; the canonical order updates after
-    // updateTaskSortOrders + loadTasksForProject. dnd-kit's drop
-    // animation covers the brief gap.
-    const reordered = arrayMove(visibleTasks, oldIndex, newIndex);
+    // M3.2.b.5.b — store action handles SQL batch + canonical map
+    // sort_order patches + index slice replacement atomically. The
+    // bucket parameter is the project bucket (not date) since this
+    // is the project-task list reorder. Note: visibleTasks excludes
+    // done tasks if showDone=false, but the bucket replacement
+    // expects the COMPLETE ordered ID list. To preserve done tasks'
+    // relative order, we reorder the visible portion in-place
+    // within the full bucket and pass that.
+    const reorderedVisible = arrayMove(visibleTasks, oldIndex, newIndex);
+    const visibleIdSet = new Set(visibleTasks.map((t) => t.id));
+    const reorderedVisibleIter = reorderedVisible[Symbol.iterator]();
+    const orderedIds: number[] = [];
+    for (const t of tasks) {
+      if (visibleIdSet.has(t.id)) {
+        const next = reorderedVisibleIter.next();
+        if (!next.done) orderedIds.push(next.value.id);
+      } else {
+        orderedIds.push(t.id);
+      }
+    }
     try {
-      await updateTaskSortOrders(
-        reordered.map((t, i) => ({ id: t.id, sortOrder: i }))
+      await setTaskSortOrdersAction(
+        { kind: "project", projectId: selectedProjectId! },
+        orderedIds,
       );
-      await loadTasksForProject(selectedProjectId!);
     } catch (e) {
       setError(errorMessage(e, "Failed to reorder"));
       refreshTasks();
@@ -1311,7 +1316,7 @@ export default function ProjectDetail() {
                       onDelete={(id) => setConfirmDeleteId(id)}
                       onStart={handleStartFocus}
                       onSetDate={(id, date) => {
-                        updateTaskDateScheduled(id, date || null)
+                        setTaskDateScheduledAction(id, date || null)
                           .then(() => refreshTasks())
                           .catch((e) => setError(errorMessage(e, "Failed to set date")));
                       }}
@@ -1485,9 +1490,9 @@ export default function ProjectDetail() {
         </div>
 
       {/* TaskDetailOverlay is mounted as a singleton at App.tsx
-          (M1 — see TaskDetailOverlayHost). The verseday:task-updated /
-          task-deleted listeners refresh local state when the host
-          commits changes. */}
+          (M1 — see TaskDetailOverlayHost). After M3.2.b.5.b, host
+          mutations route through store actions — task-list rows
+          re-render via canonical-map subscriptions automatically. */}
 
       {/* Quick-add modal — pops up when a "This week" day cell is clicked */}
       {quickAddDate && (

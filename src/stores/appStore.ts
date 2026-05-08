@@ -299,6 +299,12 @@ interface AppState {
    *  be brittle since callers already know which bucket they're
    *  reordering.
    *
+   *  Non-optimistic — SQL writes before the map update; dnd-kit's
+   *  drop animation covers the round-trip latency. Avoids the
+   *  rollback path that an optimistic write would need on partial
+   *  failure (other actions in this surface ARE optimistic; the
+   *  asymmetry is deliberate).
+   *
    *  Failure path: refetch the bucket via loadTasksForDate /
    *  loadTasksForProject (the load action's primary-slice replacement
    *  restores SQL truth). console.error with debug context. */

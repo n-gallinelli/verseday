@@ -13,8 +13,6 @@ import {
 import { selectTaskIdsByWeek, useAppStore } from "../../stores/appStore";
 import {
   getProjects,
-  createTask,
-  updateTaskDateScheduled,
   getAllTasksForProjectIds,
   getUnscheduledTasks,
   getWeeklyShutdown,
@@ -475,6 +473,8 @@ export default function ScheduleTab() {
   const loadTasksForWeek = useAppStore((s) => s.loadTasksForWeek);
   const setTaskStatusAction = useAppStore((s) => s.setTaskStatus);
   const deleteTaskAction = useAppStore((s) => s.deleteTaskAction);
+  const setTaskDateScheduledAction = useAppStore((s) => s.setTaskDateScheduled);
+  const createTaskAction = useAppStore((s) => s.createTaskAction);
   const tasksById = useAppStore((s) => s.tasksById);
 
   // M3.2.b.3 — weekTasks flow through the canonical store via the
@@ -627,20 +627,11 @@ export default function ScheduleTab() {
     loadData();
   }, [loadData]);
 
-  // M1.b — refetch when the singleton overlay commits a mutation.
-  // M3.2 retires this listener in favor of canonical store
-  // subscriptions; until then, the broadcast bridges the seam.
-  useEffect(() => {
-    function refresh() {
-      loadData();
-    }
-    window.addEventListener("verseday:task-updated", refresh);
-    window.addEventListener("verseday:task-deleted", refresh);
-    return () => {
-      window.removeEventListener("verseday:task-updated", refresh);
-      window.removeEventListener("verseday:task-deleted", refresh);
-    };
-  }, [loadData]);
+  // M3.2.b.5.b — verseday:task-updated/-deleted listener retired.
+  // Task-data reactivity flows through selectTaskIdsByWeek + tasksById
+  // (weekTasks) and the hybrid bucket-filter memos (allProjectTasks,
+  // unscheduledUnassigned). Status / date / project flips drop rows
+  // from buckets via the filters; renames re-render through tasksById.
 
   // ── Actions ───────────────────────────────────────────────────────────
 
@@ -654,15 +645,15 @@ export default function ScheduleTab() {
 
   async function handleCreateForDate(date: string) {
     try {
-      const id = await createTask({
+      const id = await createTaskAction({
         title: "",
         projectId: null,
         dateScheduled: date,
         estimatedMinutes: null,
       });
       draftTaskIds.current.add(id);
-      // Refresh canonical map so the new row resolves through tasksById.
-      await loadTasksForWeek(selectedWeek);
+      // createTaskAction populated canonical map + indices; explicit
+      // openTaskDetail resolves synchronously.
       openTaskDetail(id, { autoFocusTitle: true });
     } catch (e) {
       setError(errorMessage(e, "Failed to add task"));
@@ -735,7 +726,7 @@ export default function ScheduleTab() {
     if (task.date_scheduled === droppedDate) return;
 
     try {
-      await updateTaskDateScheduled(task.id, droppedDate);
+      await setTaskDateScheduledAction(task.id, droppedDate);
       const fromDate = task.date_scheduled;
       loadData();
       // Clear any prior pending undo and queue a new one
@@ -759,7 +750,7 @@ export default function ScheduleTab() {
     clearTimeout(timeoutId);
     setPendingMove(null);
     try {
-      await updateTaskDateScheduled(taskId, fromDate);
+      await setTaskDateScheduledAction(taskId, fromDate);
       loadData();
     } catch (e) {
       setError(errorMessage(e, "Failed to undo move"));

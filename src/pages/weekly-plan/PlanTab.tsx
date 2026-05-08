@@ -21,7 +21,6 @@ import {
   getWeeklyPlanCommitments,
   setWeeklyPlanCommitment,
   clearWeeklyPlanCommitment,
-  createTask,
   getDefaultTaskEstimateMin,
   type WeeklyPlanProjectStatus,
 } from "../../db/queries";
@@ -42,6 +41,7 @@ export default function PlanTab() {
   const loadTasksForProject = useAppStore((s) => s.loadTasksForProject);
   const updateTaskAction = useAppStore((s) => s.updateTask);
   const deleteTaskAction = useAppStore((s) => s.deleteTaskAction);
+  const createTaskAction = useAppStore((s) => s.createTaskAction);
   const tasksById = useAppStore((s) => s.tasksById);
   const weekDates = weekdayDates(selectedWeek);
 
@@ -129,20 +129,14 @@ export default function PlanTab() {
     loadData();
   }, [loadData]);
 
-  // M1.b — refetch when the singleton overlay commits a mutation.
-  // M3.2 retires this listener in favor of canonical store
-  // subscriptions; until then, the broadcast bridges the seam.
-  useEffect(() => {
-    function refresh() {
-      loadData();
-    }
-    window.addEventListener("verseday:task-updated", refresh);
-    window.addEventListener("verseday:task-deleted", refresh);
-    return () => {
-      window.removeEventListener("verseday:task-updated", refresh);
-      window.removeEventListener("verseday:task-deleted", refresh);
-    };
-  }, [loadData]);
+  // M3.2.b.5.b — verseday:task-updated/-deleted listener retired.
+  // PlanTab's loadData refreshes project metadata, weekly plan
+  // statuses, and commitments — none of which are derived from
+  // task data. The listener was overcautious (it only fired
+  // loadData; task-data reactivity already flows through
+  // selectTaskIdsByProject + tasksById). Project / status /
+  // commitment refreshes happen on selectedWeek change via the
+  // existing useEffect.
 
   // Load tasks for the currently-selected project into the canonical
   // store. The selector subscription above re-renders the list when
@@ -310,12 +304,16 @@ export default function PlanTab() {
       est = parsed.minutes;
     }
     try {
-      await createTask({
+      await createTaskAction({
         title: cleanTitle,
         projectId: selectedId,
         dateScheduled: null,
         estimatedMinutes: est,
       });
+      // createTaskAction already wrote to canonical map + indices;
+      // explicit reloadTasks is redundant for the new task itself
+      // but kept for cases where the project_id of the new task
+      // doesn't match selectedId (defensive — should always match).
       await reloadTasks(selectedId);
     } catch (e) {
       setError(errorMessage(e, "Failed to create task"));
@@ -527,9 +525,9 @@ export default function PlanTab() {
       </DndContext>
 
       {/* TaskDetailOverlay is mounted as a singleton at App.tsx
-          (M1 — see TaskDetailOverlayHost). The verseday:task-updated /
-          task-deleted listeners refresh local state when the host
-          commits changes. */}
+          (M1 — see TaskDetailOverlayHost). After M3.2.b.5.b, host
+          mutations route through store actions — local state
+          re-renders via canonical-map subscriptions automatically. */}
     </div>
   );
 }

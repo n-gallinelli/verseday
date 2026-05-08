@@ -137,22 +137,13 @@ export default function Projects() {
     loadData();
   }, [loadData]);
 
-  // M1.b — refetch when the singleton overlay commits a mutation.
-  // M3.2 retires this listener in favor of canonical store
-  // subscriptions; until then, the broadcast bridges the seam.
-  useEffect(() => {
-    function refresh() {
-      loadData();
-      // Drop expanded-project task caches so they reload fresh on next expand.
-      setProjectTasks(new Map());
-    }
-    window.addEventListener("verseday:task-updated", refresh);
-    window.addEventListener("verseday:task-deleted", refresh);
-    return () => {
-      window.removeEventListener("verseday:task-updated", refresh);
-      window.removeEventListener("verseday:task-deleted", refresh);
-    };
-  }, [loadData]);
+  // M3.2.b.5.b — verseday:task-updated/-deleted listener retired.
+  // matchingTaskIds renders rely on canonical map reactivity — a
+  // rename in the detail overlay re-renders the search row through
+  // the tasksById subscription. getProjectStats values go stale on
+  // task mutation until the next screen mount (browse-context
+  // staleness, accepted per the M3.2.b.5 audit). Expanded-project
+  // task caches load fresh on each expand anyway.
 
   // Search tasks alongside projects. Lightly debounced so each keystroke
   // doesn't hit SQLite. Empty query clears the result list.
@@ -767,9 +758,9 @@ export default function Projects() {
       )}
 
       {/* TaskDetailOverlay is mounted as a singleton at App.tsx
-          (M1 — see TaskDetailOverlayHost). The verseday:task-updated /
-          task-deleted listeners refresh local state when the host
-          commits changes. */}
+          (M1 — see TaskDetailOverlayHost). After M3.2.b.5.b, host
+          mutations route through store actions — search-result rows
+          re-render via canonical-map subscriptions automatically. */}
     </div>
   );
 }

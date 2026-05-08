@@ -141,20 +141,10 @@ export default function DailyShutdown() {
     setStep(1);
   }, [loadData]);
 
-  // M1.b — refetch when the singleton overlay commits a mutation.
-  // M3.2 retires this listener in favor of canonical store
-  // subscriptions; until then, the broadcast bridges the seam.
-  useEffect(() => {
-    function refresh() {
-      loadData();
-    }
-    window.addEventListener("verseday:task-updated", refresh);
-    window.addEventListener("verseday:task-deleted", refresh);
-    return () => {
-      window.removeEventListener("verseday:task-updated", refresh);
-      window.removeEventListener("verseday:task-deleted", refresh);
-    };
-  }, [loadData]);
+  // M3.2.b.5.b — verseday:task-updated/-deleted listener retired.
+  // Task-data flows through selectTaskIdsByDate + tasksById. Worked-
+  // minute aggregates accept stale-until-mount in this window per
+  // the M3.2.b.5 audit (M3.3 territory).
 
   // Auto-save mood + reflection
   function debouncedSave(newMood: string | null, newFields: ReflectionFields) {
@@ -603,9 +593,9 @@ export default function DailyShutdown() {
           identical regardless of where it was opened from (trash icon,
           start-focus button, pre-filled worked-minutes). */}
       {/* TaskDetailOverlay is mounted as a singleton at App.tsx
-          (M1 — see TaskDetailOverlayHost). The verseday:task-updated /
-          task-deleted listeners below refresh local lists when the host
-          commits changes. */}
+          (M1 — see TaskDetailOverlayHost). After M3.2.b.5.b, host
+          mutations route through store actions — task-list rows
+          re-render via canonical-map subscriptions automatically. */}
     </div>
   );
 }

@@ -618,6 +618,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .manage(commands::QuickAddState {
             previous_app: std::sync::Mutex::new(String::new()),
         })

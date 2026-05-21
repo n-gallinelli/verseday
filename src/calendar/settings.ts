@@ -19,6 +19,12 @@ import { getSetting, setSetting } from "../db/queries";
 
 const KEY_ENABLED = "calendar.enabled";
 const KEY_EXCLUDED = "calendar.excluded";
+const KEY_APPROACH_NOTIFY_ENABLED = "calendar.approach_notify_enabled";
+const KEY_APPROACH_LEAD_MINUTES = "calendar.approach_lead_minutes";
+
+export const APPROACH_LEAD_DEFAULT = 3;
+export const APPROACH_LEAD_MIN = 1;
+export const APPROACH_LEAD_MAX = 15;
 
 export async function getEnabled(): Promise<boolean> {
   return (await getSetting(KEY_ENABLED)) === "1";
@@ -46,4 +52,30 @@ export async function setExcludedCalendarIds(ids: Iterable<string>): Promise<voi
   // Sort for deterministic on-disk shape (debugging / diffability).
   const arr = [...new Set(ids)].sort();
   await setSetting(KEY_EXCLUDED, JSON.stringify(arr));
+}
+
+// ── Meeting approach notifier (M5) ─────────────────────────────────────
+
+export async function getApproachNotifyEnabled(): Promise<boolean> {
+  return (await getSetting(KEY_APPROACH_NOTIFY_ENABLED)) === "1";
+}
+
+export async function setApproachNotifyEnabled(enabled: boolean): Promise<void> {
+  await setSetting(KEY_APPROACH_NOTIFY_ENABLED, enabled ? "1" : "0");
+}
+
+export async function getApproachLeadMinutes(): Promise<number> {
+  const raw = await getSetting(KEY_APPROACH_LEAD_MINUTES);
+  if (!raw) return APPROACH_LEAD_DEFAULT;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n)) return APPROACH_LEAD_DEFAULT;
+  return Math.min(APPROACH_LEAD_MAX, Math.max(APPROACH_LEAD_MIN, n));
+}
+
+export async function setApproachLeadMinutes(minutes: number): Promise<void> {
+  const clamped = Math.min(
+    APPROACH_LEAD_MAX,
+    Math.max(APPROACH_LEAD_MIN, Math.round(minutes)),
+  );
+  await setSetting(KEY_APPROACH_LEAD_MINUTES, String(clamped));
 }

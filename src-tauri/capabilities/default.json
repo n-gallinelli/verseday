@@ -24,6 +24,11 @@
     "core:webview:allow-create-webview-window",
     "sql:default",
     "sql:allow-execute",
-    "sql:allow-select"
+    "sql:allow-select",
+    "notification:default",
+    "notification:allow-notify",
+    "notification:allow-request-permission",
+    "notification:allow-is-permission-granted",
+    "notification:allow-permission-state"
   ]
 }

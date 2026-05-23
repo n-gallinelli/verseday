@@ -20,7 +20,18 @@ import {
   setEnabled as setEnabledSetting,
   getExcludedCalendarIds,
   setExcludedCalendarIds,
+  getApproachNotifyEnabled,
+  setApproachNotifyEnabled,
+  getApproachLeadMinutes,
+  setApproachLeadMinutes,
+  APPROACH_LEAD_DEFAULT,
+  APPROACH_LEAD_MIN,
+  APPROACH_LEAD_MAX,
 } from "../../calendar/settings";
+import {
+  isPermissionGranted as isNotificationPermissionGranted,
+  requestPermission as requestNotificationPermission,
+} from "@tauri-apps/plugin-notification";
 import {
   useCalendarPermission,
   useCalendarSync,
@@ -46,6 +57,13 @@ export default function CalendarSettings() {
   const [revoked, setRevoked] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // Approach-notification state (M5). Setting reads are async; null
+  // until first load. `notifyPermissionBlocked` reflects the OS-level
+  // notification permission (separate from calendar/EventKit).
+  const [approachEnabled, setApproachEnabled] = useState(false);
+  const [approachLead, setApproachLead] = useState<number>(APPROACH_LEAD_DEFAULT);
+  const [notifyPermissionBlocked, setNotifyPermissionBlocked] = useState(false);
+  const leadDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Sync-result feedback rendered inline in the "Sync now" button slot
   // (e.g. "Up to date.") instead of as a separate panel below the
   // section. Keeps the panel from growing on every sync.
@@ -59,14 +77,32 @@ export default function CalendarSettings() {
   // Load persisted state on mount.
   useEffect(() => {
     void (async () => {
-      const [en, ex, ls] = await Promise.all([
+      const [en, ex, ls, apEn, apLead] = await Promise.all([
         getEnabled(),
         getExcludedCalendarIds(),
         getSetting(KEY_LAST_SYNCED_AT),
+        getApproachNotifyEnabled(),
+        getApproachLeadMinutes(),
       ]);
       setEnabledState(en);
       setExcluded(ex);
       setLastSyncedAt(ls);
+      setApproachEnabled(apEn);
+      setApproachLead(apLead);
+      // Re-probe macOS notification permission on every mount — the
+      // user can flip it in System Settings out-of-band. Without the
+      // re-probe a previously-denied state would stay stale until the
+      // user toggled the row off and on.
+      if (apEn) {
+        try {
+          const granted = await isNotificationPermissionGranted();
+          setNotifyPermissionBlocked(!granted);
+        } catch {
+          // isPermissionGranted shouldn't throw on macOS, but if the
+          // plugin surface ever changes, treat as unknown (not blocked).
+          setNotifyPermissionBlocked(false);
+        }
+      }
     })();
   }, []);
 
@@ -121,8 +157,64 @@ export default function CalendarSettings() {
   useEffect(() => {
     return () => {
       if (excludeDebounce.current) clearTimeout(excludeDebounce.current);
+      if (leadDebounce.current) clearTimeout(leadDebounce.current);
     };
   }, []);
+
+  async function handleApproachToggle(next: boolean) {
+    if (!next) {
+      setApproachEnabled(false);
+      setNotifyPermissionBlocked(false);
+      await setApproachNotifyEnabled(false);
+      return;
+    }
+
+    // Toggling ON — request macOS notification permission. The plugin
+    // returns 'granted' | 'denied' | 'default'. 'default' means the
+    // user hasn't decided (rare after first prompt).
+    let result: string;
+    try {
+      result = await requestNotificationPermission();
+    } catch (e) {
+      setError(errorMessage(e, "Couldn't request notification permission"));
+      setApproachEnabled(false);
+      return;
+    }
+
+    if (result === "granted") {
+      setApproachEnabled(true);
+      setNotifyPermissionBlocked(false);
+      await setApproachNotifyEnabled(true);
+      return;
+    }
+
+    if (result === "denied") {
+      // Toggle stays ON (intent) but render the blocked-permission
+      // hint — Verse condition §6.5. macOS won't re-prompt; user must
+      // flip it in System Settings.
+      setApproachEnabled(true);
+      setNotifyPermissionBlocked(true);
+      await setApproachNotifyEnabled(true);
+      return;
+    }
+
+    // 'default' — OS dismissed without decision. Treat as transient,
+    // leave the toggle off.
+    setApproachEnabled(false);
+    setToast("Couldn't get notification permission — try again.");
+  }
+
+  function handleLeadChange(next: number) {
+    const clamped = Math.min(
+      APPROACH_LEAD_MAX,
+      Math.max(APPROACH_LEAD_MIN, Math.round(next)),
+    );
+    setApproachLead(clamped);
+    if (leadDebounce.current) clearTimeout(leadDebounce.current);
+    leadDebounce.current = setTimeout(() => {
+      void setApproachLeadMinutes(clamped);
+    }, SYNC_DEBOUNCE_MS);
+  }
 
   const fireInitialSync = useCallback(async () => {
     // Verse correction #2: wrap the immediate post-toggle-on sync in
@@ -324,6 +416,70 @@ export default function CalendarSettings() {
                     </label>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Approach notifications (M5). Only meaningful when the
+            calendar integration is on — gated behind `showCalendarList`
+            so the toggle doesn't appear without a synced calendar to
+            notify against. */}
+        {showCalendarList && (
+          <div className="space-y-3 pt-3" style={{ borderTop: "0.5px solid var(--border-hairline)" }}>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[13px] text-fg">Approach notifications</div>
+                <div className="text-[11px] text-fg-faded">Notify before a meeting starts.</div>
+              </div>
+              <button
+                onClick={() => handleApproachToggle(!approachEnabled)}
+                className="relative w-10 h-6 rounded-full transition-colors"
+                style={{
+                  backgroundColor: approachEnabled ? "var(--accent-green)" : "var(--border-medium)",
+                }}
+                aria-pressed={approachEnabled}
+                aria-label={approachEnabled ? "Disable approach notifications" : "Enable approach notifications"}
+              >
+                <span
+                  className="absolute top-0.5 left-0 w-5 h-5 rounded-full bg-white transition-transform"
+                  style={{ transform: approachEnabled ? "translateX(18px)" : "translateX(2px)" }}
+                />
+              </button>
+            </div>
+            {approachEnabled && notifyPermissionBlocked && (
+              <div className="text-[11px] text-fg-faded">
+                Notifications blocked in System Settings.
+              </div>
+            )}
+            {approachEnabled && (
+              <div className="flex items-center justify-between">
+                <div className="text-[12px] text-fg-secondary">
+                  Lead time
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleLeadChange(approachLead - 1)}
+                    disabled={approachLead <= APPROACH_LEAD_MIN}
+                    className="w-6 h-6 rounded-md cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed text-fg-secondary transition-colors hover:bg-overlay-hover"
+                    style={{ border: "0.5px solid var(--border-hairline)" }}
+                    aria-label="Decrease lead time"
+                  >
+                    −
+                  </button>
+                  <span className="text-[13px] text-fg tabular-nums w-12 text-center">
+                    {approachLead} min
+                  </span>
+                  <button
+                    onClick={() => handleLeadChange(approachLead + 1)}
+                    disabled={approachLead >= APPROACH_LEAD_MAX}
+                    className="w-6 h-6 rounded-md cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed text-fg-secondary transition-colors hover:bg-overlay-hover"
+                    style={{ border: "0.5px solid var(--border-hairline)" }}
+                    aria-label="Increase lead time"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
             )}
           </div>

@@ -27,6 +27,7 @@ import {
   startTimeEntry,
   getWorkedMinutesForTask,
 } from "./db/queries";
+import { startMeetingApproachNotifier } from "./calendar/meetingApproachNotifier";
 import type { Page, Task } from "./types";
 
 const PAGE_SHORTCUTS: Record<string, Page> = {
@@ -315,6 +316,14 @@ function MainApp() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [setPage, startFocus]);
+
+  // Meeting approach notifier — single global mount per Verse §6.4.
+  // Owns its own 30s tick + dedup + permission probe; reads settings
+  // fresh every tick so a Settings toggle takes effect immediately.
+  useEffect(() => {
+    const stop = startMeetingApproachNotifier();
+    return stop;
+  }, []);
 
   // Resolve which page to show in the background
   // When project_detail is open, show the previous page behind the modal

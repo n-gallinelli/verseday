@@ -20,6 +20,12 @@ import {
 import RichTextEditor from "../components/RichTextEditor";
 import VerseDayLogo from "../components/VerseDayLogo";
 import { todayString } from "../utils/dates";
+import {
+  getBreakContinuity,
+  shouldContinueBreakCycle,
+  BREAK_CONTINUITY_GAP_MS,
+  type BreakContinuity,
+} from "../utils/focusSettings";
 import { getEmptyDayMessage } from "../utils/format";
 import { playBreakChime as playChime } from "../utils/sounds";
 import type { Page } from "../types";
@@ -254,14 +260,29 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     // S.3 — elapsed is derived from focus.workedMs; no setElapsed(0)
     // needed (workedMs already starts at 0 on a new active session
     // via startFocus/activateFocus).
+    //
+    // Session-local timing always resets on a new task (a stale break prompt
+    // must never carry to the next task).
     totalBreakTimeRef.current = 0;
     workCycleStartRef.current = 0;
-    setCompletedPomodoros(0);
     setPhase("work");
     setBreakRemaining(0);
     setBreakDuration(0);
     setPrompt(null);
     snoozeThresholdRef.current = null;
+
+    // Break-cycle accrual: in "continue" mode with a sub-threshold idle gap,
+    // carry the prior task's accrued work into this cycle (so e.g. 23 min on
+    // task A + 2 min on task B triggers the break); otherwise reset. Read the
+    // mode via ref so toggling the setting doesn't itself reset the cycle.
+    const gapMs = Date.now() - lastActiveTickAtRef.current;
+    if (shouldContinueBreakCycle(breakContinuityRef.current, gapMs)) {
+      breakCarryRef.current = lastWorkElapsedRef.current; // resume the cycle
+      // keep completedPomodoros so the long-break cadence stays coherent
+    } else {
+      breakCarryRef.current = 0;
+      setCompletedPomodoros(0);
+    }
   }, [focus?.taskId]);
 
   function saveNotes(value: string) {
@@ -459,6 +480,19 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // Calculate work-only elapsed (total elapsed minus break time)
   const totalBreakTimeRef = useRef(0);
 
+  // Break-continuity (#pomodoro setting). "reset" = the break cycle resets on
+  // every task switch (historical). "continue" = it carries across task
+  // switches / short pauses, resetting only after a >= 2-min idle/paused gap.
+  const [breakContinuity, setBreakContinuity] = useState<BreakContinuity>("reset");
+  const breakContinuityRef = useRef(breakContinuity);
+  breakContinuityRef.current = breakContinuity;
+  // breakCarryRef — ms of prior-session work carried into the current cycle
+  // (added to `we`). lastWorkElapsedRef — last computed `we`. lastActiveTickAtRef
+  // — Date.now() of the last active tick, for the idle-gap test.
+  const breakCarryRef = useRef(0);
+  const lastWorkElapsedRef = useRef(0);
+  const lastActiveTickAtRef = useRef(0);
+
   // S.3 — Timer tick. Runs only on active running sessions. The store
   // owns workedMs; this effect's job is to call tickFocus(deltaMs) at
   // 1Hz with wall-clock deltas (Date.now() - lastTickAt), and to drive
@@ -480,6 +514,30 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const focusMode = focus?.mode ?? null;
   const isPaused = focus?.mode === "active" ? focus.paused : true;
   const lastTickRef = useRef<number>(0);
+  const prevPausedRef = useRef(isPaused);
+  // Read the break-continuity setting on mount and on each task start, so a
+  // Settings toggle applies to the next focus session without a reload.
+  useEffect(() => {
+    getBreakContinuity().then(setBreakContinuity).catch(() => {});
+  }, [focusTaskId]);
+
+  // Resume-from-pause gap reset (continue mode only): if the session was
+  // paused/idle for >= the threshold, restart the work cycle from the current
+  // position when it resumes. In "reset" mode a pause never resets the cycle
+  // (historical behavior).
+  useEffect(() => {
+    const wasPaused = prevPausedRef.current;
+    prevPausedRef.current = isPaused;
+    if (!wasPaused || isPaused) return; // only act on paused -> active
+    if (focusMode !== "active") return;
+    if (breakContinuityRef.current !== "continue") return;
+    const gapMs = Date.now() - lastActiveTickAtRef.current;
+    if (gapMs >= BREAK_CONTINUITY_GAP_MS) {
+      workCycleStartRef.current = lastWorkElapsedRef.current; // currentCycleElapsed -> 0
+      snoozeThresholdRef.current = null;
+      setCompletedPomodoros(0);
+    }
+  }, [isPaused, focusMode]);
   useEffect(() => {
     if (focusMode !== "active" || isPaused) return;
     lastTickRef.current = Date.now();
@@ -510,9 +568,14 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       const latest = useAppStore.getState().focus;
       if (!latest || latest.mode !== "active") return;
       const raw = latest.workedMs;
+      // Stamp the last active tick (for the break-continuity idle-gap test).
+      lastActiveTickAtRef.current = now;
 
       if (phase === "work") {
-        const we = raw - totalBreakTimeRef.current;
+        // breakCarryRef carries prior-session work in "continue" mode; 0 in
+        // "reset" mode and after a >= 2-min idle gap.
+        const we = raw - totalBreakTimeRef.current + breakCarryRef.current;
+        lastWorkElapsedRef.current = we;
         setWorkElapsed(we);
 
         // Check if we've hit a pomodoro boundary

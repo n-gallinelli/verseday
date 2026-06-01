@@ -125,22 +125,14 @@ export default function DailyPlanner() {
       off();
     };
   }, []);
-  // M3.2.b.5.b — derived from canonical tasks. Pre-cutover this was
-  // refetched via getTotalPlannedMinutes on every loadData call; the
-  // verseday listener kept it fresh on cross-screen mutations. After
-  // listener removal, the SQL refetch wouldn't fire on remote
-  // mutations, leaving the total stale ("user adds a 30-min task →
-  // total doesn't budge until next navigation"). Memo derivation
-  // closes that gap reactively. Excludes done tasks because the
-  // pre-cutover SUM did the same (the SQL query filters status !=
-  // 'done').
+  // M3.2.b.5.b — derived from canonical tasks (reactive; closes the stale-
+  // total gap after the verseday listener removal). Sums the estimate of EVERY
+  // task scheduled today, done or not — matching the planned total's intent
+  // (and the pre-cutover getTotalPlannedMinutes SQL, which has no status
+  // filter). A prior version wrongly excluded done tasks, so a day with all
+  // tasks completed read "0m" planned.
   const plannedMinutes = useMemo(
-    () =>
-      tasks.reduce(
-        (sum, t) =>
-          t.status !== "done" ? sum + (t.estimated_minutes ?? 0) : sum,
-        0,
-      ),
+    () => tasks.reduce((sum, t) => sum + (t.estimated_minutes ?? 0), 0),
     [tasks],
   );
   const [workedMinutes, setWorkedMinutes] = useState(0);

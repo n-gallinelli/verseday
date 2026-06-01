@@ -26,6 +26,7 @@ import {
   updateProject,
   startTimeEntry,
   completeProject,
+  setProjectPriority,
   deleteProject,
   archiveProject,
   getWorkedMinutesForTask,
@@ -259,18 +260,46 @@ function SortableTaskRow({
     setWorkedInput(workedMinutes > 0 ? formatMinutes(workedMinutes) : "");
   }, [workedMinutes]);
 
+  // Estimated is now a free text input (was a presets-only <select>) so a
+  // custom amount can be typed directly.
+  const [estimateInput, setEstimateInput] = useState(
+    task.estimated_minutes ? formatMinutes(task.estimated_minutes) : ""
+  );
+  useEffect(() => {
+    setEstimateInput(task.estimated_minutes ? formatMinutes(task.estimated_minutes) : "");
+  }, [task.estimated_minutes]);
+
   const prevStatusRef = useRef(task.status);
   const justCompleted = task.status === "done" && prevStatusRef.current !== "done";
   useEffect(() => { prevStatusRef.current = task.status; }, [task.status]);
 
+  // Parse "1h 30m" / "90m" / a bare "90" (treated as minutes) → total minutes.
+  function parseTimeFlexible(input: string): number {
+    let total = parseTimeInput(input);
+    if (total === 0) {
+      const n = parseInt(input, 10);
+      if (!isNaN(n) && n > 0) total = n;
+    }
+    return total;
+  }
+
   function commitWorked() {
-    const total = parseTimeInput(workedInput);
+    const total = parseTimeFlexible(workedInput);
     if (total === workedMinutes) {
       // Normalize the display in case user typed garbage
       setWorkedInput(workedMinutes > 0 ? formatMinutes(workedMinutes) : "");
       return;
     }
     onSetWorked(task.id, total);
+  }
+
+  function commitEstimate() {
+    const total = parseTimeFlexible(estimateInput);
+    if (total === (task.estimated_minutes ?? 0)) {
+      setEstimateInput(task.estimated_minutes ? formatMinutes(task.estimated_minutes) : "");
+      return;
+    }
+    onSetEstimate(task.id, total > 0 ? total : null);
   }
 
   const style = {
@@ -412,27 +441,27 @@ function SortableTaskRow({
             </LabeledInputPill>
 
             <LabeledInputPill label="Estimated" tone="time">
-              <select
-                value={task.estimated_minutes ?? ""}
+              <input
+                type="text"
+                value={estimateInput}
                 onMouseDown={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  onSetEstimate(task.id, v ? parseInt(v) : null);
+                onChange={(e) => setEstimateInput(e.target.value)}
+                onBlur={commitEstimate}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    e.currentTarget.blur();
+                  } else if (e.key === "Escape") {
+                    setEstimateInput(task.estimated_minutes ? formatMinutes(task.estimated_minutes) : "");
+                    e.currentTarget.blur();
+                  }
                 }}
-                title="Estimated time"
-                className="bg-transparent border-none outline-none text-[12px] font-medium leading-[1.2] text-fg w-full cursor-pointer appearance-none -ml-0.5"
-              >
-                <option value="">—</option>
-                <option value="15">15m</option>
-                <option value="30">30m</option>
-                <option value="45">45m</option>
-                <option value="60">1h</option>
-                <option value="90">1h 30m</option>
-                <option value="120">2h</option>
-                <option value="180">3h</option>
-                <option value="240">4h</option>
-              </select>
+                onFocus={(e) => e.currentTarget.select()}
+                placeholder="—"
+                title="Estimated time (type e.g. 20 or 1h 30m)"
+                className="bg-transparent border-none outline-none text-[12px] font-medium leading-[1.2] tabular-nums text-fg placeholder:text-fg-disabled w-full cursor-text"
+              />
             </LabeledInputPill>
           </div>
         </div>
@@ -834,6 +863,16 @@ export default function ProjectDetail() {
     }
   }
 
+  async function handlePriorityToggle() {
+    if (!project) return;
+    try {
+      await setProjectPriority(project.id, !project.priority);
+      loadData();
+    } catch (e) {
+      setError(errorMessage(e, "Failed to update priority"));
+    }
+  }
+
   // ── Task CRUD ─────────────────────────────────────────────────────────
 
   async function handleAddTask(e: React.FormEvent) {
@@ -1188,6 +1227,19 @@ export default function ProjectDetail() {
               }}
             />
 
+            <button
+              onClick={handlePriorityToggle}
+              title={project.priority ? "Remove priority" : "Mark high priority (sorts to top of Objectives)"}
+              className={`flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md cursor-pointer transition-colors ${
+                project.priority
+                  ? "text-accent-orange hover:bg-overlay-hover"
+                  : "text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover"
+              }`}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill={project.priority ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round">
+                <path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 18.9 6.1 21.5l1.2-6.5L2.5 9.4l6.6-.9z" />
+              </svg>
+            </button>
             <button
               onClick={handleCompleteToggle}
               className={`text-[12px] font-medium cursor-pointer px-2.5 py-1 rounded-md border flex-shrink-0 transition-colors ${

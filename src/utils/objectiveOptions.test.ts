@@ -14,6 +14,7 @@ function proj(id: number, completed = 0): Project {
     notes: null,
     sort_order: null,
     completed,
+    priority: 0,
     created_at: "2026-01-01",
   };
 }

@@ -121,7 +121,11 @@ function TimeFieldPill({
   const displayValue = formatDisplayMinutes(value);
   const hasValue = displayValue !== "—";
 
-  // Seed the custom-input field with the current value when the popover opens.
+  // Seed the custom-input field from the current value ONLY when the popover
+  // opens. Previously this also depended on `value`, so every keystroke (which
+  // updates `value` via onChange) re-seeded `rawInput` and re-appended the "m"
+  // suffix mid-typing — typing "20" became "2" → "2m" → "2m0". Seeding once on
+  // open leaves the field fully under the user's control while typing.
   useEffect(() => {
     if (!isOpen) return;
     if (presets.some((p) => p.value === value)) {
@@ -138,7 +142,8 @@ function TimeFieldPill({
     if (h > 0 && m > 0) setRawInput(`${h}h ${m}m`);
     else if (h > 0) setRawInput(`${h}h`);
     else setRawInput(`${n}m`);
-  }, [isOpen, value, presets]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) {

@@ -16,34 +16,32 @@ import type { Project, Task, DailyPlan, TimeEntry, WeeklyPlan, WeeklyShutdown, L
 import type { DismissalReason } from "../calendar/types";
 
 /** The colors offered in project color pickers and auto-assigned to new
- *  projects: 24 distinct pastels at even 15° hue spacing (so no two are within
- *  15° of each other — maximally distinct), ordered with a +11 step so the
- *  auto-pick sequence hands out far-apart colors as projects are created. */
+ *  projects: 12 pastels that vary LIGHTNESS and CHROMA, not just hue.
+ *
+ *  Design rules (so this can be extended later without re-introducing
+ *  lookalikes — the old 24-color set failed because every swatch sat at one
+ *  fixed lightness/saturation and only hue rotated, collapsing adjacent hues):
+ *   1. Stagger lightness deliberately — butter/lime/apricot sit lightest;
+ *      teal/blue/periwinkle sit noticeably deeper. NEVER ship two same-family
+ *      hues at the same lightness (the #1 cause of confusion).
+ *   2. Space hues by *perceived* difference, not even degrees — the eye
+ *      resolves more steps in green–blue than in orange–yellow.
+ *   3. If generating programmatically, use OKLCH (not HSL — HSL "lightness"
+ *      lies). Target ~L 0.80–0.92, C 0.06–0.12 to stay pastel, varying L and C
+ *      between neighbors. */
 export const PROJECT_PALETTE = [
-  "#EAA4A4", // 0°
-  "#A4EAD8", // 165°
-  "#EAA4C7", // 330°
-  "#A4EAB6", // 135°
-  "#EAA4EA", // 300°
-  "#B6EAA4", // 105°
-  "#C7A4EA", // 270°
-  "#D8EAA4", // 75°
-  "#A4A4EA", // 240°
-  "#EAD8A4", // 45°
-  "#A4C7EA", // 210°
-  "#EAB6A4", // 15°
-  "#A4EAEA", // 180°
-  "#EAA4B6", // 345°
-  "#A4EAC7", // 150°
-  "#EAA4D8", // 315°
-  "#A4EAA4", // 120°
-  "#D8A4EA", // 285°
-  "#C7EAA4", // 90°
-  "#B6A4EA", // 255°
-  "#EAEAA4", // 60°
-  "#A4B6EA", // 225°
-  "#EAC7A4", // 30°
-  "#A4D8EA", // 195°
+  "#F4A6B8", // Rose
+  "#F6A98C", // Coral
+  "#F3C58A", // Apricot
+  "#EFDA72", // Butter
+  "#C3DE84", // Lime
+  "#8FD3A0", // Green
+  "#6FC9BD", // Teal
+  "#9BC9EC", // Sky
+  "#7BA3E0", // Blue
+  "#A99CE8", // Periwinkle
+  "#CBA6E9", // Lavender
+  "#E89CD0", // Orchid
 ];
 
 /** Every color validateColor accepts: the current pastel palette PLUS every
@@ -51,6 +49,11 @@ export const PROJECT_PALETTE = [
  *  still validate, render, and save. Only PROJECT_PALETTE is offered in the UI. */
 export const PRESET_COLORS = [
   ...PROJECT_PALETTE,
+  // Retired 24-color even-hue palette — kept so existing objectives validate.
+  "#EAA4A4", "#A4EAD8", "#EAA4C7", "#A4EAB6", "#EAA4EA", "#B6EAA4",
+  "#C7A4EA", "#D8EAA4", "#A4A4EA", "#EAD8A4", "#A4C7EA", "#EAB6A4",
+  "#A4EAEA", "#EAA4B6", "#A4EAC7", "#EAA4D8", "#A4EAA4", "#D8A4EA",
+  "#C7EAA4", "#B6A4EA", "#EAEAA4", "#A4B6EA", "#EAC7A4", "#A4D8EA",
   // Previously-curated + legacy hexes — retained for backward compat only.
   "#809BC2", "#D4897A", "#7EAD8B", "#C9A86E", "#9B89BF", "#CC8A9D", "#6BAEC8", "#908A82",
   "#B5826B", "#6FA0A0", "#A88FC6", "#A6AE6A", "#C77F84", "#7E8CC4", "#CBA64E", "#5FA38C",

@@ -71,10 +71,25 @@ export default function ProjectIconPicker({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        title="Set objective icon"
-        className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-overlay-hover transition-colors cursor-pointer"
+        title={hasIcon ? "Change objective icon" : "Add an emoji or icon"}
+        className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors cursor-pointer ${
+          hasIcon
+            ? "hover:bg-overlay-hover"
+            : "border border-dashed border-line-medium text-fg-faded hover:text-fg-secondary hover:border-line-strong"
+        }`}
       >
-        <ProjectGlyph project={project} iconsById={byId} size={18} />
+        {hasIcon ? (
+          <ProjectGlyph project={project} iconsById={byId} size={18} />
+        ) : (
+          /* No icon yet — show a clear "add emoji" glyph (smiley + ＋) so this
+             button reads as the icon control, not a second color dot. */
+          <svg width="17" height="17" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17.5 9.2A7.5 7.5 0 1 1 10.8 2.5" />
+            <path d="M7 8.5h.01M12.5 8.5h.01" />
+            <path d="M6.8 12.5a4 4 0 0 0 5.4.6" />
+            <path d="M16 2v4M18 4h-4" />
+          </svg>
+        )}
       </button>
       {open && (
         <div

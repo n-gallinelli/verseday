@@ -1,5 +1,15 @@
 import { getDb } from "./database";
-import { todayString } from "../utils/dates";
+import {
+  SQL_TOTAL_WORKED_MINUTES_FOR_DATE,
+  SQL_CLOSE_ORPHANED_TIME_ENTRIES,
+} from "./workedSecondsSql";
+import { SQL_UPSERT_WEEKLY_SHUTDOWN } from "./shutdownSql";
+import {
+  SQL_ROLLOVER_CAPTURE,
+  SQL_ROLLOVER_MOVE,
+  SQL_ROLLOVER_EXPIRE,
+} from "./rolloverSql";
+import { todayString, localDayStartUtc, localDayEndUtc } from "../utils/dates";
 import type { Project, Task, DailyPlan, TimeEntry, WeeklyPlan, WeeklyShutdown, Link } from "../types";
 import type { DismissalReason } from "../calendar/types";
 
@@ -40,6 +50,29 @@ function validateColor(color: string): void {
   }
 }
 
+// No two *active* projects (archived = 0) may share a color. `completed`
+// does not exempt a project — a completed-but-not-archived project still
+// reserves its color. Pass the project's own id as excludeId when editing
+// so it doesn't conflict with itself.
+//
+// KNOWN LIMITATION (accepted, see docs/2026-06-01-unique-active-project-colors.md):
+// this reads then writes without a transaction, so two near-simultaneous
+// writes could both pass. Acceptable for a single-user local app; a partial
+// unique index is the real fix if it ever matters.
+async function assertColorAvailable(
+  color: string,
+  excludeId?: number
+): Promise<void> {
+  const db = await getDb();
+  const rows: { id: number }[] = await db.select(
+    "SELECT id FROM projects WHERE archived = 0 AND color = $1",
+    [color]
+  );
+  if (rows.some((r) => r.id !== excludeId)) {
+    throw new Error("That color is already used by another active project — pick a different one.");
+  }
+}
+
 function validatePriority(priority: string): void {
   if (!VALID_PRIORITIES.includes(priority)) {
     throw new Error(`Invalid priority: ${priority}`);
@@ -68,6 +101,7 @@ export async function createProject(
   color: string
 ): Promise<number> {
   validateColor(color);
+  await assertColorAvailable(color);
   const db = await getDb();
   const result = await db.execute(
     "INSERT INTO projects (name, color) VALUES ($1, $2)",
@@ -88,6 +122,7 @@ export interface UpdateProjectInput {
 
 export async function updateProject(input: UpdateProjectInput): Promise<void> {
   validateColor(input.color);
+  await assertColorAvailable(input.color, input.id);
   const db = await getDb();
   await db.execute(
     "UPDATE projects SET name = $1, color = $2, description = $3, start_date = $4, target_date = $5, notes = $6 WHERE id = $7",
@@ -111,6 +146,16 @@ export async function archiveProject(
   archived: boolean
 ): Promise<void> {
   const db = await getDb();
+  // Re-activating a project brings it back into the active set — it must not
+  // collide with a color claimed while it sat archived. Callers of the
+  // un-archive path (e.g. the undo toast) must catch this.
+  if (!archived) {
+    const rows: { color: string }[] = await db.select(
+      "SELECT color FROM projects WHERE id = $1",
+      [id]
+    );
+    if (rows[0]) await assertColorAvailable(rows[0].color, id);
+  }
   await db.execute("UPDATE projects SET archived = $1 WHERE id = $2", [
     archived ? 1 : 0,
     id,
@@ -160,47 +205,62 @@ export async function getProjectById(id: number): Promise<Project | null> {
 
 /**
  * Roll over unfinished tasks from previous days to today.
- * - Only moves tasks with rollover_count < 4
- * - On the 5th missed day, unschedules the task (date_scheduled = null)
- * - Sets original_date on first rollover to remember where the task started
- * - Only call this for today's date, never for navigated dates
+ *
+ * Counting (documented = actual): a task is moved forward on each missed day
+ * while `rollover_count < 4`, incrementing the count to at most 4. On the next
+ * (5th) missed day the count is already 4, so it's no longer moved — instead
+ * it's unscheduled (`date_scheduled = NULL`). So: moved on misses 1–4,
+ * unscheduled on miss 5.
+ *
+ * - Sets `original_date` on first rollover to remember where the task started.
+ * - Rolled tasks are renumbered to the end of today's list in a deterministic
+ *   order (#10) so they don't collide with today's existing `sort_order`.
+ * - Only call this for today's date, never for navigated dates.
  */
 export async function rolloverUnfinishedTasks(today: string): Promise<void> {
   const db = await getDb();
+
+  // #10 — capture the rows about to roll forward, in a deterministic order
+  // (oldest first, then prior sort_order), BEFORE the move. Without renumbering
+  // they'd keep their prior-day sort_order and interleave arbitrarily with
+  // today's tasks; a later drag-reorder would then persist an order the user
+  // never saw.
+  const toRoll: { id: number }[] = await db.select(SQL_ROLLOVER_CAPTURE, [today]);
 
   // Roll forward: tasks from past dates, not done, rolled fewer than 4 times.
   // Skip calendar-imported tasks — they are date-specific snapshots from
   // the user's external calendar; rolling them forward would mis-attribute
   // a meeting that happened yesterday to today's agenda. The next sync
   // re-imports for the active date instead.
-  await db.execute(
-    `UPDATE tasks
-     SET original_date = COALESCE(original_date, date_scheduled),
-         rollover_count = rollover_count + 1,
-         date_scheduled = $1
-     WHERE date_scheduled < $1
-       AND status != 'done'
-       AND rollover_count < 4
-       AND recurrence_source_id IS NULL
-       AND external_source IS NULL`,
-    [today]
-  );
+  await db.execute(SQL_ROLLOVER_MOVE, [today]);
 
-  // Expire: tasks that have now hit rollover_count = 4 from a prior pass
-  // (they were already moved to today above, but if they've been rolling for 4 days, unschedule)
-  // Actually we need to catch tasks that just hit count=4 after the above update — but the above
-  // only runs on count<4 so max after update is 4. Unschedule those on the NEXT day.
-  // Simpler: unschedule any task scheduled before today with rollover_count >= 4
-  await db.execute(
-    `UPDATE tasks
-     SET date_scheduled = NULL
-     WHERE date_scheduled < $1
-       AND status != 'done'
-       AND rollover_count >= 4
-       AND recurrence_source_id IS NULL
-       AND external_source IS NULL`,
-    [today]
-  );
+  // Expire: any still-past, still-unfinished task now at count >= 4 (i.e. it
+  // was moved on four prior days and missed again) is unscheduled. The
+  // roll-forward above only touches count < 4, so these are exactly the
+  // tasks that have exhausted their rollovers.
+  await db.execute(SQL_ROLLOVER_EXPIRE, [today]);
+
+  // #10 — append the rolled tasks after today's existing tasks, preserving
+  // today's manual order and a stable order among the rolled ones. Each rolled
+  // task lands on today (count < 4 → not expired above), so renumbering them
+  // here is safe. SAFETY: ids/positions are internal numbers, not user input.
+  if (toRoll.length > 0) {
+    const rolledIds = toRoll.map((t) => t.id);
+    const idList = rolledIds.join(",");
+    const maxRows: { m: number | null }[] = await db.select(
+      `SELECT MAX(sort_order) as m FROM tasks
+       WHERE date_scheduled = $1 AND id NOT IN (${idList})`,
+      [today]
+    );
+    const base = maxRows[0]?.m ?? 0;
+    const cases = rolledIds
+      .map((id, i) => `WHEN ${id} THEN ${base + i + 1}`)
+      .join(" ");
+    await db.execute(
+      `UPDATE tasks SET sort_order = CASE id ${cases} END WHERE id IN (${idList})`,
+      []
+    );
+  }
 }
 
 export async function getTaskById(id: number): Promise<Task | null> {
@@ -686,14 +746,6 @@ export async function updateTimeEntryWorkedSeconds(
   );
 }
 
-export async function checkpointTimeEntry(id: number): Promise<void> {
-  const db = await getDb();
-  await db.execute("UPDATE time_entries SET end_time = $1 WHERE id = $2", [
-    new Date().toISOString(),
-    id,
-  ]);
-}
-
 export async function closeOrphanedTimeEntries(
   excludeId: number | null = null,
 ): Promise<number> {
@@ -710,13 +762,10 @@ export async function closeOrphanedTimeEntries(
   // this, an app where every launch restores a focus would leave
   // those older orphans permanently open.
   const MAX_ORPHAN_HOURS = 4;
-  const result = await db.execute(
-    `UPDATE time_entries
-     SET end_time = datetime(start_time, '+' || $1 || ' hours')
-     WHERE end_time IS NULL
-       AND (CAST($2 AS INTEGER) IS NULL OR id != $2)`,
-    [MAX_ORPHAN_HOURS, excludeId]
-  );
+  const result = await db.execute(SQL_CLOSE_ORPHANED_TIME_ENTRIES, [
+    MAX_ORPHAN_HOURS,
+    excludeId,
+  ]);
   return result.rowsAffected;
 }
 
@@ -730,20 +779,15 @@ export async function getTotalPlannedMinutes(date: string): Promise<number> {
   return rows[0]?.total ?? 0;
 }
 
+// #15 — daily worked-minutes total. The `te.end_time IS NOT NULL` guard (in
+// SQL_TOTAL_WORKED_MINUTES_FOR_DATE) excludes the open in-progress session so
+// its checkpointed worked_seconds isn't double-counted against the live
+// focus.workedMs added at the app layer. SQL lives in ./workedSecondsSql so the
+// integrity test runs the identical text.
 export async function getTotalWorkedMinutes(date: string): Promise<number> {
   const db = await getDb();
-  // S.5 — reads worked_seconds directly. Open entries (the in-progress
-  // session, if any) contribute 0 until stopped — the live focus.workedMs
-  // is the source of truth for that session's contribution. Consumers
-  // that need to include the live session add focus.workedMs / 60000 at
-  // the application layer; in practice DailyPlanner re-renders on every
-  // tick anyway, and the brief gap-on-stop where a closed session pops
-  // into the total is acceptable.
   const rows: { total: number }[] = await db.select(
-    `SELECT COALESCE(SUM(te.worked_seconds), 0) / 60.0 as total
-    FROM time_entries te
-    JOIN tasks t ON te.task_id = t.id
-    WHERE t.date_scheduled = $1 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL`,
+    SQL_TOTAL_WORKED_MINUTES_FOR_DATE,
     [date]
   );
   return rows[0]?.total ?? 0;
@@ -809,7 +853,7 @@ export async function getWorkedMinutesForWeek(
     `SELECT t.date_scheduled, COALESCE(SUM(te.worked_seconds), 0) / 60.0 as total
     FROM time_entries te
     JOIN tasks t ON te.task_id = t.id
-    WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL
+    WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL AND te.end_time IS NOT NULL
     GROUP BY t.date_scheduled`,
     [startDate, endDate]
   );
@@ -835,7 +879,7 @@ export async function getWorkedMinutesPerProjectPerDay(
       `SELECT t.date_scheduled, t.project_id, COALESCE(SUM(te.worked_seconds), 0) / 60.0 as total
       FROM time_entries te
       JOIN tasks t ON te.task_id = t.id
-      WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL
+      WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL AND te.end_time IS NOT NULL
       GROUP BY t.date_scheduled, t.project_id`,
       [startDate, endDate]
     );
@@ -912,11 +956,16 @@ export async function upsertWeeklyShutdown(
   mood: string | null = null
 ): Promise<void> {
   const db = await getDb();
-  await db.execute(
-    `INSERT INTO weekly_shutdowns (week_start_date, reflections, incomplete_items, mood) VALUES ($1, $2, $3, $4)
-     ON CONFLICT(week_start_date) DO UPDATE SET reflections = $2, incomplete_items = $3, mood = $4`,
-    [weekStartDate, reflections, incompleteItems, mood]
-  );
+  // #6 — null-preserving upsert (SQL in ./shutdownSql so the integrity test
+  // runs the identical text). Weekly-ONLY: upsertDailyShutdown keeps the plain
+  // replace because its callers pass full state and must be able to clear a
+  // reflection to null.
+  await db.execute(SQL_UPSERT_WEEKLY_SHUTDOWN, [
+    weekStartDate,
+    reflections,
+    incompleteItems,
+    mood,
+  ]);
 }
 
 // Project stats (batched)
@@ -1038,8 +1087,14 @@ export async function getTasksCompletedInWeek(
   fridayIso: string
 ): Promise<Task[]> {
   const db = await getDb();
-  // End-of-Friday cutoff so timestamps later in Friday still match.
-  const fridayEnd = `${fridayIso}T23:59:59.999Z`;
+  // #9 — completed_at is a UTC instant (Date.toISOString()), but the week is a
+  // LOCAL Mon..Fri. Compare it against the UTC instants of local-Monday-start
+  // and local-Friday-end, so a task completed near midnight is counted in the
+  // correct local week (the old code compared a UTC timestamp against bare
+  // local date strings + a UTC-suffixed Friday end). The date_scheduled
+  // fallback branch stays on local date strings — that column IS a local date.
+  const completedStartUtc = localDayStartUtc(mondayIso);
+  const completedEndUtc = localDayEndUtc(fridayIso);
   return db.select(
     `SELECT * FROM tasks
      WHERE status = 'done'
@@ -1049,12 +1104,12 @@ export async function getTasksCompletedInWeek(
             AND completed_at >= $1
             AND completed_at <= $2)
          OR (completed_at IS NULL
-            AND date_scheduled >= $1
-            AND date_scheduled <= $3)
+            AND date_scheduled >= $3
+            AND date_scheduled <= $4)
        )
      ORDER BY COALESCE(completed_at, date_scheduled) ASC, sort_order ASC
      LIMIT 1000`,
-    [mondayIso, fridayEnd, fridayIso]
+    [completedStartUtc, completedEndUtc, mondayIso, fridayIso]
   );
 }
 
@@ -1113,7 +1168,7 @@ export async function getWorkedMinutesForTaskIds(
   const rows: { task_id: number; total: number }[] = await db.select(
     `SELECT task_id, COALESCE(SUM(worked_seconds), 0) / 60.0 as total
     FROM time_entries
-    WHERE task_id IN (${inList})
+    WHERE task_id IN (${inList}) AND end_time IS NOT NULL
     GROUP BY task_id`,
     []
   );
@@ -1129,7 +1184,7 @@ export async function getWorkedMinutesForTask(taskId: number): Promise<number> {
   const rows: { total: number }[] = await db.select(
     `SELECT COALESCE(SUM(worked_seconds), 0) / 60.0 as total
     FROM time_entries
-    WHERE task_id = $1`,
+    WHERE task_id = $1 AND end_time IS NOT NULL`,
     [taskId]
   );
   return Math.round(rows[0]?.total ?? 0);
@@ -1143,7 +1198,7 @@ export async function getWorkedMinutesByDate(
     `SELECT date(start_time) as day,
       COALESCE(SUM(worked_seconds), 0) / 60.0 as total
     FROM time_entries
-    WHERE task_id = $1
+    WHERE task_id = $1 AND end_time IS NOT NULL
     GROUP BY date(start_time)
     ORDER BY day`,
     [taskId]

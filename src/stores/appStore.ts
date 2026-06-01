@@ -145,6 +145,29 @@ function withTaskMutated(s: AppState, before: Task, after: Task): Partial<AppSta
 const FOCUS_STORAGE_KEY = "verseday_focus";
 const SIDEBAR_COLLAPSED_KEY = "verseday_sidebar_collapsed";
 
+// P0-1 — one-shot OS-resume flag (sleep/lid-close worked-time guard).
+// Set by the `system-resumed` listener (App.tsx) when the OS signals a wake
+// from sleep; consumed by the focus tick so the suspended span contributes 0.
+// Module-level (not store state) — it's transient, must not trigger a render,
+// and is read/cleared imperatively from the tick. See utils/workedTime.ts.
+let focusResumePending = false;
+/** Mark that the OS just resumed from sleep. */
+export function markFocusResume(): void {
+  focusResumePending = true;
+}
+/** Read-and-clear the resume flag. */
+export function consumeFocusResume(): boolean {
+  const v = focusResumePending;
+  focusResumePending = false;
+  return v;
+}
+/** Clear without reading — used when restarting the tick (e.g. unpause) so a
+ *  flag that arrived while paused/inactive can't later eat a legitimate first
+ *  second on resume. */
+export function clearFocusResume(): void {
+  focusResumePending = false;
+}
+
 // Discriminated union: a focus session is either *preview* (task picked,
 // shown on the focus screen, but no time entry created — what the user
 // sees when they click the Focus icon) or *active* (running session with
@@ -263,6 +286,11 @@ interface AppState {
    *
    *  Failure-path: prior state intact + console.error. */
   loadSidebarPool: () => Promise<void>;
+  /** #11 — evict tasks from `tasksById` that no current view references, once
+   *  the map exceeds a high threshold. Conservative: the keep-set is computed
+   *  from the live indices, the focus/detail refs, AND the actual rail
+   *  selectors, so it can never drop a task a view shows. No-op below the cap. */
+  pruneTasksById: () => void;
   /** Optimistic patch + DB write. Updates tasksById and any affected
    *  secondary indices, then writes through to SQL.
    *
@@ -991,6 +1019,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     // throttling don't drift the counter; a stalled tick catches up
     // on the next iteration.
     //
+    // INVARIANT (P0-1): this adds deltaMs unguarded. The sleep/lid-close
+    // clamp lives at the SOLE caller — FocusMode's tick — because it must
+    // consume the one-shot OS-resume flag (which doesn't belong in the
+    // store). FocusMode's tick is the only thing that may call tickFocus.
+    // Do NOT add another caller; that would route worked time around the
+    // clamp (see utils/workedTime.ts, docs/...-stability-hardening-plan.md).
+    //
     // Persists on every call. localStorage write-per-second is cheap;
     // the persisted value IS the answer if the app crashes.
     //
@@ -1158,9 +1193,51 @@ export const useAppStore = create<AppState>((set, get) => ({
       // scan tasksById with bucket predicates, so the canonical map
       // is the only state that needs the rail's pool merged in.
       get().primeTasks(list);
+      // #11 — bound canonical-map growth across a long always-open session.
+      // Triggered here (Daily Planner path), never during Projects search,
+      // whose primed-but-unindexed results live in component state the store
+      // can't see — so it can't evict an actively-displayed search row.
+      get().pruneTasksById();
     } catch (err) {
       console.error("[appStore] loadSidebarPool failed", { err });
     }
+  },
+  pruneTasksById: () => {
+    const s = get();
+    // High cap: a realistic working set (loaded days + project/week views +
+    // rail pool) is in the low hundreds; only pathological multi-day
+    // accumulation crosses this. Scanning is O(map) but runs only when over.
+    const MAX_TASKS = 1500;
+    if (s.tasksById.size <= MAX_TASKS) return;
+
+    // Keep-set = everything any current view can resolve:
+    //  - the three id indices (date / project / week)
+    //  - focus + open-detail + pending-detail refs
+    //  - whatever the rail selectors would surface (computed by invoking the
+    //    SAME selectors the rail uses, so this can't drift from the views)
+    const keep = new Set<number>();
+    for (const ids of s.taskIdsByDate.values()) for (const id of ids) keep.add(id);
+    for (const ids of s.taskIdsByProject.values()) for (const id of ids) keep.add(id);
+    for (const ids of s.taskIdsByWeek.values()) for (const id of ids) keep.add(id);
+    if (s.focus) keep.add(s.focus.taskId);
+    if (s.selectedTaskDetailId !== null) keep.add(s.selectedTaskDetailId);
+    if (s.pendingDetailTask) keep.add(s.pendingDetailTask.id);
+    for (const list of selectUnscheduledTasksByProject(s.tasksById).values())
+      for (const t of list) keep.add(t.id);
+    for (const t of selectOrphanAndOverdueTasks(s.tasksById, todayString()))
+      keep.add(t.id);
+
+    if (keep.size >= s.tasksById.size) return; // nothing evictable
+    const next = new Map<number, Task>();
+    for (const id of keep) {
+      const t = s.tasksById.get(id);
+      if (t) next.set(id, t);
+    }
+    // No silent cap: report what was dropped.
+    console.debug(
+      `[appStore] pruneTasksById: ${s.tasksById.size} → ${next.size} (evicted ${s.tasksById.size - next.size} unreferenced)`,
+    );
+    set({ tasksById: next });
   },
   updateTask: async (patch) => {
     const current = get().tasksById.get(patch.id);
@@ -1292,6 +1369,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       await dbSetManualWorkedMinutes(id, minutes);
       // The query mutates time_entries, not the tasks row — the canonical
       // Task entry doesn't change. workedMinutes-by-task is M3.3 territory.
+      //
+      // #4 — if this task is the live focus session, keep its on-screen
+      // elapsed readout in sync with the DB. setFocusPriorElapsedMs no-ops
+      // unless focus.taskId === id, so this is safe for any task. Centralizing
+      // it here covers every caller (ProjectDetail edit, etc.), not just the
+      // TaskDetailOverlay which already calls it directly (idempotent — same
+      // value); the focus baseline is the manual minutes the user just set.
+      get().setFocusPriorElapsedMs(id, minutes * 60 * 1000);
     } catch (err) {
       console.error("[appStore] setTaskWorkedMinutes failed", { id, minutes, err });
     }

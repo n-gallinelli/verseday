@@ -39,6 +39,9 @@ objc2-foundation = { version = "0.3", features = [
     "NSPredicate",
     "NSError",
     "NSURL",
+    # NSNotification: NSNotificationCenter + NSNotification, used by the P0-1
+    # system-resume notifier (commands::start_system_resume_notifier).
+    "NSNotification",
     # NSGeometry: NSPoint/NSSize/NSRect, used by the focus-pip global
     # mouse-moved monitor (commands::pip_hover) for cursor-vs-rect tests.
     "NSGeometry",

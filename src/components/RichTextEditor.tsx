@@ -107,20 +107,31 @@ export default function RichTextEditor({
     setIsEmpty(editor.isEmpty);
   }, [value, editor]);
 
-  // Flush pending save on unmount
+  // #7 — flush a PENDING edit on unmount only. Read editor/onChange through
+  // refs so the effect deps are [] (true mount/unmount), NOT [editor, onChange]:
+  // callers pass inline onChange closures, so the old deps re-ran this effect
+  // every parent render and its cleanup could fire an EARLY flush mid-edit,
+  // re-emitting and risking a stale clobber across surfaces. With no pending
+  // debounce, the cleanup writes nothing (idle close is silent); a real pending
+  // edit still flushes.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const editorRef = useRef(editor);
+  editorRef.current = editor;
   useEffect(() => {
     return () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
         debounceRef.current = null;
-        if (editor) {
-          const html = editor.getHTML();
+        const ed = editorRef.current;
+        if (ed) {
+          const html = ed.getHTML();
           lastEmittedRef.current = html;
-          onChange(html);
+          onChangeRef.current(html);
         }
       }
     };
-  }, [editor, onChange]);
+  }, []);
 
   if (!editor) return null;
 

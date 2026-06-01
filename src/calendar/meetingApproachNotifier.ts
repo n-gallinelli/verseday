@@ -14,9 +14,12 @@
 //    filter drops it. Acceptable for v1 (the meeting is in progress).
 //
 //  - Tauri webview `setInterval` can be throttled when the window is
-//    fully hidden. At a 30s tick + 3min lead the window is wide enough
-//    that throttled timers still hit it in practice. If reliability ever
-//    needs to be guaranteed, move the scheduler to Rust.
+//    fully hidden. #12 mitigates a single missed tick with NOTIFY_GRACE_MS
+//    (a just-started event still fires on the next tick). The 30s poll itself
+//    is retained while hidden (cheap settings GETs); the event-driven
+//    setTimeout-to-next-event rewrite that would remove the poll entirely is
+//    deferred as too structural for this pass (see docs/stability-followups.md).
+//    If reliability must be guaranteed, move the scheduler to Rust.
 //
 // IMPORTANT — Action button: this build ships the doc §6.3 fallback
 // (no action button). The notification's body click brings VerseDay to
@@ -45,6 +48,11 @@ import {
 const STORAGE_KEY = "meetingApproachNotifier.notifiedIds";
 const TICK_MS = 30 * 1000;
 const PRUNE_CUTOFF_MS = 24 * 60 * 60 * 1000;
+// #12 — grace for a throttled/missed tick: keep events that started up to this
+// long ago in the candidate window so a single skipped 30s tick (even at a
+// 1-min lead) doesn't drop the alert entirely. 90s ≈ 3 ticks; large enough to
+// survive throttling, small enough not to alert for a meeting well underway.
+const NOTIFY_GRACE_MS = 90 * 1000;
 
 interface NotifiedEntry {
   eventId: string;
@@ -105,7 +113,7 @@ export function startMeetingApproachNotifier(): () => void {
       if (!(await getEnabled())) return;
 
       const leadMin = await getApproachLeadMinutes();
-      const events = await upcomingEvents(leadMin);
+      const events = await upcomingEvents(leadMin, NOTIFY_GRACE_MS);
       if (events.length === 0) return;
 
       // Filter dedup BEFORE the permission probe so we don't probe on
@@ -123,10 +131,23 @@ export function startMeetingApproachNotifier(): () => void {
           1,
           Math.ceil((ev.startMs - now) / 60000),
         );
-        sendNotification({
-          title: `Meeting in ${minutesAway} min`,
-          body: ev.title,
-        });
+        // #12 — mark "notified" ONLY after a confirmed send. Previously the
+        // dedup set was updated unconditionally right after a fire-and-forget
+        // call, so a failed send still suppressed every future retry for that
+        // event. Await it and, on failure, leave it un-notified to retry next
+        // tick. (await on a void return is harmless.)
+        try {
+          await sendNotification({
+            title: `Meeting in ${minutesAway} min`,
+            body: ev.title,
+          });
+        } catch (sendErr) {
+          console.error(
+            "meetingApproachNotifier: sendNotification failed, will retry",
+            sendErr,
+          );
+          continue;
+        }
         notifiedSet.add(ev.externalId);
         notified.push({ eventId: ev.externalId, start: ev.startLocal });
         changed = true;

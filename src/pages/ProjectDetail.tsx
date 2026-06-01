@@ -22,6 +22,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { selectTaskIdsByProject, useAppStore } from "../stores/appStore";
 import {
   getProjectById,
+  getProjects,
   updateProject,
   startTimeEntry,
   completeProject,
@@ -74,9 +75,13 @@ function getCurrentWeekdayDates(): string[] {
 function ColorPicker({
   value,
   onChange,
+  takenColors = [],
 }: {
   value: string;
   onChange: (color: string) => void;
+  // Colors claimed by other active projects — shown but disabled, so the
+  // user can't pick a color the DB guard would reject on save.
+  takenColors?: string[];
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -111,22 +116,30 @@ function ColorPicker({
           className="absolute top-full left-0 mt-1 z-20 bg-elevated border border-line-soft rounded-lg p-2 flex gap-1.5 flex-wrap w-[120px]"
           style={{ boxShadow: "var(--shadow-card)" }}
         >
-          {PRESET_COLORS.slice(0, 8).map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => {
-                onChange(c);
-                setOpen(false);
-              }}
-              className="w-4 h-4 rounded-full cursor-pointer border"
-              style={{
-                backgroundColor: c,
-                borderColor:
-                  value === c ? "var(--text-primary)" : "transparent",
-              }}
-            />
-          ))}
+          {PRESET_COLORS.slice(0, 8).map((c) => {
+            const taken = c !== value && takenColors.includes(c);
+            return (
+              <button
+                key={c}
+                type="button"
+                disabled={taken}
+                title={taken ? "Used by another active project" : undefined}
+                onClick={() => {
+                  if (taken) return;
+                  onChange(c);
+                  setOpen(false);
+                }}
+                className={`w-4 h-4 rounded-full border ${
+                  taken ? "cursor-not-allowed opacity-30" : "cursor-pointer"
+                }`}
+                style={{
+                  backgroundColor: c,
+                  borderColor:
+                    value === c ? "var(--text-primary)" : "transparent",
+                }}
+              />
+            );
+          })}
         </div>
       )}
     </div>
@@ -453,6 +466,8 @@ export default function ProjectDetail() {
   const setTaskSortOrdersAction = useAppStore((s) => s.setTaskSortOrders);
   const createTaskAction = useAppStore((s) => s.createTaskAction);
   const [project, setProject] = useState<Project | null>(null);
+  // Colors used by *other* active projects — drives the disabled swatches.
+  const [takenColors, setTakenColors] = useState<string[]>([]);
   const [workedMap, setWorkedMap] = useState<Map<number, number>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(true);
@@ -560,21 +575,33 @@ export default function ProjectDetail() {
   }, [selectedProjectId, loadTasksForProject]);
 
   // Full load — resets edit fields (only on mount / project switch).
-  const loadData = useCallback(async () => {
+  // #14 — `isStale` lets the caller abort state writes if the component
+  // unmounted or switched projects mid-read (fast project switching), so a slow
+  // load can't flash stale data or warn. Effect-driven callers pass it via the
+  // cancelled-ref pattern; event-handler callers (mounted) omit it.
+  const loadData = useCallback(async (isStale?: () => boolean) => {
     if (selectedProjectId === null) return;
     try {
-      const [p] = await Promise.all([
+      const [p, , activeProjects] = await Promise.all([
         getProjectById(selectedProjectId),
         loadTasksForProject(selectedProjectId),
+        getProjects(false),
       ]);
+      if (isStale?.()) return;
       setProject(p);
+      setTakenColors(
+        activeProjects
+          .filter((ap) => ap.id !== selectedProjectId)
+          .map((ap) => ap.color)
+      );
       const ids =
         useAppStore.getState().taskIdsByProject.get(selectedProjectId) ?? [];
       try {
         const wmap = await getWorkedMinutesForTaskIds(ids);
+        if (isStale?.()) return;
         setWorkedMap(wmap);
       } catch {
-        setWorkedMap(new Map());
+        if (!isStale?.()) setWorkedMap(new Map());
       }
       if (p) {
         setEditName(p.name);
@@ -602,9 +629,15 @@ export default function ProjectDetail() {
       deleteTaskAction(pendingDelete.task.id).catch(() => {});
       setPendingDelete(null);
     }
-    loadData();
+    // #14 — cancelled-ref: a project switch or unmount mid-load marks this run
+    // stale so loadData skips its state writes.
+    let cancelled = false;
+    loadData(() => cancelled);
     setEditingTaskId(null);
     setConfirmDeleteId(null);
+    return () => {
+      cancelled = true;
+    };
   }, [loadData]);
 
   // M3.2.b.5.b — verseday:task-updated/-deleted listener retired.
@@ -1110,6 +1143,7 @@ export default function ProjectDetail() {
                 on outside click or color selection. */}
             <ColorPicker
               value={editColor}
+              takenColors={takenColors}
               onChange={(c) => updateField("color", c)}
             />
 

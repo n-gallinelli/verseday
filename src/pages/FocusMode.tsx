@@ -1,10 +1,10 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore, selectFocusedTask } from "../stores/appStore";
+import { useAppStore, selectFocusedTask, consumeFocusResume, clearFocusResume } from "../stores/appStore";
+import { clampWorkedDelta } from "../utils/workedTime";
 import {
   stopTimeEntry,
-  checkpointTimeEntry,
   updateTaskStatus,
   updateTaskNotes,
   updateTaskTitle,
@@ -483,6 +483,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   useEffect(() => {
     if (focusMode !== "active" || isPaused) return;
     lastTickRef.current = Date.now();
+    // P0-1 — the effect (re)starts here on activate/unpause, and lastTickRef
+    // is freshly reset, so any suspended span is already dropped. Discard a
+    // resume flag that arrived while paused/inactive so it can't later zero a
+    // legitimate first second once we resume counting.
+    clearFocusResume();
 
     const interval = setInterval(() => {
       const current = useAppStore.getState().focus;
@@ -490,8 +495,14 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 
       const now = Date.now();
       const delta = now - lastTickRef.current;
+      // Always advance the reference so the NEXT tick computes a normal small
+      // delta even when this one is dropped (sleep/lid-close gap).
       lastTickRef.current = now;
-      if (delta > 0) tickFocus(delta);
+      // P0-1 — drop a suspended span: zero if the OS just signalled resume
+      // (primary), or if the delta exceeds the missed-wake backstop. Normal
+      // ticks and sub-cap throttle catch-up pass through in full.
+      const worked = clampWorkedDelta(delta, consumeFocusResume());
+      if (worked > 0) tickFocus(worked);
 
       // Read latest workedMs after the tick — `current` was sampled
       // before tickFocus; for Pomodoro thresholds we want the
@@ -546,17 +557,31 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     return () => clearInterval(interval);
   }, [focusTaskId, focusMode, isPaused, phase, completedPomodoros, breakDuration, tickFocus]);
 
-  // Checkpoint — active sessions only.
+  // #2 — worked_seconds checkpoint (crash/force-quit recovery).
+  //
+  // Depends on STABLE primitives, not the whole `focus` object: tickFocus
+  // replaces `focus` every second, so a `[focus]` dep tore this interval down
+  // and recreated it every tick — it never survived the 30s cadence to fire.
+  // (That latent bug is why an abnormal exit lost the whole session.) We read
+  // live state via getState() inside instead.
+  //
+  // Writes ONLY worked_seconds — NOT end_time. The row must stay open
+  // (end_time IS NULL) while running so the #15-guarded aggregates exclude it
+  // and the live focus.workedMs is counted exactly once at the app layer.
+  // On a force-quit the row keeps this checkpointed worked_seconds; the next
+  // boot's closeOrphanedTimeEntries sets end_time and it re-enters the totals.
   useEffect(() => {
-    if (!focus || focus.mode !== "active") return;
-    const timeEntryId = focus.timeEntryId;
+    if (focusMode !== "active") return;
     const checkpoint = setInterval(() => {
-      if (!focus.paused) {
-        checkpointTimeEntry(timeEntryId).catch(() => {});
-      }
+      const f = useAppStore.getState().focus;
+      if (!f || f.mode !== "active" || f.paused) return;
+      updateTimeEntryWorkedSeconds(
+        f.timeEntryId,
+        Math.round(f.workedMs / 1000)
+      ).catch(() => {});
     }, CHECKPOINT_INTERVAL_MS);
     return () => clearInterval(checkpoint);
-  }, [focus]);
+  }, [focusTaskId, focusMode]);
 
   // Broadcast state to PiP window — active sessions only. Preview has
   // no live state to mirror; the pip stays closed.
@@ -652,7 +677,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       }
     }, 200);
     return () => clearInterval(interval);
-  }, [elapsed, SHORT_BREAK_MS, CYCLES_BEFORE_LONG_BREAK]);
+    // #8 — `elapsed` was in the deps but is never read here (all handlers go
+    // through *Ref.current). It made this 200ms poller tear down and rebuild
+    // every second, opening a per-tick window where a PiP pause/stop click
+    // could be dropped. Deps are only the values actually read in the body.
+  }, [SHORT_BREAK_MS, CYCLES_BEFORE_LONG_BREAK]);
 
   // Listen for Space shortcut from App.tsx
   useEffect(() => {

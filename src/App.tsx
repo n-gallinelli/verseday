@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { register } from "@tauri-apps/plugin-global-shortcut";
+import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import ErrorBoundary from "./components/ErrorBoundary";
 import FocusPip from "./components/FocusPip";
 import QuickAdd from "./pages/QuickAdd";
@@ -20,7 +21,7 @@ import WrapUpReminder from "./components/WrapUpReminder";
 import TaskDetailOverlayHost from "./components/TaskDetailOverlayHost";
 import SummaryOverlayHost from "./components/SummaryOverlayHost";
 import SunsetOverlayHost from "./components/SunsetOverlayHost";
-import { useAppStore } from "./stores/appStore";
+import { useAppStore, markFocusResume } from "./stores/appStore";
 import {
   closeOrphanedTimeEntries,
   getTasksForDate,
@@ -157,7 +158,28 @@ function MainApp() {
       }
     }
     startup();
+
+    // #13 — unregister the global quick-add shortcut on teardown. Without this,
+    // a remount (StrictMode dev double-invoke, or any future re-mount) would
+    // re-register and could leave a stale handler / "already registered" error.
+    return () => {
+      unregister("CmdOrCtrl+Shift+A").catch(() => {});
+    };
   }, [restoreFocus]);
+
+  // P0-1 — OS resume signal. The native side observes
+  // NSWorkspaceDidWakeNotification and emits `system-resumed` on a real wake
+  // from sleep (never on App Nap / throttle). The focus tick consumes this
+  // flag to drop the suspended span instead of counting it as worked time.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen("system-resumed", () => markFocusResume())
+      .then((un) => {
+        unlisten = un;
+      })
+      .catch((err) => console.error("system-resumed listen failed:", err));
+    return () => unlisten?.();
+  }, []);
 
   // Global keyboard shortcuts
   useEffect(() => {

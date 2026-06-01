@@ -21,5 +21,9 @@
       "@/*": ["src/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Tests are run by vitest (vitest.config.ts). Excluded from the app build so
+  // their Node imports (node:sqlite) and @types/node globals don't leak into
+  // the browser/webview app's typecheck.
+  "exclude": ["src/**/*.test.ts"]
 }

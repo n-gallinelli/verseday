@@ -1014,6 +1014,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     // throttling don't drift the counter; a stalled tick catches up
     // on the next iteration.
     //
+    // INVARIANT (P0-1): this adds deltaMs unguarded. The sleep/lid-close
+    // clamp lives at the SOLE caller — FocusMode's tick — because it must
+    // consume the one-shot OS-resume flag (which doesn't belong in the
+    // store). FocusMode's tick is the only thing that may call tickFocus.
+    // Do NOT add another caller; that would route worked time around the
+    // clamp (see utils/workedTime.ts, docs/...-stability-hardening-plan.md).
+    //
     // Persists on every call. localStorage write-per-second is cheap;
     // the persisted value IS the answer if the app crashes.
     //

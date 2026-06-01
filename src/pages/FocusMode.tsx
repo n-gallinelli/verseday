@@ -5,7 +5,6 @@ import { useAppStore, selectFocusedTask, consumeFocusResume, clearFocusResume } 
 import { clampWorkedDelta } from "../utils/workedTime";
 import {
   stopTimeEntry,
-  checkpointTimeEntry,
   updateTaskStatus,
   updateTaskNotes,
   updateTaskTitle,
@@ -558,17 +557,31 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     return () => clearInterval(interval);
   }, [focusTaskId, focusMode, isPaused, phase, completedPomodoros, breakDuration, tickFocus]);
 
-  // Checkpoint — active sessions only.
+  // #2 — worked_seconds checkpoint (crash/force-quit recovery).
+  //
+  // Depends on STABLE primitives, not the whole `focus` object: tickFocus
+  // replaces `focus` every second, so a `[focus]` dep tore this interval down
+  // and recreated it every tick — it never survived the 30s cadence to fire.
+  // (That latent bug is why an abnormal exit lost the whole session.) We read
+  // live state via getState() inside instead.
+  //
+  // Writes ONLY worked_seconds — NOT end_time. The row must stay open
+  // (end_time IS NULL) while running so the #15-guarded aggregates exclude it
+  // and the live focus.workedMs is counted exactly once at the app layer.
+  // On a force-quit the row keeps this checkpointed worked_seconds; the next
+  // boot's closeOrphanedTimeEntries sets end_time and it re-enters the totals.
   useEffect(() => {
-    if (!focus || focus.mode !== "active") return;
-    const timeEntryId = focus.timeEntryId;
+    if (focusMode !== "active") return;
     const checkpoint = setInterval(() => {
-      if (!focus.paused) {
-        checkpointTimeEntry(timeEntryId).catch(() => {});
-      }
+      const f = useAppStore.getState().focus;
+      if (!f || f.mode !== "active" || f.paused) return;
+      updateTimeEntryWorkedSeconds(
+        f.timeEntryId,
+        Math.round(f.workedMs / 1000)
+      ).catch(() => {});
     }, CHECKPOINT_INTERVAL_MS);
     return () => clearInterval(checkpoint);
-  }, [focus]);
+  }, [focusTaskId, focusMode]);
 
   // Broadcast state to PiP window — active sessions only. Preview has
   // no live state to mirror; the pip stays closed.

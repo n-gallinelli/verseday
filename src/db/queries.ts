@@ -10,6 +10,7 @@ import {
   SQL_ROLLOVER_EXPIRE,
 } from "./rolloverSql";
 import { todayString, localDayStartUtc, localDayEndUtc } from "../utils/dates";
+import { emitProjectChanged } from "../utils/projectEvents";
 import type { Project, Task, DailyPlan, TimeEntry, WeeklyPlan, WeeklyShutdown, Link } from "../types";
 import type { DismissalReason } from "../calendar/types";
 
@@ -107,6 +108,7 @@ export async function createProject(
     "INSERT INTO projects (name, color) VALUES ($1, $2)",
     [name, color]
   );
+  emitProjectChanged();
   return result.lastInsertId ?? 0;
 }
 
@@ -128,6 +130,7 @@ export async function updateProject(input: UpdateProjectInput): Promise<void> {
     "UPDATE projects SET name = $1, color = $2, description = $3, start_date = $4, target_date = $5, notes = $6 WHERE id = $7",
     [input.name, input.color, input.description, input.startDate, input.targetDate, input.notes, input.id]
   );
+  emitProjectChanged();
 }
 
 export async function completeProject(
@@ -139,6 +142,7 @@ export async function completeProject(
     completed ? 1 : 0,
     id,
   ]);
+  emitProjectChanged();
 }
 
 export async function archiveProject(
@@ -160,6 +164,7 @@ export async function archiveProject(
     archived ? 1 : 0,
     id,
   ]);
+  emitProjectChanged();
 }
 
 export async function getProjectTaskCount(id: number): Promise<number> {
@@ -174,6 +179,7 @@ export async function getProjectTaskCount(id: number): Promise<number> {
 export async function deleteProject(id: number): Promise<void> {
   const db = await getDb();
   await db.execute("DELETE FROM projects WHERE id = $1", [id]);
+  emitProjectChanged();
 }
 
 export async function updateProjectSortOrders(
@@ -190,6 +196,7 @@ export async function updateProjectSortOrders(
     `UPDATE projects SET sort_order = CASE id ${cases} END WHERE id IN (${ids.join(",")})`,
     []
   );
+  emitProjectChanged();
 }
 
 export async function getProjectById(id: number): Promise<Project | null> {

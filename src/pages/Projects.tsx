@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { onProjectChanged } from "../utils/projectEvents";
 import {
   DndContext,
   closestCenter,
@@ -77,6 +78,24 @@ export default function Projects() {
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
   const primeTasks = useAppStore((s) => s.primeTasks);
   const [projects, setProjects] = useState<Project[]>([]);
+  // #3 — refresh on verseday:project-changed so an edit made from a task's
+  // ProjectDetail reflects on the Objectives list. (Harmless double-fetch on
+  // this page's own mutations — it also reloads post-mutation; not worth
+  // de-duping.) Read-only handler → no loop; mounted-guarded.
+  useEffect(() => {
+    let mounted = true;
+    const off = onProjectChanged(() => {
+      getProjects(false)
+        .then((p) => {
+          if (mounted) setProjects(p);
+        })
+        .catch(() => {});
+    });
+    return () => {
+      mounted = false;
+      off();
+    };
+  }, []);
   const [statsMap, setStatsMap] = useState<
     Map<number, { total: number; done: number; lastDate: string | null }>
   >(new Map());

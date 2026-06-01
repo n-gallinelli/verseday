@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { onProjectChanged } from "../utils/projectEvents";
 import { getCompletedShutdowns, getProjects, type CompletedShutdown } from "../db/queries";
 import { useAppStore } from "../stores/appStore";
 import type { Project } from "../types";
@@ -8,6 +9,25 @@ export default function PastShutdowns() {
   const setPage = useAppStore((s) => s.setPage);
   const [shutdowns, setShutdowns] = useState<CompletedShutdown[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  // #3 — refresh project name/color on verseday:project-changed. Past
+  // shutdowns are historical for their TASK data, but project identity
+  // (name/color) is a living attribute and should read consistently — so we
+  // re-fetch projects only; the historical content is untouched. Read-only →
+  // no loop; mounted-guarded.
+  useEffect(() => {
+    let mounted = true;
+    const off = onProjectChanged(() => {
+      getProjects(true)
+        .then((p) => {
+          if (mounted) setProjects(p);
+        })
+        .catch(() => {});
+    });
+    return () => {
+      mounted = false;
+      off();
+    };
+  }, []);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

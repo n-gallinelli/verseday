@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { onProjectChanged } from "../utils/projectEvents";
 import Button from "./Button";
 import { getProjects, getTasksForDate, getTasksForWeek } from "../db/queries";
 import type { Task, Project } from "../types";
@@ -248,6 +249,23 @@ export default function SummaryOverlay({ type, anchorDate, onClose }: SummaryOve
   // eslint-disable-next-line no-restricted-syntax -- pre-M4 M3 gap
   const [weeklyNextTasks, setWeeklyNextTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  // #3 — refresh project name/color on verseday:project-changed (the summary
+  // groups tasks by project chrome; historical task data is untouched). Read-
+  // only, mounted-guarded, balanced cleanup.
+  useEffect(() => {
+    let mounted = true;
+    const off = onProjectChanged(() => {
+      getProjects()
+        .then((p) => {
+          if (mounted) setProjects(p);
+        })
+        .catch(() => {});
+    });
+    return () => {
+      mounted = false;
+      off();
+    };
+  }, []);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);

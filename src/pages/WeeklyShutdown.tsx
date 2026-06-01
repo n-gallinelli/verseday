@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { onProjectChanged } from "../utils/projectEvents";
 import { useAppStore } from "../stores/appStore";
 import {
   getWeeklyShutdown,
@@ -281,6 +282,22 @@ export default function WeeklyShutdown() {
     return out;
   }, [completedTaskIds, tasksById]);
   const [projects, setProjects] = useState<Project[]>([]);
+  // #3 — refresh on verseday:project-changed (include archived; tasks may
+  // belong to archived projects). Read-only → no loop; mounted-guarded.
+  useEffect(() => {
+    let mounted = true;
+    const off = onProjectChanged(() => {
+      getProjects(true)
+        .then((p) => {
+          if (mounted) setProjects(p);
+        })
+        .catch(() => {});
+    });
+    return () => {
+      mounted = false;
+      off();
+    };
+  }, []);
   const [workedByDay, setWorkedByDay] = useState<Map<string, Map<number, number>>>(new Map());
   const [workedPerTask, setWorkedPerTask] = useState<Map<number, number>>(new Map());
   const [error, setError] = useState<string | null>(null);

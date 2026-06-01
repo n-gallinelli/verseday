@@ -11,7 +11,6 @@ import {
 } from "../db/queries";
 import RichTextEditor from "./RichTextEditor";
 import CalendarChip from "./CalendarChip";
-import LinkIcon from "./LinkIcon";
 import { formatHoursMinutes } from "../utils/format";
 import { selectTaskById, useAppStore } from "../stores/appStore";
 import type { Task, Project, Link } from "../types";
@@ -578,7 +577,6 @@ function TaskCardImpl({
                     key={link.id}
                     className="flex items-center gap-2 text-[11px]"
                   >
-                    <LinkIcon className="text-fg-faded flex-shrink-0" />
                     {isSafeUrl(link.url) ? (
                       <a
                         href={link.url}

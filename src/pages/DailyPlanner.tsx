@@ -903,54 +903,15 @@ export default function DailyPlanner() {
     setSelectedDate(localDateIso(d));
   }
 
-  // Trackpad swipe to page between days. Swipe left → next day, swipe right →
-  // previous. We accumulate BOTH axes across the gesture (a gesture ends after
-  // a brief pause) and judge horizontal-vs-vertical over the whole gesture, not
-  // per event — a per-event dominance check dropped the jittery mixed deltas a
-  // real trackpad emits, which made it feel like it wouldn't budge. Fires once
-  // per gesture, then waits for the fling's momentum to settle, so a single
-  // swipe steps exactly one day and vertical scrolling is left alone.
-  const swipeRef = useRef<HTMLDivElement | null>(null);
-  const changeDateRef = useRef(changeDate);
-  changeDateRef.current = changeDate;
-  useEffect(() => {
-    const el = swipeRef.current;
-    if (!el) return;
-    const SWIPE_THRESHOLD = 50; // px of accumulated horizontal travel
-    const GESTURE_GAP_MS = 150; // pause that ends a gesture / clears the lock
-    let accX = 0;
-    let accY = 0;
-    let last = 0;
-    let fired = false;
-    const onWheel = (e: WheelEvent) => {
-      const now = performance.now();
-      if (now - last > GESTURE_GAP_MS) {
-        accX = 0;
-        accY = 0;
-        fired = false;
-      }
-      last = now;
-      accX += e.deltaX;
-      accY += e.deltaY;
-      if (fired) return;
-      // Clearly horizontal over the whole gesture, past the distance threshold.
-      if (Math.abs(accX) >= SWIPE_THRESHOLD && Math.abs(accX) > Math.abs(accY) * 1.4) {
-        changeDateRef.current(accX > 0 ? 1 : -1);
-        fired = true;
-      }
-    };
-    el.addEventListener("wheel", onWheel, { passive: true });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
-
   // Visual feedback when the day changes: the day column slides + fades in from
   // the direction of travel (next day → in from the right, previous → from the
   // left). Direction is derived from the date delta, so it's correct however
-  // the change was triggered — swipe, arrows, or the calendar. ISO date strings
-  // compare chronologically, so a lexical compare gives the direction.
+  // the change was triggered — arrows or the calendar. ISO date strings compare
+  // chronologically, so a lexical compare gives the direction.
+  const dayColumnRef = useRef<HTMLDivElement | null>(null);
   const prevDateRef = useRef(selectedDate);
   useEffect(() => {
-    const el = swipeRef.current;
+    const el = dayColumnRef.current;
     const prev = prevDateRef.current;
     prevDateRef.current = selectedDate;
     if (!el || prev === selectedDate) return;
@@ -986,7 +947,7 @@ export default function DailyPlanner() {
   return (
     <div className="flex h-full overflow-hidden">
       {/* ── Main content ────────────────────────────────────────────── */}
-      <div ref={swipeRef} className="flex-1 flex flex-col overflow-hidden">
+      <div ref={dayColumnRef} className="flex-1 flex flex-col overflow-hidden">
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
       {showSlowSyncToast && (

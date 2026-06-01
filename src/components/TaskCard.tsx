@@ -118,12 +118,6 @@ function TaskCardImpl({
   // short-circuit means non-changing rows skip re-renders without
   // help from the memo comparator below.
   const task = useAppStore((s) => selectTaskById(s, taskId));
-  // M2.3 — pause toggle subscribes through the store so the Daily Plan
-  // row, PiP, and Focus screen share the same action. Pre-rev-3 the
-  // row's "pause" button fully stopped the session via onStop; that
-  // semantic moved to PiP/Focus only (see rev 3 doc §"Stop availability
-  // on Daily Plan row").
-  const togglePauseFocus = useAppStore((s) => s.togglePauseFocus);
   const {
     attributes,
     listeners,
@@ -465,34 +459,9 @@ function TaskCardImpl({
                 </span>
               );
             })()}
-            {isFocused && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  togglePauseFocus();
-                }}
-                className={`w-6 h-6 rounded-full flex items-center justify-center cursor-pointer hover:bg-overlay-pressed transition-colors duration-150 ${
-                  isPaused
-                    ? "text-fg-faded hover:text-fg-secondary"
-                    : "text-accent-blue-soft-fg hover:text-accent-blue"
-                }`}
-                title={isPaused ? "Resume focus" : "Pause focus"}
-              >
-                {isPaused ? (
-                  // Resume: blue play-triangle outline, matching the PiP's
-                  // resume icon. Optically centered (nudged ~1px right since a
-                  // triangle's mass sits left of center).
-                  <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="var(--accent-blue)" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" className="translate-x-px">
-                    <path d="M3 1v12l10-6z" />
-                  </svg>
-                ) : (
-                  <svg width="10" height="11" viewBox="0 0 9 10" fill="currentColor">
-                    <rect x="0.5" y="1" width="2.5" height="8" rx="0.6" />
-                    <rect x="6" y="1" width="2.5" height="8" rx="0.6" />
-                  </svg>
-                )}
-              </button>
-            )}
+            {/* No inline play/pause on the daily-view row — focus is started
+                from the top-right control, the Focus screen, or the task
+                detail's Start button. */}
           </div>
         </div>
       </div>

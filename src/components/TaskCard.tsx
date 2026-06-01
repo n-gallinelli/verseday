@@ -411,9 +411,11 @@ function TaskCardImpl({
                   ? "bg-overlay-hover"
                   : "bg-accent-blue-soft"
                 : "bg-overlay-hover";
-              // Drop min-w when focused so the pill + pause button fit
-              // together inside the 132px slot.
-              const widthClass = isFocused ? "" : "min-w-[100px]";
+              // Uniform pill width across all rows (focused or not). The
+              // focused row used to drop min-w to fit an inline pause button
+              // beside it, but that button was removed, so the pill keeps the
+              // same min-width everywhere.
+              const widthClass = "min-w-[100px]";
               return (
                 <span
                   className={`inline-flex items-center justify-center gap-0.5 h-[20px] ${widthClass} px-2 rounded-full text-[11px] tabular-nums whitespace-nowrap ${

@@ -5,6 +5,7 @@ import {
   DEFAULT_TASK_ESTIMATE_FALLBACK_MIN,
 } from "../db/queries";
 import CalendarSettings from "../components/settings/CalendarSettings";
+import RepeatingTasksSettings from "../components/settings/RepeatingTasksSettings";
 import {
   getBreakContinuity,
   setBreakContinuity as persistBreakContinuity,
@@ -280,6 +281,20 @@ export default function Settings() {
           </section>
 
           <CalendarSettings />
+
+          {/* Repeating tasks — see/edit every recurring task in one place */}
+          <section>
+            <div className="flex items-center gap-2 mb-4">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--text-faded)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 7a5 5 0 0 1 8.5-3.5L12 5M12 7a5 5 0 0 1-8.5 3.5L2 9" />
+                <path d="M12 2v3H9M2 12V9h3" />
+              </svg>
+              <h3 className="uppercase [font-size:var(--font-size-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded" style={{ fontWeight: 500 }}>
+                Repeating tasks
+              </h3>
+            </div>
+            <RepeatingTasksSettings />
+          </section>
 
         </div>
       </div>

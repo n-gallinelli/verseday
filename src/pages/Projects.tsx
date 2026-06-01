@@ -494,19 +494,23 @@ export default function Projects() {
                               className={`bg-elevated rounded-[12px] overflow-hidden cursor-pointer hover:bg-overlay-hover transition-colors flex flex-col h-full ${
                                 isCompleted ? "opacity-55" : ""
                               }`}
-                              style={{ border: "0.5px solid var(--border-hairline)" }}
+                              style={{
+                                border: "0.5px solid var(--border-hairline)",
+                                // Objective color as a left bar (always), so it
+                                // reads even when an emoji/custom icon is set.
+                                borderLeftWidth: dueSoonOrPast ? "4px" : "3px",
+                                borderLeftColor: project.color,
+                              }}
                             >
-                              {/* Color stripe at top */}
-                              <div
-                                className="h-1 w-full"
-                                style={{ backgroundColor: project.color }}
-                              />
                               <div className="px-4 py-3 flex flex-col flex-1 gap-2">
                                 <div className="flex items-start gap-2">
                                   {isCompleted && (
                                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" className="shrink-0 mt-1">
                                       <path d="M3 8.5l3.5 3.5 6.5-7" />
                                     </svg>
+                                  )}
+                                  {!isCompleted && (project.icon || project.custom_icon_id != null) && (
+                                    <ProjectGlyph project={project} iconsById={iconsById} size={16} className="shrink-0 mt-[2px]" />
                                   )}
                                   {/* min-h reserves space for up to 3 lines so
                                       every card is the same height regardless
@@ -606,7 +610,7 @@ export default function Projects() {
                               <div className="flex-1 min-w-0">
                                 {/* Title row — icon/color glyph + name */}
                                 <div className="flex items-center gap-2.5">
-                                  {!isCompleted && (
+                                  {!isCompleted && (project.icon || project.custom_icon_id != null) && (
                                     <ProjectGlyph project={project} iconsById={iconsById} size={14} />
                                   )}
                                   {isCompleted && (

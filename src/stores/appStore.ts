@@ -145,6 +145,29 @@ function withTaskMutated(s: AppState, before: Task, after: Task): Partial<AppSta
 const FOCUS_STORAGE_KEY = "verseday_focus";
 const SIDEBAR_COLLAPSED_KEY = "verseday_sidebar_collapsed";
 
+// P0-1 — one-shot OS-resume flag (sleep/lid-close worked-time guard).
+// Set by the `system-resumed` listener (App.tsx) when the OS signals a wake
+// from sleep; consumed by the focus tick so the suspended span contributes 0.
+// Module-level (not store state) — it's transient, must not trigger a render,
+// and is read/cleared imperatively from the tick. See utils/workedTime.ts.
+let focusResumePending = false;
+/** Mark that the OS just resumed from sleep. */
+export function markFocusResume(): void {
+  focusResumePending = true;
+}
+/** Read-and-clear the resume flag. */
+export function consumeFocusResume(): boolean {
+  const v = focusResumePending;
+  focusResumePending = false;
+  return v;
+}
+/** Clear without reading — used when restarting the tick (e.g. unpause) so a
+ *  flag that arrived while paused/inactive can't later eat a legitimate first
+ *  second on resume. */
+export function clearFocusResume(): void {
+  focusResumePending = false;
+}
+
 // Discriminated union: a focus session is either *preview* (task picked,
 // shown on the focus screen, but no time entry created — what the user
 // sees when they click the Focus icon) or *active* (running session with

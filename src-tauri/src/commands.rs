@@ -408,3 +408,46 @@ pub async fn generate_summary(
         .and_then(|c| c.text.clone())
         .ok_or_else(|| "Empty response from API".to_string())
 }
+
+// ── System power: resume-from-sleep notifier (P0-1) ──────────────────────
+// Observes NSWorkspaceDidWakeNotification and emits `system-resumed` to JS on
+// a real machine wake from sleep. App Nap / DOM-timer throttling NEVER raise
+// this notification, so the JS focus tick can use it to drop a suspended span
+// (lid-close, sleep) without discarding real occluded-but-working time. See
+// docs/2026-06-01-stability-hardening-plan.md, Branch A.
+//
+// Called once from `setup`, which runs on the main thread (NSWorkspace
+// requires it). The observer is retained for the app's lifetime.
+
+#[cfg(target_os = "macos")]
+pub fn start_system_resume_notifier(app: &tauri::AppHandle) {
+    use block2::RcBlock;
+    use objc2::rc::Retained;
+    use objc2::runtime::{NSObjectProtocol, ProtocolObject};
+    use objc2_app_kit::NSWorkspace;
+    use objc2_foundation::{NSNotification, NSString};
+    use std::ptr::NonNull;
+    use tauri::Emitter;
+
+    let app = app.clone();
+    let workspace = NSWorkspace::sharedWorkspace();
+    let center = workspace.notificationCenter();
+    // NSWorkspace notification constants have string values equal to their
+    // symbol names, so the literal is the canonical name — no feature-gated
+    // constant import needed.
+    let name = NSString::from_str("NSWorkspaceDidWakeNotification");
+
+    let block = RcBlock::new(move |_notif: NonNull<NSNotification>| {
+        // Fires on the main thread; emit is thread-safe regardless.
+        let _ = app.emit("system-resumed", ());
+    });
+
+    let observer: Retained<ProtocolObject<dyn NSObjectProtocol>> = unsafe {
+        center.addObserverForName_object_queue_usingBlock(Some(&name), None, None, &block)
+    };
+    // Dropping the observer unregisters the block; keep it for app lifetime.
+    std::mem::forget(observer);
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn start_system_resume_notifier(_app: &tauri::AppHandle) {}

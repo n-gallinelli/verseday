@@ -3,6 +3,7 @@ import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Typography from "@tiptap/extension-typography";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useRef, useEffect, useState } from "react";
 
 interface RichTextEditorProps {
@@ -65,7 +66,10 @@ export default function RichTextEditor({
       StarterKit,
       Typography,
       Link.configure({
-        openOnClick: true,
+        // Tiptap's openOnClick uses window.open, which a Tauri webview blocks —
+        // links did nothing. We open via the Tauri opener in the click handler
+        // below instead (see the editor.view.dom listener).
+        openOnClick: false,
         autolink: true,
         linkOnPaste: true,
         HTMLAttributes: {
@@ -132,6 +136,25 @@ export default function RichTextEditor({
       }
     };
   }, []);
+
+  // Open links in the system browser via the Tauri opener (Tiptap's own
+  // openOnClick can't, since the webview blocks window.open). A plain click on
+  // a link opens it; clicks elsewhere fall through to normal cursor placement.
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view.dom;
+    const onClick = (e: MouseEvent) => {
+      const anchor = (e.target as HTMLElement | null)?.closest?.("a");
+      const href = anchor?.getAttribute("href");
+      if (href && /^https?:\/\//i.test(href)) {
+        e.preventDefault();
+        e.stopPropagation();
+        openUrl(href).catch(() => {});
+      }
+    };
+    dom.addEventListener("click", onClick);
+    return () => dom.removeEventListener("click", onClick);
+  }, [editor]);
 
   if (!editor) return null;
 

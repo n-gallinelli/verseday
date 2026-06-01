@@ -36,11 +36,18 @@ interface Row {
   external_start_local: string | null;
 }
 
-/** Returns today's calendar events starting within the next `leadMinutes`,
- *  excluding all-day events and events already in progress. Bounded by
- *  date_scheduled = today, so cost is O(today's calendar tasks). */
+/** Returns today's calendar events starting within `(now - graceMs,
+ *  now + leadMinutes]`, excluding all-day events. Bounded by
+ *  date_scheduled = today, so cost is O(today's calendar tasks).
+ *
+ *  #12 — `graceMs` keeps events that started up to that long ago in the
+ *  window. A throttled/missed 30s tick can let an event cross from "within
+ *  lead" to "already started" between fires; the grace lets the next tick
+ *  still surface it (the notifier's per-event dedup prevents a repeat). With
+ *  the default 0 the window is `(now, now + lead]` as before. */
 export async function upcomingEvents(
   leadMinutes: number,
+  graceMs = 0,
 ): Promise<UpcomingEvent[]> {
   if (!Number.isFinite(leadMinutes) || leadMinutes <= 0) return [];
   const db = await getDb();
@@ -62,7 +69,7 @@ export async function upcomingEvents(
     if (!r.external_start_local) continue;
     const startMs = localStartToMs(r.external_start_local);
     if (!Number.isFinite(startMs)) continue;
-    if (startMs <= now) continue;
+    if (startMs <= now - graceMs) continue; // started > grace ago → drop
     if (startMs - now > leadMs) continue;
     out.push({
       externalId: r.external_id,

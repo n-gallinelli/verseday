@@ -286,6 +286,11 @@ interface AppState {
    *
    *  Failure-path: prior state intact + console.error. */
   loadSidebarPool: () => Promise<void>;
+  /** #11 — evict tasks from `tasksById` that no current view references, once
+   *  the map exceeds a high threshold. Conservative: the keep-set is computed
+   *  from the live indices, the focus/detail refs, AND the actual rail
+   *  selectors, so it can never drop a task a view shows. No-op below the cap. */
+  pruneTasksById: () => void;
   /** Optimistic patch + DB write. Updates tasksById and any affected
    *  secondary indices, then writes through to SQL.
    *
@@ -1188,9 +1193,51 @@ export const useAppStore = create<AppState>((set, get) => ({
       // scan tasksById with bucket predicates, so the canonical map
       // is the only state that needs the rail's pool merged in.
       get().primeTasks(list);
+      // #11 — bound canonical-map growth across a long always-open session.
+      // Triggered here (Daily Planner path), never during Projects search,
+      // whose primed-but-unindexed results live in component state the store
+      // can't see — so it can't evict an actively-displayed search row.
+      get().pruneTasksById();
     } catch (err) {
       console.error("[appStore] loadSidebarPool failed", { err });
     }
+  },
+  pruneTasksById: () => {
+    const s = get();
+    // High cap: a realistic working set (loaded days + project/week views +
+    // rail pool) is in the low hundreds; only pathological multi-day
+    // accumulation crosses this. Scanning is O(map) but runs only when over.
+    const MAX_TASKS = 1500;
+    if (s.tasksById.size <= MAX_TASKS) return;
+
+    // Keep-set = everything any current view can resolve:
+    //  - the three id indices (date / project / week)
+    //  - focus + open-detail + pending-detail refs
+    //  - whatever the rail selectors would surface (computed by invoking the
+    //    SAME selectors the rail uses, so this can't drift from the views)
+    const keep = new Set<number>();
+    for (const ids of s.taskIdsByDate.values()) for (const id of ids) keep.add(id);
+    for (const ids of s.taskIdsByProject.values()) for (const id of ids) keep.add(id);
+    for (const ids of s.taskIdsByWeek.values()) for (const id of ids) keep.add(id);
+    if (s.focus) keep.add(s.focus.taskId);
+    if (s.selectedTaskDetailId !== null) keep.add(s.selectedTaskDetailId);
+    if (s.pendingDetailTask) keep.add(s.pendingDetailTask.id);
+    for (const list of selectUnscheduledTasksByProject(s.tasksById).values())
+      for (const t of list) keep.add(t.id);
+    for (const t of selectOrphanAndOverdueTasks(s.tasksById, todayString()))
+      keep.add(t.id);
+
+    if (keep.size >= s.tasksById.size) return; // nothing evictable
+    const next = new Map<number, Task>();
+    for (const id of keep) {
+      const t = s.tasksById.get(id);
+      if (t) next.set(id, t);
+    }
+    // No silent cap: report what was dropped.
+    console.debug(
+      `[appStore] pruneTasksById: ${s.tasksById.size} → ${next.size} (evicted ${s.tasksById.size - next.size} unreferenced)`,
+    );
+    set({ tasksById: next });
   },
   updateTask: async (patch) => {
     const current = get().tasksById.get(patch.id);

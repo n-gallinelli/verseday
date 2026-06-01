@@ -3,6 +3,12 @@ import {
   SQL_TOTAL_WORKED_MINUTES_FOR_DATE,
   SQL_CLOSE_ORPHANED_TIME_ENTRIES,
 } from "./workedSecondsSql";
+import { SQL_UPSERT_WEEKLY_SHUTDOWN } from "./shutdownSql";
+import {
+  SQL_ROLLOVER_CAPTURE,
+  SQL_ROLLOVER_MOVE,
+  SQL_ROLLOVER_EXPIRE,
+} from "./rolloverSql";
 import { todayString, localDayStartUtc, localDayEndUtc } from "../utils/dates";
 import type { Project, Task, DailyPlan, TimeEntry, WeeklyPlan, WeeklyShutdown, Link } from "../types";
 import type { DismissalReason } from "../calendar/types";
@@ -219,49 +225,20 @@ export async function rolloverUnfinishedTasks(today: string): Promise<void> {
   // they'd keep their prior-day sort_order and interleave arbitrarily with
   // today's tasks; a later drag-reorder would then persist an order the user
   // never saw.
-  const toRoll: { id: number }[] = await db.select(
-    `SELECT id FROM tasks
-     WHERE date_scheduled < $1
-       AND status != 'done'
-       AND rollover_count < 4
-       AND recurrence_source_id IS NULL
-       AND external_source IS NULL
-     ORDER BY date_scheduled ASC, sort_order ASC`,
-    [today]
-  );
+  const toRoll: { id: number }[] = await db.select(SQL_ROLLOVER_CAPTURE, [today]);
 
   // Roll forward: tasks from past dates, not done, rolled fewer than 4 times.
   // Skip calendar-imported tasks — they are date-specific snapshots from
   // the user's external calendar; rolling them forward would mis-attribute
   // a meeting that happened yesterday to today's agenda. The next sync
   // re-imports for the active date instead.
-  await db.execute(
-    `UPDATE tasks
-     SET original_date = COALESCE(original_date, date_scheduled),
-         rollover_count = rollover_count + 1,
-         date_scheduled = $1
-     WHERE date_scheduled < $1
-       AND status != 'done'
-       AND rollover_count < 4
-       AND recurrence_source_id IS NULL
-       AND external_source IS NULL`,
-    [today]
-  );
+  await db.execute(SQL_ROLLOVER_MOVE, [today]);
 
   // Expire: any still-past, still-unfinished task now at count >= 4 (i.e. it
   // was moved on four prior days and missed again) is unscheduled. The
   // roll-forward above only touches count < 4, so these are exactly the
   // tasks that have exhausted their rollovers.
-  await db.execute(
-    `UPDATE tasks
-     SET date_scheduled = NULL
-     WHERE date_scheduled < $1
-       AND status != 'done'
-       AND rollover_count >= 4
-       AND recurrence_source_id IS NULL
-       AND external_source IS NULL`,
-    [today]
-  );
+  await db.execute(SQL_ROLLOVER_EXPIRE, [today]);
 
   // #10 — append the rolled tasks after today's existing tasks, preserving
   // today's manual order and a stable order among the rolled ones. Each rolled
@@ -979,22 +956,16 @@ export async function upsertWeeklyShutdown(
   mood: string | null = null
 ): Promise<void> {
   const db = await getDb();
-  // #6 — null-preserving upsert. The sole caller marks the week complete with
-  // (null, null, null); a plain replace (SET col = $n) nulled incomplete_items
-  // — the carry-forward note ScheduleTab reads — on every (re-)completion.
-  // COALESCE($n, col) keeps any previously-saved value when the arg is null, so
-  // re-completing a shutdown never destroys data; a future caller passing a
-  // real value still wins. Weekly-ONLY: upsertDailyShutdown deliberately keeps
-  // the plain replace because its callers always pass the full current state
-  // and the user must be able to clear a reflection to null.
-  await db.execute(
-    `INSERT INTO weekly_shutdowns (week_start_date, reflections, incomplete_items, mood) VALUES ($1, $2, $3, $4)
-     ON CONFLICT(week_start_date) DO UPDATE SET
-       reflections = COALESCE($2, reflections),
-       incomplete_items = COALESCE($3, incomplete_items),
-       mood = COALESCE($4, mood)`,
-    [weekStartDate, reflections, incompleteItems, mood]
-  );
+  // #6 — null-preserving upsert (SQL in ./shutdownSql so the integrity test
+  // runs the identical text). Weekly-ONLY: upsertDailyShutdown keeps the plain
+  // replace because its callers pass full state and must be able to clear a
+  // reflection to null.
+  await db.execute(SQL_UPSERT_WEEKLY_SHUTDOWN, [
+    weekStartDate,
+    reflections,
+    incompleteItems,
+    mood,
+  ]);
 }
 
 // Project stats (batched)

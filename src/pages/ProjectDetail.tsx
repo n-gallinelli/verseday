@@ -27,6 +27,7 @@ import {
   startTimeEntry,
   completeProject,
   setProjectPriority,
+  setProjectIcon,
   deleteProject,
   archiveProject,
   getWorkedMinutesForTask,
@@ -38,6 +39,7 @@ import { errorMessage } from "../utils/errors";
 import CalendarPicker from "../components/CalendarPicker";
 import { parseTimeFromTitle } from "../utils/format";
 import RichTextEditor from "../components/RichTextEditor";
+import ProjectIconPicker from "../components/ProjectIconPicker";
 import type { Project, Task } from "../types";
 
 const MAX_TITLE_LENGTH = 200;
@@ -875,6 +877,16 @@ export default function ProjectDetail() {
     }
   }
 
+  async function handleSetIcon(icon: string | null, customIconId: number | null) {
+    if (!project) return;
+    try {
+      await setProjectIcon(project.id, icon, customIconId);
+      loadData();
+    } catch (e) {
+      setError(errorMessage(e, "Failed to set icon"));
+    }
+  }
+
   // ── Task CRUD ─────────────────────────────────────────────────────────
 
   async function handleAddTask(e: React.FormEvent) {
@@ -1204,6 +1216,12 @@ export default function ProjectDetail() {
               value={editColor}
               takenColors={takenColors}
               onChange={(c) => updateField("color", c)}
+            />
+
+            {/* Objective icon — emoji or custom uploaded image (#25) */}
+            <ProjectIconPicker
+              project={project}
+              onPick={(icon, customIconId) => handleSetIcon(icon, customIconId)}
             />
 
             {/* Editable name — 22px hero; shrinks for longer titles */}

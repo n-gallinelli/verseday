@@ -15,6 +15,8 @@ function proj(id: number, completed = 0): Project {
     sort_order: null,
     completed,
     priority: 0,
+    icon: null,
+    custom_icon_id: null,
     created_at: "2026-01-01",
   };
 }

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { onProjectChanged } from "../utils/projectEvents";
+import ProjectGlyph from "../components/ProjectGlyph";
+import { useCustomIcons } from "../hooks/useCustomIcons";
 import {
   DndContext,
   closestCenter,
@@ -79,6 +81,7 @@ export default function Projects() {
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
   const primeTasks = useAppStore((s) => s.primeTasks);
   const [projects, setProjects] = useState<Project[]>([]);
+  const { byId: iconsById } = useCustomIcons();
   // #3 — refresh on verseday:project-changed so an edit made from a task's
   // ProjectDetail reflects on the Objectives list. (Harmless double-fetch on
   // this page's own mutations — it also reloads post-mutation; not worth
@@ -598,13 +601,10 @@ export default function Projects() {
                           >
                             <div className="flex items-start gap-3">
                               <div className="flex-1 min-w-0">
-                                {/* Title row — color dot + name */}
+                                {/* Title row — icon/color glyph + name */}
                                 <div className="flex items-center gap-2.5">
                                   {!isCompleted && (
-                                    <div
-                                      className="w-[10px] h-[10px] rounded-full shrink-0"
-                                      style={{ backgroundColor: project.color }}
-                                    />
+                                    <ProjectGlyph project={project} iconsById={iconsById} size={14} />
                                   )}
                                   {isCompleted && (
                                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" className="shrink-0">

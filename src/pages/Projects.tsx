@@ -202,9 +202,15 @@ export default function Projects() {
   async function handleInlineCreate() {
     const name = inlineCreateName.trim();
     if (!name) return;
-    // Auto-pick first unused color
+    // Auto-pick first unused color. `projects` is the active set, so this
+    // honors the unique-active-color rule. Prefer the 8 primaries, then fall
+    // back to the legacy presets before the last-resort default (which the DB
+    // guard would reject and surface via handleCreate's catch).
     const usedColors = new Set(projects.map((p) => p.color));
-    const color = PRESET_COLORS.slice(0, 8).find((c) => !usedColors.has(c)) ?? PRESET_COLORS[0];
+    const color =
+      PRESET_COLORS.slice(0, 8).find((c) => !usedColors.has(c)) ??
+      PRESET_COLORS.find((c) => !usedColors.has(c)) ??
+      PRESET_COLORS[0];
     await handleCreate(name, color);
     setInlineCreateName("");
     inlineInputRef.current?.focus();
@@ -297,7 +303,20 @@ export default function Projects() {
           </span>
           <button
             onClick={async () => {
-              await archiveProject(archivedUndo.id, false);
+              try {
+                await archiveProject(archivedUndo.id, false);
+                setError(null);
+              } catch (e) {
+                // Its old color may have been claimed by another active
+                // project while it sat archived. Surface a recoverable
+                // message instead of a thrown stack / silent no-op.
+                setError(
+                  errorMessage(
+                    e,
+                    `Can't restore "${archivedUndo.name}" — its color is now taken. Open it to pick another.`
+                  )
+                );
+              }
               setArchivedUndo(null);
               if (archiveTimerRef.current) clearTimeout(archiveTimerRef.current);
               loadData();

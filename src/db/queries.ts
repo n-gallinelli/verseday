@@ -40,6 +40,29 @@ function validateColor(color: string): void {
   }
 }
 
+// No two *active* projects (archived = 0) may share a color. `completed`
+// does not exempt a project — a completed-but-not-archived project still
+// reserves its color. Pass the project's own id as excludeId when editing
+// so it doesn't conflict with itself.
+//
+// KNOWN LIMITATION (accepted, see docs/2026-06-01-unique-active-project-colors.md):
+// this reads then writes without a transaction, so two near-simultaneous
+// writes could both pass. Acceptable for a single-user local app; a partial
+// unique index is the real fix if it ever matters.
+async function assertColorAvailable(
+  color: string,
+  excludeId?: number
+): Promise<void> {
+  const db = await getDb();
+  const rows: { id: number }[] = await db.select(
+    "SELECT id FROM projects WHERE archived = 0 AND color = $1",
+    [color]
+  );
+  if (rows.some((r) => r.id !== excludeId)) {
+    throw new Error("That color is already used by another active project — pick a different one.");
+  }
+}
+
 function validatePriority(priority: string): void {
   if (!VALID_PRIORITIES.includes(priority)) {
     throw new Error(`Invalid priority: ${priority}`);
@@ -68,6 +91,7 @@ export async function createProject(
   color: string
 ): Promise<number> {
   validateColor(color);
+  await assertColorAvailable(color);
   const db = await getDb();
   const result = await db.execute(
     "INSERT INTO projects (name, color) VALUES ($1, $2)",
@@ -88,6 +112,7 @@ export interface UpdateProjectInput {
 
 export async function updateProject(input: UpdateProjectInput): Promise<void> {
   validateColor(input.color);
+  await assertColorAvailable(input.color, input.id);
   const db = await getDb();
   await db.execute(
     "UPDATE projects SET name = $1, color = $2, description = $3, start_date = $4, target_date = $5, notes = $6 WHERE id = $7",
@@ -111,6 +136,16 @@ export async function archiveProject(
   archived: boolean
 ): Promise<void> {
   const db = await getDb();
+  // Re-activating a project brings it back into the active set — it must not
+  // collide with a color claimed while it sat archived. Callers of the
+  // un-archive path (e.g. the undo toast) must catch this.
+  if (!archived) {
+    const rows: { color: string }[] = await db.select(
+      "SELECT color FROM projects WHERE id = $1",
+      [id]
+    );
+    if (rows[0]) await assertColorAvailable(rows[0].color, id);
+  }
   await db.execute("UPDATE projects SET archived = $1 WHERE id = $2", [
     archived ? 1 : 0,
     id,

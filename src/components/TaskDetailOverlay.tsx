@@ -752,7 +752,41 @@ export default function TaskDetailOverlay({
               attendees, location, description) instead of the in-app
               property rows that don't apply to a calendar event. */}
           {task.external_source === "calendar" ? (
-            <CalendarMetaRail task={task} />
+            <CalendarMetaRail
+              task={task}
+              timeControl={
+                <div data-time-pill>
+                  <TimeFieldPill
+                    label="Time spent"
+                    value={worked}
+                    presets={WORKED_PRESETS}
+                    isOpen={openPopover === "worked"}
+                    onToggle={() => setOpenPopover(openPopover === "worked" ? null : "worked")}
+                    onChange={(val) => {
+                      setWorked(val);
+                      if (onSetWorkedMinutes && val) {
+                        const n = parseInt(val);
+                        if (!isNaN(n) && n > 0) {
+                          onSetWorkedMinutes(task.id, n);
+                          if (isFocusedTask) setFocusPriorElapsedMs(task.id, n * 60 * 1000);
+                        }
+                      }
+                    }}
+                    onReset={
+                      onSetWorkedMinutes
+                        ? () => {
+                            setWorked("");
+                            onSetWorkedMinutes(task.id, 0);
+                            if (isFocusedTask) setFocusPriorElapsedMs(task.id, 0);
+                            setOpenPopover(null);
+                          }
+                        : undefined
+                    }
+                    autoTrackedNote={autoTrackedNote}
+                  />
+                </div>
+              }
+            />
           ) : (
           <div className="w-[320px] flex-shrink-0 border-l border-line-hairline bg-rail px-6 py-7 overflow-y-auto space-y-6">
             <PropertyRow label="Objective">

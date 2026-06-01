@@ -12,6 +12,11 @@ import type { Attendee } from "../calendar/types";
 
 interface Props {
   task: Task;
+  /** Editable "time spent" control for the meeting. Rendered at the top of the
+   *  rail. Supplied by TaskDetailOverlay (which owns the worked-minutes state +
+   *  handlers) so this panel stays a dumb presenter. Calendar events are
+   *  otherwise read-only, but logging time against a meeting is a real edit. */
+  timeControl?: React.ReactNode;
 }
 
 function parseAttendees(raw: string | null): Attendee[] {
@@ -106,7 +111,7 @@ const ATTENDEE_STATUS_LABEL: Record<string, string> = {
   unknown: "·",
 };
 
-export default function CalendarMetaRail({ task }: Props) {
+export default function CalendarMetaRail({ task, timeControl }: Props) {
   const attendees = parseAttendees(task.external_attendees);
   const timeLabel = formatEventTime(task.external_start_local, task.external_end_local);
   const location = task.external_location?.trim() || null;
@@ -122,6 +127,8 @@ export default function CalendarMetaRail({ task }: Props) {
 
   return (
     <div className="w-[320px] flex-shrink-0 border-l border-line-hairline bg-rail px-6 py-7 overflow-y-auto space-y-6">
+      {timeControl && <Section label="Time spent">{timeControl}</Section>}
+
       <Section label="From calendar">
         {calendarName && (
           <Row label="Calendar">

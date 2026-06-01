@@ -903,6 +903,43 @@ export default function DailyPlanner() {
     setSelectedDate(localDateIso(d));
   }
 
+  // Trackpad swipe to page between days. A *deliberate* horizontal two-finger
+  // swipe (clearly horizontal-dominant, past a distance threshold) steps a day:
+  // swipe left → next day, swipe right → previous. One day per swipe — locks
+  // until the gesture's momentum settles (a >200ms gap) so a single fling can't
+  // skip multiple days, and vertical scrolling is never hijacked.
+  const swipeRef = useRef<HTMLDivElement | null>(null);
+  const changeDateRef = useRef(changeDate);
+  changeDateRef.current = changeDate;
+  useEffect(() => {
+    const el = swipeRef.current;
+    if (!el) return;
+    const SWIPE_THRESHOLD = 120; // px of accumulated horizontal travel
+    const GESTURE_GAP_MS = 200; // pause that ends a gesture / clears the lock
+    let accum = 0;
+    let last = 0;
+    let locked = false;
+    const onWheel = (e: WheelEvent) => {
+      const now = performance.now();
+      if (now - last > GESTURE_GAP_MS) {
+        accum = 0;
+        locked = false;
+      }
+      last = now;
+      // Only act on horizontal-dominant motion; leave vertical scroll alone.
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      accum += e.deltaX;
+      if (locked) return;
+      if (Math.abs(accum) >= SWIPE_THRESHOLD) {
+        changeDateRef.current(accum > 0 ? 1 : -1);
+        locked = true;
+        accum = 0;
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
   const isToday = selectedDate === todayString();
   const progressPercent =
     plannedHours > 0
@@ -925,7 +962,7 @@ export default function DailyPlanner() {
   return (
     <div className="flex h-full overflow-hidden">
       {/* ── Main content ────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div ref={swipeRef} className="flex-1 flex flex-col overflow-hidden">
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
       {showSlowSyncToast && (

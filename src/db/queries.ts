@@ -199,13 +199,36 @@ export async function getProjectById(id: number): Promise<Project | null> {
 
 /**
  * Roll over unfinished tasks from previous days to today.
- * - Only moves tasks with rollover_count < 4
- * - On the 5th missed day, unschedules the task (date_scheduled = null)
- * - Sets original_date on first rollover to remember where the task started
- * - Only call this for today's date, never for navigated dates
+ *
+ * Counting (documented = actual): a task is moved forward on each missed day
+ * while `rollover_count < 4`, incrementing the count to at most 4. On the next
+ * (5th) missed day the count is already 4, so it's no longer moved — instead
+ * it's unscheduled (`date_scheduled = NULL`). So: moved on misses 1–4,
+ * unscheduled on miss 5.
+ *
+ * - Sets `original_date` on first rollover to remember where the task started.
+ * - Rolled tasks are renumbered to the end of today's list in a deterministic
+ *   order (#10) so they don't collide with today's existing `sort_order`.
+ * - Only call this for today's date, never for navigated dates.
  */
 export async function rolloverUnfinishedTasks(today: string): Promise<void> {
   const db = await getDb();
+
+  // #10 — capture the rows about to roll forward, in a deterministic order
+  // (oldest first, then prior sort_order), BEFORE the move. Without renumbering
+  // they'd keep their prior-day sort_order and interleave arbitrarily with
+  // today's tasks; a later drag-reorder would then persist an order the user
+  // never saw.
+  const toRoll: { id: number }[] = await db.select(
+    `SELECT id FROM tasks
+     WHERE date_scheduled < $1
+       AND status != 'done'
+       AND rollover_count < 4
+       AND recurrence_source_id IS NULL
+       AND external_source IS NULL
+     ORDER BY date_scheduled ASC, sort_order ASC`,
+    [today]
+  );
 
   // Roll forward: tasks from past dates, not done, rolled fewer than 4 times.
   // Skip calendar-imported tasks — they are date-specific snapshots from
@@ -225,11 +248,10 @@ export async function rolloverUnfinishedTasks(today: string): Promise<void> {
     [today]
   );
 
-  // Expire: tasks that have now hit rollover_count = 4 from a prior pass
-  // (they were already moved to today above, but if they've been rolling for 4 days, unschedule)
-  // Actually we need to catch tasks that just hit count=4 after the above update — but the above
-  // only runs on count<4 so max after update is 4. Unschedule those on the NEXT day.
-  // Simpler: unschedule any task scheduled before today with rollover_count >= 4
+  // Expire: any still-past, still-unfinished task now at count >= 4 (i.e. it
+  // was moved on four prior days and missed again) is unscheduled. The
+  // roll-forward above only touches count < 4, so these are exactly the
+  // tasks that have exhausted their rollovers.
   await db.execute(
     `UPDATE tasks
      SET date_scheduled = NULL
@@ -240,6 +262,28 @@ export async function rolloverUnfinishedTasks(today: string): Promise<void> {
        AND external_source IS NULL`,
     [today]
   );
+
+  // #10 — append the rolled tasks after today's existing tasks, preserving
+  // today's manual order and a stable order among the rolled ones. Each rolled
+  // task lands on today (count < 4 → not expired above), so renumbering them
+  // here is safe. SAFETY: ids/positions are internal numbers, not user input.
+  if (toRoll.length > 0) {
+    const rolledIds = toRoll.map((t) => t.id);
+    const idList = rolledIds.join(",");
+    const maxRows: { m: number | null }[] = await db.select(
+      `SELECT MAX(sort_order) as m FROM tasks
+       WHERE date_scheduled = $1 AND id NOT IN (${idList})`,
+      [today]
+    );
+    const base = maxRows[0]?.m ?? 0;
+    const cases = rolledIds
+      .map((id, i) => `WHEN ${id} THEN ${base + i + 1}`)
+      .join(" ");
+    await db.execute(
+      `UPDATE tasks SET sort_order = CASE id ${cases} END WHERE id IN (${idList})`,
+      []
+    );
+  }
 }
 
 export async function getTaskById(id: number): Promise<Task | null> {
@@ -935,9 +979,20 @@ export async function upsertWeeklyShutdown(
   mood: string | null = null
 ): Promise<void> {
   const db = await getDb();
+  // #6 — null-preserving upsert. The sole caller marks the week complete with
+  // (null, null, null); a plain replace (SET col = $n) nulled incomplete_items
+  // — the carry-forward note ScheduleTab reads — on every (re-)completion.
+  // COALESCE($n, col) keeps any previously-saved value when the arg is null, so
+  // re-completing a shutdown never destroys data; a future caller passing a
+  // real value still wins. Weekly-ONLY: upsertDailyShutdown deliberately keeps
+  // the plain replace because its callers always pass the full current state
+  // and the user must be able to clear a reflection to null.
   await db.execute(
     `INSERT INTO weekly_shutdowns (week_start_date, reflections, incomplete_items, mood) VALUES ($1, $2, $3, $4)
-     ON CONFLICT(week_start_date) DO UPDATE SET reflections = $2, incomplete_items = $3, mood = $4`,
+     ON CONFLICT(week_start_date) DO UPDATE SET
+       reflections = COALESCE($2, reflections),
+       incomplete_items = COALESCE($3, incomplete_items),
+       mood = COALESCE($4, mood)`,
     [weekStartDate, reflections, incompleteItems, mood]
   );
 }

@@ -14,48 +14,48 @@ import { emitProjectChanged } from "../utils/projectEvents";
 import type { Project, Task, DailyPlan, TimeEntry, WeeklyPlan, WeeklyShutdown, Link } from "../types";
 import type { DismissalReason } from "../calendar/types";
 
-export const PRESET_COLORS = [
-  "#809BC2", // muted blue
-  "#D4897A", // soft coral
-  "#7EAD8B", // sage green
-  "#C9A86E", // warm sand
-  "#9B89BF", // lavender
-  "#CC8A9D", // blush
-  "#6BAEC8", // sky
-  "#908A82", // stone
-  // Added to double the project palette (8 → 16). Same muted family, hues
-  // chosen to spread around the wheel and stay distinct from the first 8.
-  "#B5826B", // clay
-  "#6FA0A0", // teal
-  "#A88FC6", // orchid
-  "#A6AE6A", // olive
-  "#C77F84", // rose
-  "#7E8CC4", // periwinkle
-  "#CBA64E", // amber
-  "#5FA38C", // jade
-  // Legacy colors (kept for backward compat with existing projects)
-  "#6b5fd4",
-  "#d95f5f",
-  "#4aad82",
-  "#e4a945",
-  "#378add",
-  "#d4537e",
-  "#e07b39",
-  "#888780",
-  "#6366f1",
-  "#ec4899",
-  "#f59e0b",
-  "#22c55e",
-  "#06b6d4",
-  "#f97316",
-  "#8b5cf6",
-  "#ef4444",
+/** The colors offered in project color pickers and auto-assigned to new
+ *  projects: 24 distinct pastels at even 15° hue spacing (so no two are within
+ *  15° of each other — maximally distinct), ordered with a +11 step so the
+ *  auto-pick sequence hands out far-apart colors as projects are created. */
+export const PROJECT_PALETTE = [
+  "#EAA4A4", // 0°
+  "#A4EAD8", // 165°
+  "#EAA4C7", // 330°
+  "#A4EAB6", // 135°
+  "#EAA4EA", // 300°
+  "#B6EAA4", // 105°
+  "#C7A4EA", // 270°
+  "#D8EAA4", // 75°
+  "#A4A4EA", // 240°
+  "#EAD8A4", // 45°
+  "#A4C7EA", // 210°
+  "#EAB6A4", // 15°
+  "#A4EAEA", // 180°
+  "#EAA4B6", // 345°
+  "#A4EAC7", // 150°
+  "#EAA4D8", // 315°
+  "#A4EAA4", // 120°
+  "#D8A4EA", // 285°
+  "#C7EAA4", // 90°
+  "#B6A4EA", // 255°
+  "#EAEAA4", // 60°
+  "#A4B6EA", // 225°
+  "#EAC7A4", // 30°
+  "#A4D8EA", // 195°
 ];
 
-/** The colors offered in project color pickers / auto-assigned to new projects:
- *  the first 16 curated tones. (Legacy colors past index 16 stay valid for
- *  existing projects but aren't offered.) */
-export const PROJECT_PALETTE = PRESET_COLORS.slice(0, 16);
+/** Every color validateColor accepts: the current pastel palette PLUS every
+ *  previously-shipped/legacy hex, so projects created under older palettes
+ *  still validate, render, and save. Only PROJECT_PALETTE is offered in the UI. */
+export const PRESET_COLORS = [
+  ...PROJECT_PALETTE,
+  // Previously-curated + legacy hexes — retained for backward compat only.
+  "#809BC2", "#D4897A", "#7EAD8B", "#C9A86E", "#9B89BF", "#CC8A9D", "#6BAEC8", "#908A82",
+  "#B5826B", "#6FA0A0", "#A88FC6", "#A6AE6A", "#C77F84", "#7E8CC4", "#CBA64E", "#5FA38C",
+  "#6b5fd4", "#d95f5f", "#4aad82", "#e4a945", "#378add", "#d4537e", "#e07b39", "#888780",
+  "#6366f1", "#ec4899", "#f59e0b", "#22c55e", "#06b6d4", "#f97316", "#8b5cf6", "#ef4444",
+];
 
 const VALID_PRIORITIES = ["low", "medium", "high", "urgent"];
 const VALID_TASK_STATUSES = ["todo", "in_progress", "done"];

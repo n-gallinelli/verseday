@@ -30,7 +30,7 @@ import {
   archiveProject,
   getWorkedMinutesForTask,
   getWorkedMinutesForTaskIds,
-  PRESET_COLORS,
+  PROJECT_PALETTE,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
@@ -113,10 +113,10 @@ function ColorPicker({
       />
       {open && (
         <div
-          className="absolute top-full left-0 mt-1 z-20 bg-elevated border border-line-soft rounded-lg p-2 flex gap-1.5 flex-wrap w-[120px]"
+          className="absolute top-full left-0 mt-1 z-20 bg-elevated border border-line-soft rounded-lg p-2 grid grid-cols-4 gap-1.5 w-max"
           style={{ boxShadow: "var(--shadow-card)" }}
         >
-          {PRESET_COLORS.slice(0, 8).map((c) => {
+          {PROJECT_PALETTE.map((c) => {
             const taken = c !== value && takenColors.includes(c);
             return (
               <button

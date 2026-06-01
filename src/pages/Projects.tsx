@@ -25,6 +25,7 @@ import {
   archiveProject,
   searchTasksByTitle,
   PRESET_COLORS,
+  PROJECT_PALETTE,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
@@ -221,15 +222,16 @@ export default function Projects() {
   async function handleInlineCreate() {
     const name = inlineCreateName.trim();
     if (!name) return;
-    // Auto-pick first unused color. `projects` is the active set, so this
-    // honors the unique-active-color rule. Prefer the 8 primaries, then fall
-    // back to the legacy presets before the last-resort default (which the DB
-    // guard would reject and surface via handleCreate's catch).
+    // Auto-pick the first color not used by an active project, walking the
+    // 16-color palette so no two active projects share a color. `projects` is
+    // the active set, so this honors the unique-active-color rule. Falls back
+    // to any remaining preset, then a last-resort default (which the DB guard
+    // would reject and surface via handleCreate's catch).
     const usedColors = new Set(projects.map((p) => p.color));
     const color =
-      PRESET_COLORS.slice(0, 8).find((c) => !usedColors.has(c)) ??
+      PROJECT_PALETTE.find((c) => !usedColors.has(c)) ??
       PRESET_COLORS.find((c) => !usedColors.has(c)) ??
-      PRESET_COLORS[0];
+      PROJECT_PALETTE[0];
     await handleCreate(name, color);
     setInlineCreateName("");
     inlineInputRef.current?.focus();

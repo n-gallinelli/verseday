@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { activeObjectiveOptions } from "../utils/objectiveOptions";
 import { createPortal } from "react-dom";
 import { getWorkedMinutesByDate, setTaskRecurrence, parseRecurrence, serializeRecurrence } from "../db/queries";
 import { parseTimeFromTitle, formatHoursMinutes } from "../utils/format";
@@ -385,6 +386,13 @@ export default function TaskDetailOverlay({
   const [notes, setNotes] = useState(task.notes ?? "");
   const [estimate, setEstimate] = useState(task.estimated_minutes?.toString() ?? "");
   const [projectId, setProjectId] = useState(task.project_id?.toString() ?? "");
+  // The Objective dropdown offers active objectives only — completed ones are
+  // not assignable. The task's current objective is kept even if completed so
+  // an existing assignment still shows. See utils/objectiveOptions.
+  const objectiveOptions = useMemo(
+    () => activeObjectiveOptions(projects, projectId),
+    [projects, projectId],
+  );
   const [priority, setPriority] = useState(task.priority);
   const [dateScheduled, setDateScheduled] = useState(task.date_scheduled ?? "");
   const [dueDate, setDueDate] = useState(task.due_date ?? "");
@@ -792,7 +800,7 @@ export default function TaskDetailOverlay({
             <PropertyRow label="Objective">
               <ProjectPicker
                 value={projectId}
-                projects={projects}
+                projects={objectiveOptions}
                 onChange={(val) => {
                   setProjectId(val);
                   debouncedSave({ projectId: val });

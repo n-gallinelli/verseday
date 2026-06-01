@@ -479,10 +479,11 @@ function TaskCardImpl({
                 title={isPaused ? "Resume focus" : "Pause focus"}
               >
                 {isPaused ? (
-                  // Play triangle — same shape as the in-page Resume
-                  // button and the PiP's resume icon.
-                  <svg width="9" height="10" viewBox="0 0 9 10" fill="currentColor">
-                    <path d="M2 1.2v7.6L8 5z" />
+                  // Resume: blue play-triangle outline, matching the PiP's
+                  // resume icon. Optically centered (nudged ~1px right since a
+                  // triangle's mass sits left of center).
+                  <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="var(--accent-blue)" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" className="translate-x-px">
+                    <path d="M3 1v12l10-6z" />
                   </svg>
                 ) : (
                   <svg width="10" height="11" viewBox="0 0 9 10" fill="currentColor">

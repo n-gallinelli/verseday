@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { register } from "@tauri-apps/plugin-global-shortcut";
+import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -158,6 +158,13 @@ function MainApp() {
       }
     }
     startup();
+
+    // #13 — unregister the global quick-add shortcut on teardown. Without this,
+    // a remount (StrictMode dev double-invoke, or any future re-mount) would
+    // re-register and could leave a stale handler / "already registered" error.
+    return () => {
+      unregister("CmdOrCtrl+Shift+A").catch(() => {});
+    };
   }, [restoreFocus]);
 
   // P0-1 — OS resume signal. The native side observes

@@ -34,6 +34,21 @@ export function mondayOfWeek(date: Date = new Date()): string {
 }
 
 /**
+ * The UTC instant (ISO 8601, ...Z) at the START of the given LOCAL calendar
+ * day. Use to compare a UTC `completed_at`/timestamp against a local-day
+ * boundary: `new Date("YYYY-MM-DDT00:00:00")` (no Z) parses in local tz, so
+ * `.toISOString()` yields that local midnight expressed as a UTC instant.
+ */
+export function localDayStartUtc(dateIso: string): string {
+  return new Date(`${dateIso}T00:00:00`).toISOString();
+}
+
+/** The UTC instant (ISO 8601, ...Z) at the END of the given LOCAL calendar day. */
+export function localDayEndUtc(dateIso: string): string {
+  return new Date(`${dateIso}T23:59:59.999`).toISOString();
+}
+
+/**
  * Five Mon..Fri ISO strings (local) starting from a Monday-ISO.
  * Parses with `T00:00:00` so DST transitions don't shift the boundary.
  */

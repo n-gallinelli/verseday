@@ -1322,6 +1322,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       await dbSetManualWorkedMinutes(id, minutes);
       // The query mutates time_entries, not the tasks row — the canonical
       // Task entry doesn't change. workedMinutes-by-task is M3.3 territory.
+      //
+      // #4 — if this task is the live focus session, keep its on-screen
+      // elapsed readout in sync with the DB. setFocusPriorElapsedMs no-ops
+      // unless focus.taskId === id, so this is safe for any task. Centralizing
+      // it here covers every caller (ProjectDetail edit, etc.), not just the
+      // TaskDetailOverlay which already calls it directly (idempotent — same
+      // value); the focus baseline is the manual minutes the user just set.
+      get().setFocusPriorElapsedMs(id, minutes * 60 * 1000);
     } catch (err) {
       console.error("[appStore] setTaskWorkedMinutes failed", { id, minutes, err });
     }

@@ -32,7 +32,7 @@ import {
   generateRecurringInstances,
   rolloverUnfinishedTasks,
 } from "../db/queries";
-import { todayString } from "../utils/dates";
+import { todayString, localDateIso } from "../utils/dates";
 import ErrorBanner from "../components/ErrorBanner";
 import TaskCard from "../components/TaskCard";
 import DatePicker from "../components/DatePicker";
@@ -272,7 +272,12 @@ export default function DailyPlanner() {
   const plannedHours = plannedMinutes / 60;
   const workedHours = workedMinutes / 60;
 
-  const projectMap = new Map(projects.map((p) => [p.id, p]));
+  // #8 — memoized so it's rebuilt only when `projects` changes, not on every
+  // render (it feeds row rendering on a list that re-renders each focus tick).
+  const projectMap = useMemo(
+    () => new Map(projects.map((p) => [p.id, p])),
+    [projects]
+  );
 
   // Collapse task input on click outside
   useEffect(() => {
@@ -326,11 +331,12 @@ export default function DailyPlanner() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("verseday:open-task-input", onOpenTaskInput);
     };
-    // tasks/handleStartFocus/setPage closures are read at call time;
-    // keeping the dep array narrow avoids re-binding the listener on
-    // every render.
+    // #8 — the handler body reads no `tasks` (Space-on-hover-to-start was
+    // removed); any closures it does use are read at call time. `tasks` in the
+    // deps re-bound these window listeners on every task mutation for nothing,
+    // so it's dropped — the deps are only the gate flags the body branches on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTaskDetailId, confirmDeleteId, editingId, tasks]);
+  }, [selectedTaskDetailId, confirmDeleteId, editingId]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -372,11 +378,15 @@ export default function DailyPlanner() {
   }
 
 
-  async function loadData() {
+  // #14 — `isStale` lets an effect-driven load abort its state writes if the
+  // date changed or the view unmounted mid-read (fast date paging over slow
+  // reads), so stale data never flashes. Event-handler callers (mounted) omit
+  // it and behave as before.
+  async function loadData(isStale?: () => boolean) {
     try {
       // Generate recurring task instances for this date before loading
       await generateRecurringInstances(selectedDate);
-      const todayIso = new Date().toISOString().split("T")[0];
+      const todayIso = todayString();
       // Roll over unfinished tasks from previous days (only for today)
       if (selectedDate === todayIso) {
         await rolloverUnfinishedTasks(todayIso);
@@ -397,11 +407,13 @@ export default function DailyPlanner() {
       ]);
       void _lt;
       void _sp;
+      if (isStale?.()) return;
       setWorkedMinutes(wm);
       setDailyPlan(dp);
       setProjects(p);
       // Fetch project stats for right panel
       const pStats = await getProjectStats();
+      if (isStale?.()) return;
       setProjectStats(pStats);
       // Fetch worked minutes per task. Read taskIdsByDate fresh from the
       // store after the loadTasksForDate above resolved — taskIds in the
@@ -411,6 +423,7 @@ export default function DailyPlanner() {
         .taskIdsByDate.get(selectedDate) ?? [];
       if (freshIds.length > 0) {
         const wmap = await getWorkedMinutesForTaskIds(freshIds);
+        if (isStale?.()) return;
         setWorkedMap(wmap);
       } else {
         setWorkedMap(new Map());
@@ -430,7 +443,13 @@ export default function DailyPlanner() {
     initialLoadDone.current = false;
     setEditingId(null);
     setConfirmDeleteId(null);
-    loadData();
+    // #14 — cancelled-ref: paging to another date (or unmounting) mid-load
+    // marks this run stale so loadData skips its state writes.
+    let cancelled = false;
+    loadData(() => cancelled);
+    return () => {
+      cancelled = true;
+    };
   }, [selectedDate]);
 
   // M4 — refetch when calendar auto-sync imported new rows. Only
@@ -860,12 +879,15 @@ export default function DailyPlanner() {
   }
 
   function changeDate(offset: number) {
+    // #5 — parse + format in LOCAL tz. toISOString() would format the local
+    // date in UTC, shifting the day by ±1 in evening-west / morning-east zones
+    // and letting the arrows mis-step (and tasks added while paging land wrong).
     const d = new Date(selectedDate + "T00:00:00");
     d.setDate(d.getDate() + offset);
-    setSelectedDate(d.toISOString().split("T")[0]);
+    setSelectedDate(localDateIso(d));
   }
 
-  const isToday = selectedDate === new Date().toISOString().split("T")[0];
+  const isToday = selectedDate === todayString();
   const progressPercent =
     plannedHours > 0
       ? Math.min((workedHours / plannedHours) * 100, 100)

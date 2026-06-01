@@ -903,37 +903,40 @@ export default function DailyPlanner() {
     setSelectedDate(localDateIso(d));
   }
 
-  // Trackpad swipe to page between days. A *deliberate* horizontal two-finger
-  // swipe (clearly horizontal-dominant, past a distance threshold) steps a day:
-  // swipe left → next day, swipe right → previous. One day per swipe — locks
-  // until the gesture's momentum settles (a >200ms gap) so a single fling can't
-  // skip multiple days, and vertical scrolling is never hijacked.
+  // Trackpad swipe to page between days. Swipe left → next day, swipe right →
+  // previous. We accumulate BOTH axes across the gesture (a gesture ends after
+  // a brief pause) and judge horizontal-vs-vertical over the whole gesture, not
+  // per event — a per-event dominance check dropped the jittery mixed deltas a
+  // real trackpad emits, which made it feel like it wouldn't budge. Fires once
+  // per gesture, then waits for the fling's momentum to settle, so a single
+  // swipe steps exactly one day and vertical scrolling is left alone.
   const swipeRef = useRef<HTMLDivElement | null>(null);
   const changeDateRef = useRef(changeDate);
   changeDateRef.current = changeDate;
   useEffect(() => {
     const el = swipeRef.current;
     if (!el) return;
-    const SWIPE_THRESHOLD = 120; // px of accumulated horizontal travel
-    const GESTURE_GAP_MS = 200; // pause that ends a gesture / clears the lock
-    let accum = 0;
+    const SWIPE_THRESHOLD = 50; // px of accumulated horizontal travel
+    const GESTURE_GAP_MS = 150; // pause that ends a gesture / clears the lock
+    let accX = 0;
+    let accY = 0;
     let last = 0;
-    let locked = false;
+    let fired = false;
     const onWheel = (e: WheelEvent) => {
       const now = performance.now();
       if (now - last > GESTURE_GAP_MS) {
-        accum = 0;
-        locked = false;
+        accX = 0;
+        accY = 0;
+        fired = false;
       }
       last = now;
-      // Only act on horizontal-dominant motion; leave vertical scroll alone.
-      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-      accum += e.deltaX;
-      if (locked) return;
-      if (Math.abs(accum) >= SWIPE_THRESHOLD) {
-        changeDateRef.current(accum > 0 ? 1 : -1);
-        locked = true;
-        accum = 0;
+      accX += e.deltaX;
+      accY += e.deltaY;
+      if (fired) return;
+      // Clearly horizontal over the whole gesture, past the distance threshold.
+      if (Math.abs(accX) >= SWIPE_THRESHOLD && Math.abs(accX) > Math.abs(accY) * 1.4) {
+        changeDateRef.current(accX > 0 ? 1 : -1);
+        fired = true;
       }
     };
     el.addEventListener("wheel", onWheel, { passive: true });

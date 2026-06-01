@@ -1,4 +1,8 @@
 import { getDb } from "./database";
+import {
+  SQL_TOTAL_WORKED_MINUTES_FOR_DATE,
+  SQL_CLOSE_ORPHANED_TIME_ENTRIES,
+} from "./workedSecondsSql";
 import { todayString } from "../utils/dates";
 import type { Project, Task, DailyPlan, TimeEntry, WeeklyPlan, WeeklyShutdown, Link } from "../types";
 import type { DismissalReason } from "../calendar/types";
@@ -721,14 +725,6 @@ export async function updateTimeEntryWorkedSeconds(
   );
 }
 
-export async function checkpointTimeEntry(id: number): Promise<void> {
-  const db = await getDb();
-  await db.execute("UPDATE time_entries SET end_time = $1 WHERE id = $2", [
-    new Date().toISOString(),
-    id,
-  ]);
-}
-
 export async function closeOrphanedTimeEntries(
   excludeId: number | null = null,
 ): Promise<number> {
@@ -745,13 +741,10 @@ export async function closeOrphanedTimeEntries(
   // this, an app where every launch restores a focus would leave
   // those older orphans permanently open.
   const MAX_ORPHAN_HOURS = 4;
-  const result = await db.execute(
-    `UPDATE time_entries
-     SET end_time = datetime(start_time, '+' || $1 || ' hours')
-     WHERE end_time IS NULL
-       AND (CAST($2 AS INTEGER) IS NULL OR id != $2)`,
-    [MAX_ORPHAN_HOURS, excludeId]
-  );
+  const result = await db.execute(SQL_CLOSE_ORPHANED_TIME_ENTRIES, [
+    MAX_ORPHAN_HOURS,
+    excludeId,
+  ]);
   return result.rowsAffected;
 }
 
@@ -765,20 +758,15 @@ export async function getTotalPlannedMinutes(date: string): Promise<number> {
   return rows[0]?.total ?? 0;
 }
 
+// #15 — daily worked-minutes total. The `te.end_time IS NOT NULL` guard (in
+// SQL_TOTAL_WORKED_MINUTES_FOR_DATE) excludes the open in-progress session so
+// its checkpointed worked_seconds isn't double-counted against the live
+// focus.workedMs added at the app layer. SQL lives in ./workedSecondsSql so the
+// integrity test runs the identical text.
 export async function getTotalWorkedMinutes(date: string): Promise<number> {
   const db = await getDb();
-  // S.5 — reads worked_seconds directly. Open entries (the in-progress
-  // session, if any) contribute 0 until stopped — the live focus.workedMs
-  // is the source of truth for that session's contribution. Consumers
-  // that need to include the live session add focus.workedMs / 60000 at
-  // the application layer; in practice DailyPlanner re-renders on every
-  // tick anyway, and the brief gap-on-stop where a closed session pops
-  // into the total is acceptable.
   const rows: { total: number }[] = await db.select(
-    `SELECT COALESCE(SUM(te.worked_seconds), 0) / 60.0 as total
-    FROM time_entries te
-    JOIN tasks t ON te.task_id = t.id
-    WHERE t.date_scheduled = $1 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL`,
+    SQL_TOTAL_WORKED_MINUTES_FOR_DATE,
     [date]
   );
   return rows[0]?.total ?? 0;
@@ -844,7 +832,7 @@ export async function getWorkedMinutesForWeek(
     `SELECT t.date_scheduled, COALESCE(SUM(te.worked_seconds), 0) / 60.0 as total
     FROM time_entries te
     JOIN tasks t ON te.task_id = t.id
-    WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL
+    WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL AND te.end_time IS NOT NULL
     GROUP BY t.date_scheduled`,
     [startDate, endDate]
   );
@@ -870,7 +858,7 @@ export async function getWorkedMinutesPerProjectPerDay(
       `SELECT t.date_scheduled, t.project_id, COALESCE(SUM(te.worked_seconds), 0) / 60.0 as total
       FROM time_entries te
       JOIN tasks t ON te.task_id = t.id
-      WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL
+      WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL AND te.end_time IS NOT NULL
       GROUP BY t.date_scheduled, t.project_id`,
       [startDate, endDate]
     );
@@ -1148,7 +1136,7 @@ export async function getWorkedMinutesForTaskIds(
   const rows: { task_id: number; total: number }[] = await db.select(
     `SELECT task_id, COALESCE(SUM(worked_seconds), 0) / 60.0 as total
     FROM time_entries
-    WHERE task_id IN (${inList})
+    WHERE task_id IN (${inList}) AND end_time IS NOT NULL
     GROUP BY task_id`,
     []
   );
@@ -1164,7 +1152,7 @@ export async function getWorkedMinutesForTask(taskId: number): Promise<number> {
   const rows: { total: number }[] = await db.select(
     `SELECT COALESCE(SUM(worked_seconds), 0) / 60.0 as total
     FROM time_entries
-    WHERE task_id = $1`,
+    WHERE task_id = $1 AND end_time IS NOT NULL`,
     [taskId]
   );
   return Math.round(rows[0]?.total ?? 0);
@@ -1178,7 +1166,7 @@ export async function getWorkedMinutesByDate(
     `SELECT date(start_time) as day,
       COALESCE(SUM(worked_seconds), 0) / 60.0 as total
     FROM time_entries
-    WHERE task_id = $1
+    WHERE task_id = $1 AND end_time IS NOT NULL
     GROUP BY date(start_time)
     ORDER BY day`,
     [taskId]

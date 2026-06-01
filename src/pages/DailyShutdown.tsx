@@ -9,6 +9,7 @@ import {
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
+import { todayString, localDateIso } from "../utils/dates";
 import { formatHoursMinutes } from "../utils/format";
 import MoodSelector from "../components/MoodSelector";
 import CalendarChip from "../components/CalendarChip";
@@ -130,7 +131,7 @@ export default function DailyShutdown() {
   // pointing at another day (e.g., they were paging through a past Daily
   // Plan), snap it to today on mount.
   useEffect(() => {
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayString(); // #5 — local-tz, not UTC
     if (selectedDate !== today) setSelectedDate(today);
     // intentionally only on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -200,9 +201,11 @@ export default function DailyShutdown() {
   }
 
   function getTomorrowDate(): string {
+    // #5 — local-tz format; toISOString() would shift the carry-forward target
+    // day by ±1 near midnight in non-UTC zones.
     const d = new Date(selectedDate + "T00:00:00");
     d.setDate(d.getDate() + 1);
-    return d.toISOString().split("T")[0];
+    return localDateIso(d);
   }
 
   async function carryTaskToTomorrow(taskId: number) {

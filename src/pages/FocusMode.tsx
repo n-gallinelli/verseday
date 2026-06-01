@@ -677,7 +677,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       }
     }, 200);
     return () => clearInterval(interval);
-  }, [elapsed, SHORT_BREAK_MS, CYCLES_BEFORE_LONG_BREAK]);
+    // #8 — `elapsed` was in the deps but is never read here (all handlers go
+    // through *Ref.current). It made this 200ms poller tear down and rebuild
+    // every second, opening a per-tick window where a PiP pause/stop click
+    // could be dropped. Deps are only the values actually read in the body.
+  }, [SHORT_BREAK_MS, CYCLES_BEFORE_LONG_BREAK]);
 
   // Listen for Space shortcut from App.tsx
   useEffect(() => {

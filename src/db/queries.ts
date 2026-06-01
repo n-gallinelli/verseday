@@ -3,7 +3,7 @@ import {
   SQL_TOTAL_WORKED_MINUTES_FOR_DATE,
   SQL_CLOSE_ORPHANED_TIME_ENTRIES,
 } from "./workedSecondsSql";
-import { todayString } from "../utils/dates";
+import { todayString, localDayStartUtc, localDayEndUtc } from "../utils/dates";
 import type { Project, Task, DailyPlan, TimeEntry, WeeklyPlan, WeeklyShutdown, Link } from "../types";
 import type { DismissalReason } from "../calendar/types";
 
@@ -1061,8 +1061,14 @@ export async function getTasksCompletedInWeek(
   fridayIso: string
 ): Promise<Task[]> {
   const db = await getDb();
-  // End-of-Friday cutoff so timestamps later in Friday still match.
-  const fridayEnd = `${fridayIso}T23:59:59.999Z`;
+  // #9 — completed_at is a UTC instant (Date.toISOString()), but the week is a
+  // LOCAL Mon..Fri. Compare it against the UTC instants of local-Monday-start
+  // and local-Friday-end, so a task completed near midnight is counted in the
+  // correct local week (the old code compared a UTC timestamp against bare
+  // local date strings + a UTC-suffixed Friday end). The date_scheduled
+  // fallback branch stays on local date strings — that column IS a local date.
+  const completedStartUtc = localDayStartUtc(mondayIso);
+  const completedEndUtc = localDayEndUtc(fridayIso);
   return db.select(
     `SELECT * FROM tasks
      WHERE status = 'done'
@@ -1072,12 +1078,12 @@ export async function getTasksCompletedInWeek(
             AND completed_at >= $1
             AND completed_at <= $2)
          OR (completed_at IS NULL
-            AND date_scheduled >= $1
-            AND date_scheduled <= $3)
+            AND date_scheduled >= $3
+            AND date_scheduled <= $4)
        )
      ORDER BY COALESCE(completed_at, date_scheduled) ASC, sort_order ASC
      LIMIT 1000`,
-    [mondayIso, fridayEnd, fridayIso]
+    [completedStartUtc, completedEndUtc, mondayIso, fridayIso]
   );
 }
 

@@ -575,7 +575,11 @@ export default function ProjectDetail() {
   }, [selectedProjectId, loadTasksForProject]);
 
   // Full load — resets edit fields (only on mount / project switch).
-  const loadData = useCallback(async () => {
+  // #14 — `isStale` lets the caller abort state writes if the component
+  // unmounted or switched projects mid-read (fast project switching), so a slow
+  // load can't flash stale data or warn. Effect-driven callers pass it via the
+  // cancelled-ref pattern; event-handler callers (mounted) omit it.
+  const loadData = useCallback(async (isStale?: () => boolean) => {
     if (selectedProjectId === null) return;
     try {
       const [p, , activeProjects] = await Promise.all([
@@ -583,6 +587,7 @@ export default function ProjectDetail() {
         loadTasksForProject(selectedProjectId),
         getProjects(false),
       ]);
+      if (isStale?.()) return;
       setProject(p);
       setTakenColors(
         activeProjects
@@ -593,9 +598,10 @@ export default function ProjectDetail() {
         useAppStore.getState().taskIdsByProject.get(selectedProjectId) ?? [];
       try {
         const wmap = await getWorkedMinutesForTaskIds(ids);
+        if (isStale?.()) return;
         setWorkedMap(wmap);
       } catch {
-        setWorkedMap(new Map());
+        if (!isStale?.()) setWorkedMap(new Map());
       }
       if (p) {
         setEditName(p.name);
@@ -623,9 +629,15 @@ export default function ProjectDetail() {
       deleteTaskAction(pendingDelete.task.id).catch(() => {});
       setPendingDelete(null);
     }
-    loadData();
+    // #14 — cancelled-ref: a project switch or unmount mid-load marks this run
+    // stale so loadData skips its state writes.
+    let cancelled = false;
+    loadData(() => cancelled);
     setEditingTaskId(null);
     setConfirmDeleteId(null);
+    return () => {
+      cancelled = true;
+    };
   }, [loadData]);
 
   // M3.2.b.5.b — verseday:task-updated/-deleted listener retired.

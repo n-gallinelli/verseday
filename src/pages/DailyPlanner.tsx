@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { onProjectChanged } from "../utils/projectEvents";
+import { activeObjectiveOptions } from "../utils/objectiveOptions";
 import {
   DndContext,
   closestCenter,
@@ -166,6 +167,12 @@ export default function DailyPlanner() {
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskEstimate, setNewTaskEstimate] = useState<number | null>(null);
   const [newTaskProjectId, setNewTaskProjectId] = useState<string>("");
+  // Add-task objective picker: active objectives only (completed ones aren't
+  // assignable), preserving any current pick. See utils/objectiveOptions.
+  const newTaskObjectiveOptions = useMemo(
+    () => activeObjectiveOptions(projects, newTaskProjectId),
+    [projects, newTaskProjectId],
+  );
   const [newTaskHighPriority, setNewTaskHighPriority] = useState(false);
 
   // Edit state
@@ -1148,7 +1155,7 @@ export default function DailyPlanner() {
                 <div className="w-[220px]">
                   <ProjectPicker
                     value={newTaskProjectId}
-                    projects={projects}
+                    projects={newTaskObjectiveOptions}
                     onChange={setNewTaskProjectId}
                   />
                 </div>

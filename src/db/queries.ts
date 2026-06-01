@@ -1632,6 +1632,15 @@ export function serializeRecurrence(rule: RecurrenceRule): string {
   return JSON.stringify(rule);
 }
 
+/** All recurring task templates (recurrence set). Instances point at these via
+ *  recurrence_source_id and are excluded (they have recurrence NULL). */
+export async function getRecurringTemplates(): Promise<Task[]> {
+  const db = await getDb();
+  return db.select(
+    "SELECT * FROM tasks WHERE recurrence IS NOT NULL ORDER BY title COLLATE NOCASE LIMIT 500"
+  );
+}
+
 export async function setTaskRecurrence(
   taskId: number,
   recurrence: string | null

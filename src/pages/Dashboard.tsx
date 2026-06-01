@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { onProjectChanged } from "../utils/projectEvents";
 import { useAppStore } from "../stores/appStore";
 import {
   getTasksForWeek,
@@ -175,6 +176,21 @@ export default function Dashboard() {
     Map<number, { total: number; done: number; lastDate: string | null }>
   >(new Map());
   const [projects, setProjects] = useState<Project[]>([]);
+  // #3 — refresh on verseday:project-changed. Read-only → no loop; guarded.
+  useEffect(() => {
+    let mounted = true;
+    const off = onProjectChanged(() => {
+      getProjects()
+        .then((p) => {
+          if (mounted) setProjects(p);
+        })
+        .catch(() => {});
+    });
+    return () => {
+      mounted = false;
+      off();
+    };
+  }, []);
   // eslint-disable-next-line no-restricted-syntax -- pre-M4 M3 gap
   const [recentCompleted, setRecentCompleted] = useState<Task[]>([]);
   const [pastShutdowns, setPastShutdowns] = useState<CompletedShutdown[]>([]);

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { onProjectChanged } from "../utils/projectEvents";
 import TaskDetailOverlay from "./TaskDetailOverlay";
 import { selectTaskDetailTask, useAppStore } from "../stores/appStore";
 import {
@@ -38,6 +39,24 @@ export default function TaskDetailOverlayHost() {
   const task = useAppStore(selectTaskDetailTask);
 
   const [projects, setProjects] = useState<Project[]>([]);
+  // #3 — refresh the project copy when any screen mutates a project
+  // (verseday:project-changed). This is the reported bug: editing a project on
+  // the Objectives page now updates the task's Objective dropdown live. Read-
+  // only handler (never emits → no loop), mounted-guarded, balanced cleanup.
+  useEffect(() => {
+    let mounted = true;
+    const off = onProjectChanged(() => {
+      getProjects()
+        .then((p) => {
+          if (mounted) setProjects(p);
+        })
+        .catch(() => {});
+    });
+    return () => {
+      mounted = false;
+      off();
+    };
+  }, []);
   const [workedMinutes, setWorkedMinutes] = useState(0);
 
   // Cache-miss fallback. If a screen hasn't primed the canonical map

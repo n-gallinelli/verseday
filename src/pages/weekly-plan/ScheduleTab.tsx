@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { onProjectChanged } from "../../utils/projectEvents";
 import {
   DndContext,
   DragOverlay,
@@ -491,6 +492,25 @@ export default function ScheduleTab() {
   }, [weekTaskIds, tasksById]);
 
   const [projects, setProjects] = useState<Project[]>([]);
+  // #3 — refresh project name/color on verseday:project-changed. Projects-only
+  // re-fetch (the bug is name/color drift); the activeProjectIds membership
+  // derivation is NOT recomputed here, so an archive/complete from another
+  // screen only re-membership on the next full load — a known minor bound
+  // documented in the changelog. Read-only → no loop; mounted-guarded.
+  useEffect(() => {
+    let mounted = true;
+    const off = onProjectChanged(() => {
+      getProjects()
+        .then((p) => {
+          if (mounted) setProjects(p);
+        })
+        .catch(() => {});
+    });
+    return () => {
+      mounted = false;
+      off();
+    };
+  }, []);
   // Hybrid lists — SQL stays authoritative for membership (cross-cutting
   // queries don't fit any secondary index); IDs are stored locally;
   // canonical map drives the rendered Task data so renames flow back

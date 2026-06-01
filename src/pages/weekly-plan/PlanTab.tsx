@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { onProjectChanged } from "../../utils/projectEvents";
 import {
   DndContext,
   DragOverlay,
@@ -46,6 +47,29 @@ export default function PlanTab() {
   const weekDates = weekdayDates(selectedWeek);
 
   const [projects, setProjects] = useState<Project[]>([]);
+  // #3 — refresh on verseday:project-changed. Replicates loadData's active
+  // filter (Plan is forward-looking: archived/completed projects don't surface)
+  // so a rename/recolor AND an archive/complete both reflect live. Read-only →
+  // no loop; mounted-guarded.
+  useEffect(() => {
+    let mounted = true;
+    const off = onProjectChanged(() => {
+      getProjects(false)
+        .then((all) => {
+          if (mounted)
+            setProjects(
+              all
+                .filter((p) => !p.archived && !p.completed)
+                .sort((a, b) => a.name.localeCompare(b.name)),
+            );
+        })
+        .catch(() => {});
+    });
+    return () => {
+      mounted = false;
+      off();
+    };
+  }, []);
   const [statuses, setStatuses] = useState<
     Map<number, WeeklyPlanProjectStatus>
   >(new Map());

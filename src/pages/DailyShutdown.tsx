@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { onProjectChanged } from "../utils/projectEvents";
 import { selectTaskIdsByDate, useAppStore } from "../stores/appStore";
 import {
   getDailyPlan,
@@ -67,6 +68,21 @@ export default function DailyShutdown() {
   }, [dayTaskIds, tasksById]);
 
   const [projects, setProjects] = useState<Project[]>([]);
+  // #3 — refresh on verseday:project-changed. Read-only → no loop; guarded.
+  useEffect(() => {
+    let mounted = true;
+    const off = onProjectChanged(() => {
+      getProjects(false)
+        .then((p) => {
+          if (mounted) setProjects(p);
+        })
+        .catch(() => {});
+    });
+    return () => {
+      mounted = false;
+      off();
+    };
+  }, []);
   const [error, setError] = useState<string | null>(null);
 
   const [mood, setMood] = useState<string | null>(null);

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from "react";
+import { onProjectChanged } from "../utils/projectEvents";
 import {
   DndContext,
   closestCenter,
@@ -107,6 +108,22 @@ export default function DailyPlanner() {
     return out;
   }, [taskIds, tasksById]);
   const [projects, setProjects] = useState<Project[]>([]);
+  // #3 — refresh on verseday:project-changed (project pills/colors on task
+  // rows stay current). Read-only handler → no loop; mounted-guarded.
+  useEffect(() => {
+    let mounted = true;
+    const off = onProjectChanged(() => {
+      getProjects()
+        .then((p) => {
+          if (mounted) setProjects(p);
+        })
+        .catch(() => {});
+    });
+    return () => {
+      mounted = false;
+      off();
+    };
+  }, []);
   // M3.2.b.5.b — derived from canonical tasks. Pre-cutover this was
   // refetched via getTotalPlannedMinutes on every loadData call; the
   // verseday listener kept it fresh on cross-screen mutations. After

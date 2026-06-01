@@ -615,6 +615,20 @@ pub fn run() {
             sql: "ALTER TABLE projects ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 25,
+            description: "custom objective icons: custom_icons library + projects.icon / custom_icon_id",
+            sql: "
+                CREATE TABLE IF NOT EXISTS custom_icons (
+                  id INTEGER PRIMARY KEY,
+                  data TEXT NOT NULL,
+                  created_at TEXT NOT NULL
+                );
+                ALTER TABLE projects ADD COLUMN icon TEXT;
+                ALTER TABLE projects ADD COLUMN custom_icon_id INTEGER REFERENCES custom_icons(id) ON DELETE SET NULL;
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

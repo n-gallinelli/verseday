@@ -11,7 +11,8 @@ import {
 } from "./rolloverSql";
 import { todayString, localDayStartUtc, localDayEndUtc } from "../utils/dates";
 import { emitProjectChanged } from "../utils/projectEvents";
-import type { Project, Task, DailyPlan, TimeEntry, WeeklyPlan, WeeklyShutdown, Link } from "../types";
+import { emitIconsChanged } from "../utils/iconEvents";
+import type { Project, Task, DailyPlan, TimeEntry, WeeklyPlan, WeeklyShutdown, Link, CustomIcon } from "../types";
 import type { DismissalReason } from "../calendar/types";
 
 /** The colors offered in project color pickers and auto-assigned to new
@@ -169,6 +170,42 @@ export async function setProjectPriority(
     priority ? 1 : 0,
     id,
   ]);
+  emitProjectChanged();
+}
+
+// ── Custom objective icons (#25) ──────────────────────────────────────────
+// data is a canvas-re-encoded PNG data URI (utils/iconUpload) — never raw
+// upload bytes. created_at stamped here (ISO), not a SQL default.
+export async function createCustomIcon(data: string): Promise<number> {
+  const db = await getDb();
+  const result = await db.execute(
+    "INSERT INTO custom_icons (data, created_at) VALUES ($1, $2)",
+    [data, new Date().toISOString()]
+  );
+  emitIconsChanged();
+  return result.lastInsertId ?? 0;
+}
+
+export async function getCustomIcons(): Promise<CustomIcon[]> {
+  const db = await getDb();
+  return db.select(
+    "SELECT id, data, created_at FROM custom_icons ORDER BY created_at DESC, id DESC LIMIT 500"
+  );
+}
+
+/** Set a project's icon: an emoji (icon set, customIconId null), a custom image
+ *  (customIconId set, icon null), or none (both null). Emits project-changed so
+ *  every project-list holder re-renders the glyph. */
+export async function setProjectIcon(
+  id: number,
+  icon: string | null,
+  customIconId: number | null
+): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "UPDATE projects SET icon = $1, custom_icon_id = $2 WHERE id = $3",
+    [icon, customIconId, id]
+  );
   emitProjectChanged();
 }
 

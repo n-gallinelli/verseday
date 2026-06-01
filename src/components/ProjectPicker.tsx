@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import type { Project } from "../types";
+import ProjectGlyph from "./ProjectGlyph";
+import { useCustomIcons } from "../hooks/useCustomIcons";
 
 interface ProjectPickerProps {
   value: string; // project id as string, or "" for —
@@ -15,6 +17,7 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
   const popoverRef = useRef<HTMLDivElement>(null);
 
   const selected = value ? projects.find((p) => String(p.id) === value) ?? null : null;
+  const { byId: iconsById } = useCustomIcons();
 
   const updatePosition = useCallback(() => {
     if (!triggerRef.current) return;
@@ -64,10 +67,9 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
       >
         {selected ? (
           <>
-            <span
-              className="w-2 h-2 rounded-full flex-shrink-0 mt-[6px]"
-              style={{ backgroundColor: selected.color }}
-            />
+            <span className="mt-[3px]">
+              <ProjectGlyph project={selected} iconsById={iconsById} size={14} />
+            </span>
             <span className="flex-1 min-w-0 text-[13px] font-normal text-fg-secondary leading-[1.4] line-clamp-3">
               {selected.name}
             </span>
@@ -126,10 +128,7 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
                     : "hover:bg-overlay-hover text-fg-secondary"
                 }`}
               >
-                <span
-                  className="w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: p.color }}
-                />
+                <ProjectGlyph project={p} iconsById={iconsById} size={14} />
                 <span className="flex-1 truncate">{p.name}</span>
               </button>
             );

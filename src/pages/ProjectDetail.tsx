@@ -571,10 +571,12 @@ export default function ProjectDetail() {
       const t = tasksById.get(id);
       if (t) out.push(t);
     }
-    // Default order: uncompleted first, soonest-dated at the top — by due date,
-    // falling back to the scheduled date, with undated tasks last. Done tasks
-    // sink to the bottom (in their stored order). sort_order breaks ties so a
-    // manual drag still orders same-date tasks.
+    // Default order for uncompleted tasks: UNDATED first (a newly-added task
+    // has no date, so it surfaces at the top), then dated tasks by soonest —
+    // due date, falling back to the scheduled date. Done tasks sink to the
+    // bottom. sort_order breaks ties (so among undated, the most-recently-added
+    // — smallest sort_order via prepend-on-create — leads, and a manual drag
+    // still orders same-date tasks).
     const effectiveDate = (t: Task): string | null => t.due_date ?? t.date_scheduled;
     out.sort((a, b) => {
       const aDone = a.status === "done" ? 1 : 0;
@@ -583,9 +585,9 @@ export default function ProjectDetail() {
       if (aDone === 0) {
         const ad = effectiveDate(a);
         const bd = effectiveDate(b);
+        if (!ad && bd) return -1; // undated first
+        if (ad && !bd) return 1;
         if (ad && bd && ad !== bd) return ad < bd ? -1 : 1;
-        if (ad && !bd) return -1; // dated before undated
-        if (!ad && bd) return 1;
       }
       return (a.sort_order ?? 0) - (b.sort_order ?? 0);
     });

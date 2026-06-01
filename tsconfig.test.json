@@ -1,0 +1,14 @@
+{
+  // Typecheck the vitest suites (vitest runs but does not typecheck). Separate
+  // from the app build so Node types (node:sqlite) are available to tests
+  // WITHOUT leaking into the browser/webview app's typecheck. Run via
+  // `npm test` (tsc -p this, then vitest run). Requires Node >= 24 for
+  // node:sqlite. See docs/changelog-branch-b-worked-seconds-integrity.md.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": ["src/**/*.test.ts"],
+  "exclude": []
+}

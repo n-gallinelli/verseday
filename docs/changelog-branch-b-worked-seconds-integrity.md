@@ -53,8 +53,18 @@ double-count #2 would otherwise introduce.
   worked_seconds); dropped `checkpointTimeEntry` import.
 - `src/stores/appStore.ts` — `tickFocus` invariant comment.
 - `src/db/workedSeconds.integrity.test.ts` (new) — node:sqlite runtime check.
-- `tsconfig.json` — exclude `*.test.ts` from the app build (tests run by vitest;
-  keeps `node:sqlite`/@types/node out of the browser app typecheck).
+- `tsconfig.json` — exclude `*.test.ts` from the app build + pin `types: []` so
+  the test-only `@types/node` can't leak Node globals into the browser app.
+- `tsconfig.test.json` (new) — typechecks the suites with Node types (Verse note
+  1: vitest runs but doesn't typecheck; correctness-critical tests stay checked).
+- `package.json` — `test` now runs `tsc -p tsconfig.test.json && vitest run`;
+  `@types/node` devDep; `engines.node >= 24`.
+
+## Environment requirement (Verse note 2)
+`npm test` requires **Node ≥ 24** — the integrity suite uses the built-in
+`node:sqlite` (stable in 24; experimental, emits a warning). Recorded via
+`engines.node` so the ⚠️ suite can't silently become unrunnable on an older
+Node. The app build (vite) has no such floor.
 
 ## Validation (⚠️ runtime requirement met)
 - `npm test` → **11/11** (6 from Branch A + 5 here). The integrity test runs the

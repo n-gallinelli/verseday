@@ -19,7 +19,11 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]
-    }
+    },
+    // Pin to no ambient @types: the app is a browser/webview target and must
+    // not pick up @types/node globals (installed for the test typecheck —
+    // tsconfig.test.json). The app relies only on imported types, not ambient.
+    "types": []
   },
   "include": ["src"],
   // Tests are run by vitest (vitest.config.ts). Excluded from the app build so

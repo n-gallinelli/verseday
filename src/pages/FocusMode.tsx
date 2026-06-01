@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore, selectFocusedTask } from "../stores/appStore";
+import { useAppStore, selectFocusedTask, consumeFocusResume, clearFocusResume } from "../stores/appStore";
+import { clampWorkedDelta } from "../utils/workedTime";
 import {
   stopTimeEntry,
   checkpointTimeEntry,
@@ -483,6 +484,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   useEffect(() => {
     if (focusMode !== "active" || isPaused) return;
     lastTickRef.current = Date.now();
+    // P0-1 — the effect (re)starts here on activate/unpause, and lastTickRef
+    // is freshly reset, so any suspended span is already dropped. Discard a
+    // resume flag that arrived while paused/inactive so it can't later zero a
+    // legitimate first second once we resume counting.
+    clearFocusResume();
 
     const interval = setInterval(() => {
       const current = useAppStore.getState().focus;
@@ -490,8 +496,14 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 
       const now = Date.now();
       const delta = now - lastTickRef.current;
+      // Always advance the reference so the NEXT tick computes a normal small
+      // delta even when this one is dropped (sleep/lid-close gap).
       lastTickRef.current = now;
-      if (delta > 0) tickFocus(delta);
+      // P0-1 — drop a suspended span: zero if the OS just signalled resume
+      // (primary), or if the delta exceeds the missed-wake backstop. Normal
+      // ticks and sub-cap throttle catch-up pass through in full.
+      const worked = clampWorkedDelta(delta, consumeFocusResume());
+      if (worked > 0) tickFocus(worked);
 
       // Read latest workedMs after the tick — `current` was sampled
       // before tickFocus; for Pomodoro thresholds we want the

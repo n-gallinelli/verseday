@@ -10,6 +10,7 @@
     "lint": "eslint src/",
     "format": "prettier --write src/",
     "audit:contrast": "node scripts/contrast-audit.mjs > docs/dark-mode-m4-contrast.md",
+    "test": "vitest run",
     "test:skip-migration": "bash scripts/test-skip-migration.sh"
   },
   "dependencies": {
@@ -43,6 +44,7 @@
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.57.1",
-    "vite": "^8.0.0"
+    "vite": "^8.0.0",
+    "vitest": "^3.2.6"
   }
 }

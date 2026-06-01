@@ -701,6 +701,11 @@ pub fn run() {
                 });
             }
 
+            // P0-1 — emit `system-resumed` on a real wake from sleep so the
+            // focus tick drops the suspended span instead of inflating worked
+            // time. setup() runs on the main thread (required by NSWorkspace).
+            commands::start_system_resume_notifier(&app.handle());
+
             Ok(())
         })
         .build(tauri::generate_context!())

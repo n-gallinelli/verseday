@@ -10,6 +10,14 @@ export interface Project {
   sort_order: number | null;
   completed: number;
   priority: number; // 0 = normal, 1 = high (sorts to top of Objectives)
+  icon: string | null; // emoji grapheme, or null
+  custom_icon_id: number | null; // FK → custom_icons.id (image takes precedence over emoji)
+  created_at: string;
+}
+
+export interface CustomIcon {
+  id: number;
+  data: string; // PNG data URI (≤64×64, canvas-re-encoded)
   created_at: string;
 }
 

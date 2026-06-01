@@ -8,17 +8,39 @@ Attach an icon to an objective (project): either a **standard emoji** or a
 **custom uploaded image**, shown before the project name everywhere — replacing
 the current "lead the name with an emoji" convention with a real field.
 
-## Data model
-- **`projects.icon TEXT` (nullable)** — holds one of:
-  - an emoji grapheme (e.g. `"🍾"`), or
-  - `"custom:<id>"` referencing an uploaded image, or
-  - `NULL` (no icon → today's color dot only).
-- **New table `custom_icons`** (reusable library so one upload can be used on
-  many objectives): `id INTEGER PK, data TEXT NOT NULL, created_at TEXT`.
-  `data` = a small PNG **data URI** (resized to ≤64×64, target <~30KB).
-- **Migration 24** (next version after the current 23 — a NEW migration;
-  applied migrations stay frozen per the discipline rule):
-  `ALTER TABLE projects ADD COLUMN icon TEXT;` + `CREATE TABLE custom_icons(...)`.
+## Data model (REVISED per Verse — real FK, not a `"custom:<id>"` string)
+Verse rejected overloading one TEXT column with `"custom:5"` (no referential
+integrity; deleting an icon in P2 would orphan `<img>`s). Final shape:
+- **`custom_icons`** library table: `id, data (PNG data URI ≤64×64), created_at`.
+- **`projects.icon TEXT`** — an emoji grapheme, or NULL.
+- **`projects.custom_icon_id INTEGER`** — FK → `custom_icons(id)` ON DELETE SET NULL.
+- **Resolution order:** `custom_icon_id` set → render the image; else `icon`
+  set → render the emoji; else → today's color dot.
+
+### Migration #25 (literal DDL for sign-off)
+Migration #24 is now taken (objectives priority column, shipped). The icon
+migration is **#25**. The table is created BEFORE the ALTER that references it.
+`created_at` is `NOT NULL` and stamped by the app at insert time
+(`new Date().toISOString()`) — not a SQL default (sqlite's CURRENT_TIMESTAMP
+format differs from our ISO convention elsewhere).
+
+```sql
+CREATE TABLE IF NOT EXISTS custom_icons (
+  id INTEGER PRIMARY KEY,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+ALTER TABLE projects ADD COLUMN icon TEXT;
+ALTER TABLE projects ADD COLUMN custom_icon_id INTEGER REFERENCES custom_icons(id) ON DELETE SET NULL;
+```
+
+### foreign_keys PRAGMA caveat (handled, not assumed)
+`tauri-plugin-sql`/sqlx default `PRAGMA foreign_keys = OFF` per connection, so
+`ON DELETE SET NULL` may not fire automatically (the existing `objective_id …
+ON DELETE SET NULL` at lib.rs:40 is likely decorative for the same reason). So
+P2's delete-icon path will **explicitly** `UPDATE projects SET custom_icon_id =
+NULL WHERE custom_icon_id = ?` before/with deleting the row — we do NOT rely on
+the PRAGMA. The FK declaration stays as intent + safety if the PRAGMA is ever on.
 
 ## Upload (no new native plugin, no cost)
 A hidden `<input type="file" accept="image/*">` in the webview (works in the
@@ -56,6 +78,21 @@ project tooltip. The custom-icon library is loaded once and refreshed on a
 DB (test:skip-migration discipline). Manual: upload an image → it resizes,
 saves, and shows; pick an emoji → shows; remove → back to dot. (Upload/canvas
 is hard to unit-test; I'll verify in the running app.)
+
+## Verse binding conditions (folded in)
+3. **Canvas re-encode is mandatory (security).** Never persist or render raw
+   uploaded bytes — always `file → canvas → toDataURL("image/png")`, which
+   re-rasterizes and strips any SVG/script payload. Add a **pre-decode file-size
+   guard** (reject multi-MB inputs before decoding) so a huge image can't OOM
+   the resize. Both are hard rules, not incidental.
+4. **No icons on focus surfaces (P2).** "No projects on focus screens" stands —
+   P2 must not bleed the objective icon onto FocusMode/FocusPip. Icons appear
+   only where project name/color already does (ProjectPicker, ProjectDetail,
+   Projects list, task-card tooltip).
+5. **Library resolves everywhere.** Every surface that renders a
+   `custom_icon_id` must have the icon library loaded and refresh on
+   `verseday:icons-changed` — no stale per-screen copy that silently fails to
+   show. (Load once via a shared fetch + broadcast, mirroring project-changed.)
 
 ## Decisions to confirm before building
 1. **Scope of P1** as above (set in ProjectDetail + show in picker/list), P2

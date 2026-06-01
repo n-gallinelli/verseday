@@ -35,9 +35,13 @@ export async function fileToIconDataUri(file: File): Promise<string> {
       el.src = objectUrl;
     });
 
-    const scale = Math.min(ICON_PX / img.width, ICON_PX / img.height, 1);
-    const w = Math.max(1, Math.round(img.width * scale));
-    const h = Math.max(1, Math.round(img.height * scale));
+    // SVGs (and some images) can report 0 intrinsic size — fall back to a
+    // square so they fill the box instead of drawing 1×1 (blank).
+    const iw = img.naturalWidth || img.width || ICON_PX;
+    const ih = img.naturalHeight || img.height || ICON_PX;
+    const scale = Math.min(ICON_PX / iw, ICON_PX / ih, 1);
+    const w = Math.max(1, Math.round(iw * scale));
+    const h = Math.max(1, Math.round(ih * scale));
 
     const canvas = document.createElement("canvas");
     canvas.width = ICON_PX;
@@ -47,7 +51,14 @@ export async function fileToIconDataUri(file: File): Promise<string> {
     // Centered in the 64×64 box (transparent padding).
     ctx.drawImage(img, (ICON_PX - w) / 2, (ICON_PX - h) / 2, w, h);
 
-    return canvas.toDataURL("image/png");
+    try {
+      return canvas.toDataURL("image/png");
+    } catch {
+      // toDataURL throws on a tainted canvas (e.g. an SVG referencing external
+      // resources). Re-encoding is mandatory for safety, so we surface a clear
+      // error rather than ever storing the raw bytes.
+      throw new Error("Couldn't process that image — try a PNG, or an SVG without external references.");
+    }
   } finally {
     URL.revokeObjectURL(objectUrl);
   }

@@ -542,18 +542,13 @@ export default function FocusPip() {
               of the hover region. */}
           <button
             onClick={(e) => { e.stopPropagation(); sendCommand("pause"); }}
-            className={`absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
-              state.paused
-                ? "bg-accent-orange text-white hover:bg-accent-orange-hover"
-                : "text-fg-faded hover:text-fg hover:bg-input-hover"
-            }`}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg hover:bg-input-hover transition-colors"
             title={state.paused ? "Resume" : "Pause"}
           >
             {state.paused ? (
-              // Resume is the primary action when paused: a filled sunset-orange
-              // circle with a white play triangle, optically centered (nudged
-              // ~1px right since a triangle's visual mass sits left of center).
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" className="translate-x-px">
+              // Resume: a blue play triangle, outline only (optically centered —
+              // nudged ~1px right since a triangle's mass sits left of center).
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--accent-blue)" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" className="translate-x-px">
                 <path d="M3 1v12l10-6z" />
               </svg>
             ) : (

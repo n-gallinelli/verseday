@@ -127,7 +127,7 @@ export default function CalendarMetaRail({ task, timeControl }: Props) {
 
   return (
     <div className="w-[320px] flex-shrink-0 border-l border-line-hairline bg-rail px-6 py-7 overflow-y-auto space-y-6">
-      {timeControl && <Section label="Time spent">{timeControl}</Section>}
+      {timeControl}
 
       <Section label="From calendar">
         {calendarName && (

@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { PRESET_COLORS } from "../db/queries";
+import { PROJECT_PALETTE } from "../db/queries";
 import Button from "./Button";
 
-const PALETTE = PRESET_COLORS.slice(0, 8);
+const PALETTE = PROJECT_PALETTE;
 const MAX_NAME_LENGTH = 100;
 
 interface NewProjectPanelProps {
@@ -88,17 +88,19 @@ export default function NewProjectPanel({
           <label className="text-[11px] text-fg-secondary mb-[5px] block">
             Color
           </label>
-          <div className="flex items-center gap-[7px] flex-wrap">
+          <div className="flex items-center gap-[10px] flex-wrap">
             {PALETTE.map((c) => (
               <button
                 key={c}
                 type="button"
                 onClick={() => setColor(c)}
-                className="w-[22px] h-[22px] rounded-full cursor-pointer border-2"
+                className="w-[24px] h-[24px] rounded-full cursor-pointer border-2"
                 style={{
                   backgroundColor: c,
                   borderColor:
                     color === c ? "var(--border-strong)" : "transparent",
+                  // Always-on inset ring so pale swatches stay visible.
+                  boxShadow: "inset 0 0 0 1px var(--swatch-ring)",
                 }}
               />
             ))}

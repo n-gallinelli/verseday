@@ -116,7 +116,7 @@ function ColorPicker({
       />
       {open && (
         <div
-          className="absolute top-full left-0 mt-1 z-20 bg-elevated border border-line-soft rounded-lg p-2 grid grid-cols-4 gap-1.5 w-max"
+          className="absolute top-full left-0 mt-1 z-20 bg-elevated border border-line-soft rounded-lg p-2.5 grid grid-cols-4 gap-2.5 w-max"
           style={{ boxShadow: "var(--shadow-card)" }}
         >
           {PROJECT_PALETTE.map((c) => {
@@ -132,13 +132,15 @@ function ColorPicker({
                   onChange(c);
                   setOpen(false);
                 }}
-                className={`w-4 h-4 rounded-full border ${
+                className={`w-5 h-5 rounded-full border ${
                   taken ? "cursor-not-allowed opacity-30" : "cursor-pointer"
                 }`}
                 style={{
                   backgroundColor: c,
                   borderColor:
                     value === c ? "var(--text-primary)" : "transparent",
+                  // Always-on inset ring so pale swatches stay visible.
+                  boxShadow: "inset 0 0 0 1px var(--swatch-ring)",
                 }}
               />
             );

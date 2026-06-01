@@ -25,6 +25,10 @@
   --shutdown-bg-neutral: #e8e4dc;
   --shutdown-bg-warm: #ede8e0;
 
+  /* Inset ring on color swatches so pale pastels (butter/apricot) don't
+     vanish against a light panel and read as "missing". */
+  --swatch-ring: rgba(0, 0, 0, 0.12);
+
   /* — Text — */
   --text-primary: #2c2a35;
   --text-secondary: rgba(0, 0, 0, 0.55);
@@ -200,6 +204,8 @@
     --shutdown-bg-cool: #181c24;
     --shutdown-bg-neutral: #181614;
     --shutdown-bg-warm: #1c1814;
+
+    --swatch-ring: rgba(255, 255, 255, 0.18);
 
     /* — Text — */
     --text-primary: #e8e6e0;

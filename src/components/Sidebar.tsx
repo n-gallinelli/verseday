@@ -189,16 +189,27 @@ function RailIconButton({
   );
 }
 
-const SHORTCUTS = [
-  { keys: "F", desc: "Focus on hovered task" },
-  { keys: "F", desc: "Focus screen" },
-  { keys: "T", desc: "Daily plan (today)" },
-  { keys: "W", desc: "Weekly planning" },
-  { keys: "O", desc: "Objectives" },
-  { keys: "D", desc: "Dashboard" },
+// Keep these in sync with the handlers in App.tsx (global keydown) and the
+// CmdOrCtrl+Shift+A registration. A `header` row starts a group.
+type ShortcutRow = { header: string } | { keys: string; desc: string };
+const SHORTCUTS: ShortcutRow[] = [
+  { header: "Navigate" },
+  { keys: "T  ·  ⌘1", desc: "Daily plan" },
+  { keys: "W  ·  ⌘3", desc: "Weekly planning" },
+  { keys: "O  ·  ⌘5", desc: "Objectives" },
+  { keys: "D  ·  ⌘6", desc: "Dashboard" },
   { keys: "S", desc: "Settings" },
-  { keys: "⌘ N", desc: "New task" },
+  { keys: "⌘2", desc: "Daily shutdown" },
+  { keys: "⌘4", desc: "Weekly shutdown" },
+  { keys: "⌘0", desc: "Focus screen" },
+  { keys: "← / →", desc: "Collapse / expand sidebar" },
+  { header: "Focus & capture" },
+  { keys: "F", desc: "Focus hovered task / resume session" },
   { keys: "Space", desc: "Pause / resume (focus)" },
+  { keys: "⌘N", desc: "New task" },
+  { keys: "⌘⇧A", desc: "Quick add (works anywhere)" },
+  { keys: "⌘⇧S", desc: "Shutdown (on daily plan)" },
+  { header: "General" },
   { keys: "Esc", desc: "Close / blur" },
 ];
 
@@ -337,15 +348,24 @@ export default function Sidebar() {
           pushing them up. bg-sidebar keeps the overlay opaque. */}
       <div className="border-t border-line-hairline relative">
         {showShortcuts && (
-          <div className="absolute bottom-full left-0 right-0 bg-sidebar border-t border-line-hairline px-4 pt-3 pb-2 space-y-1">
-            {SHORTCUTS.map((s) => (
-              <div key={`${s.keys}-${s.desc}`} className="flex items-center justify-between">
-                <span className="text-[10px] text-fg-secondary">{s.desc}</span>
-                <kbd className="text-[9px] text-fg-faded bg-overlay-hover px-1.5 py-0.5 rounded font-mono whitespace-nowrap shrink-0">
-                  {s.keys}
-                </kbd>
-              </div>
-            ))}
+          <div className="absolute bottom-full left-0 right-0 bg-sidebar border-t border-line-hairline px-4 pt-3 pb-2 space-y-1 max-h-[60vh] overflow-y-auto">
+            {SHORTCUTS.map((s, i) =>
+              "header" in s ? (
+                <div
+                  key={`h-${s.header}`}
+                  className={`text-[9px] uppercase tracking-wide text-fg-faded font-medium ${i === 0 ? "" : "pt-2"}`}
+                >
+                  {s.header}
+                </div>
+              ) : (
+                <div key={`${s.keys}-${s.desc}`} className="flex items-center justify-between gap-3">
+                  <span className="text-[10px] text-fg-secondary">{s.desc}</span>
+                  <kbd className="text-[9px] text-fg-faded bg-overlay-hover px-1.5 py-0.5 rounded font-mono whitespace-nowrap shrink-0">
+                    {s.keys}
+                  </kbd>
+                </div>
+              )
+            )}
           </div>
         )}
         <button

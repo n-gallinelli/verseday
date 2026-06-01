@@ -98,21 +98,21 @@ function BarChart({
                 className="w-full flex items-end justify-center gap-[3px]"
                 style={{ height: chartHeight }}
               >
-                {/* Planned bar — cool slate, "intent" */}
-                <div
-                  className="w-[14px] rounded-t-[3px] bg-chart-bar-planned transition-all duration-300"
-                  style={{
-                    height: `${(plannedPct / 100) * chartHeight}px`,
-                  }}
-                  title={`Planned: ${formatMinutesToHours(planned)}h`}
-                />
-                {/* Worked bar — warm tan, "done" */}
+                {/* Worked (actual) bar — warm tan, "done" — on the left */}
                 <div
                   className="w-[14px] rounded-t-[3px] bg-chart-bar-worked transition-all duration-300"
                   style={{
                     height: `${(workedPct / 100) * chartHeight}px`,
                   }}
                   title={`Worked: ${formatMinutesToHours(worked)}h`}
+                />
+                {/* Planned bar — cool slate, "intent" — on the right */}
+                <div
+                  className="w-[14px] rounded-t-[3px] bg-chart-bar-planned transition-all duration-300"
+                  style={{
+                    height: `${(plannedPct / 100) * chartHeight}px`,
+                  }}
+                  title={`Planned: ${formatMinutesToHours(planned)}h`}
                 />
               </div>
               {/* Day label */}
@@ -379,12 +379,12 @@ export default function Dashboard() {
                 {/* Legend */}
                 <div className="flex items-center gap-4 mt-3 justify-center">
                   <div className="flex items-center gap-1.5">
-                    <div className="w-[10px] h-[10px] rounded-[2px] bg-chart-bar-planned" />
-                    <span className="text-[10px] text-fg-faded">Planned</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
                     <div className="w-[10px] h-[10px] rounded-[2px] bg-chart-bar-worked" />
                     <span className="text-[10px] text-fg-faded">Worked</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-[10px] h-[10px] rounded-[2px] bg-chart-bar-planned" />
+                    <span className="text-[10px] text-fg-faded">Planned</span>
                   </div>
                 </div>
               </div>

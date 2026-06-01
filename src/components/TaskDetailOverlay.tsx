@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { activeObjectiveOptions } from "../utils/objectiveOptions";
+import { useFocusTick } from "../hooks/useFocusTick";
 import { createPortal } from "react-dom";
 import { getWorkedMinutesByDate, setTaskRecurrence, parseRecurrence, serializeRecurrence } from "../db/queries";
 import { parseTimeFromTitle, formatHoursMinutes } from "../utils/format";
@@ -350,6 +351,14 @@ export default function TaskDetailOverlay({
   // wrapper; signature unchanged for callers.
   const { focus, updateFocusTask, setFocusPriorElapsedMs } = useAppStore();
   const isFocusedTask = focus?.taskId === task.id;
+  // Live elapsed for the active session (null if none). Used to auto-populate
+  // a calendar meeting's "time spent" while it's the running focus task — the
+  // value ticks live but stays editable.
+  const liveFocusMs = useFocusTick();
+  const liveTimeSpentValue =
+    isFocusedTask && liveFocusMs !== null
+      ? String(Math.round(liveFocusMs / 60000))
+      : null;
 
   const [title, setTitle] = useState(task.title);
   const titleRef = useRef<HTMLTextAreaElement | null>(null);
@@ -766,7 +775,8 @@ export default function TaskDetailOverlay({
                 <div data-time-pill>
                   <TimeFieldPill
                     label="Time spent"
-                    value={worked}
+                    hideLabel
+                    value={liveTimeSpentValue ?? worked}
                     presets={WORKED_PRESETS}
                     isOpen={openPopover === "worked"}
                     onToggle={() => setOpenPopover(openPopover === "worked" ? null : "worked")}

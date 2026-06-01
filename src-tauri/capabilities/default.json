@@ -29,6 +29,8 @@
     "notification:allow-notify",
     "notification:allow-request-permission",
     "notification:allow-is-permission-granted",
-    "notification:allow-permission-state"
+    "notification:allow-permission-state",
+    "opener:default",
+    "opener:allow-open-url"
   ]
 }

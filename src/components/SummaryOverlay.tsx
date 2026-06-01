@@ -1,8 +1,37 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { onProjectChanged } from "../utils/projectEvents";
 import Button from "./Button";
+import ProjectGlyph from "./ProjectGlyph";
+import { useCustomIcons } from "../hooks/useCustomIcons";
 import { getProjects, getTasksForDate, getTasksForWeek } from "../db/queries";
 import type { Task, Project } from "../types";
+
+/** Group marker: the objective's emoji/custom icon when set, else its color dot
+ *  (faded for the "No project" group). Keeps the dot small but renders emojis
+ *  large enough to read, centered in a fixed box so rows stay aligned. */
+function GroupMarker({
+  project,
+  iconsById,
+  topOffset,
+}: {
+  project: Project | null;
+  iconsById: Map<number, string>;
+  topOffset: number;
+}) {
+  const hasGlyph = !!project && (!!project.icon || project.custom_icon_id != null);
+  return (
+    <span
+      className="flex-shrink-0 inline-flex items-center justify-center w-[15px] h-[15px]"
+      style={{ marginTop: topOffset }}
+    >
+      {project ? (
+        <ProjectGlyph project={project} iconsById={iconsById} size={hasGlyph ? 15 : 8} />
+      ) : (
+        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "var(--text-faded)" }} />
+      )}
+    </span>
+  );
+}
 
 interface SummaryOverlayProps {
   type: "daily" | "weekly";
@@ -63,7 +92,7 @@ function groupByProject(tasks: Task[], projects: Project[]): ProjectGroup[] {
   return result;
 }
 
-function DailySection({ groups }: { groups: ProjectGroup[] }) {
+function DailySection({ groups, iconsById }: { groups: ProjectGroup[]; iconsById: Map<number, string> }) {
   return (
     <div>
       <div className="flex items-center gap-2 mb-4">
@@ -77,10 +106,7 @@ function DailySection({ groups }: { groups: ProjectGroup[] }) {
           {groups.map((g, i) => (
             <div key={g.project?.id ?? `none-${i}`}>
               <div className="flex items-start gap-2 mb-2">
-                <span
-                  className="w-2 h-2 rounded-full flex-shrink-0 mt-[6px]"
-                  style={{ backgroundColor: g.project?.color ?? "var(--text-faded)" }}
-                />
+                <GroupMarker project={g.project} iconsById={iconsById} topOffset={3} />
                 <span className="text-[13px] font-medium text-fg line-clamp-2 leading-[1.4]">
                   {g.project?.name ?? "No project"}
                 </span>
@@ -134,10 +160,12 @@ function DailySection({ groups }: { groups: ProjectGroup[] }) {
 function WeeklySection({
   label,
   groups,
+  iconsById,
   completed = false,
 }: {
   label: string;
   groups: ProjectGroup[];
+  iconsById: Map<number, string>;
   completed?: boolean;
 }) {
   return (
@@ -153,10 +181,7 @@ function WeeklySection({
           {groups.map((g, i) => (
             <div key={g.project?.id ?? `none-${i}`}>
               <div className="flex items-start gap-2 mb-1.5">
-                <span
-                  className="w-2 h-2 rounded-full flex-shrink-0 mt-[5px]"
-                  style={{ backgroundColor: g.project?.color ?? "var(--text-faded)" }}
-                />
+                <GroupMarker project={g.project} iconsById={iconsById} topOffset={2} />
                 <span className="text-[12px] font-semibold text-fg line-clamp-2 leading-[1.4]">
                   {g.project?.name ?? "No project"}
                 </span>
@@ -249,6 +274,7 @@ export default function SummaryOverlay({ type, anchorDate, onClose }: SummaryOve
   // eslint-disable-next-line no-restricted-syntax -- pre-M4 M3 gap
   const [weeklyNextTasks, setWeeklyNextTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const { byId: iconsById } = useCustomIcons();
   // #3 — refresh project name/color on verseday:project-changed (the summary
   // groups tasks by project chrome; historical task data is untouched). Read-
   // only, mounted-guarded, balanced cleanup.
@@ -376,11 +402,11 @@ export default function SummaryOverlay({ type, anchorDate, onClose }: SummaryOve
               <div className="w-5 h-5 border-2 border-accent-blue border-t-transparent rounded-full animate-spin" />
             </div>
           ) : type === "daily" ? (
-            <DailySection groups={dailyGroups} />
+            <DailySection groups={dailyGroups} iconsById={iconsById} />
           ) : (
             <div className="space-y-8">
-              <WeeklySection label="This week" groups={weeklyDoneGroups} completed />
-              <WeeklySection label="Next week" groups={weeklyNextGroups} />
+              <WeeklySection label="This week" groups={weeklyDoneGroups} iconsById={iconsById} completed />
+              <WeeklySection label="Next week" groups={weeklyNextGroups} iconsById={iconsById} />
             </div>
           )}
         </div>

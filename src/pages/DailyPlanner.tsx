@@ -940,6 +940,27 @@ export default function DailyPlanner() {
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  // Visual feedback when the day changes: the day column slides + fades in from
+  // the direction of travel (next day → in from the right, previous → from the
+  // left). Direction is derived from the date delta, so it's correct however
+  // the change was triggered — swipe, arrows, or the calendar. ISO date strings
+  // compare chronologically, so a lexical compare gives the direction.
+  const prevDateRef = useRef(selectedDate);
+  useEffect(() => {
+    const el = swipeRef.current;
+    const prev = prevDateRef.current;
+    prevDateRef.current = selectedDate;
+    if (!el || prev === selectedDate) return;
+    const from = selectedDate > prev ? 28 : -28;
+    el.animate(
+      [
+        { opacity: 0.25, transform: `translateX(${from}px)` },
+        { opacity: 1, transform: "translateX(0)" },
+      ],
+      { duration: 220, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+    );
+  }, [selectedDate]);
+
   const isToday = selectedDate === todayString();
   const progressPercent =
     plannedHours > 0

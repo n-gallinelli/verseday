@@ -23,6 +23,16 @@ export const PRESET_COLORS = [
   "#CC8A9D", // blush
   "#6BAEC8", // sky
   "#908A82", // stone
+  // Added to double the project palette (8 → 16). Same muted family, hues
+  // chosen to spread around the wheel and stay distinct from the first 8.
+  "#B5826B", // clay
+  "#6FA0A0", // teal
+  "#A88FC6", // orchid
+  "#A6AE6A", // olive
+  "#C77F84", // rose
+  "#7E8CC4", // periwinkle
+  "#CBA64E", // amber
+  "#5FA38C", // jade
   // Legacy colors (kept for backward compat with existing projects)
   "#6b5fd4",
   "#d95f5f",
@@ -41,6 +51,11 @@ export const PRESET_COLORS = [
   "#8b5cf6",
   "#ef4444",
 ];
+
+/** The colors offered in project color pickers / auto-assigned to new projects:
+ *  the first 16 curated tones. (Legacy colors past index 16 stay valid for
+ *  existing projects but aren't offered.) */
+export const PROJECT_PALETTE = PRESET_COLORS.slice(0, 16);
 
 const VALID_PRIORITIES = ["low", "medium", "high", "urgent"];
 const VALID_TASK_STATUSES = ["todo", "in_progress", "done"];

@@ -590,8 +590,11 @@ export default function Projects() {
                         }`}
                         style={{
                           border: "0.5px solid var(--border-hairline)",
-                          borderLeftWidth: dueSoonOrPast ? "3px" : undefined,
-                          borderLeftColor: dueSoonOrPast ? project.color : undefined,
+                          // Always show the objective's color as a left bar, so
+                          // the color still reads when an emoji/custom icon
+                          // replaces the dot. Thicker when due soon/overdue.
+                          borderLeftWidth: dueSoonOrPast ? "4px" : "3px",
+                          borderLeftColor: project.color,
                         }}
                       >
                         <div className="flex-1 min-w-0">

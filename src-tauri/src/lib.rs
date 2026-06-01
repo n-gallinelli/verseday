@@ -609,6 +609,12 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 24,
+            description: "add projects.priority (0 = normal, 1 = high) for objective prioritization",
+            sql: "ALTER TABLE projects ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

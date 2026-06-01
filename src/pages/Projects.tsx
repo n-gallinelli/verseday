@@ -284,6 +284,11 @@ export default function Projects() {
   const hasCustomOrder = projects.some((p) => p.sort_order != null);
 
   const sortedProjects = [...projects].sort((a, b) => {
+    // High-priority objectives always sort to the top, regardless of manual
+    // order or open-task count.
+    const aPri = a.priority ? 1 : 0;
+    const bPri = b.priority ? 1 : 0;
+    if (aPri !== bPri) return bPri - aPri;
     if (hasCustomOrder) {
       return (a.sort_order ?? 9999) - (b.sort_order ?? 9999);
     }
@@ -611,6 +616,11 @@ export default function Projects() {
                                   }`}>
                                     {project.name}
                                   </span>
+                                  {!!project.priority && !isCompleted && (
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="shrink-0 text-accent-orange" aria-label="High priority">
+                                      <path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 18.9 6.1 21.5l1.2-6.5L2.5 9.4l6.6-.9z" />
+                                    </svg>
+                                  )}
                                 </div>
 
                                 {/* Subline — due pill + date range, OR

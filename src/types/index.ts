@@ -9,6 +9,7 @@ export interface Project {
   notes: string | null;
   sort_order: number | null;
   completed: number;
+  priority: number; // 0 = normal, 1 = high (sorts to top of Objectives)
   created_at: string;
 }
 

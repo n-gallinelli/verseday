@@ -160,6 +160,18 @@ export async function completeProject(
   emitProjectChanged();
 }
 
+export async function setProjectPriority(
+  id: number,
+  priority: boolean
+): Promise<void> {
+  const db = await getDb();
+  await db.execute("UPDATE projects SET priority = $1 WHERE id = $2", [
+    priority ? 1 : 0,
+    id,
+  ]);
+  emitProjectChanged();
+}
+
 export async function archiveProject(
   id: number,
   archived: boolean

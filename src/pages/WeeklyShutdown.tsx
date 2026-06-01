@@ -69,12 +69,12 @@ function StackedBarChart({
     if (!inner) return 0;
     return Array.from(inner.values()).reduce((s, n) => s + n, 0);
   });
-  // Pinned y-axis max — 7h gives a stable scale across weeks so a
+  // Pinned y-axis max — 9h gives a stable scale across weeks so a
   // light week doesn't read as full bars and a heavy week doesn't
-  // shrink last week's bars to nothing. Days that exceed 7h clamp
+  // shrink last week's bars to nothing. Days that exceed 9h clamp
   // to a full bar (overflow is rare and the day label still shows
   // the actual total below).
-  const Y_AXIS_MAX_MINUTES = 7 * 60;
+  const Y_AXIS_MAX_MINUTES = 9 * 60;
 
   // Hover state for the custom tooltip. Native `title` is slow and
   // inconsistent across platforms; a proper tooltip reads instantly

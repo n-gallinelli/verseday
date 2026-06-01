@@ -50,12 +50,13 @@ function BarChart({
   plannedByDay: Map<string, number>;
   workedByDay: Map<string, number>;
 }) {
-  // Fixed 7h y-axis — the standard working-day budget. Days that
-  // exceed it cap at the top (Math.min below); rare and acceptable.
-  const yAxisMax = 7;
+  // Fixed 9h y-axis — gives headroom over a standard working day so longer
+  // days still read as longer. Days that exceed it cap at the top (Math.min
+  // below); rare and acceptable.
+  const yAxisMax = 9;
 
   const yLabels: number[] = [];
-  const step = 2;
+  const step = 3;
   for (let i = 0; i <= yAxisMax; i += step) {
     yLabels.push(i);
   }

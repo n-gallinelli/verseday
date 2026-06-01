@@ -5,6 +5,11 @@ import {
   DEFAULT_TASK_ESTIMATE_FALLBACK_MIN,
 } from "../db/queries";
 import CalendarSettings from "../components/settings/CalendarSettings";
+import {
+  getBreakContinuity,
+  setBreakContinuity as persistBreakContinuity,
+  type BreakContinuity,
+} from "../utils/focusSettings";
 
 const FOCUS_DEFAULTS = {
   focus_work_min: 25,
@@ -48,6 +53,7 @@ export default function Settings() {
   const [taskEstimate, setTaskEstimate] = useState<number>(
     DEFAULT_TASK_ESTIMATE_FALLBACK_MIN
   );
+  const [breakContinuity, setBreakContinuity] = useState<BreakContinuity>("reset");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const taskDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -68,9 +74,16 @@ export default function Settings() {
           ? parsed
           : DEFAULT_TASK_ESTIMATE_FALLBACK_MIN
       );
+
+      setBreakContinuity(await getBreakContinuity());
     }
     load();
   }, []);
+
+  function handleBreakContinuityChange(mode: BreakContinuity) {
+    setBreakContinuity(mode);
+    persistBreakContinuity(mode);
+  }
 
   function handleTaskEstimateChange(value: number) {
     const clamped = Math.min(
@@ -183,6 +196,36 @@ export default function Settings() {
                   </div>
                 </div>
               ))}
+
+              {/* Break continuity across tasks */}
+              <div className="flex items-center justify-between pt-1">
+                <div>
+                  <div className="text-[13px] text-fg">Break timer across tasks</div>
+                  <div className="text-[11px] text-fg-faded">
+                    {breakContinuity === "continue"
+                      ? "Keeps counting across tasks; resets after 2 min idle/paused"
+                      : "Resets the break timer each time you switch tasks"}
+                  </div>
+                </div>
+                <div
+                  className="flex items-center bg-elevated rounded-lg overflow-hidden flex-shrink-0 w-[168px]"
+                  style={{ border: "1px solid var(--border-medium)" }}
+                >
+                  {(["reset", "continue"] as BreakContinuity[]).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => handleBreakContinuityChange(mode)}
+                      className={`flex-1 h-8 flex items-center justify-center text-[12px] cursor-pointer transition-colors ${
+                        breakContinuity === mode
+                          ? "bg-accent-blue-soft text-accent-blue-soft-fg font-medium"
+                          : "text-fg-muted hover:text-fg"
+                      }`}
+                    >
+                      {mode === "reset" ? "Each task" : "Continue"}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </section>
 

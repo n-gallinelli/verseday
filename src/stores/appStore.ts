@@ -984,7 +984,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     // JSON.
     persistFocus(restored);
 
-    set({ currentPage: "focus", focus: restored });
+    // Restore the (auto-paused) session state but do NOT navigate to the Focus
+    // screen — the app should open to the Daily Plan by default. The restored
+    // session is still there to resume from the daily row / Focus screen / PiP.
+    set({ focus: restored });
   },
   togglePauseFocus: () => {
     // S.5 — flag flip only. Under the worked-seconds model, pause is

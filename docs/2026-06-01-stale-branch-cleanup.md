@@ -26,3 +26,9 @@ not merged. Merging any of these would revert/conflict against M3 + focus-unifie
   salvaged into main so the idea survives the branch. If the feature is still
   wanted, rebuild fresh on current main from that doc (+ the e3cf951 SHA above
   for reference); otherwise delete the branch.
+
+## Dropped stash (superseded shutdown/weekly WIP)
+- `stash@{0}` ("shutdown-mood + weekly-objectives-collapse wip") commit object: **78c0e11a87d0332a11db01b8d5f58c7205c12bae**
+  (recover within the gc window: `git stash apply 78c0e11a87d0332a11db01b8d5f58c7205c12bae`). Content: MoodSelector
+  iconless/column variant + DailyShutdown/Projects/WeeklyPlanner edits, all on the
+  stale pre-M3 base — superseded by the since-reworked shutdown/weekly surfaces.

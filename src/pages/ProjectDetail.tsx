@@ -31,7 +31,6 @@ import {
   deleteProject,
   archiveProject,
   getWorkedMinutesForTask,
-  getWorkedMinutesForTaskIds,
   PROJECT_PALETTE,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
@@ -498,7 +497,13 @@ export default function ProjectDetail() {
   const [project, setProject] = useState<Project | null>(null);
   // Colors used by *other* active projects — drives the disabled swatches.
   const [takenColors, setTakenColors] = useState<string[]>([]);
-  const [workedMap, setWorkedMap] = useState<Map<number, number>>(new Map());
+  // P2 — committed worked-minutes from the canonical store (was a private
+  // workedMap). Committed-only here on purpose: the project badge is a
+  // history value, and subscribing to the live focus tick would re-render
+  // ProjectDetail every second. A live session reconciles into the index on
+  // stop (stopFocusedSessionForTask) / next load.
+  const workedByTaskId = useAppStore((s) => s.workedByTaskId);
+  const loadWorkedMinutesAction = useAppStore((s) => s.loadWorkedMinutes);
   const [error, setError] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(true);
 
@@ -613,16 +618,11 @@ export default function ProjectDetail() {
       setError(null);
       const ids =
         useAppStore.getState().taskIdsByProject.get(selectedProjectId) ?? [];
-      try {
-        const wmap = await getWorkedMinutesForTaskIds(ids);
-        setWorkedMap(wmap);
-      } catch {
-        setWorkedMap(new Map());
-      }
+      await loadWorkedMinutesAction(ids);
     } catch (e) {
       setError(errorMessage(e, "Failed to load tasks"));
     }
-  }, [selectedProjectId, loadTasksForProject]);
+  }, [selectedProjectId, loadTasksForProject, loadWorkedMinutesAction]);
 
   // Full load — resets edit fields (only on mount / project switch).
   // #14 — `isStale` lets the caller abort state writes if the component
@@ -646,13 +646,8 @@ export default function ProjectDetail() {
       );
       const ids =
         useAppStore.getState().taskIdsByProject.get(selectedProjectId) ?? [];
-      try {
-        const wmap = await getWorkedMinutesForTaskIds(ids);
-        if (isStale?.()) return;
-        setWorkedMap(wmap);
-      } catch {
-        if (!isStale?.()) setWorkedMap(new Map());
-      }
+      await loadWorkedMinutesAction(ids);
+      if (isStale?.()) return;
       if (p) {
         setEditName(p.name);
         setEditColor(p.color);
@@ -1448,7 +1443,7 @@ export default function ProjectDetail() {
                     <div key={task.id} className="relative">
                       <SortableTaskRow
                       task={task}
-                      workedMinutes={workedMap.get(task.id) ?? 0}
+                      workedMinutes={workedByTaskId.get(task.id) ?? 0}
                       onToggle={toggleTask}
                       onOpenDetail={(t) => openTaskDetail(t.id)}
                       onDelete={(id) => setConfirmDeleteId(id)}

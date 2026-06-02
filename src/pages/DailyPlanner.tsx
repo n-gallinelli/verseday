@@ -28,7 +28,6 @@ import {
   getTotalWorkedMinutes,
   getDailyPlan,
   upsertDailyPlan,
-  getWorkedMinutesForTaskIds,
   getWorkedMinutesForTask,
   getProjectStats,
   generateRecurringInstances,
@@ -137,7 +136,12 @@ export default function DailyPlanner() {
   );
   const [workedMinutes, setWorkedMinutes] = useState(0);
   const [dailyPlan, setDailyPlan] = useState<DailyPlan | null>(null);
-  const [workedMap, setWorkedMap] = useState<Map<number, number>>(new Map());
+  // P2 — per-task committed worked-minutes now read from the canonical store
+  // (was a private workedMap useState). The focused row's live session is
+  // layered on separately via the liveElapsedMs prop below.
+  const workedByTaskId = useAppStore((s) => s.workedByTaskId);
+  const loadWorkedMinutesAction = useAppStore((s) => s.loadWorkedMinutes);
+  const stopFocusedSessionForTask = useAppStore((s) => s.stopFocusedSessionForTask);
   // Tracks tasks that just transitioned to done so we can trigger the
   // arrival animation. Lives in the parent because the row unmounts when it
   // moves between the incomplete/completed render groups — a ref inside
@@ -448,11 +452,8 @@ export default function DailyPlanner() {
         .getState()
         .taskIdsByDate.get(selectedDate) ?? [];
       if (freshIds.length > 0) {
-        const wmap = await getWorkedMinutesForTaskIds(freshIds);
+        await loadWorkedMinutesAction(freshIds);
         if (isStale?.()) return;
-        setWorkedMap(wmap);
-      } else {
-        setWorkedMap(new Map());
       }
       setDailyNotes(dp?.notes ?? "");
       setError(null);
@@ -589,6 +590,18 @@ export default function DailyPlanner() {
     // shift the surviving incomplete rows experience as they fill the gap.
     const oldPositions = captureRowPositions();
     try {
+      // P2.2c — if we're completing the live-focused task, stop+commit its
+      // session FIRST (awaited): writes worked_seconds + end_time, refreshes
+      // the canonical worked index, and clears focus atomically. This kills
+      // the under-count race (loadData below reads committed truth) and, with
+      // focus cleared, the verseday:task-status-changed listener no longer
+      // auto-advances focus on an inline row-complete (Option A, per Verse).
+      if (!wasDone) {
+        const f = useAppStore.getState().focus;
+        if (f && f.mode === "active" && f.taskId === task.id) {
+          await stopFocusedSessionForTask(task.id);
+        }
+      }
       // M3.2.b.1 — store action handles optimistic map write + DB +
       // verseday:task-status-changed broadcast (FocusMode auto-stop).
       await setTaskStatusAction(task.id, wasDone ? "todo" : "done");
@@ -664,17 +677,13 @@ export default function DailyPlanner() {
         // S.5 — workedMs is the truth. Write it to worked_seconds
         // before stopping. break_seconds = 0 (Daily Plan path doesn't
         // track Pomodoro breaks; pre-existing limitation).
-        const finalElapsedMs = current.workedMs + current.priorElapsedMs;
-        const finalMinutes = Math.floor(finalElapsedMs / 60000);
         const oldTaskId = current.taskId;
         const workedSeconds = Math.round(current.workedMs / 1000);
         await updateTimeEntryWorkedSeconds(current.timeEntryId, workedSeconds);
         await stopTimeEntry(current.timeEntryId, 0);
-        setWorkedMap((prev) => {
-          const next = new Map(prev);
-          next.set(oldTaskId, finalMinutes);
-          return next;
-        });
+        // Reconcile the old task's committed minutes from DB truth (entry was
+        // just closed) so its row pill flips live → static with no flash.
+        await loadWorkedMinutesAction([oldTaskId]);
       }
       // Preview-mode current is just discarded by the startFocus call
       // below — no time entry to close, no workedMap update needed.
@@ -1356,7 +1365,7 @@ export default function DailyPlanner() {
                         onOpenDetail={(t) => openTaskDetail(t.id)}
                         onOpenProject={openProject}
                         expandedNotes={expandedId === task.id}
-                        workedMinutes={workedMap.get(task.id)}
+                        workedMinutes={workedByTaskId.get(task.id)}
                         showProject={true}
                         justArrived={arrivedIds.has(task.id)}
                         justAdded={addedIds.has(task.id)}

@@ -37,6 +37,7 @@ import {
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
 import CalendarPicker from "../components/CalendarPicker";
+import DateRangeField from "../components/DateRangeField";
 import { parseTimeFromTitle } from "../utils/format";
 import RichTextEditor from "../components/RichTextEditor";
 import ProjectIconPicker from "../components/ProjectIconPicker";
@@ -857,6 +858,16 @@ export default function ProjectDetail() {
     );
   }
 
+  // Atomic start+target write. updateField reads sibling fields from the
+  // current closure, so calling it twice in a row (start then target) would
+  // race on stale state and one debounced save would clobber the other. The
+  // date range is always set as a pair, in a single debounced write.
+  function updateDates(start: string, target: string) {
+    setEditStartDate(start);
+    setEditTargetDate(target);
+    debouncedSaveProject(editName, editColor, editDescription, start, target, editNotes);
+  }
+
   // ── Project completion ───────────────────────────────────────────────
 
   async function handleCompleteToggle() {
@@ -1510,29 +1521,16 @@ export default function ProjectDetail() {
               week grid at the bottom can grow into available vertical
               space instead of leaving an empty band beneath it. */}
           <div className="flex-1 min-w-[200px] border-l border-line-hairline bg-rail p-8 overflow-y-auto flex flex-col gap-8">
-            <div className="flex gap-3">
-              <div>
-                <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1.5">
-                  Start
-                </div>
-                <CalendarPicker
-                  value={editStartDate}
-                  onChange={(date) => updateField("startDate", date)}
-                  onClear={() => updateField("startDate", "")}
-                  placeholder="No start"
-                />
+            <div>
+              <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1.5">
+                Dates
               </div>
-              <div>
-                <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1.5">
-                  End
-                </div>
-                <CalendarPicker
-                  value={editTargetDate}
-                  onChange={(date) => updateField("targetDate", date)}
-                  onClear={() => updateField("targetDate", "")}
-                  placeholder="No end"
-                />
-              </div>
+              <DateRangeField
+                defaultMode="range"
+                emptyLabel="Set dates"
+                value={{ start: editStartDate || null, end: editTargetDate || null }}
+                onChange={(v) => updateDates(v.start ?? "", v.end ?? "")}
+              />
             </div>
 
             <div>

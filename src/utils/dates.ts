@@ -49,6 +49,33 @@ export function localDayEndUtc(dateIso: string): string {
 }
 
 /**
+ * Render a YYYY-MM-DD ISO string as a short "Jun 21" label. Parses with
+ * `T00:00:00` so the displayed day matches the local calendar day (no UTC
+ * off-by-one). Returns "" for empty/falsy input.
+ */
+export function formatMonthDay(iso: string | null | undefined): string {
+  if (!iso) return "";
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/** Shift a YYYY-MM-DD ISO string by N days, staying in local tz. */
+export function addDaysIso(iso: string, days: number): string {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return localDateIso(d);
+}
+
+/** Shift a YYYY-MM-DD ISO string by N months, staying in local tz. */
+export function addMonthsIso(iso: string, months: number): string {
+  const d = new Date(iso + "T00:00:00");
+  d.setMonth(d.getMonth() + months);
+  return localDateIso(d);
+}
+
+/**
  * Five Mon..Fri ISO strings (local) starting from a Monday-ISO.
  * Parses with `T00:00:00` so DST transitions don't shift the boundary.
  */

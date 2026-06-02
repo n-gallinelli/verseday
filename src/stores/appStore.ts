@@ -1320,6 +1320,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       // event is OUT OF SCOPE for M3.2 retirement (only -updated and
       // -deleted are retired in M3.2.b.5).
       await setTaskStatusFromUI(id, status);
+      // P1.1a — reconcile to DB truth on success. The optimistic patch
+      // above only flips `status`; the DB (updateTaskStatus) ALSO stamps
+      // completed_at and snaps a future-scheduled done task to today. A
+      // shallow status-only patch leaves the store diverged (missing
+      // completed_at, stale future date, wrong date/week buckets).
+      // Refetch and route through withTaskMutated so completed_at, the
+      // snapped date_scheduled, and the index transitions all land.
+      const fresh = await getTaskById(id);
+      const before = get().tasksById.get(id);
+      if (fresh) {
+        if (before) set((s) => withTaskMutated(s, before, fresh));
+        else set((s) => withTaskInserted(s, fresh));
+      }
     } catch (err) {
       console.error("[appStore] setTaskStatus failed — refetching truth", {
         id,
@@ -1338,15 +1351,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   setTaskHighlight: async (id, isHighlight) => {
     const current = get().tasksById.get(id);
     if (current) {
-      // Optimistic shallow patch — is_highlight is stored as 0/1 on
-      // the row, matching the SQL helper's serialization. No
-      // secondary index touches it, so withTaskMutated isn't needed.
+      // P1.1b — route through withTaskMutated, not a shallow map poke, so
+      // any future index-membership transition happens automatically and
+      // this stays consistent with the non-negotiable reconcile discipline.
+      // (is_highlight touches no secondary index today, so this is
+      // behaviour-preserving now and correct-by-construction later.)
       const next: Task = { ...current, is_highlight: isHighlight ? 1 : 0 };
-      set((s) => {
-        const nextMap = new Map(s.tasksById);
-        nextMap.set(id, next);
-        return { tasksById: nextMap };
-      });
+      set((s) => withTaskMutated(s, current, next));
     }
     try {
       await dbToggleTaskHighlight(id, isHighlight);
@@ -1360,15 +1371,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         const fresh = await getTaskById(id);
         const before = get().tasksById.get(id);
         if (fresh) {
-          if (before) {
-            set((s) => {
-              const nextMap = new Map(s.tasksById);
-              nextMap.set(id, fresh);
-              return { tasksById: nextMap };
-            });
-          } else {
-            set((s) => withTaskInserted(s, fresh));
-          }
+          if (before) set((s) => withTaskMutated(s, before, fresh));
+          else set((s) => withTaskInserted(s, fresh));
         }
       } catch (refetchErr) {
         console.error("[appStore] setTaskHighlight refetch also failed", refetchErr);

@@ -1405,7 +1405,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       set((s) => withTaskMutated(s, current, next));
     }
     try {
-      await dbUpdateTaskDateScheduled(id, date);
+      // The DB collision guard may DELETE a recurring sibling on the target
+      // date. Reconcile those out of the canonical map/indices via
+      // withTaskRemoved so they don't linger as ghost rows until reload.
+      const deletedSiblingIds = await dbUpdateTaskDateScheduled(id, date);
+      for (const sibId of deletedSiblingIds) {
+        const sib = get().tasksById.get(sibId);
+        if (sib) set((s) => withTaskRemoved(s, sib));
+      }
     } catch (err) {
       console.error("[appStore] setTaskDateScheduled failed — refetching truth", {
         id,

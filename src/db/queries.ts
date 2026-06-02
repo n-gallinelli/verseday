@@ -997,11 +997,16 @@ export async function hasWeekBeenPlanned(weekStartDate: string): Promise<boolean
   return (statusRows[0]?.n ?? 0) > 0;
 }
 
+// Returns the id(s) of any recurring-sibling rows DELETED by the collision
+// guard, so the caller (store action) can reconcile them out of the canonical
+// map/indices via withTaskRemoved — otherwise they linger as ghost rows until
+// a reload. Empty array when nothing was dropped.
 export async function updateTaskDateScheduled(
   id: number,
   dateScheduled: string | null
-): Promise<void> {
+): Promise<number[]> {
   const db = await getDb();
+  let deletedSiblingIds: number[] = [];
   // Recurring-instance collision guard. The partial UNIQUE index
   // idx_tasks_recurrence_per_date (recurrence_source_id, date_scheduled)
   // means moving an instance onto a date that already holds a sibling of
@@ -1018,16 +1023,28 @@ export async function updateTaskDateScheduled(
     );
     const sourceId = rows[0]?.recurrence_source_id ?? null;
     if (sourceId !== null) {
-      await db.execute(
-        "DELETE FROM tasks WHERE recurrence_source_id = $1 AND date_scheduled = $2 AND id <> $3",
+      // Capture the colliding sibling id(s) before deleting so the store can
+      // drop them from tasksById. Hard delete — fine for the common case (a
+      // freshly auto-generated, empty instance). A sibling that already had
+      // time_entries/notes would lose them; rare, flagged for a future guard.
+      const sibs: { id: number }[] = await db.select(
+        "SELECT id FROM tasks WHERE recurrence_source_id = $1 AND date_scheduled = $2 AND id <> $3",
         [sourceId, dateScheduled, id]
       );
+      deletedSiblingIds = sibs.map((r) => r.id);
+      if (deletedSiblingIds.length > 0) {
+        await db.execute(
+          "DELETE FROM tasks WHERE recurrence_source_id = $1 AND date_scheduled = $2 AND id <> $3",
+          [sourceId, dateScheduled, id]
+        );
+      }
     }
   }
   await db.execute(
     "UPDATE tasks SET date_scheduled = $1 WHERE id = $2",
     [dateScheduled, id]
   );
+  return deletedSiblingIds;
 }
 
 export async function updateTaskDueDate(

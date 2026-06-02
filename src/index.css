@@ -116,11 +116,11 @@
 
   /* — Chart visualization (data-only; not for action/alert/mood) —
      Planned vs. Worked uses contrasting hues so the comparison reads
-     instantly: cool slate signals "intent / future plan" (passive),
-     warm tan signals "actually done" (grounded, accomplished).
+     instantly: cool slate signals "actually done" (grounded), warm tan
+     signals "intent / future plan" (passive).
      `chart-bar-neutral` is kept as an alias for backwards-compat. */
-  --chart-bar-planned: #8aa5c4;
-  --chart-bar-worked: #c49a6c;
+  --chart-bar-planned: #c49a6c;
+  --chart-bar-worked: #8aa5c4;
   --chart-bar-neutral: #c49a6c;
 
   /* — Calendar — */
@@ -279,8 +279,8 @@
     --accent-destructive-hover: #b35e48;
 
     /* — Chart visualization — */
-    --chart-bar-planned: #7b96b5;
-    --chart-bar-worked: #c8a47d;
+    --chart-bar-planned: #c8a47d;
+    --chart-bar-worked: #7b96b5;
     --chart-bar-neutral: #c8a47d;
 
     /* — Calendar — */

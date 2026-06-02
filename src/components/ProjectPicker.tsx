@@ -95,6 +95,7 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
       {open && pos && createPortal(
         <div
           ref={popoverRef}
+          data-portal-popover
           className="fixed z-[60] bg-elevated rounded-lg max-h-[440px] overflow-y-auto animate-scale-in"
           style={{
             top: pos.top,

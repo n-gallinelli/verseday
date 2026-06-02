@@ -181,6 +181,24 @@ function MainApp() {
     return () => unlisten?.();
   }, []);
 
+  // QuickAdd lives in a separate webview with its own store, so a task it
+  // inserts is invisible here until we re-read the DB. It emits
+  // `verseday:task-created` with the scheduled date; re-read that date's
+  // bucket from DB truth so the row appears immediately. Mounts in the main
+  // webview only — the #quick-add branch returns before MainApp.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<{ date?: string }>("verseday:task-created", (e) => {
+      const date = e.payload?.date;
+      if (date) void useAppStore.getState().loadTasksForDate(date);
+    })
+      .then((un) => {
+        unlisten = un;
+      })
+      .catch((err) => console.error("task-created listen failed:", err));
+    return () => unlisten?.();
+  }, []);
+
   // Global keyboard shortcuts
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {

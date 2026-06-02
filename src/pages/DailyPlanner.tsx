@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from "react";
-import { onProjectChanged } from "../utils/projectEvents";
+import { useShallow } from "zustand/react/shallow";
 import { activeObjectiveOptions } from "../utils/objectiveOptions";
 import {
   DndContext,
@@ -16,12 +16,12 @@ import {
 } from "@dnd-kit/sortable";
 import {
   selectOrphanAndOverdueTasks,
+  selectProjectsByStatus,
   selectTaskIdsByDate,
   selectUnscheduledTasksByProject,
   useAppStore,
 } from "../stores/appStore";
 import {
-  getProjects,
   startTimeEntry,
   stopTimeEntry,
   updateTimeEntryWorkedSeconds,
@@ -46,7 +46,7 @@ import { formatHoursMinutes, parseTimeFromTitle, getEmptyDayMessage } from "../u
 import { useCalendarAutoSync } from "../calendar/hooks";
 import { errorMessage } from "../utils/errors";
 import { useFocusTick } from "../hooks/useFocusTick";
-import type { Task, DailyPlan, Project } from "../types";
+import type { Task, DailyPlan } from "../types";
 
 
 // Sanity belt only — see TaskDetailOverlay for the same constant. UI no
@@ -107,23 +107,7 @@ export default function DailyPlanner() {
     }
     return out;
   }, [taskIds, tasksById]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  // #3 — refresh on verseday:project-changed (project pills/colors on task
-  // rows stay current). Read-only handler → no loop; mounted-guarded.
-  useEffect(() => {
-    let mounted = true;
-    const off = onProjectChanged(() => {
-      getProjects()
-        .then((p) => {
-          if (mounted) setProjects(p);
-        })
-        .catch(() => {});
-    });
-    return () => {
-      mounted = false;
-      off();
-    };
-  }, []);
+  const projects = useAppStore(useShallow((s) => selectProjectsByStatus(s, "active")));
   // M3.2.b.5.b — derived from canonical tasks (reactive; closes the stale-
   // total gap after the verseday listener removal). Sums the estimate of EVERY
   // task scheduled today, done or not — matching the planned total's intent
@@ -428,11 +412,10 @@ export default function DailyPlanner() {
       // getUnfinishedRolloverTasks dual-fetch and the
       // primeTasks/setSidebar*Ids state plumbing — sidebar reads
       // through canonical store selectors now).
-      const [_lt, wm, dp, p, _sp] = await Promise.all([
+      const [_lt, wm, dp, _sp] = await Promise.all([
         loadTasksForDate(selectedDate),
         getTotalWorkedMinutes(selectedDate),
         getDailyPlan(selectedDate),
-        getProjects(),
         loadSidebarPool(),
       ]);
       void _lt;
@@ -440,7 +423,6 @@ export default function DailyPlanner() {
       if (isStale?.()) return;
       setWorkedMinutes(wm);
       setDailyPlan(dp);
-      setProjects(p);
       // Fetch project stats for right panel
       const pStats = await getProjectStats();
       if (isStale?.()) return;

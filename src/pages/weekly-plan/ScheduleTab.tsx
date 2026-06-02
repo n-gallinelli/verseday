@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { onProjectChanged } from "../../utils/projectEvents";
+import { useShallow } from "zustand/react/shallow";
 import {
   DndContext,
   DragOverlay,
@@ -11,9 +11,12 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { selectTaskIdsByWeek, useAppStore } from "../../stores/appStore";
 import {
-  getProjects,
+  selectProjectsByStatus,
+  selectTaskIdsByWeek,
+  useAppStore,
+} from "../../stores/appStore";
+import {
   getAllTasksForProjectIds,
   getUnscheduledTasks,
   getWeeklyShutdown,
@@ -484,26 +487,7 @@ export default function ScheduleTab() {
     return out;
   }, [weekTaskIds, tasksById]);
 
-  const [projects, setProjects] = useState<Project[]>([]);
-  // #3 — refresh project name/color on verseday:project-changed. Projects-only
-  // re-fetch (the bug is name/color drift); the activeProjectIds membership
-  // derivation is NOT recomputed here, so an archive/complete from another
-  // screen only re-membership on the next full load — a known minor bound
-  // documented in the changelog. Read-only → no loop; mounted-guarded.
-  useEffect(() => {
-    let mounted = true;
-    const off = onProjectChanged(() => {
-      getProjects()
-        .then((p) => {
-          if (mounted) setProjects(p);
-        })
-        .catch(() => {});
-    });
-    return () => {
-      mounted = false;
-      off();
-    };
-  }, []);
+  const projects = useAppStore(useShallow((s) => selectProjectsByStatus(s, "active")));
   // Hybrid lists — SQL stays authoritative for membership (cross-cutting
   // queries don't fit any secondary index); IDs are stored locally;
   // canonical map drives the rendered Task data so renames flow back
@@ -595,9 +579,8 @@ export default function ScheduleTab() {
       // loadTasksForWeek populates the canonical map for the week
       // selector. Sibling queries stay direct DB; their results prime
       // the canonical map via primeTasks before IDs are stored.
-      const [_, p, unscheduled] = await Promise.all([
+      const [_, unscheduled] = await Promise.all([
         loadTasksForWeek(selectedWeek),
-        getProjects(),
         getUnscheduledTasks(),
       ]);
       void _;
@@ -605,8 +588,13 @@ export default function ScheduleTab() {
       primeTasks(unscheduledOnlyOrphans);
       setUnscheduledUnassignedIds(unscheduledOnlyOrphans.map((t) => t.id));
 
-      // Auto-show all active, non-completed projects
-      const activeProjects = p.filter((proj) => !proj.archived && !proj.completed);
+      // Auto-show all active, non-completed projects. Read project truth from
+      // the canonical store (selectProjectsByStatus 'active' = archived === 0);
+      // exclude completed to match the prior loadData filter.
+      const activeProjects = selectProjectsByStatus(
+        useAppStore.getState(),
+        "active",
+      ).filter((proj) => !proj.completed);
       const activeIds = activeProjects.map((proj) => proj.id);
 
       // Also include any project IDs from this week's tasks (even if
@@ -626,7 +614,6 @@ export default function ScheduleTab() {
       primeTasks(projectTasks);
       setAllProjectTaskIds(projectTasks.map((t) => t.id));
       setActiveProjectIds(activeIds);
-      setProjects(p);
 
       // Load carry forward from previous week's shutdown
       const prevMonday = new Date(selectedWeek + "T00:00:00");

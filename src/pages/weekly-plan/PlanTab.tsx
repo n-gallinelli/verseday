@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { onProjectChanged } from "../../utils/projectEvents";
+import { useShallow } from "zustand/react/shallow";
 import {
   DndContext,
   DragOverlay,
@@ -9,13 +9,16 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { selectTaskIdsByProject, useAppStore } from "../../stores/appStore";
+import {
+  selectActiveObjectiveOptions,
+  selectTaskIdsByProject,
+  useAppStore,
+} from "../../stores/appStore";
 import { weekdayDates } from "../../utils/dates";
 import { snapCenterToCursor } from "../../utils/dnd";
 import { PLAN_TASK_DRAG_PREFIX } from "./PlanTaskList";
 import { PLAN_DAY_DROP_PREFIX } from "./PlanDayStrip";
 import {
-  getProjects,
   getWeeklyPlanProjectStatuses,
   setWeeklyPlanProjectStatus,
   clearWeeklyPlanProjectStatus,
@@ -25,7 +28,7 @@ import {
   getDefaultTaskEstimateMin,
   type WeeklyPlanProjectStatus,
 } from "../../db/queries";
-import type { Project, Task } from "../../types";
+import type { Task } from "../../types";
 import PlanProjectRail from "./PlanProjectRail";
 import PlanProjectPanel from "./PlanProjectPanel";
 import ErrorBanner from "../../components/ErrorBanner";
@@ -46,30 +49,10 @@ export default function PlanTab() {
   const tasksById = useAppStore((s) => s.tasksById);
   const weekDates = weekdayDates(selectedWeek);
 
-  const [projects, setProjects] = useState<Project[]>([]);
-  // #3 — refresh on verseday:project-changed. Replicates loadData's active
-  // filter (Plan is forward-looking: archived/completed projects don't surface)
-  // so a rename/recolor AND an archive/complete both reflect live. Read-only →
-  // no loop; mounted-guarded.
-  useEffect(() => {
-    let mounted = true;
-    const off = onProjectChanged(() => {
-      getProjects(false)
-        .then((all) => {
-          if (mounted)
-            setProjects(
-              all
-                .filter((p) => !p.archived && !p.completed)
-                .sort((a, b) => a.name.localeCompare(b.name)),
-            );
-        })
-        .catch(() => {});
-    });
-    return () => {
-      mounted = false;
-      off();
-    };
-  }, []);
+  // Active objectives (archived=0 && !completed, name-sorted) — Plan is
+  // forward-looking, so archived/completed projects don't surface. The
+  // canonical selector returns exactly that filter+sort.
+  const projects = useAppStore(useShallow((s) => selectActiveObjectiveOptions(s, "")));
   const [statuses, setStatuses] = useState<
     Map<number, WeeklyPlanProjectStatus>
   >(new Map());
@@ -116,30 +99,12 @@ export default function PlanTab() {
 
   const loadData = useCallback(async () => {
     try {
-      const [allProjects, statusMap, commitMap] = await Promise.all([
-        getProjects(false),
+      const [statusMap, commitMap] = await Promise.all([
         getWeeklyPlanProjectStatuses(selectedWeek),
         getWeeklyPlanCommitments(selectedWeek),
       ]);
-      // Intentional divergence from ScheduleTab: Plan is forward-looking,
-      // so archived-but-has-tasks projects do NOT surface here. Schedule
-      // includes them because they may carry scheduled tasks that need
-      // to render; Plan asks "what should we commit time to next week,"
-      // and archived projects shouldn't bid for that time.
-      const active = allProjects
-        .filter((p) => !p.archived && !p.completed)
-        .sort((a, b) => a.name.localeCompare(b.name));
-      setProjects(active);
       setStatuses(statusMap);
       setCommitments(commitMap);
-
-      setSelectedId((current) => {
-        if (current != null && active.some((p) => p.id === current)) {
-          return current;
-        }
-        const firstUnplanned = active.find((p) => !statusMap.has(p.id));
-        return firstUnplanned?.id ?? null;
-      });
       setError(null);
     } catch (e) {
       setError(errorMessage(e, "Failed to load weekly plan"));
@@ -152,6 +117,21 @@ export default function PlanTab() {
     setLoading(true);
     loadData();
   }, [loadData]);
+
+  // Initialize / re-validate the selected project once projects + statuses
+  // are available. Keeps the prior selection if still valid; otherwise picks
+  // the first not-yet-reviewed project. (Was inline in loadData when projects
+  // came from a fetch; now that projects flow from the canonical selector the
+  // selection logic lives in its own effect keyed on both inputs.)
+  useEffect(() => {
+    setSelectedId((current) => {
+      if (current != null && projects.some((p) => p.id === current)) {
+        return current;
+      }
+      const firstUnplanned = projects.find((p) => !statuses.has(p.id));
+      return firstUnplanned?.id ?? null;
+    });
+  }, [projects, statuses]);
 
   // M3.2.b.5.b — verseday:task-updated/-deleted listener retired.
   // PlanTab's loadData refreshes project metadata, weekly plan

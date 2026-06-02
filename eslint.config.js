@@ -56,6 +56,12 @@ export default tseslint.config(
           message:
             "Don't put Task in useState — read from the canonical store via selectors (selectTaskById, selectTaskIdsBy*, selectUnscheduledTasksByProject, etc.). M3 entity refactor / M4 guardrail. For a confirmed legitimate exception (transient single-component UI state with no cross-screen visibility need), add `// eslint-disable-next-line no-restricted-syntax -- <justification>` on the line above with a specific reason; the justification is the gate, not the disable.",
         },
+        {
+          selector:
+            "CallExpression[callee.name='useState'] > TSTypeParameterInstantiation TSTypeReference[typeName.name=/^Project$/]",
+          message:
+            "Don't put Project in useState — read from the canonical store via selectors (selectProjectById, selectActiveObjectiveOptions, selectProjectsByStatus, selectAllProjects). Consume list selectors with useShallow. P3 canonical-projects guardrail. For a confirmed legitimate exception, add `// eslint-disable-next-line no-restricted-syntax -- <justification>` above the line.",
+        },
       ],
     },
   },

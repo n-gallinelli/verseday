@@ -20,6 +20,7 @@ export default function QuickAdd() {
   const [title, setTitle] = useState("");
   const [projectId, setProjectId] = useState<number | null>(null);
   const [estimateMinutes, setEstimateMinutes] = useState<number | null>(null);
+  // eslint-disable-next-line no-restricted-syntax -- QuickAdd is a separate Tauri webview; the canonical projectsById store doesn't cross the webview boundary, so it reads getProjects(false) from the shared DB on focus. Promoting this to cross-webview events is Phase 5.
   const [projects, setProjects] = useState<Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [showProjectPicker, setShowProjectPicker] = useState(false);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { onProjectChanged } from "../utils/projectEvents";
+import { useShallow } from "zustand/react/shallow";
 import ProjectGlyph from "../components/ProjectGlyph";
 import { useCustomIcons } from "../hooks/useCustomIcons";
 import {
@@ -18,13 +18,9 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useAppStore } from "../stores/appStore";
+import { selectProjectsByStatus, useAppStore } from "../stores/appStore";
 import {
-  getProjects,
-  createProject,
   getProjectStats,
-  updateProjectSortOrders,
-  archiveProject,
   searchTasksByTitle,
   PRESET_COLORS,
   PROJECT_PALETTE,
@@ -33,7 +29,7 @@ import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
 import { formatHoursMinutes } from "../utils/format";
 import DisclosureCaret from "../components/DisclosureCaret";
-import type { Project, Task } from "../types";
+import type { Task } from "../types";
 
 type FilterMode = "all" | "active" | "completed";
 
@@ -80,26 +76,13 @@ export default function Projects() {
   const { openProject } = useAppStore();
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
   const primeTasks = useAppStore((s) => s.primeTasks);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const createProjectAction = useAppStore((s) => s.createProjectAction);
+  const archiveProjectAction = useAppStore((s) => s.archiveProjectAction);
+  const reorderProjectsAction = useAppStore((s) => s.reorderProjectsAction);
+  // Source: active objectives from the canonical store (archived === 0).
+  // Downstream sortedProjects/filteredProjects derivations preserved as-is.
+  const projects = useAppStore(useShallow((s) => selectProjectsByStatus(s, "active")));
   const { byId: iconsById } = useCustomIcons();
-  // #3 — refresh on verseday:project-changed so an edit made from a task's
-  // ProjectDetail reflects on the Objectives list. (Harmless double-fetch on
-  // this page's own mutations — it also reloads post-mutation; not worth
-  // de-duping.) Read-only handler → no loop; mounted-guarded.
-  useEffect(() => {
-    let mounted = true;
-    const off = onProjectChanged(() => {
-      getProjects(false)
-        .then((p) => {
-          if (mounted) setProjects(p);
-        })
-        .catch(() => {});
-    });
-    return () => {
-      mounted = false;
-      off();
-    };
-  }, []);
   const [statsMap, setStatsMap] = useState<
     Map<number, { total: number; done: number; lastDate: string | null }>
   >(new Map());
@@ -167,11 +150,7 @@ export default function Projects() {
 
   const loadData = useCallback(async () => {
     try {
-      const [p, stats] = await Promise.all([
-        getProjects(false),
-        getProjectStats(),
-      ]);
-      setProjects(p);
+      const stats = await getProjectStats();
       setStatsMap(stats);
       setError(null);
     } catch (e) {
@@ -214,7 +193,7 @@ export default function Projects() {
 
   async function handleCreate(name: string, color: string) {
     try {
-      await createProject(name, color);
+      await createProjectAction(name, color);
       setError(null);
       loadData();
     } catch (e) {
@@ -272,11 +251,10 @@ export default function Projects() {
     const newIndex = projects.findIndex((p) => p.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
     const reordered = arrayMove(projects, oldIndex, newIndex);
-    setProjects(reordered);
     try {
-      await updateProjectSortOrders(
-        reordered.map((p, i) => ({ id: p.id, sortOrder: i }))
-      );
+      // reorderProjectsAction is non-optimistic (SQL-then-map); the
+      // canonical selector re-renders the new order once it resolves.
+      await reorderProjectsAction(reordered.map((p) => p.id));
     } catch (e) {
       setError(errorMessage(e, "Failed to reorder"));
       loadData();
@@ -333,7 +311,7 @@ export default function Projects() {
           <button
             onClick={async () => {
               try {
-                await archiveProject(archivedUndo.id, false);
+                await archiveProjectAction(archivedUndo.id, false);
                 setError(null);
               } catch (e) {
                 // Its old color may have been claimed by another active

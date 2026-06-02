@@ -19,17 +19,15 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { selectTaskIdsByProject, useAppStore } from "../stores/appStore";
+import { useShallow } from "zustand/react/shallow";
 import {
-  getProjectById,
-  getProjects,
-  updateProject,
+  selectTaskIdsByProject,
+  selectProjectById,
+  selectProjectsByStatus,
+  useAppStore,
+} from "../stores/appStore";
+import {
   startTimeEntry,
-  completeProject,
-  setProjectPriority,
-  setProjectIcon,
-  deleteProject,
-  archiveProject,
   getWorkedMinutesForTask,
   PROJECT_PALETTE,
 } from "../db/queries";
@@ -40,7 +38,7 @@ import DateRangeField from "../components/DateRangeField";
 import { parseTimeFromTitle } from "../utils/format";
 import RichTextEditor from "../components/RichTextEditor";
 import ProjectIconPicker from "../components/ProjectIconPicker";
-import type { Project, Task } from "../types";
+import type { Task } from "../types";
 
 const MAX_TITLE_LENGTH = 200;
 const MAX_ESTIMATE_MINUTES = 480;
@@ -494,9 +492,28 @@ export default function ProjectDetail() {
   const setTaskDateScheduledAction = useAppStore((s) => s.setTaskDateScheduled);
   const setTaskSortOrdersAction = useAppStore((s) => s.setTaskSortOrders);
   const createTaskAction = useAppStore((s) => s.createTaskAction);
-  const [project, setProject] = useState<Project | null>(null);
+  // P3 — the viewed project comes from the canonical store (single-value
+  // selector, no useShallow needed).
+  const project = useAppStore((s) => selectProjectById(s, selectedProjectId)) ?? null;
+  // P3 — project mutations route through reconciling store actions.
+  const updateProjectAction = useAppStore((s) => s.updateProjectAction);
+  const completeProjectAction = useAppStore((s) => s.completeProjectAction);
+  const setProjectPriorityAction = useAppStore((s) => s.setProjectPriorityAction);
+  const setProjectIconAction = useAppStore((s) => s.setProjectIconAction);
+  const archiveProjectAction = useAppStore((s) => s.archiveProjectAction);
+  const deleteProjectAction = useAppStore((s) => s.deleteProjectAction);
   // Colors used by *other* active projects — drives the disabled swatches.
-  const [takenColors, setTakenColors] = useState<string[]>([]);
+  // Derived from the canonical active set (was a fetched+setState pair).
+  const activeProjects = useAppStore(
+    useShallow((s) => selectProjectsByStatus(s, "active")),
+  );
+  const takenColors = useMemo(
+    () =>
+      activeProjects
+        .filter((p) => p.id !== selectedProjectId)
+        .map((p) => p.color),
+    [activeProjects, selectedProjectId],
+  );
   // P2 — committed worked-minutes from the canonical store (was a private
   // workedMap). Committed-only here on purpose: the project badge is a
   // history value, and subscribing to the live focus tick would re-render
@@ -516,6 +533,24 @@ export default function ProjectDetail() {
   const [editNotes, setEditNotes] = useState("");
   const projectSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
+
+  // P3 — seed the (debounce-saved) edit fields exactly ONCE per project.
+  // The form is auto-saved, so re-seeding on every canonical-store project
+  // change (e.g. our own committed save reconciling back in) would clobber
+  // an in-progress edit. The ref gates seeding to the first time we see a
+  // given project id.
+  const initedForId = useRef<number | null>(null);
+  useEffect(() => {
+    if (!project || project.id !== selectedProjectId) return;
+    if (initedForId.current === project.id) return; // already seeded for this project
+    initedForId.current = project.id;
+    setEditName(project.name);
+    setEditColor(project.color);
+    setEditDescription(project.description ?? "");
+    setEditStartDate(project.start_date ?? "");
+    setEditTargetDate(project.target_date ?? "");
+    setEditNotes(project.notes ? project.notes : project.description ? project.description : "");
+  }, [project, selectedProjectId]);
 
   // Task creation
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -632,40 +667,21 @@ export default function ProjectDetail() {
   const loadData = useCallback(async (isStale?: () => boolean) => {
     if (selectedProjectId === null) return;
     try {
-      const [p, , activeProjects] = await Promise.all([
-        getProjectById(selectedProjectId),
-        loadTasksForProject(selectedProjectId),
-        getProjects(false),
-      ]);
+      // P3 — the project itself + taken colors now come from the canonical
+      // store (selectProjectById / selectProjectsByStatus); edit-field
+      // seeding moved to the one-time init effect above. loadData only
+      // loads the task list + worked-minutes index.
+      await loadTasksForProject(selectedProjectId);
       if (isStale?.()) return;
-      setProject(p);
-      setTakenColors(
-        activeProjects
-          .filter((ap) => ap.id !== selectedProjectId)
-          .map((ap) => ap.color)
-      );
       const ids =
         useAppStore.getState().taskIdsByProject.get(selectedProjectId) ?? [];
       await loadWorkedMinutesAction(ids);
       if (isStale?.()) return;
-      if (p) {
-        setEditName(p.name);
-        setEditColor(p.color);
-        setEditDescription(p.description ?? "");
-        setEditStartDate(p.start_date ?? "");
-        setEditTargetDate(p.target_date ?? "");
-        const mergedNotes = p.notes
-          ? p.notes
-          : p.description
-            ? p.description
-            : "";
-        setEditNotes(mergedNotes);
-      }
       setError(null);
     } catch (e) {
       setError(errorMessage(e, "Failed to load project"));
     }
-  }, [selectedProjectId, loadTasksForProject]);
+  }, [selectedProjectId, loadTasksForProject, loadWorkedMinutesAction]);
 
   useEffect(() => {
     // Finalize any pending delete when switching projects
@@ -706,7 +722,7 @@ export default function ProjectDetail() {
       const trimmedName = name.trim();
       if (!trimmedName) return;
       try {
-        await updateProject({
+        await updateProjectAction({
           id: project.id,
           name: trimmedName,
           color,
@@ -743,7 +759,7 @@ export default function ProjectDetail() {
       projectSaveRef.current = null;
       const trimmedName = editName.trim();
       if (trimmedName) {
-        updateProject({
+        updateProjectAction({
           id: project.id,
           name: trimmedName,
           color: editColor,
@@ -801,7 +817,7 @@ export default function ProjectDetail() {
   async function handleDeleteProject() {
     if (!selectedProjectId) return;
     try {
-      await deleteProject(selectedProjectId);
+      await deleteProjectAction(selectedProjectId);
       goBack();
     } catch (e) {
       setError(errorMessage(e, "Failed to delete project"));
@@ -812,7 +828,7 @@ export default function ProjectDetail() {
   async function handleArchive() {
     if (!selectedProjectId) return;
     try {
-      await archiveProject(selectedProjectId, true);
+      await archiveProjectAction(selectedProjectId, true);
       goBack();
     } catch (e) {
       setError(errorMessage(e, "Failed to archive objective"));
@@ -864,8 +880,8 @@ export default function ProjectDetail() {
   async function handleCompleteToggle() {
     if (!project) return;
     try {
-      await completeProject(project.id, !project.completed);
-      loadData();
+      // Action reconciles into the canonical store; the selector re-renders us.
+      await completeProjectAction(project.id, !project.completed);
     } catch (e) {
       setError(errorMessage(e, "Failed to update project"));
     }
@@ -874,8 +890,7 @@ export default function ProjectDetail() {
   async function handlePriorityToggle() {
     if (!project) return;
     try {
-      await setProjectPriority(project.id, !project.priority);
-      loadData();
+      await setProjectPriorityAction(project.id, !project.priority);
     } catch (e) {
       setError(errorMessage(e, "Failed to update priority"));
     }
@@ -884,8 +899,7 @@ export default function ProjectDetail() {
   async function handleSetIcon(icon: string | null, customIconId: number | null) {
     if (!project) return;
     try {
-      await setProjectIcon(project.id, icon, customIconId);
-      loadData();
+      await setProjectIconAction(project.id, icon, customIconId);
     } catch (e) {
       setError(errorMessage(e, "Failed to set icon"));
     }

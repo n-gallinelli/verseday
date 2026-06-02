@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Page, Task } from "../types";
+import type { Page, Task, Project } from "../types";
 import { todayString, mondayOfWeek } from "../utils/dates";
 import {
   createTask as dbCreateTask,
@@ -19,7 +19,18 @@ import {
   updateTaskDateScheduled as dbUpdateTaskDateScheduled,
   updateTaskSortOrders as dbUpdateTaskSortOrders,
   updateTimeEntryWorkedSeconds,
+  getProjects,
+  getProjectById,
+  createProject as dbCreateProject,
+  updateProject as dbUpdateProject,
+  completeProject as dbCompleteProject,
+  archiveProject as dbArchiveProject,
+  deleteProject as dbDeleteProject,
+  setProjectPriority as dbSetProjectPriority,
+  setProjectIcon as dbSetProjectIcon,
+  updateProjectSortOrders as dbUpdateProjectSortOrders,
 } from "../db/queries";
+import type { UpdateProjectInput } from "../db/queries";
 import type { CreateTaskInput, UpdateTaskInput } from "../db/queries";
 
 /** Returns the local-tz Monday-ISO of the week containing `dateIso`.
@@ -144,6 +155,49 @@ function withTaskMutated(s: AppState, before: Task, after: Task): Partial<AppSta
   };
 }
 
+// ── Project canonical-map transitions (P3) ────────────────────────────────
+// No secondary index for projects (small set; active/archived/completed are
+// derived in selectors — Verse-approved). So these are plain set/delete on
+// projectsById; Inserted/Mutated are intentionally identical (kept distinct
+// for caller intent + parity with the task helpers).
+function withProjectInserted(s: AppState, project: Project): Partial<AppState> {
+  const next = new Map(s.projectsById);
+  next.set(project.id, project);
+  return { projectsById: next };
+}
+function withProjectMutated(s: AppState, project: Project): Partial<AppState> {
+  const next = new Map(s.projectsById);
+  next.set(project.id, project);
+  return { projectsById: next };
+}
+function withProjectRemoved(s: AppState, project: Project): Partial<AppState> {
+  const next = new Map(s.projectsById);
+  next.delete(project.id);
+  return { projectsById: next };
+}
+
+/** Pure reducer for project deletion (exported for tests): remove the project
+ *  from projectsById AND mirror the DB's ON DELETE SET NULL — clear project_id
+ *  on every task that pointed at it (canonical map + taskIdsByProject index),
+ *  so no task is left referencing a deleted project. This is the audit-flagged
+ *  orphan-divergence invariant. */
+export function reduceProjectDeleted(s: AppState, id: number): Partial<AppState> {
+  const before = s.projectsById.get(id);
+  let working: AppState = before ? ({ ...s, ...withProjectRemoved(s, before) } as AppState) : s;
+  const projTaskIds = s.taskIdsByProject.get(id) ?? [];
+  for (const tid of projTaskIds) {
+    const t = working.tasksById.get(tid);
+    if (t) working = { ...working, ...withTaskMutated(working, t, { ...t, project_id: null }) } as AppState;
+  }
+  return {
+    projectsById: working.projectsById,
+    tasksById: working.tasksById,
+    taskIdsByProject: working.taskIdsByProject,
+    taskIdsByDate: working.taskIdsByDate,
+    taskIdsByWeek: working.taskIdsByWeek,
+  };
+}
+
 const FOCUS_STORAGE_KEY = "verseday_focus";
 const SIDEBAR_COLLAPSED_KEY = "verseday_sidebar_collapsed";
 
@@ -260,6 +314,31 @@ interface AppState {
    *  reads committed truth (kills the under-count race). No-op if the active
    *  session isn't this task. */
   stopFocusedSessionForTask: (taskId: number) => Promise<void>;
+  /** Canonical project map (P3). Holds ALL projects (active + archived);
+   *  active/archived/completed are derived in selectors (no secondary index
+   *  — small set). Populated by loadProjects; every project mutation routes
+   *  through a reconciling action below. */
+  projectsById: Map<number, Project>;
+  /** Refresh projectsById from DB truth (getProjects(true) — includes
+   *  archived so the canonical map is complete). */
+  loadProjects: () => Promise<void>;
+  /** Create a project; reconciles the new row into projectsById. Returns id.
+   *  Rethrows validation errors (e.g. color collision) for the caller. */
+  createProjectAction: (name: string, color: string) => Promise<number>;
+  /** Update name/color/description/dates/notes; reconcile-on-success,
+   *  refetch-on-failure, then rethrow so the UI can surface color collisions. */
+  updateProjectAction: (input: UpdateProjectInput) => Promise<void>;
+  completeProjectAction: (id: number, completed: boolean) => Promise<void>;
+  setProjectPriorityAction: (id: number, priority: boolean) => Promise<void>;
+  /** Set icon: reconciles BOTH icon and custom_icon_id into projectsById. */
+  setProjectIconAction: (id: number, icon: string | null, customIconId: number | null) => Promise<void>;
+  /** Archive/unarchive; rethrows the un-archive color-collision error. */
+  archiveProjectAction: (id: number, archived: boolean) => Promise<void>;
+  /** Delete a project, then mirror the DB's ON DELETE SET NULL: clear
+   *  project_id on every affected task in tasksById (orphan-divergence fix). */
+  deleteProjectAction: (id: number) => Promise<void>;
+  /** Reorder: non-optimistic SQL-then-map (mirrors setTaskSortOrders). */
+  reorderProjectsAction: (orderedIds: number[]) => Promise<void>;
   /** Open the singleton task detail overlay for `id`. Pass
    *  `{ autoFocusTitle: true }` to focus the title input on open
    *  (used by quick-add flows that create the task in draft state). */
@@ -700,6 +779,54 @@ export function selectWorkedMinutesWithLive(state: AppState, taskId: number): nu
   return committed;
 }
 
+/** Selector: a single project by id (no list → no useShallow needed). */
+export function selectProjectById(state: AppState, id: number | null): Project | undefined {
+  return id == null ? undefined : state.projectsById.get(id);
+}
+
+/** Selector: ALL projects incl. archived (equivalent to getProjects(true)).
+ *  For surfaces that resolve chips for tasks on archived projects
+ *  (PastShutdowns, WeeklyShutdown) — they must NOT use a status selector,
+ *  which would drop archived projects. Fresh array — consume with useShallow. */
+export function selectAllProjects(state: AppState): Project[] {
+  return Array.from(state.projectsById.values());
+}
+
+/** Selector: objectives offered in a task's Objective dropdown — active
+ *  (archived = 0) and NOT completed, name-ordered, with the current selection
+ *  retained even if it's since been archived/completed (so an existing
+ *  assignment still displays). Subsumes the old activeObjectiveOptions util +
+ *  the hand-replicated getProjects() filters. Returns a fresh array — consume
+ *  with useShallow. `currentValue` is the picker's value (id-as-string or ""). */
+export function selectActiveObjectiveOptions(state: AppState, currentValue: string): Project[] {
+  const active = Array.from(state.projectsById.values())
+    .filter((p) => p.archived === 0 && !p.completed)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  if (currentValue && !active.some((p) => String(p.id) === currentValue)) {
+    const current = state.projectsById.get(parseInt(currentValue, 10));
+    if (current) return [...active, current];
+  }
+  return active;
+}
+
+/** Selector: projects filtered by archived status. "active" is sorted for the
+ *  Objectives grid (priority desc, then sort_order asc, then name); "archived"
+ *  by name. Returns a fresh array — consume with useShallow. */
+export function selectProjectsByStatus(state: AppState, status: "active" | "archived"): Project[] {
+  const all = Array.from(state.projectsById.values());
+  if (status === "archived") {
+    return all.filter((p) => p.archived === 1).sort((a, b) => a.name.localeCompare(b.name));
+  }
+  return all
+    .filter((p) => p.archived === 0)
+    .sort(
+      (a, b) =>
+        b.priority - a.priority ||
+        (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+        a.name.localeCompare(b.name),
+    );
+}
+
 /** R.2 — Right sidebar rebuild. Map of projectId → Task[] for
  *  projects that have at least one unscheduled, open task in the
  *  canonical map. Tasks within each project are sorted by
@@ -808,6 +935,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   taskDetailAutoFocusTitle: false,
   tasksById: new Map(),
   workedByTaskId: new Map(),
+  projectsById: new Map(),
   taskIdsByDate: new Map(),
   taskIdsByProject: new Map(),
   taskIdsByWeek: new Map(),
@@ -1494,6 +1622,137 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().setFocusPriorElapsedMs(id, minutes * 60 * 1000);
     } catch (err) {
       console.error("[appStore] setTaskWorkedMinutes failed", { id, minutes, err });
+    }
+  },
+  // ── Projects (P3) — every mutation reconciles to DB truth ──────────────
+  loadProjects: async () => {
+    try {
+      const list = await getProjects(true); // include archived: canonical map is complete
+      set(() => {
+        const next = new Map<number, Project>();
+        for (const p of list) next.set(p.id, p);
+        return { projectsById: next };
+      });
+    } catch (err) {
+      console.error("[appStore] loadProjects failed", err);
+    }
+  },
+  createProjectAction: async (name, color) => {
+    const id = await dbCreateProject(name, color); // may throw (color collision) — let it propagate
+    try {
+      const fresh = await getProjectById(id);
+      if (fresh) set((s) => withProjectInserted(s, fresh));
+    } catch (err) {
+      console.error("[appStore] createProjectAction post-insert fetch failed", { id, err });
+    }
+    return id;
+  },
+  updateProjectAction: async (input) => {
+    const before = get().projectsById.get(input.id);
+    if (before) {
+      set((s) => withProjectMutated(s, {
+        ...before,
+        name: input.name,
+        color: input.color,
+        description: input.description,
+        start_date: input.startDate,
+        target_date: input.targetDate,
+        notes: input.notes,
+      }));
+    }
+    try {
+      await dbUpdateProject(input);
+      const fresh = await getProjectById(input.id);
+      if (fresh) set((s) => withProjectMutated(s, fresh));
+    } catch (err) {
+      // Restore truth, then rethrow so the caller can surface the message
+      // (e.g. "color already used by another active project").
+      const fresh = await getProjectById(input.id).catch(() => null);
+      if (fresh) set((s) => withProjectMutated(s, fresh));
+      else if (before) set((s) => withProjectMutated(s, before));
+      throw err;
+    }
+  },
+  completeProjectAction: async (id, completed) => {
+    const before = get().projectsById.get(id);
+    if (before) set((s) => withProjectMutated(s, { ...before, completed: completed ? 1 : 0 }));
+    try {
+      await dbCompleteProject(id, completed);
+      const fresh = await getProjectById(id);
+      if (fresh) set((s) => withProjectMutated(s, fresh));
+    } catch (err) {
+      console.error("[appStore] completeProjectAction failed — refetching truth", { id, err });
+      const fresh = await getProjectById(id).catch(() => null);
+      if (fresh) set((s) => withProjectMutated(s, fresh));
+      else if (before) set((s) => withProjectMutated(s, before));
+    }
+  },
+  setProjectPriorityAction: async (id, priority) => {
+    const before = get().projectsById.get(id);
+    if (before) set((s) => withProjectMutated(s, { ...before, priority: priority ? 1 : 0 }));
+    try {
+      await dbSetProjectPriority(id, priority);
+      const fresh = await getProjectById(id);
+      if (fresh) set((s) => withProjectMutated(s, fresh));
+    } catch (err) {
+      console.error("[appStore] setProjectPriorityAction failed — refetching truth", { id, err });
+      const fresh = await getProjectById(id).catch(() => null);
+      if (fresh) set((s) => withProjectMutated(s, fresh));
+      else if (before) set((s) => withProjectMutated(s, before));
+    }
+  },
+  setProjectIconAction: async (id, icon, customIconId) => {
+    const before = get().projectsById.get(id);
+    if (before) set((s) => withProjectMutated(s, { ...before, icon, custom_icon_id: customIconId }));
+    try {
+      await dbSetProjectIcon(id, icon, customIconId);
+      const fresh = await getProjectById(id);
+      if (fresh) set((s) => withProjectMutated(s, fresh));
+    } catch (err) {
+      console.error("[appStore] setProjectIconAction failed — refetching truth", { id, err });
+      const fresh = await getProjectById(id).catch(() => null);
+      if (fresh) set((s) => withProjectMutated(s, fresh));
+      else if (before) set((s) => withProjectMutated(s, before));
+    }
+  },
+  archiveProjectAction: async (id, archived) => {
+    const before = get().projectsById.get(id);
+    if (before) set((s) => withProjectMutated(s, { ...before, archived: archived ? 1 : 0 }));
+    try {
+      await dbArchiveProject(id, archived); // un-archive may throw on color collision
+      const fresh = await getProjectById(id);
+      if (fresh) set((s) => withProjectMutated(s, fresh));
+    } catch (err) {
+      const fresh = await getProjectById(id).catch(() => null);
+      if (fresh) set((s) => withProjectMutated(s, fresh));
+      else if (before) set((s) => withProjectMutated(s, before));
+      throw err;
+    }
+  },
+  deleteProjectAction: async (id) => {
+    try {
+      await dbDeleteProject(id);
+      set((s) => reduceProjectDeleted(s, id));
+    } catch (err) {
+      console.error("[appStore] deleteProjectAction failed", { id, err });
+      throw err;
+    }
+  },
+  reorderProjectsAction: async (orderedIds) => {
+    // Non-optimistic: SQL first, then patch the map (mirrors setTaskSortOrders).
+    try {
+      const updates = orderedIds.map((id, i) => ({ id, sortOrder: i }));
+      await dbUpdateProjectSortOrders(updates);
+      set((s) => {
+        const next = new Map(s.projectsById);
+        updates.forEach(({ id, sortOrder }) => {
+          const p = next.get(id);
+          if (p) next.set(id, { ...p, sort_order: sortOrder });
+        });
+        return { projectsById: next };
+      });
+    } catch (err) {
+      console.error("[appStore] reorderProjectsAction failed", err);
     }
   },
   insertTask: (task) => {

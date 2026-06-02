@@ -94,6 +94,10 @@ function MainApp() {
     startupDone.current = true;
 
     async function startup() {
+      // P3 — hydrate the canonical projects map on boot. Fire-and-forget:
+      // nothing blocks on it, and (during the 3a–c additive stage) no consumer
+      // reads it yet; 3d flips consumers to the store selectors.
+      void useAppStore.getState().loadProjects();
       // Defensive: close any stray focus-pip window that survived
       // a previous app session (force-quit, crash, etc). Must run
       // BEFORE restoreFocus() — restoring a persisted focus state

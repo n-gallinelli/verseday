@@ -1,12 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
-import { onProjectChanged } from "../utils/projectEvents";
-import { useAppStore } from "../stores/appStore";
+import { useShallow } from "zustand/react/shallow";
+import { selectProjectsByStatus, useAppStore } from "../stores/appStore";
 import {
   getTasksForWeek,
   getPlannedMinutesPerDay,
   getWorkedMinutesForWeek,
   getProjectStats,
-  getProjects,
   getRecentCompletedTasks,
   getCompletedShutdowns,
   type CompletedShutdown,
@@ -176,22 +175,7 @@ export default function Dashboard() {
   const [projectStatsMap, setProjectStatsMap] = useState<
     Map<number, { total: number; done: number; lastDate: string | null }>
   >(new Map());
-  const [projects, setProjects] = useState<Project[]>([]);
-  // #3 — refresh on verseday:project-changed. Read-only → no loop; guarded.
-  useEffect(() => {
-    let mounted = true;
-    const off = onProjectChanged(() => {
-      getProjects()
-        .then((p) => {
-          if (mounted) setProjects(p);
-        })
-        .catch(() => {});
-    });
-    return () => {
-      mounted = false;
-      off();
-    };
-  }, []);
+  const projects = useAppStore(useShallow((s) => selectProjectsByStatus(s, "active")));
   // eslint-disable-next-line no-restricted-syntax -- pre-M4 M3 gap
   const [recentCompleted, setRecentCompleted] = useState<Task[]>([]);
   const [pastShutdowns, setPastShutdowns] = useState<CompletedShutdown[]>([]);
@@ -203,12 +187,11 @@ export default function Dashboard() {
 
   const loadData = useCallback(async () => {
     try {
-      const [wt, pbd, wbd, ps, p, rc, sd] = await Promise.all([
+      const [wt, pbd, wbd, ps, rc, sd] = await Promise.all([
         getTasksForWeek(selectedWeek, fridayIso),
         getPlannedMinutesPerDay(selectedWeek, fridayIso),
         getWorkedMinutesForWeek(selectedWeek, fridayIso),
         getProjectStats(),
-        getProjects(),
         getRecentCompletedTasks(selectedWeek, fridayIso),
         getCompletedShutdowns(4),
       ]);
@@ -216,7 +199,6 @@ export default function Dashboard() {
       setPlannedByDay(pbd);
       setWorkedByDay(wbd);
       setProjectStatsMap(ps);
-      setProjects(p);
       setRecentCompleted(rc);
       setPastShutdowns(sd);
       setError(null);

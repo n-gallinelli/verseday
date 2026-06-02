@@ -1,15 +1,19 @@
-import { useEffect, useState } from "react";
-import { onProjectChanged } from "../utils/projectEvents";
+import { useEffect } from "react";
+import { useShallow } from "zustand/react/shallow";
 import TaskDetailOverlay from "./TaskDetailOverlay";
-import { selectTaskDetailTask, selectWorkedMinutesWithLive, useAppStore } from "../stores/appStore";
 import {
-  getProjects,
+  selectProjectsByStatus,
+  selectTaskDetailTask,
+  selectWorkedMinutesWithLive,
+  useAppStore,
+} from "../stores/appStore";
+import {
   getTaskById,
   getWorkedMinutesForTask,
   startTimeEntry,
 } from "../db/queries";
 import type { UpdateTaskInput } from "../db/queries";
-import type { Project, Task } from "../types";
+import type { Task } from "../types";
 
 // Singleton host for TaskDetailOverlay (Verse rule 2 — one mount per
 // cross-screen surface). Mounted exactly once at the App shell. Reads
@@ -39,25 +43,7 @@ export default function TaskDetailOverlayHost() {
   const loadWorkedMinutesAction = useAppStore((s) => s.loadWorkedMinutes);
   const task = useAppStore(selectTaskDetailTask);
 
-  const [projects, setProjects] = useState<Project[]>([]);
-  // #3 — refresh the project copy when any screen mutates a project
-  // (verseday:project-changed). This is the reported bug: editing a project on
-  // the Objectives page now updates the task's Objective dropdown live. Read-
-  // only handler (never emits → no loop), mounted-guarded, balanced cleanup.
-  useEffect(() => {
-    let mounted = true;
-    const off = onProjectChanged(() => {
-      getProjects()
-        .then((p) => {
-          if (mounted) setProjects(p);
-        })
-        .catch(() => {});
-    });
-    return () => {
-      mounted = false;
-      off();
-    };
-  }, []);
+  const projects = useAppStore(useShallow((s) => selectProjectsByStatus(s, "active")));
   // P2 — worked-minutes read from the canonical store (committed + live
   // session via the shared derivation), not a private one-shot fetch.
   const workedMinutes = useAppStore((s) => {
@@ -82,18 +68,6 @@ export default function TaskDetailOverlayHost() {
       cancelled = true;
     };
   }, [selectedTaskDetailId, task, primeTasks]);
-
-  useEffect(() => {
-    let cancelled = false;
-    getProjects()
-      .then((list) => {
-        if (!cancelled) setProjects(list);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Ensure the canonical worked index is populated/fresh for this task when
   // the overlay opens (it may be opened from a context that never loaded it).

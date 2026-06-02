@@ -141,8 +141,14 @@ DOM `CustomEvent`s can't cross Tauri webviews; QuickAdd stays fresh only via foc
 
 | Phase | Branch | tsc | build | lint | test | HMR | Verse |
 |---|---|---|---|---|---|---|---|
-| 1 | canonical/p1-task-reconcile | — | — | — | — | — | (bundled w/ 2) |
-| 2 | canonical/p2-worked-time | — | — | — | — | — | pending |
-| 3 | canonical/p3-projects-ById | — | — | — | — | — | design sign-off first |
+| 1 | canonical/p1-task-reconcile | ✅ | ✅ | 21 (0 new) | 30/30 | ✅ | APPROVED (bundled w/ 2) — merged to main 2026-06-02 |
+| 2 | canonical/p2-worked-time | ✅ | ✅ | 21 (0 new) | 34/34 (+4) | ✅ | APPROVED — merged to main 2026-06-02 |
+| 3 | canonical/p3-projects-ById | — | — | — | — | — | design APPROVED (derived selectors + useShallow); code staged 3a–c then 3d |
 | 4 | canonical/p4-bypass-readers | — | — | — | — | — | pending |
 | 5 | canonical/p5-cross-webview | — | — | — | — | — | pending |
+
+**Lint baseline:** 21 errors on post-cleanup main (pre-existing unused-vars in the deferred-#9 ProjectDetail subsystem + a broken `react-hooks/exhaustive-deps` rule ref). Each phase holds at 21 with 0 new. Phase 3 adds the `useState<Project>` ban.
+
+**Cleanup re-derivation** (`cleanup/dead-code-rederive`) merged to main 2026-06-02 (−321 net); plus the session's reviewed fixes (task-adders, date-range-field, duration, palette, dashboard, recurring-collision + ghost-row, settings). All local — **not pushed**.
+
+**Phase 3 design conditions (Verse, 2026-06-02):** derived selectors consumed with `useShallow` for list-returning ones (`selectActiveObjectiveOptions`, `selectProjectsByStatus`) — non-optional; `selectProjectById` needs no wrapper. Preserve each consumer's existing sort (objective options name-ordered; grid by sort_order/priority). `setProjectIconAction` reconciles icon + custom_icon_id. `reorderProjectsAction` wraps existing `updateProjectSortOrders` (non-optimistic SQL-then-map). Retire the in-window `verseday:project-changed` bus entirely (listeners AND emitters, ~50 sites); QuickAdd's focus-refetch stays until Phase 5.

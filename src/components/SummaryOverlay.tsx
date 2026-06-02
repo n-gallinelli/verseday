@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
-import { onProjectChanged } from "../utils/projectEvents";
+import { useShallow } from "zustand/react/shallow";
 import Button from "./Button";
 import ProjectGlyph from "./ProjectGlyph";
 import { useCustomIcons } from "../hooks/useCustomIcons";
-import { getProjects, getTasksForDate, getTasksForWeek } from "../db/queries";
+import { getTasksForDate, getTasksForWeek } from "../db/queries";
+import { selectProjectsByStatus, useAppStore } from "../stores/appStore";
 import type { Task, Project } from "../types";
 
 /** Group marker: the objective's emoji/custom icon when set, else its color dot
@@ -273,25 +274,8 @@ export default function SummaryOverlay({ type, anchorDate, onClose }: SummaryOve
   const [weeklyDoneTasks, setWeeklyDoneTasks] = useState<Task[]>([]);
   // eslint-disable-next-line no-restricted-syntax -- pre-M4 M3 gap
   const [weeklyNextTasks, setWeeklyNextTasks] = useState<Task[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const projects = useAppStore(useShallow((s) => selectProjectsByStatus(s, "active")));
   const { byId: iconsById } = useCustomIcons();
-  // #3 — refresh project name/color on verseday:project-changed (the summary
-  // groups tasks by project chrome; historical task data is untouched). Read-
-  // only, mounted-guarded, balanced cleanup.
-  useEffect(() => {
-    let mounted = true;
-    const off = onProjectChanged(() => {
-      getProjects()
-        .then((p) => {
-          if (mounted) setProjects(p);
-        })
-        .catch(() => {});
-    });
-    return () => {
-      mounted = false;
-      off();
-    };
-  }, []);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
@@ -301,21 +285,15 @@ export default function SummaryOverlay({ type, anchorDate, onClose }: SummaryOve
       setLoading(true);
       try {
         if (type === "daily") {
-          const [allProjects, today] = await Promise.all([
-            getProjects(),
-            getTasksForDate(anchorDate),
-          ]);
+          const today = await getTasksForDate(anchorDate);
           if (cancelled) return;
-          setProjects(allProjects);
           setDailyTasks(today);
         } else {
-          const [allProjects, thisWeek, nextWeek] = await Promise.all([
-            getProjects(),
+          const [thisWeek, nextWeek] = await Promise.all([
             getTasksForWeek(anchorDate, addDays(anchorDate, 4)),
             getTasksForWeek(addDays(anchorDate, 7), addDays(anchorDate, 11)),
           ]);
           if (cancelled) return;
-          setProjects(allProjects);
           setWeeklyDoneTasks(thisWeek.filter((t) => t.status === "done"));
           setWeeklyNextTasks(nextWeek.filter((t) => t.status !== "done"));
         }

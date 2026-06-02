@@ -309,6 +309,20 @@ export default function CalendarSettings() {
     setError(null);
     setSyncFeedback(null);
     try {
+      // The grant can be lost out-of-band (e.g. a TCC reset after an app
+      // rebuild) while calendar.enabled stays '1'. Re-read the live status
+      // and, if EventKit hasn't been asked yet, prompt — so this one button
+      // recovers the integration instead of silently no-op'ing.
+      let current = status ?? (await refresh());
+      if (current === "prompt") {
+        current = await request();
+      }
+      if (current !== "granted") {
+        setError(
+          "Calendar access isn't granted. Open System Settings → Privacy & Security → Calendars, enable VerseDay, then sync again.",
+        );
+        return;
+      }
       const result = await syncNow(todayString());
       if (result.created > 0) {
         setSyncFeedback(`Synced ${result.created}.`);
@@ -327,7 +341,11 @@ export default function CalendarSettings() {
   }
 
   const showCalendarList = enabled && status === "granted";
-  const syncDisabled = !enabled || status !== "granted" || syncing;
+  // Sync stays available whenever the integration is enabled — even if the
+  // grant was lost (status 'prompt'/null) — so the button itself can
+  // re-acquire permission. Only a hard 'denied' disables it (the banner
+  // then routes the user to System Settings).
+  const syncDisabled = !enabled || status === "denied" || syncing;
 
   return (
     <section className="mt-1">
@@ -489,7 +507,7 @@ export default function CalendarSettings() {
             "Synced N.") replaces the button text briefly via
             `syncFeedback` instead of expanding the section with a
             toast row, so the panel doesn't grow on every click. */}
-        {enabled && status === "granted" && (
+        {enabled && status !== "denied" && (
           <div className="flex items-center justify-between pt-2" style={{ borderTop: "0.5px solid var(--border-hairline)" }}>
             <div className="text-[11px] text-fg-faded">
               {lastSyncedAt ? `Last synced ${formatLastSynced(lastSyncedAt)}` : "Not yet synced"}

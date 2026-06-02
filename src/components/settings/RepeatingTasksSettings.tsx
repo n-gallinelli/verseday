@@ -47,6 +47,15 @@ export default function RepeatingTasksSettings() {
     load();
   }, [load]);
 
+  // Reload when a task is deleted anywhere — including from the "Edit…"
+  // detail overlay opened off a row here. Templates aren't in the
+  // canonical store indices, so this list won't otherwise hear about the
+  // removal and a deleted row would linger until the page is remounted.
+  useEffect(() => {
+    window.addEventListener("verseday:task-deleted", load);
+    return () => window.removeEventListener("verseday:task-deleted", load);
+  }, [load]);
+
   async function changeCadence(task: Task, value: string) {
     try {
       if (value === "none") {

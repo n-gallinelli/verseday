@@ -1290,6 +1290,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (current) set((s) => withTaskRemoved(s, current));
     try {
       await dbDeleteTask(id);
+      // Broadcast so settings-only lists that aren't backed by the
+      // canonical store indices (e.g. RepeatingTasksSettings, which loads
+      // recurrence templates via getRecurringTemplates) can reload. The
+      // store mutation above doesn't reach them — templates are excluded
+      // from every taskIdsBy* index, so they hold their own local state.
+      window.dispatchEvent(
+        new CustomEvent("verseday:task-deleted", { detail: { id } }),
+      );
     } catch (err) {
       console.error("[appStore] deleteTask failed — refetching truth", { id, err });
       try {

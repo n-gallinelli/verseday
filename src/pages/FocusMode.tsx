@@ -357,11 +357,26 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // the "show mini timer" control sets it false → the effect recreates.
   const [pipHidden, setPipHidden] = useState(false);
 
+  // The pip only shows once the timer has actually run at least once this
+  // session — not on the initial preview (clicking Focus loads the next task
+  // paused). Set true the first time focus goes active; reset on stop (focus
+  // null). Stays true across roll-to-next-task previews so the pip survives.
+  const [hasBeenActive, setHasBeenActive] = useState(false);
   useEffect(() => {
-    // P-fix2: keep the pip alive for the whole session — preview AND active —
+    if (!focus) {
+      setHasBeenActive(false);
+      setPipHidden(false); // fresh session starts with the pip un-hidden
+    } else if (focus.mode === "active") {
+      setHasBeenActive(true);
+    }
+  }, [focus]);
+
+  useEffect(() => {
+    // P-fix2: keep the pip alive for the whole session once it's been active —
     // so it survives the roll-to-next-task (active→preview) without a
-    // teardown/recreate. Gate on focus != null (closes on stop) and !pipHidden.
-    if (!focus || pipHidden) return;
+    // teardown/recreate. Gate on focus (closes on stop), !pipHidden, and
+    // hasBeenActive (so it doesn't show on the initial preview).
+    if (!focus || pipHidden || !hasBeenActive) return;
 
     // Sweep-then-create. The previous adopt-existing pattern raced
     // against (a) HMR re-mounts where the old close() hadn't completed
@@ -447,7 +462,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     };
     // Stable across active↔preview (focus != null), re-runs on stop (→null) and
     // on hide/unhide.
-  }, [focus != null, pipHidden]);
+  }, [focus != null, pipHidden, hasBeenActive]);
 
   // Total elapsed (for time entry / display)
   const priorMs = focus?.priorElapsedMs ?? 0;

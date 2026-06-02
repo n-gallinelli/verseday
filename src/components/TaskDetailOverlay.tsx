@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { getWorkedMinutesByDate, setTaskRecurrence, parseRecurrence, serializeRecurrence } from "../db/queries";
 import { parseTimeFromTitle, formatHoursMinutes } from "../utils/format";
 import { useAppStore } from "../stores/appStore";
-import CalendarPicker from "./CalendarPicker";
+import DateRangeField from "./DateRangeField";
 import CalendarMetaRail from "./CalendarMetaRail";
 import ProjectPicker from "./ProjectPicker";
 import RichTextEditor from "./RichTextEditor";
@@ -827,36 +827,21 @@ export default function TaskDetailOverlay({
               <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1.5">
                 Dates
               </div>
-              <div className="flex items-stretch gap-1.5">
-                <div className="flex-1">
-                  <CalendarPicker
-                    label="Scheduled"
-                    value={dateScheduled}
-                    onChange={(date) => {
-                      setDateScheduled(date);
-                      debouncedSave({ dateScheduled: date });
-                    }}
-                    onClear={() => {
-                      setDateScheduled("");
-                      debouncedSave({ dateScheduled: "" });
-                    }}
-                  />
-                </div>
-                <div className="flex-1">
-                  <CalendarPicker
-                    label="Due"
-                    value={dueDate}
-                    onChange={(date) => {
-                      setDueDate(date);
-                      debouncedSave({ dueDate: date });
-                    }}
-                    onClear={() => {
-                      setDueDate("");
-                      debouncedSave({ dueDate: "" });
-                    }}
-                  />
-                </div>
-              </div>
+              <DateRangeField
+                defaultMode="single"
+                emptyLabel="Set day"
+                quickShortcuts
+                value={{ start: dateScheduled || null, end: dueDate || null }}
+                onChange={(v) => {
+                  // Preserve the existing debouncedSave→onSave plumbing
+                  // verbatim (one debounced write with both overrides — no
+                  // two-debounce race). End maps to due_date (deadline);
+                  // task placement is unchanged.
+                  setDateScheduled(v.start ?? "");
+                  setDueDate(v.end ?? "");
+                  debouncedSave({ dateScheduled: v.start ?? "", dueDate: v.end ?? "" });
+                }}
+              />
             </div>
 
             <div>

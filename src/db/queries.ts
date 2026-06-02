@@ -355,14 +355,18 @@ export async function getTasksForProject(
   includeDone = false
 ): Promise<Task[]> {
   const db = await getDb();
+  // recurrence IS NULL excludes recurring TEMPLATES (P4) — a template can carry
+  // a project_id, and this feeds the canonical taskIdsByProject slice directly
+  // (load replaces the slice, bypassing the isTemplate index predicate), so it
+  // must filter here or the template would show in the objective's task list.
   if (includeDone) {
     return db.select(
-      "SELECT * FROM tasks WHERE project_id = $1 ORDER BY status = 'done', sort_order LIMIT 500",
+      "SELECT * FROM tasks WHERE project_id = $1 AND recurrence IS NULL ORDER BY status = 'done', sort_order LIMIT 500",
       [projectId]
     );
   }
   return db.select(
-    "SELECT * FROM tasks WHERE project_id = $1 AND status != 'done' ORDER BY sort_order LIMIT 500",
+    "SELECT * FROM tasks WHERE project_id = $1 AND recurrence IS NULL AND status != 'done' ORDER BY sort_order LIMIT 500",
     [projectId]
   );
 }
@@ -884,14 +888,16 @@ export async function getUnscheduledTasks(
   projectId?: number | null
 ): Promise<Task[]> {
   const db = await getDb();
+  // recurrence IS NULL excludes templates (P4): a template has date_scheduled
+  // NULL, so without this it would surface as an "unscheduled" task.
   if (projectId != null) {
     return db.select(
-      "SELECT * FROM tasks WHERE date_scheduled IS NULL AND status != 'done' AND project_id = $1 ORDER BY sort_order LIMIT 50",
+      "SELECT * FROM tasks WHERE date_scheduled IS NULL AND recurrence IS NULL AND status != 'done' AND project_id = $1 ORDER BY sort_order LIMIT 50",
       [projectId]
     );
   }
   return db.select(
-    "SELECT * FROM tasks WHERE date_scheduled IS NULL AND status != 'done' ORDER BY sort_order LIMIT 50"
+    "SELECT * FROM tasks WHERE date_scheduled IS NULL AND recurrence IS NULL AND status != 'done' ORDER BY sort_order LIMIT 50"
   );
 }
 
@@ -1354,6 +1360,7 @@ export async function getSidebarPoolTasks(today: string): Promise<Task[]> {
   return db.select(
     `SELECT * FROM tasks
        WHERE status != 'done'
+         AND recurrence IS NULL
          AND external_dismissal_reason IS NULL
          AND (
            date_scheduled IS NULL
@@ -1605,7 +1612,10 @@ export function serializeRecurrence(rule: RecurrenceRule): string {
 export async function getRecurringTemplates(): Promise<Task[]> {
   const db = await getDb();
   return db.select(
-    "SELECT * FROM tasks WHERE recurrence IS NOT NULL ORDER BY title COLLATE NOCASE LIMIT 500"
+    // recurrence_source_id IS NULL = the template/source itself, not a
+    // generated instance (instances never carry recurrence, so this is belt
+    // + suspenders for exactness).
+    "SELECT * FROM tasks WHERE recurrence IS NOT NULL AND recurrence_source_id IS NULL ORDER BY title COLLATE NOCASE LIMIT 500"
   );
 }
 

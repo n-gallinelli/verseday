@@ -1,12 +1,14 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { selectProjectsByStatus, useAppStore } from "../stores/appStore";
 import {
-  getTasksForWeek,
+  selectProjectsByStatus,
+  selectTaskIdsByWeek,
+  useAppStore,
+} from "../stores/appStore";
+import {
   getPlannedMinutesPerDay,
   getWorkedMinutesForWeek,
   getProjectStats,
-  getRecentCompletedTasks,
   getCompletedShutdowns,
   type CompletedShutdown,
 } from "../db/queries";
@@ -158,14 +160,6 @@ function ProjectProgressRow({
 export default function Dashboard() {
   const { selectedWeek, setSelectedWeek } = useAppStore();
 
-  // Pre-M4 surfaces: Dashboard's task lists weren't migrated to
-  // canonical store during M3.2 (the entity plan §M3.2 listed
-  // Dashboard among the eleven files but it wasn't touched in
-  // b.1-b.5). weekTasks could migrate via selectTaskIdsByWeek;
-  // recentCompleted needs a small dedicated query. Track for
-  // follow-up cleanup.
-  // eslint-disable-next-line no-restricted-syntax -- pre-M4 M3 gap
-  const [weekTasks, setWeekTasks] = useState<Task[]>([]);
   const [plannedByDay, setPlannedByDay] = useState<Map<string, number>>(
     new Map()
   );
@@ -176,8 +170,6 @@ export default function Dashboard() {
     Map<number, { total: number; done: number; lastDate: string | null }>
   >(new Map());
   const projects = useAppStore(useShallow((s) => selectProjectsByStatus(s, "active")));
-  // eslint-disable-next-line no-restricted-syntax -- pre-M4 M3 gap
-  const [recentCompleted, setRecentCompleted] = useState<Task[]>([]);
   const [pastShutdowns, setPastShutdowns] = useState<CompletedShutdown[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -185,21 +177,67 @@ export default function Dashboard() {
   const fridayIso = getFridayIso(selectedWeek);
   const isThisWeek = selectedWeek === getMondayOfWeek();
 
+  // Canonical week tasks. The store's taskIdsByWeek index spans Mon..Sun
+  // (loadTasksForWeek uses weekEndFromMonday), so filter to the Mon..Fri
+  // window (date_scheduled <= fridayIso) to preserve the exact set the old
+  // getTasksForWeek(selectedWeek, fridayIso) returned. Order (date_scheduled,
+  // sort_order) is preserved from the SQL the loader ran.
+  const weekIds = useAppStore(
+    useShallow((s) => selectTaskIdsByWeek(s, selectedWeek))
+  );
+  const tasksById = useAppStore((s) => s.tasksById);
+  const weekTasks = useMemo(
+    () =>
+      weekIds
+        .map((id) => tasksById.get(id))
+        .filter(
+          (t): t is Task =>
+            !!t && t.date_scheduled != null && t.date_scheduled <= fridayIso
+        ),
+    [weekIds, tasksById, fridayIso]
+  );
+
+  // recentCompleted: matches getRecentCompletedTasks' SQL —
+  //   date_scheduled in [selectedWeek, fridayIso] AND status='done'
+  //   AND external_dismissal_reason IS NULL
+  //   ORDER BY date_scheduled DESC, sort_order  LIMIT 10
+  // The week index already excludes external_dismissal_reason rows (the loader
+  // ran the same filter), so done + the Mon..Fri bound + the DESC/limit
+  // reproduce the original list exactly.
+  const recentCompleted = useMemo(() => {
+    const done = weekIds
+      .map((id) => tasksById.get(id))
+      .filter(
+        (t): t is Task =>
+          !!t &&
+          t.status === "done" &&
+          t.date_scheduled != null &&
+          t.date_scheduled <= fridayIso
+      );
+    done.sort((a, b) => {
+      if (a.date_scheduled !== b.date_scheduled) {
+        // DESC by date_scheduled
+        return a.date_scheduled! < b.date_scheduled! ? 1 : -1;
+      }
+      return a.sort_order - b.sort_order;
+    });
+    return done.slice(0, 10);
+  }, [weekIds, tasksById, fridayIso]);
+
   const loadData = useCallback(async () => {
     try {
-      const [wt, pbd, wbd, ps, rc, sd] = await Promise.all([
-        getTasksForWeek(selectedWeek, fridayIso),
+      // Prime the canonical week index/map; weekTasks + recentCompleted derive
+      // from it via the selectors above.
+      await useAppStore.getState().loadTasksForWeek(selectedWeek);
+      const [pbd, wbd, ps, sd] = await Promise.all([
         getPlannedMinutesPerDay(selectedWeek, fridayIso),
         getWorkedMinutesForWeek(selectedWeek, fridayIso),
         getProjectStats(),
-        getRecentCompletedTasks(selectedWeek, fridayIso),
         getCompletedShutdowns(4),
       ]);
-      setWeekTasks(wt);
       setPlannedByDay(pbd);
       setWorkedByDay(wbd);
       setProjectStatsMap(ps);
-      setRecentCompleted(rc);
       setPastShutdowns(sd);
       setError(null);
     } catch (e) {

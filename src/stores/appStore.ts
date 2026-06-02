@@ -11,6 +11,8 @@ import {
   getTasksForWeek,
   getTimeEntryById,
   getWorkedMinutesForTaskIds,
+  getRecurringTemplates,
+  setTaskRecurrence as dbSetTaskRecurrence,
   setManualWorkedMinutes as dbSetManualWorkedMinutes,
   setTaskStatusFromUI,
   stopTimeEntry,
@@ -74,19 +76,30 @@ function indexRemove<K>(idx: Map<K, number[]>, key: K, id: number): Map<K, numbe
   return next;
 }
 
+/** A recurring-task TEMPLATE (the definition/source): recurrence set, no
+ *  source pointer of its own. Templates are kept OUT of the date/week/project
+ *  list indices (P4) — they live in tasksById only, surfaced via
+ *  selectTemplates. Generated INSTANCES (recurrence_source_id set, recurrence
+ *  null) index normally. */
+function isTemplate(t: Task): boolean {
+  return t.recurrence != null && t.recurrence_source_id == null;
+}
+
 /** State patch: insert `task` into tasksById and the relevant secondary
- *  indices. Pure — caller passes to set((s) => ...). */
+ *  indices. Pure — caller passes to set((s) => ...). Templates are added to
+ *  the map but excluded from every list index. */
 function withTaskInserted(s: AppState, task: Task): Partial<AppState> {
   const nextMap = new Map(s.tasksById);
   nextMap.set(task.id, task);
   let nextDateIdx = s.taskIdsByDate;
   let nextWeekIdx = s.taskIdsByWeek;
   let nextProjIdx = s.taskIdsByProject;
-  if (task.date_scheduled !== null) {
+  const tpl = isTemplate(task);
+  if (!tpl && task.date_scheduled !== null) {
     nextDateIdx = indexAppend(nextDateIdx, task.date_scheduled, task.id);
     nextWeekIdx = indexAppend(nextWeekIdx, weekStartFromDate(task.date_scheduled), task.id);
   }
-  if (task.project_id !== null) {
+  if (!tpl && task.project_id !== null) {
     nextProjIdx = indexAppend(nextProjIdx, task.project_id, task.id);
   }
   return {
@@ -123,28 +136,38 @@ function withTaskRemoved(s: AppState, task: Task): Partial<AppState> {
  *  whose membership changed (date_scheduled or project_id moved between
  *  buckets). The before/after framing is what makes this incremental
  *  rather than rebuild-from-scratch. */
-function withTaskMutated(s: AppState, before: Task, after: Task): Partial<AppState> {
+export function withTaskMutated(s: AppState, before: Task, after: Task): Partial<AppState> {
   const nextMap = new Map(s.tasksById);
   nextMap.set(after.id, after);
   let nextDateIdx = s.taskIdsByDate;
   let nextWeekIdx = s.taskIdsByWeek;
   let nextProjIdx = s.taskIdsByProject;
-  if (before.date_scheduled !== after.date_scheduled) {
-    if (before.date_scheduled !== null) {
-      nextDateIdx = indexRemove(nextDateIdx, before.date_scheduled, after.id);
-      nextWeekIdx = indexRemove(nextWeekIdx, weekStartFromDate(before.date_scheduled), after.id);
+  // Index membership is computed through isTemplate (P4): a task that becomes
+  // a template drops out of ALL list indices even if only `recurrence`
+  // changed (project_id unchanged), and one that ceases re-enters. Treating
+  // a template's effective date/project as null collapses every transition
+  // (date change, project change, becoming/ceasing a template) into the same
+  // remove-old / add-new comparison.
+  const beforeDate = isTemplate(before) ? null : before.date_scheduled;
+  const afterDate = isTemplate(after) ? null : after.date_scheduled;
+  if (beforeDate !== afterDate) {
+    if (beforeDate !== null) {
+      nextDateIdx = indexRemove(nextDateIdx, beforeDate, after.id);
+      nextWeekIdx = indexRemove(nextWeekIdx, weekStartFromDate(beforeDate), after.id);
     }
-    if (after.date_scheduled !== null) {
-      nextDateIdx = indexAppend(nextDateIdx, after.date_scheduled, after.id);
-      nextWeekIdx = indexAppend(nextWeekIdx, weekStartFromDate(after.date_scheduled), after.id);
+    if (afterDate !== null) {
+      nextDateIdx = indexAppend(nextDateIdx, afterDate, after.id);
+      nextWeekIdx = indexAppend(nextWeekIdx, weekStartFromDate(afterDate), after.id);
     }
   }
-  if (before.project_id !== after.project_id) {
-    if (before.project_id !== null) {
-      nextProjIdx = indexRemove(nextProjIdx, before.project_id, after.id);
+  const beforeProj = isTemplate(before) ? null : before.project_id;
+  const afterProj = isTemplate(after) ? null : after.project_id;
+  if (beforeProj !== afterProj) {
+    if (beforeProj !== null) {
+      nextProjIdx = indexRemove(nextProjIdx, beforeProj, after.id);
     }
-    if (after.project_id !== null) {
-      nextProjIdx = indexAppend(nextProjIdx, after.project_id, after.id);
+    if (afterProj !== null) {
+      nextProjIdx = indexAppend(nextProjIdx, afterProj, after.id);
     }
   }
   return {
@@ -306,6 +329,16 @@ interface AppState {
    *  (getWorkedMinutesForTaskIds). Ids absent from the result are set to
    *  0 so a task whose entries were cleared drops to 0, not stale. */
   loadWorkedMinutes: (taskIds: number[]) => Promise<void>;
+  /** P4 — load recurring-task TEMPLATES into tasksById (kept out of the list
+   *  indices by isTemplate). Surfaced via selectTemplates. */
+  loadTemplates: () => Promise<void>;
+  /** P4 — set/clear a task's recurrence (task↔template transition only; does
+   *  NOT generate future instances — that propagation stays deferred). Setting
+   *  recurrence makes it a template (DB also nulls date_scheduled); the
+   *  reconcile routes through withTaskMutated so the isTemplate predicate pulls
+   *  it out of (or back into) the date/week/project indices. Refetch-truth on
+   *  failure; rethrows the invalid-format validation error. */
+  setTaskRecurrenceAction: (taskId: number, recurrence: string | null) => Promise<void>;
   /** P2.2c — stop+commit the live focus session IFF it's the active session
    *  for `taskId`: write worked_seconds (from focus.workedMs) + end_time,
    *  refresh workedByTaskId[taskId] from DB, and clear focus in ONE atomic
@@ -777,6 +810,16 @@ export function selectWorkedMinutesWithLive(state: AppState, taskId: number): nu
     return committed + Math.round(f.workedMs / 60000);
   }
   return committed;
+}
+
+/** Selector: recurring-task TEMPLATES (P4) — the template-sources held in
+ *  tasksById but excluded from every list index. Title-sorted (case-insensitive,
+ *  matching getRecurringTemplates' COLLATE NOCASE). Fresh array — consume with
+ *  useShallow. Populated via loadTemplates. */
+export function selectTemplates(state: AppState): Task[] {
+  return Array.from(state.tasksById.values())
+    .filter(isTemplate)
+    .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
 }
 
 /** Selector: a single project by id (no list → no useShallow needed). */
@@ -1568,6 +1611,52 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
     } catch (err) {
       console.error("[appStore] loadWorkedMinutes failed", { taskIds, err });
+    }
+  },
+  loadTemplates: async () => {
+    try {
+      const templates = await getRecurringTemplates();
+      set((s) => {
+        // Templates go into the canonical map only — isTemplate keeps them out
+        // of every list index, so a direct map set (not withTaskInserted) is
+        // both correct and avoids touching the indices.
+        const next = new Map(s.tasksById);
+        for (const t of templates) next.set(t.id, t);
+        return { tasksById: next };
+      });
+    } catch (err) {
+      console.error("[appStore] loadTemplates failed", err);
+    }
+  },
+  setTaskRecurrenceAction: async (taskId, recurrence) => {
+    const before = get().tasksById.get(taskId);
+    if (before) {
+      // Optimistic: setting recurrence makes it a template; the DB also nulls
+      // date_scheduled, so mirror that. withTaskMutated + isTemplate pull it
+      // out of the date/week/project indices (or back in when clearing).
+      const next: Task =
+        recurrence != null
+          ? { ...before, recurrence, date_scheduled: null }
+          : { ...before, recurrence: null };
+      set((s) => withTaskMutated(s, before, next));
+    }
+    try {
+      await dbSetTaskRecurrence(taskId, recurrence);
+      const fresh = await getTaskById(taskId);
+      const cur = get().tasksById.get(taskId);
+      if (fresh) {
+        if (cur) set((s) => withTaskMutated(s, cur, fresh));
+        else set((s) => withTaskInserted(s, fresh));
+      }
+    } catch (err) {
+      // Invalid-format throws before any DB write; refetch restores truth
+      // (the unchanged row), then rethrow so the caller can surface it.
+      console.error("[appStore] setTaskRecurrenceAction failed — refetching truth", { taskId, err });
+      const fresh = await getTaskById(taskId).catch(() => null);
+      const cur = get().tasksById.get(taskId);
+      if (fresh && cur) set((s) => withTaskMutated(s, cur, fresh));
+      else if (before && cur) set((s) => withTaskMutated(s, cur, before));
+      throw err;
     }
   },
   stopFocusedSessionForTask: async (taskId) => {

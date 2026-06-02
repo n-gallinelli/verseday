@@ -3,8 +3,12 @@ import { useShallow } from "zustand/react/shallow";
 import Button from "./Button";
 import ProjectGlyph from "./ProjectGlyph";
 import { useCustomIcons } from "../hooks/useCustomIcons";
-import { getTasksForDate, getTasksForWeek } from "../db/queries";
-import { selectProjectsByStatus, useAppStore } from "../stores/appStore";
+import {
+  selectProjectsByStatus,
+  selectTaskIdsByDate,
+  selectTaskIdsByWeek,
+  useAppStore,
+} from "../stores/appStore";
 import type { Task, Project } from "../types";
 
 /** Group marker: the objective's emoji/custom icon when set, else its color dot
@@ -261,41 +265,39 @@ function buildWeeklyPlainText(
 }
 
 export default function SummaryOverlay({ type, anchorDate, onClose }: SummaryOverlayProps) {
-  // Pre-M4 surfaces: SummaryOverlay's three task lists weren't
-  // migrated to canonical store during M3.2 (the entity plan §M3.2
-  // listed SummaryOverlay among the eleven files but it wasn't
-  // touched in b.1-b.5). Read-only summary modal — daily uses the
-  // selected date's tasks; weekly uses week ranges. Hybrid SQL →
-  // IDs → tasksById migration would close these. Track for
-  // follow-up cleanup.
-  // eslint-disable-next-line no-restricted-syntax -- pre-M4 M3 gap
-  const [dailyTasks, setDailyTasks] = useState<Task[]>([]);
-  // eslint-disable-next-line no-restricted-syntax -- pre-M4 M3 gap
-  const [weeklyDoneTasks, setWeeklyDoneTasks] = useState<Task[]>([]);
-  // eslint-disable-next-line no-restricted-syntax -- pre-M4 M3 gap
-  const [weeklyNextTasks, setWeeklyNextTasks] = useState<Task[]>([]);
   const projects = useAppStore(useShallow((s) => selectProjectsByStatus(s, "active")));
   const { byId: iconsById } = useCustomIcons();
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
+  // Canonical reads. Daily uses the single-day index; weekly uses the
+  // week index for the anchor week (done) and the following week (next).
+  const tasksById = useAppStore((s) => s.tasksById);
+  const dailyIds = useAppStore(
+    useShallow((s) => selectTaskIdsByDate(s, anchorDate))
+  );
+  const nextMonday = addDays(anchorDate, 7);
+  const thisWeekIds = useAppStore(
+    useShallow((s) => selectTaskIdsByWeek(s, anchorDate))
+  );
+  const nextWeekIds = useAppStore(
+    useShallow((s) => selectTaskIdsByWeek(s, nextMonday))
+  );
+
+  // Prime the canonical store for the surfaces this overlay reads, then drop
+  // the spinner. Derivations below stay live against the store.
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoading(true);
       try {
         if (type === "daily") {
-          const today = await getTasksForDate(anchorDate);
-          if (cancelled) return;
-          setDailyTasks(today);
+          await useAppStore.getState().loadTasksForDate(anchorDate);
         } else {
-          const [thisWeek, nextWeek] = await Promise.all([
-            getTasksForWeek(anchorDate, addDays(anchorDate, 4)),
-            getTasksForWeek(addDays(anchorDate, 7), addDays(anchorDate, 11)),
+          await Promise.all([
+            useAppStore.getState().loadTasksForWeek(anchorDate),
+            useAppStore.getState().loadTasksForWeek(addDays(anchorDate, 7)),
           ]);
-          if (cancelled) return;
-          setWeeklyDoneTasks(thisWeek.filter((t) => t.status === "done"));
-          setWeeklyNextTasks(nextWeek.filter((t) => t.status !== "done"));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -310,6 +312,43 @@ export default function SummaryOverlay({ type, anchorDate, onClose }: SummaryOve
   const title = type === "daily" ? "Daily Summary" : "Weekly Summary";
   const subtitle =
     type === "daily" ? formatLongDate(anchorDate) : formatWeekOf(anchorDate);
+
+  // getTasksForDate(anchorDate) — full day's list, SQL order preserved.
+  const dailyTasks = useMemo(
+    () =>
+      dailyIds
+        .map((id) => tasksById.get(id))
+        .filter((t): t is Task => !!t),
+    [dailyIds, tasksById]
+  );
+  // getTasksForWeek(anchorDate, anchorDate+4).filter(done). The week index
+  // spans Mon..Sun, so bound to Mon..Fri (date_scheduled <= anchorDate+4).
+  const weeklyDoneTasks = useMemo(() => {
+    const friday = addDays(anchorDate, 4);
+    return thisWeekIds
+      .map((id) => tasksById.get(id))
+      .filter(
+        (t): t is Task =>
+          !!t &&
+          t.status === "done" &&
+          t.date_scheduled != null &&
+          t.date_scheduled <= friday
+      );
+  }, [thisWeekIds, tasksById, anchorDate]);
+  // getTasksForWeek(anchorDate+7, anchorDate+11).filter(!done). Bound to the
+  // next-week Mon..Fri (date_scheduled <= anchorDate+11).
+  const weeklyNextTasks = useMemo(() => {
+    const nextFriday = addDays(anchorDate, 11);
+    return nextWeekIds
+      .map((id) => tasksById.get(id))
+      .filter(
+        (t): t is Task =>
+          !!t &&
+          t.status !== "done" &&
+          t.date_scheduled != null &&
+          t.date_scheduled <= nextFriday
+      );
+  }, [nextWeekIds, tasksById, anchorDate]);
 
   const dailyGroups = useMemo(
     () => groupByProject(dailyTasks, projects),

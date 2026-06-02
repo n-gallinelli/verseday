@@ -1,13 +1,7 @@
-import { useEffect, useState, useCallback } from "react";
-import {
-  getRecurringTemplates,
-  setTaskRecurrence,
-  serializeRecurrence,
-  parseRecurrence,
-  updateTaskTitle,
-  updateTaskEstimate,
-} from "../../db/queries";
-import { useAppStore } from "../../stores/appStore";
+import { useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { serializeRecurrence, parseRecurrence } from "../../db/queries";
+import { selectTemplates, useAppStore } from "../../stores/appStore";
 import { formatHoursMinutes } from "../../utils/format";
 import type { Task } from "../../types";
 
@@ -29,54 +23,86 @@ function parseEstimate(input: string): number {
  * One screen to see and edit every repeating task: change its cadence, title,
  * and estimate inline, or open it for full edit. Setting cadence to "Doesn't
  * repeat" removes the recurrence (stops the task repeating).
+ *
+ * P4 — templates read canonically from the store (selectTemplates over
+ * tasksById, populated by loadTemplates) and every edit routes through a
+ * reconciling store action, so the list stays live: a cadence change, a delete
+ * from the "Edit…" overlay, or a rename all reflect via the selector without
+ * the old verseday:task-deleted DOM listener or a manual reload.
  */
 export default function RepeatingTasksSettings() {
-  // eslint-disable-next-line no-restricted-syntax -- recurrence templates are excluded from the canonical store indices (every taskIdsBy* query filters recurrence IS NULL), so there's no selector for them; this is a settings-only, no-cross-screen list loaded via getRecurringTemplates.
-  const [templates, setTemplates] = useState<Task[]>([]);
+  const templates = useAppStore(useShallow(selectTemplates));
   const [loaded, setLoaded] = useState(false);
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
-
-  const load = useCallback(() => {
-    getRecurringTemplates()
-      .then((t) => setTemplates(t))
-      .catch(() => {})
-      .finally(() => setLoaded(true));
-  }, []);
+  const loadTemplates = useAppStore((s) => s.loadTemplates);
+  const setTaskRecurrenceAction = useAppStore((s) => s.setTaskRecurrenceAction);
+  const updateTaskAction = useAppStore((s) => s.updateTask);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let mounted = true;
+    loadTemplates().finally(() => {
+      if (mounted) setLoaded(true);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [loadTemplates]);
 
-  // Reload when a task is deleted anywhere — including from the "Edit…"
-  // detail overlay opened off a row here. Templates aren't in the
-  // canonical store indices, so this list won't otherwise hear about the
-  // removal and a deleted row would linger until the page is remounted.
-  useEffect(() => {
-    window.addEventListener("verseday:task-deleted", load);
-    return () => window.removeEventListener("verseday:task-deleted", load);
-  }, [load]);
+  // Build a full UpdateTaskInput from a template task + a single-field patch
+  // (the store's updateTask reconciles tasksById → selectTemplates re-renders).
+  function buildUpdate(task: Task, patch: Partial<{ title: string; estimatedMinutes: number | null }>) {
+    return {
+      id: task.id,
+      title: task.title,
+      projectId: task.project_id,
+      estimatedMinutes: task.estimated_minutes,
+      priority: task.priority,
+      notes: task.notes,
+      dateScheduled: task.date_scheduled,
+      dueDate: task.due_date,
+      ...patch,
+    };
+  }
 
   async function changeCadence(task: Task, value: string) {
     try {
       if (value === "none") {
-        await setTaskRecurrence(task.id, null);
+        await setTaskRecurrenceAction(task.id, null);
       } else if (value === "weekly") {
         // Keep an existing weekly day/interval if present; else default Mon.
         const cur = parseRecurrence(task.recurrence);
-        await setTaskRecurrence(
+        await setTaskRecurrenceAction(
           task.id,
           serializeRecurrence({
             freq: "weekly",
             day: cur?.freq === "weekly" ? cur.day ?? 1 : 1,
             interval: cur?.freq === "weekly" ? cur.interval ?? 1 : 1,
-          })
+          }),
         );
       } else {
-        await setTaskRecurrence(task.id, serializeRecurrence({ freq: value as "daily" | "weekdays" }));
+        await setTaskRecurrenceAction(task.id, serializeRecurrence({ freq: value as "daily" | "weekdays" }));
       }
-      load();
     } catch {
-      load();
+      // The action refetches DB truth on failure; the selector re-renders.
+    }
+  }
+
+  async function commitTitle(task: Task, value: string) {
+    const v = value.trim();
+    if (!v || v === task.title) return;
+    try {
+      await updateTaskAction(buildUpdate(task, { title: v }));
+    } catch {
+      // reconciled by the action
+    }
+  }
+
+  async function commitEstimate(task: Task, minutes: number | null) {
+    if (minutes === (task.estimated_minutes ?? null)) return;
+    try {
+      await updateTaskAction(buildUpdate(task, { estimatedMinutes: minutes }));
+    } catch {
+      // reconciled by the action
     }
   }
 
@@ -96,8 +122,9 @@ export default function RepeatingTasksSettings() {
           key={t.id}
           task={t}
           onCadence={(v) => changeCadence(t, v)}
+          onCommitTitle={(v) => commitTitle(t, v)}
+          onCommitEstimate={(m) => commitEstimate(t, m)}
           onOpen={() => openTaskDetail(t.id)}
-          onCommitted={load}
         />
       ))}
     </div>
@@ -107,13 +134,15 @@ export default function RepeatingTasksSettings() {
 function RepeatingRow({
   task,
   onCadence,
+  onCommitTitle,
+  onCommitEstimate,
   onOpen,
-  onCommitted,
 }: {
   task: Task;
   onCadence: (value: string) => void;
+  onCommitTitle: (value: string) => void;
+  onCommitEstimate: (minutes: number | null) => void;
   onOpen: () => void;
-  onCommitted: () => void;
 }) {
   const [title, setTitle] = useState(task.title);
   const [estimate, setEstimate] = useState(
@@ -121,32 +150,22 @@ function RepeatingRow({
   );
   const freq = parseRecurrence(task.recurrence)?.freq ?? "daily";
 
-  async function commitTitle() {
+  function commitTitle() {
     const v = title.trim();
     if (!v || v === task.title) {
       setTitle(task.title);
       return;
     }
-    try {
-      await updateTaskTitle(task.id, v);
-      onCommitted();
-    } catch {
-      setTitle(task.title);
-    }
+    onCommitTitle(v);
   }
 
-  async function commitEstimate() {
+  function commitEstimate() {
     const total = parseEstimate(estimate);
     if (total === (task.estimated_minutes ?? 0)) {
       setEstimate(task.estimated_minutes ? formatHoursMinutes(task.estimated_minutes) : "");
       return;
     }
-    try {
-      await updateTaskEstimate(task.id, total > 0 ? total : null);
-      onCommitted();
-    } catch {
-      onCommitted();
-    }
+    onCommitEstimate(total > 0 ? total : null);
   }
 
   return (

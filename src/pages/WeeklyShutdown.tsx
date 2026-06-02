@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { onProjectChanged } from "../utils/projectEvents";
 import { useAppStore } from "../stores/appStore";
 import {
@@ -303,9 +303,6 @@ export default function WeeklyShutdown() {
   const [error, setError] = useState<string | null>(null);
   const [showPlanPrompt, setShowPlanPrompt] = useState(false);
 
-  const selectedWeekRef = useRef(selectedWeek);
-  selectedWeekRef.current = selectedWeek;
-
   const fridayIso = getFridayIso(selectedWeek);
   const todayMonday = getMondayOfWeek();
   const weekDates = getWeekdayDates(selectedWeek);
@@ -357,7 +354,7 @@ export default function WeeklyShutdown() {
     // Shutdowns) still show the week as completed. Reflection fields
     // and mood removed per the daily-reflection consolidation.
     try {
-      await upsertWeeklyShutdown(selectedWeekRef.current, null, null, null);
+      await upsertWeeklyShutdown(selectedWeek, null, null, null);
     } catch (e) {
       setError(errorMessage(e, "Failed to save shutdown"));
       return;

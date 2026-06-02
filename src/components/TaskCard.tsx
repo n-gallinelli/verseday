@@ -61,45 +61,10 @@ interface TaskCardProps {
   onOpenProject?: (projectId: number) => void;
 }
 
-function TrashButton({ onDelete }: { onDelete: () => void }) {
-  // One click → onDelete fires (which sets confirmDeleteId in the parent
-  // and renders the inline Delete/Cancel confirmation row). No more "armed"
-  // intermediate state — it was a redundant gate on top of the inline
-  // confirmation, which is the actual destructive prompt.
-  return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onDelete();
-      }}
-      // Solid bg so the icon stays readable when overlaid on the title.
-      // Picks up the elevated surface tone instead of the destructive
-      // soft-tint so it doesn't read as "armed" — destructive intent only
-      // surfaces on hover (text and bg shift to accent-destructive).
-      // Visibility is controlled by the parent layer's opacity, so this
-      // class only handles colors.
-      className="w-6 h-6 rounded-full flex items-center justify-center cursor-pointer transition-colors duration-150 text-fg-faded bg-elevated border border-line-soft hover:text-accent-destructive hover:bg-accent-destructive/15 hover:border-accent-destructive/30"
-      title="Delete"
-    >
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M2 4h12" />
-        <path d="M5 4V3a1 1 0 011-1h4a1 1 0 011 1v1" />
-        <path d="M13 4v9a1 1 0 01-1 1H4a1 1 0 01-1-1V4" />
-        <line x1="6.5" y1="7" x2="6.5" y2="11" />
-        <line x1="9.5" y1="7" x2="9.5" y2="11" />
-      </svg>
-    </button>
-  );
-}
-
 function TaskCardImpl({
   taskId,
   project,
   onToggle,
-  onEdit,
-  onDelete,
-  onToggleNotes,
-  onStart,
   onOpenDetail,
   expandedNotes,
   showProject = true,
@@ -279,7 +244,6 @@ function TaskCardImpl({
   }
 
   const isHigh = task.priority === "high" || task.priority === "urgent";
-  const hasContent = task.notes || expandedNotes;
 
   return (
     <div

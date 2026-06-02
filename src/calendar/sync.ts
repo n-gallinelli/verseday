@@ -170,15 +170,3 @@ export async function syncCalendarEventsForDate(
 
   return { created, skipped };
 }
-
-// ───────────────────────────────────────────────────────────────────
-// Test surface — exported for unit/manual verification only.
-// ───────────────────────────────────────────────────────────────────
-
-export const _internals = {
-  TTL_MS,
-  TTL_MAP_CAP,
-  lastSyncByDate,
-  dateFromStartLocal,
-  estimatedMinutesForEvent,
-};

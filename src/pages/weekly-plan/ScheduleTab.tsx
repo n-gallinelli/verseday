@@ -30,13 +30,6 @@ import { formatHoursMinutes } from "../../utils/format";
 import type { Task, Project } from "../../types";
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-const MAX_TITLE_LENGTH = 200;
-
-function getFridayIso(mondayIso: string): string {
-  const d = new Date(mondayIso + "T00:00:00");
-  d.setDate(d.getDate() + 4);
-  return localDateIso(d);
-}
 
 function dateToDayAbbrev(
   dateScheduled: string | null,
@@ -591,7 +584,6 @@ export default function ScheduleTab() {
   selectedWeekRef.current = selectedWeek;
 
   const weekDates = getWeekdayDates(selectedWeek);
-  const fridayIso = getFridayIso(selectedWeek);
   const todayStr = todayString();
 
   const projectMap = new Map(projects.map((p) => [p.id, p]));
@@ -720,7 +712,7 @@ export default function ScheduleTab() {
         loadData();
       }
     }
-  }, [selectedTaskDetailId, selectedWeek, fridayIso, loadData, deleteTaskAction]);
+  }, [selectedTaskDetailId, selectedWeek, loadData, deleteTaskAction]);
 
 
   function navigateToProject(id: number) {

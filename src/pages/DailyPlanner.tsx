@@ -286,7 +286,6 @@ export default function DailyPlanner() {
 
   const hourBudget = dailyPlan?.hour_budget ?? 8;
   const plannedHours = plannedMinutes / 60;
-  const workedHours = workedMinutes / 60;
 
   // #8 — memoized so it's rebuilt only when `projects` changes, not on every
   // render (it feeds row rendering on a list that re-renders each focus tick).
@@ -937,16 +936,6 @@ export default function DailyPlanner() {
   }, [selectedDate]);
 
   const isToday = selectedDate === todayString();
-  const progressPercent =
-    plannedHours > 0
-      ? Math.min((workedHours / plannedHours) * 100, 100)
-      : 0;
-
-  const selectedProjectName =
-    newTaskProjectId
-      ? projects.find((p) => p.id === parseInt(newTaskProjectId))?.name ??
-        "No project"
-      : "No project";
 
   // Sort tasks: incomplete first, completed at bottom (stable within each group)
   const sortedTasks = [...tasks].sort((a, b) =>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { onProjectChanged } from "../utils/projectEvents";
 import Button from "./Button";
 import ProjectGlyph from "./ProjectGlyph";
@@ -294,7 +294,6 @@ export default function SummaryOverlay({ type, anchorDate, onClose }: SummaryOve
   }, []);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
-  const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -371,7 +370,6 @@ export default function SummaryOverlay({ type, anchorDate, onClose }: SummaryOve
     >
       <div className="absolute inset-0 bg-overlay-scrim" />
       <div
-        ref={modalRef}
         className="relative bg-elevated rounded-xl w-[640px] max-w-[92vw] max-h-[85vh] flex flex-col overflow-hidden animate-scale-in"
         style={{ boxShadow: "var(--shadow-modal)" }}
         onClick={(e) => e.stopPropagation()}

@@ -12,11 +12,6 @@ import RichTextEditor from "./RichTextEditor";
 import SimpleSelect from "./SimpleSelect";
 import type { Task, Project } from "../types";
 
-// Sanity belt only — render surfaces use `truncate`, no UI gates titles
-// below this. Bumped from 200 (an old product opinion) so titles can be as
-// long as the user needs them in the detail overlay; truncate-with-ellipsis
-// keeps lists scannable.
-const MAX_TITLE_LENGTH = 5000;
 const MAX_ESTIMATE_MINUTES = 480;
 
 // Experiment: render the Time section like the daily plan's task-row
@@ -114,7 +109,6 @@ function TimeFieldPill({
   autoTrackedNote?: string;
   hideLabel?: boolean;
 }) {
-  const pillRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
   const [rawInput, setRawInput] = useState("");
@@ -172,7 +166,7 @@ function TimeFieldPill({
   }, [isOpen]);
 
   return (
-    <div className="relative" ref={pillRef}>
+    <div className="relative">
       {/* Pill: trigger + × clear affordance share one styled container —
           mirrors CalendarPicker's pill so the DATES and TIME rows read
           as a consistent set. × space is reserved when onReset is
@@ -407,7 +401,7 @@ export default function TaskDetailOverlay({
     () => activeObjectiveOptions(projects, projectId),
     [projects, projectId],
   );
-  const [priority, setPriority] = useState(task.priority);
+  const [priority] = useState(task.priority);
   const [dateScheduled, setDateScheduled] = useState(task.date_scheduled ?? "");
   const [dueDate, setDueDate] = useState(task.due_date ?? "");
   const [worked, setWorked] = useState(workedMinutes > 0 ? workedMinutes.toString() : "");
@@ -431,7 +425,6 @@ export default function TaskDetailOverlay({
   // save is queued, 'saved' for ~1.5s after a save fires, 'idle' at
   // steady state.
   const [saveState, setSaveState] = useState<"idle" | "pending" | "saved">("idle");
-  const modalRef = useRef<HTMLDivElement>(null);
 
   // Load per-day breakdown
   useEffect(() => {
@@ -629,7 +622,6 @@ export default function TaskDetailOverlay({
     >
       <div className="absolute inset-0 bg-overlay-scrim" />
       <div
-        ref={modalRef}
         className="relative bg-elevated rounded-[12px] w-[880px] max-w-[94vw] max-h-[88vh] flex flex-col overflow-hidden animate-scale-in"
         style={{ boxShadow: "var(--shadow-modal)" }}
         onClick={(e) => { e.stopPropagation(); handleModalClick(e); }}
@@ -1034,8 +1026,10 @@ export default function TaskDetailOverlay({
             {dayBreakdown.length > 1 && (
               <PropertyRow label="Worked on">
                 <div className="flex flex-wrap gap-1.5 w-full">
-                  {dayBreakdown.map((d) => {
+                  {(() => {
+                    // Hoisted out of the per-row map — was O(n²).
                     const maxMin = Math.max(...dayBreakdown.map((x) => x.minutes));
+                    return dayBreakdown.map((d) => {
                     const barWidth = maxMin > 0 ? Math.max(12, Math.round((d.minutes / maxMin) * 100)) : 12;
                     return (
                       <div key={d.date} className="flex items-center gap-1.5 bg-elevated rounded-md px-2 py-1 border border-divider">
@@ -1049,7 +1043,8 @@ export default function TaskDetailOverlay({
                         <span className="text-[10px] text-fg-secondary font-medium">{formatHoursMinutes(d.minutes)}</span>
                       </div>
                     );
-                  })}
+                    });
+                  })()}
                 </div>
               </PropertyRow>
             )}

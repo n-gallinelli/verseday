@@ -12,6 +12,7 @@ import {
   getTimeEntryById,
   getWorkedMinutesForTaskIds,
   getRecurringTemplates,
+  rolloverUnfinishedTasks as dbRolloverUnfinishedTasks,
   setTaskRecurrence as dbSetTaskRecurrence,
   setManualWorkedMinutes as dbSetManualWorkedMinutes,
   setTaskStatusFromUI,
@@ -88,7 +89,7 @@ function isTemplate(t: Task): boolean {
 /** State patch: insert `task` into tasksById and the relevant secondary
  *  indices. Pure — caller passes to set((s) => ...). Templates are added to
  *  the map but excluded from every list index. */
-function withTaskInserted(s: AppState, task: Task): Partial<AppState> {
+export function withTaskInserted(s: AppState, task: Task): Partial<AppState> {
   const nextMap = new Map(s.tasksById);
   nextMap.set(task.id, task);
   let nextDateIdx = s.taskIdsByDate;
@@ -339,6 +340,11 @@ interface AppState {
    *  it out of (or back into) the date/week/project indices. Refetch-truth on
    *  failure; rethrows the invalid-format validation error. */
   setTaskRecurrenceAction: (taskId: number, recurrence: string | null) => Promise<void>;
+  /** P6 — run the unfinished-task rollover for `today` and reconcile EVERY
+   *  bucket it moved (source past dates + their weeks, today + its week, and
+   *  the unscheduled set for expired tasks) via withTaskMutated — not just the
+   *  active date. Replaces the raw rolloverUnfinishedTasks call. */
+  rolloverTasksAction: (today: string) => Promise<void>;
   /** P2.2c — stop+commit the live focus session IFF it's the active session
    *  for `taskId`: write worked_seconds (from focus.workedMs) + end_time,
    *  refresh workedByTaskId[taskId] from DB, and clear focus in ONE atomic
@@ -1627,6 +1633,41 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (err) {
       console.error("[appStore] loadTemplates failed", err);
     }
+  },
+  rolloverTasksAction: async (today) => {
+    let moved;
+    try {
+      moved = await dbRolloverUnfinishedTasks(today);
+    } catch (err) {
+      console.error("[appStore] rolloverTasksAction failed", { today, err });
+      return;
+    }
+    if (moved.length === 0) return;
+    set((s) => {
+      // Reconcile each moved task through withTaskMutated: the store's current
+      // copy (before) carries the OLD date, so this removes it from the old
+      // date+week (and project, unchanged) indices and adds it to the new
+      // date/week — or, for expired tasks (toDate null), drops it from the
+      // date/week indices entirely. Tasks not currently in the store are
+      // skipped (not indexed → nothing stale). The caller still does
+      // loadTasksForDate(today) afterward for today's exact sort/fields.
+      let working: AppState = s;
+      for (const m of moved) {
+        const before = working.tasksById.get(m.id);
+        if (before) {
+          working = {
+            ...working,
+            ...withTaskMutated(working, before, { ...before, date_scheduled: m.toDate }),
+          } as AppState;
+        }
+      }
+      return {
+        tasksById: working.tasksById,
+        taskIdsByDate: working.taskIdsByDate,
+        taskIdsByWeek: working.taskIdsByWeek,
+        taskIdsByProject: working.taskIdsByProject,
+      };
+    });
   },
   setTaskRecurrenceAction: async (taskId, recurrence) => {
     const before = get().tasksById.get(taskId);

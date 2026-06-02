@@ -762,6 +762,14 @@ export function selectProjectById(state: AppState, id: number | null): Project |
   return id == null ? undefined : state.projectsById.get(id);
 }
 
+/** Selector: ALL projects incl. archived (equivalent to getProjects(true)).
+ *  For surfaces that resolve chips for tasks on archived projects
+ *  (PastShutdowns, WeeklyShutdown) — they must NOT use a status selector,
+ *  which would drop archived projects. Fresh array — consume with useShallow. */
+export function selectAllProjects(state: AppState): Project[] {
+  return Array.from(state.projectsById.values());
+}
+
 /** Selector: objectives offered in a task's Objective dropdown — active
  *  (archived = 0) and NOT completed, name-ordered, with the current selection
  *  retained even if it's since been archived/completed (so an existing

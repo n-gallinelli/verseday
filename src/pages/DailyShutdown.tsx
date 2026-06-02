@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { onProjectChanged } from "../utils/projectEvents";
-import { selectTaskIdsByDate, useAppStore } from "../stores/appStore";
+import { useShallow } from "zustand/react/shallow";
+import {
+  selectProjectsByStatus,
+  selectTaskIdsByDate,
+  useAppStore,
+} from "../stores/appStore";
 import {
   getDailyPlan,
   getWorkedMinutesForTaskIds,
   updateTaskDateScheduled,
   upsertDailyShutdown,
-  getProjects,
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
@@ -14,7 +17,7 @@ import { todayString, localDateIso } from "../utils/dates";
 import { formatHoursMinutes } from "../utils/format";
 import MoodSelector from "../components/MoodSelector";
 import CalendarChip from "../components/CalendarChip";
-import type { Task, Project } from "../types";
+import type { Task } from "../types";
 
 const SHUTDOWN_KEY_PREFIX = "daily-shutdown-";
 
@@ -67,22 +70,7 @@ export default function DailyShutdown() {
     return out;
   }, [dayTaskIds, tasksById]);
 
-  const [projects, setProjects] = useState<Project[]>([]);
-  // #3 — refresh on verseday:project-changed. Read-only → no loop; guarded.
-  useEffect(() => {
-    let mounted = true;
-    const off = onProjectChanged(() => {
-      getProjects(false)
-        .then((p) => {
-          if (mounted) setProjects(p);
-        })
-        .catch(() => {});
-    });
-    return () => {
-      mounted = false;
-      off();
-    };
-  }, []);
+  const projects = useAppStore(useShallow((s) => selectProjectsByStatus(s, "active")));
   const [error, setError] = useState<string | null>(null);
 
   const [mood, setMood] = useState<string | null>(null);
@@ -105,13 +93,11 @@ export default function DailyShutdown() {
 
   const loadData = useCallback(async () => {
     try {
-      const [_, dp, p] = await Promise.all([
+      const [_, dp] = await Promise.all([
         loadTasksForDate(selectedDate),
         getDailyPlan(selectedDate),
-        getProjects(false),
       ]);
       void _;
-      setProjects(p);
       setMood(dp?.mood ?? null);
       setReflectionFields(parseReflection(dp?.reflection ?? ""));
       setIsShutdown(

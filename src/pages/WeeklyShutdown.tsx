@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { onProjectChanged } from "../utils/projectEvents";
-import { useAppStore } from "../stores/appStore";
+import { useShallow } from "zustand/react/shallow";
+import { selectAllProjects, useAppStore } from "../stores/appStore";
 import {
   getWeeklyShutdown,
   upsertWeeklyShutdown,
   getTasksCompletedInWeek,
-  getProjects,
   getWorkedMinutesPerProjectPerDay,
   getWorkedMinutesForTaskIds,
   hasWeekBeenPlanned,
@@ -281,23 +280,7 @@ export default function WeeklyShutdown() {
     }
     return out;
   }, [completedTaskIds, tasksById]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  // #3 — refresh on verseday:project-changed (include archived; tasks may
-  // belong to archived projects). Read-only → no loop; mounted-guarded.
-  useEffect(() => {
-    let mounted = true;
-    const off = onProjectChanged(() => {
-      getProjects(true)
-        .then((p) => {
-          if (mounted) setProjects(p);
-        })
-        .catch(() => {});
-    });
-    return () => {
-      mounted = false;
-      off();
-    };
-  }, []);
+  const projects = useAppStore(useShallow((s) => selectAllProjects(s)));
   const [workedByDay, setWorkedByDay] = useState<Map<string, Map<number, number>>>(new Map());
   const [workedPerTask, setWorkedPerTask] = useState<Map<number, number>>(new Map());
   const [error, setError] = useState<string | null>(null);
@@ -320,16 +303,14 @@ export default function WeeklyShutdown() {
 
   const loadData = useCallback(async () => {
     try {
-      const [completed, p, perDay] = await Promise.all([
+      const [completed, perDay] = await Promise.all([
         getTasksCompletedInWeek(selectedWeek, fridayIso),
-        getProjects(true), // include archived; tasks may belong to archived projects
         getWorkedMinutesPerProjectPerDay(selectedWeek, fridayIso),
       ]);
       // Prime canonical map first so the render below resolves each
       // id without a flash of empty rows.
       primeTasks(completed);
       setCompletedTaskIds(completed.map((t) => t.id));
-      setProjects(p);
       setWorkedByDay(perDay);
       if (completed.length > 0) {
         const wpt = await getWorkedMinutesForTaskIds(completed.map((t) => t.id));

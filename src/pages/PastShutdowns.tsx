@@ -1,46 +1,22 @@
 import { useEffect, useState } from "react";
-import { onProjectChanged } from "../utils/projectEvents";
-import { getCompletedShutdowns, getProjects, type CompletedShutdown } from "../db/queries";
-import { useAppStore } from "../stores/appStore";
-import type { Project } from "../types";
+import { useShallow } from "zustand/react/shallow";
+import { getCompletedShutdowns, type CompletedShutdown } from "../db/queries";
+import { selectAllProjects, useAppStore } from "../stores/appStore";
 import PastShutdownCard from "../components/PastShutdownCard";
 
 export default function PastShutdowns() {
   const setPage = useAppStore((s) => s.setPage);
   const [shutdowns, setShutdowns] = useState<CompletedShutdown[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  // #3 — refresh project name/color on verseday:project-changed. Past
-  // shutdowns are historical for their TASK data, but project identity
-  // (name/color) is a living attribute and should read consistently — so we
-  // re-fetch projects only; the historical content is untouched. Read-only →
-  // no loop; mounted-guarded.
-  useEffect(() => {
-    let mounted = true;
-    const off = onProjectChanged(() => {
-      getProjects(true)
-        .then((p) => {
-          if (mounted) setProjects(p);
-        })
-        .catch(() => {});
-    });
-    return () => {
-      mounted = false;
-      off();
-    };
-  }, []);
+  const projects = useAppStore(useShallow((s) => selectAllProjects(s)));
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const [s, p] = await Promise.all([
-          getCompletedShutdowns(),
-          getProjects(true),
-        ]);
+        const s = await getCompletedShutdowns();
         if (!active) return;
         setShutdowns(s);
-        setProjects(p);
       } finally {
         if (active) setLoading(false);
       }

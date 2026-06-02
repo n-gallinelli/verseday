@@ -298,7 +298,18 @@ export default function DailyPlanner() {
   // Collapse task input on click outside
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (taskInputRef.current && !taskInputRef.current.contains(e.target as Node)) {
+      const t = e.target;
+      // Picker dropdowns (ProjectPicker) render through a portal to
+      // document.body, so a click on an option is technically "outside"
+      // taskInputRef — without this guard, selecting a project collapses
+      // the add row. Treat marked portal popovers as part of the open
+      // adder. `t` can be a non-Element (e.g. document), so guard before
+      // calling .closest().
+      if (
+        taskInputRef.current &&
+        !taskInputRef.current.contains(t as Node) &&
+        !(t instanceof Element && t.closest("[data-portal-popover]"))
+      ) {
         setTaskInputExpanded(false);
       }
     }

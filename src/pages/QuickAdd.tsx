@@ -1,15 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { getProjects, createTask } from "../db/queries";
 import { todayString } from "../utils/dates";
+import { activeObjectiveOptions } from "../utils/objectiveOptions";
+import ProjectGlyph from "../components/ProjectGlyph";
+import { useCustomIcons } from "../hooks/useCustomIcons";
 import type { Project } from "../types";
 
 const ESTIMATE_PRESETS = [
+  { label: "5m", value: 5 },
   { label: "15m", value: 15 },
   { label: "30m", value: 30 },
   { label: "1h", value: 60 },
-  { label: "2h", value: 120 },
 ];
 
 export default function QuickAdd() {
@@ -30,9 +34,15 @@ export default function QuickAdd() {
     setShowProjectPicker(false);
   }, []);
 
+  const { byId: iconsById } = useCustomIcons();
+
   const loadProjects = useCallback(async () => {
     try {
-      const all = await getProjects();
+      // Same source + filter the rest of the app uses (DailyPlanner,
+      // TaskDetail): active objectives only. getProjects(false) drops
+      // archived; activeObjectiveOptions additionally drops completed, so
+      // the QuickAdd list can't drift from the canonical objective set.
+      const all = await getProjects(false);
       setProjects(all);
     } catch {
       // silent
@@ -128,13 +138,19 @@ export default function QuickAdd() {
 
     setSubmitting(true);
     try {
+      const date = todayString();
       await createTask({
         title: trimmed,
         projectId,
-        dateScheduled: todayString(),
+        dateScheduled: date,
         estimatedMinutes: estimateMinutes,
         priority: "medium",
       });
+      // Cross-webview notify: this is a separate window with its own store,
+      // so the main window can't see the insert. A Tauri global event tells
+      // it to re-read today's bucket from the DB so the task shows up
+      // immediately. Awaited so delivery is guaranteed before we dismiss.
+      await emit("verseday:task-created", { date });
       hideWindow();
     } catch (e) {
       console.error("QuickAdd: failed to create task", e);
@@ -159,6 +175,13 @@ export default function QuickAdd() {
     [hideWindow, handleSubmit, showProjectPicker],
   );
 
+  // Canonical active-objective list, with the current selection always
+  // retained even if it's since been completed/archived (matches the rest
+  // of the app via the shared helper).
+  const objectiveOptions = activeObjectiveOptions(
+    projects,
+    projectId != null ? String(projectId) : "",
+  );
   const selectedProject = projects.find((p) => p.id === projectId);
 
   return (
@@ -280,10 +303,9 @@ export default function QuickAdd() {
             style={{ maxWidth: 150 }}
           >
             {selectedProject && (
-              <span
-                className="w-2 h-2 rounded-full flex-shrink-0"
-                style={{ background: selectedProject.color }}
-              />
+              <span className="flex-shrink-0">
+                <ProjectGlyph project={selectedProject} iconsById={iconsById} size={14} />
+              </span>
             )}
             <span className="truncate">
               {selectedProject ? selectedProject.name : "Project"}
@@ -324,7 +346,7 @@ export default function QuickAdd() {
                 No project
               </button>
 
-              {projects.map((p) => (
+              {objectiveOptions.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => { setProjectId(p.id); setShowProjectPicker(false); }}
@@ -334,10 +356,7 @@ export default function QuickAdd() {
                       : "text-fg hover:bg-overlay-hover"
                   }`}
                 >
-                  <span
-                    className="w-2 h-2 rounded-full flex-shrink-0"
-                    style={{ background: p.color }}
-                  />
+                  <ProjectGlyph project={p} iconsById={iconsById} size={14} />
                   <span className="truncate">{p.name}</span>
                 </button>
               ))}

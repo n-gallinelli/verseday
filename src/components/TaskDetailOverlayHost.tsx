@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { onProjectChanged } from "../utils/projectEvents";
 import TaskDetailOverlay from "./TaskDetailOverlay";
-import { selectTaskDetailTask, useAppStore } from "../stores/appStore";
+import { selectTaskDetailTask, selectWorkedMinutesWithLive, useAppStore } from "../stores/appStore";
 import {
   getProjects,
   getTaskById,
@@ -36,6 +36,7 @@ export default function TaskDetailOverlayHost() {
   const deleteTaskAction = useAppStore((s) => s.deleteTaskAction);
   const setTaskStatusAction = useAppStore((s) => s.setTaskStatus);
   const setTaskWorkedMinutesAction = useAppStore((s) => s.setTaskWorkedMinutesAction);
+  const loadWorkedMinutesAction = useAppStore((s) => s.loadWorkedMinutes);
   const task = useAppStore(selectTaskDetailTask);
 
   const [projects, setProjects] = useState<Project[]>([]);
@@ -57,7 +58,12 @@ export default function TaskDetailOverlayHost() {
       off();
     };
   }, []);
-  const [workedMinutes, setWorkedMinutes] = useState(0);
+  // P2 — worked-minutes read from the canonical store (committed + live
+  // session via the shared derivation), not a private one-shot fetch.
+  const workedMinutes = useAppStore((s) => {
+    const t = selectTaskDetailTask(s);
+    return t ? selectWorkedMinutesWithLive(s, t.id) : 0;
+  });
 
   // Cache-miss fallback. If a screen hasn't primed the canonical map
   // for this id (e.g., the overlay is opened from a context where the
@@ -89,21 +95,12 @@ export default function TaskDetailOverlayHost() {
     };
   }, []);
 
+  // Ensure the canonical worked index is populated/fresh for this task when
+  // the overlay opens (it may be opened from a context that never loaded it).
   useEffect(() => {
-    if (!task) {
-      setWorkedMinutes(0);
-      return;
-    }
-    let cancelled = false;
-    getWorkedMinutesForTask(task.id)
-      .then((m) => {
-        if (!cancelled) setWorkedMinutes(m);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [task?.id]);
+    if (!task) return;
+    void loadWorkedMinutesAction([task.id]);
+  }, [task?.id, loadWorkedMinutesAction]);
 
   if (!task) return null;
 
@@ -153,8 +150,10 @@ export default function TaskDetailOverlayHost() {
 
   async function handleSetWorkedMinutes(id: number, minutes: number) {
     try {
+      // setTaskWorkedMinutesAction mirrors the new value into the canonical
+      // workedByTaskId index, so the derived `workedMinutes` updates on its
+      // own — no local setter needed.
       await setTaskWorkedMinutesAction(id, minutes);
-      setWorkedMinutes(minutes);
     } catch {
       // silent — surfaces via existing error pathways
     }

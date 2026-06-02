@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getSetting } from "../../db/queries";
+import { useAppStore } from "../../stores/appStore";
 import {
   getEnabled,
   setEnabled as setEnabledSetting,
@@ -225,6 +226,9 @@ export default function CalendarSettings() {
     try {
       const result = await syncNow(todayString());
       if (result.created > 0) {
+        // P6 — reconcile the canonical store so imported rows land in
+        // tasksById/taskIdsByDate (every surface sees them, no remount).
+        await useAppStore.getState().loadTasksForDate(todayString());
         setToast(`Synced ${result.created} event${result.created === 1 ? "" : "s"}.`);
       }
     } catch (e) {
@@ -325,6 +329,8 @@ export default function CalendarSettings() {
       }
       const result = await syncNow(todayString());
       if (result.created > 0) {
+        // P6 — reconcile the canonical store (see fireInitialSync).
+        await useAppStore.getState().loadTasksForDate(todayString());
         setSyncFeedback(`Synced ${result.created}.`);
       } else if (result.skipped > 0) {
         setSyncFeedback("Up to date.");

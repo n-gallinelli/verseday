@@ -281,7 +281,17 @@ export async function getProjectById(id: number): Promise<Project | null> {
  *   order (#10) so they don't collide with today's existing `sort_order`.
  * - Only call this for today's date, never for navigated dates.
  */
-export async function rolloverUnfinishedTasks(today: string): Promise<void> {
+/** What a rollover moved, so the store can reconcile EVERY affected bucket
+ *  (source past dates + their weeks, today + its week, the unscheduled set) —
+ *  not just the active one. `toDate` is `today` for rolled tasks, `null` for
+ *  expired (unscheduled) ones. P6. */
+export interface RolloverMove {
+  id: number;
+  fromDate: string;
+  toDate: string | null;
+}
+
+export async function rolloverUnfinishedTasks(today: string): Promise<RolloverMove[]> {
   const db = await getDb();
 
   // #10 — capture the rows about to roll forward, in a deterministic order
@@ -290,6 +300,26 @@ export async function rolloverUnfinishedTasks(today: string): Promise<void> {
   // today's tasks; a later drag-reorder would then persist an order the user
   // never saw.
   const toRoll: { id: number }[] = await db.select(SQL_ROLLOVER_CAPTURE, [today]);
+
+  // P6 — capture old dates of the rolling set + the expiring set BEFORE the
+  // move, so the caller can reconcile the source buckets they vacate.
+  const rolledIdList = toRoll.map((t) => t.id).join(",");
+  const rolledDates: { id: number; date_scheduled: string }[] =
+    toRoll.length > 0
+      ? await db.select(
+          `SELECT id, date_scheduled FROM tasks WHERE id IN (${rolledIdList})`,
+          []
+        )
+      : [];
+  const expiredRows: { id: number; date_scheduled: string }[] = await db.select(
+    `SELECT id, date_scheduled FROM tasks
+       WHERE date_scheduled < $1
+         AND status != 'done'
+         AND rollover_count >= 4
+         AND recurrence_source_id IS NULL
+         AND external_source IS NULL`,
+    [today]
+  );
 
   // Roll forward: tasks from past dates, not done, rolled fewer than 4 times.
   // Skip calendar-imported tasks — they are date-specific snapshots from
@@ -325,6 +355,14 @@ export async function rolloverUnfinishedTasks(today: string): Promise<void> {
       []
     );
   }
+
+  const fromById = new Map(rolledDates.map((r) => [r.id, r.date_scheduled]));
+  return [
+    ...toRoll
+      .map((t) => ({ id: t.id, fromDate: fromById.get(t.id), toDate: today as string | null }))
+      .filter((m): m is RolloverMove => m.fromDate != null),
+    ...expiredRows.map((r) => ({ id: r.id, fromDate: r.date_scheduled, toDate: null as string | null })),
+  ];
 }
 
 export async function getTaskById(id: number): Promise<Task | null> {

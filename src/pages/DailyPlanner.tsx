@@ -31,7 +31,6 @@ import {
   getWorkedMinutesForTask,
   getProjectStats,
   generateRecurringInstances,
-  rolloverUnfinishedTasks,
 } from "../db/queries";
 import { todayString, localDateIso } from "../utils/dates";
 import ErrorBanner from "../components/ErrorBanner";
@@ -76,6 +75,7 @@ export default function DailyPlanner() {
   const taskIds = useAppStore((s) => selectTaskIdsByDate(s, selectedDate));
   const tasksById = useAppStore((s) => s.tasksById);
   const loadTasksForDate = useAppStore((s) => s.loadTasksForDate);
+  const rolloverTasksAction = useAppStore((s) => s.rolloverTasksAction);
   const loadSidebarPool = useAppStore((s) => s.loadSidebarPool);
   const updateTaskAction = useAppStore((s) => s.updateTask);
   const deleteTaskAction = useAppStore((s) => s.deleteTaskAction);
@@ -401,9 +401,11 @@ export default function DailyPlanner() {
       // Generate recurring task instances for this date before loading
       await generateRecurringInstances(selectedDate);
       const todayIso = todayString();
-      // Roll over unfinished tasks from previous days (only for today)
+      // Roll over unfinished tasks from previous days (only for today).
+      // P6 — store action reconciles every bucket the rollover moved (source
+      // past dates + weeks, today, the unscheduled set), not just today.
       if (selectedDate === todayIso) {
-        await rolloverUnfinishedTasks(todayIso);
+        await rolloverTasksAction(todayIso);
       }
       // M3.2.b.1 — main task list goes through the store via
       // loadTasksForDate; the selector subscription re-renders the
@@ -466,7 +468,11 @@ export default function DailyPlanner() {
   // every visibility ping that produces zero new rows).
   useEffect(() => {
     if (calendarLastResultAt === null) return;
-    loadData();
+    // P6 — reconcile via the canonical store (was a full loadData()): the
+    // imported calendar rows land in tasksById/taskIdsByDate so every surface
+    // sees them, and we skip the redundant rollover/stats refresh a calendar
+    // import doesn't change.
+    loadTasksForDate(selectedDate);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calendarLastResultAt]);
 

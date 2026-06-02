@@ -51,13 +51,14 @@ function BarChart({
   plannedByDay: Map<string, number>;
   workedByDay: Map<string, number>;
 }) {
-  // Fixed 9h y-axis — gives headroom over a standard working day so longer
-  // days still read as longer. Days that exceed it cap at the top (Math.min
-  // below); rare and acceptable.
-  const yAxisMax = 9;
+  // Fixed 8h y-axis — a standard working day. Days that exceed it cap at the
+  // top (Math.min below); rare and acceptable. Step 4 keeps the labels (8/4/0)
+  // evenly spaced AND at their true heights (a step that doesn't divide the
+  // max would put e.g. "6" at the wrong fraction of the column).
+  const yAxisMax = 8;
 
   const yLabels: number[] = [];
-  const step = 3;
+  const step = 4;
   for (let i = 0; i <= yAxisMax; i += step) {
     yLabels.push(i);
   }

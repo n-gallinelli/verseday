@@ -26,6 +26,9 @@ interface PipState {
   breakRemaining: number;
   taskTitle: string;
   estimatedMinutes: number | null;
+  // P-fix2: the session is queued (preview, not yet started). The pip stays
+  // alive across the roll-to-next-task; its primary button starts the session.
+  queued: boolean;
 }
 
 function formatTime(ms: number): string {
@@ -464,7 +467,14 @@ export default function FocusPip() {
             propagation so the outer focus-on-click doesn't fire. */}
         <div
           onMouseEnter={() => setCssHovered(true)}
-          onMouseLeave={() => setCssHovered(false)}
+          onMouseLeave={() => {
+            // Clear BOTH hover sources. externallyHovered comes from the Rust
+            // global mouse monitor, which goes dormant while VerseDay is
+            // frontmost — so it can stay stuck `true` and keep the icons fanned
+            // out. A real CSS mouseLeave is authoritative that the cursor left.
+            setCssHovered(false);
+            setExternallyHovered(false);
+          }}
           className="absolute top-0 bottom-0 right-0 transition-[left] duration-150 ease-out"
           style={{ left: expanded ? 8 : 156 }}
         >
@@ -541,11 +551,11 @@ export default function FocusPip() {
               hover wrapper. Inside the wrapper so its hit area is part
               of the hover region. */}
           <button
-            onClick={(e) => { e.stopPropagation(); sendCommand("pause"); }}
+            onClick={(e) => { e.stopPropagation(); sendCommand(state.queued ? "start" : "pause"); }}
             className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg hover:bg-input-hover transition-colors"
-            title={state.paused ? "Resume" : "Pause"}
+            title={state.queued ? "Start" : state.paused ? "Resume" : "Pause"}
           >
-            {state.paused ? (
+            {state.queued || state.paused ? (
               // Resume: a blue play triangle, outline only (optically centered —
               // nudged ~1px right since a triangle's mass sits left of center).
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--accent-blue)" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" className="translate-x-px">

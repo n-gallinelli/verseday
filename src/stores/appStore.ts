@@ -10,6 +10,7 @@ import {
   getTasksForProject,
   getTasksForWeek,
   getTimeEntryById,
+  getWorkedMinutesForTaskIds,
   setManualWorkedMinutes as dbSetManualWorkedMinutes,
   setTaskStatusFromUI,
   toggleTaskHighlight as dbToggleTaskHighlight,
@@ -239,6 +240,17 @@ interface AppState {
    *  task is scheduled in. NULL-scheduled tasks are NOT in this index.
    *  Read via selectTaskIdsByWeek. */
   taskIdsByWeek: Map<string, number[]>;
+  /** Canonical worked-minutes-per-task index (P2). Committed/closed
+   *  time_entries only (end_time IS NOT NULL) — the live focus session's
+   *  open minutes are NOT here; consumers add them via the
+   *  selectWorkedMinutesWithLive derivation. Populated by
+   *  loadWorkedMinutes; refreshed by setTaskWorkedMinutesAction and on
+   *  focus stop so it never diverges from time_entries. */
+  workedByTaskId: Map<number, number>;
+  /** Refresh workedByTaskId for the given task ids from DB truth
+   *  (getWorkedMinutesForTaskIds). Ids absent from the result are set to
+   *  0 so a task whose entries were cleared drops to 0, not stale. */
+  loadWorkedMinutes: (taskIds: number[]) => Promise<void>;
   /** Open the singleton task detail overlay for `id`. Pass
    *  `{ autoFocusTitle: true }` to focus the title input on open
    *  (used by quick-add flows that create the task in draft state). */
@@ -654,6 +666,31 @@ export function selectTaskIdsByWeek(state: AppState, weekStart: string): number[
   return state.taskIdsByWeek.get(weekStart) ?? EMPTY_ID_LIST;
 }
 
+/** Selector: committed worked-minutes for `taskId` (closed time_entries
+ *  only — excludes any live focus session). */
+export function selectWorkedMinutes(state: AppState, taskId: number): number {
+  return state.workedByTaskId.get(taskId) ?? 0;
+}
+
+/** Selector: worked-minutes for `taskId` INCLUDING the live focus session.
+ *  P2 canonical derivation: committed closed-entry minutes
+ *  (workedByTaskId) + the current session's minutes (focus.workedMs) — and
+ *  ONLY when that task is the actively-running focus session. We add
+ *  focus.workedMs (session-only, reset to 0 at start), NOT priorElapsedMs:
+ *  priorElapsedMs is the committed baseline already counted in
+ *  workedByTaskId, so adding it would double-count. Once focus clears (or
+ *  pauses out of 'active'), this falls back to workedByTaskId alone — by
+ *  which point the stopped session's minutes have been committed + the
+ *  index refreshed (see commitFocusedSessionForTask), so there's no gap. */
+export function selectWorkedMinutesWithLive(state: AppState, taskId: number): number {
+  const committed = state.workedByTaskId.get(taskId) ?? 0;
+  const f = state.focus;
+  if (f && f.mode === "active" && f.taskId === taskId) {
+    return committed + Math.round(f.workedMs / 60000);
+  }
+  return committed;
+}
+
 /** R.2 — Right sidebar rebuild. Map of projectId → Task[] for
  *  projects that have at least one unscheduled, open task in the
  *  canonical map. Tasks within each project are sorted by
@@ -761,6 +798,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedTaskDetailId: null,
   taskDetailAutoFocusTitle: false,
   tasksById: new Map(),
+  workedByTaskId: new Map(),
   taskIdsByDate: new Map(),
   taskIdsByProject: new Map(),
   taskIdsByWeek: new Map(),
@@ -1379,12 +1417,34 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
   },
+  loadWorkedMinutes: async (taskIds) => {
+    if (taskIds.length === 0) return;
+    try {
+      const fresh = await getWorkedMinutesForTaskIds(taskIds);
+      set((s) => {
+        const next = new Map(s.workedByTaskId);
+        // Set every requested id explicitly — ids absent from the query
+        // result have zero committed minutes, so write 0 rather than leave
+        // a stale value behind.
+        for (const id of taskIds) next.set(id, fresh.get(id) ?? 0);
+        return { workedByTaskId: next };
+      });
+    } catch (err) {
+      console.error("[appStore] loadWorkedMinutes failed", { taskIds, err });
+    }
+  },
   setTaskWorkedMinutesAction: async (id, minutes) => {
     try {
       await dbSetManualWorkedMinutes(id, minutes);
-      // The query mutates time_entries, not the tasks row — the canonical
-      // Task entry doesn't change. workedMinutes-by-task is M3.3 territory.
-      //
+      // P2 — worked-minutes is now canonical in the store. The manual edit
+      // mutates time_entries; mirror the committed truth into workedByTaskId
+      // so every consumer (day total, row pills, badges) re-renders off one
+      // source. The tasks row itself is unchanged.
+      set((s) => {
+        const next = new Map(s.workedByTaskId);
+        next.set(id, minutes);
+        return { workedByTaskId: next };
+      });
       // #4 — if this task is the live focus session, keep its on-screen
       // elapsed readout in sync with the DB. setFocusPriorElapsedMs no-ops
       // unless focus.taskId === id, so this is safe for any task. Centralizing

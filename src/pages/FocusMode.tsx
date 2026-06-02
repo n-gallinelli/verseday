@@ -465,7 +465,6 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     prevPhaseRef.current = phase;
   }, [phase]);
 
-  const [, setWorkElapsed] = useState(0); // triggers re-render on work elapsed change
   const [breakRemaining, setBreakRemaining] = useState(0);
   const [breakDuration, setBreakDuration] = useState(0);
   const [prompt, setPrompt] = useState<BreakPrompt | null>(null);
@@ -576,7 +575,6 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         // "reset" mode and after a >= 2-min idle gap.
         const we = raw - totalBreakTimeRef.current + breakCarryRef.current;
         lastWorkElapsedRef.current = we;
-        setWorkElapsed(we);
 
         // Check if we've hit a pomodoro boundary
         const currentCycleElapsed = we - workCycleStartRef.current;
@@ -716,16 +714,6 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       if (cmd === "pause") handleTogglePauseRef.current();
       else if (cmd === "done") handleDoneRef.current();
       else if (cmd === "stop") handleStopRef.current();
-      else if (cmd === "requestBreak") {
-        setCompletedPomodoros((c) => {
-          const cycleNum = c + 1;
-          const isLong = cycleNum % CYCLES_BEFORE_LONG_BREAK === 0;
-          setPrompt({ isLongBreak: isLong });
-          setPhase("prompt");
-          playChime();
-          return cycleNum;
-        });
-      }
       else if (cmd === "takeBreak") handleTakeBreakRef.current(SHORT_BREAK_MS);
       else if (cmd === "snooze5") handleSnoozeRef.current();
       else if (cmd === "noBreak") handleNoBreakRef.current();
@@ -744,7 +732,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     // through *Ref.current). It made this 200ms poller tear down and rebuild
     // every second, opening a per-tick window where a PiP pause/stop click
     // could be dropped. Deps are only the values actually read in the body.
-  }, [SHORT_BREAK_MS, CYCLES_BEFORE_LONG_BREAK]);
+  }, [SHORT_BREAK_MS]);
 
   // Listen for Space shortcut from App.tsx
   useEffect(() => {

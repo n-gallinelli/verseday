@@ -280,12 +280,9 @@ function SortableTaskRow({
 
   // Parse "1h 30m" / "90m" / a bare "90" (treated as minutes) → total minutes.
   function parseTimeFlexible(input: string): number {
-    let total = parseTimeInput(input);
-    if (total === 0) {
-      const n = parseInt(input, 10);
-      if (!isNaN(n) && n > 0) total = n;
-    }
-    return total;
+    // parseTimeInput already handles the bare-integer case; the old extra
+    // fallback here was redundant.
+    return parseTimeInput(input);
   }
 
   function commitWorked() {
@@ -481,7 +478,6 @@ function SortableTaskRow({
 export default function ProjectDetail() {
   const { selectedProjectId, openProject, startFocus, goBack, setPage } = useAppStore();
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
-  const primeTasks = useAppStore((s) => s.primeTasks);
   // M3.2.b.2 — task list now flows through the canonical store. The
   // selector returns ID list for the project; resolution against
   // tasksById happens in a memo below. Per-row TaskCard subscription
@@ -1656,7 +1652,6 @@ function PdDayCell({
 }) {
   const { isOver, setNodeRef } = useDroppable({
     id: `${PD_DAY_DROP_PREFIX}${date}`,
-    data: { date },
   });
   const hasTasks = dayTasks.length > 0;
 
@@ -1715,7 +1710,6 @@ function PdDayTaskChip({
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `${PD_DAY_TASK_PREFIX}${task.id}`,
-    data: { taskId: task.id },
   });
 
   return (

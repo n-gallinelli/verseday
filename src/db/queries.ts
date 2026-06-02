@@ -242,15 +242,6 @@ export async function archiveProject(
   emitProjectChanged();
 }
 
-export async function getProjectTaskCount(id: number): Promise<number> {
-  const db = await getDb();
-  const rows: { count: number }[] = await db.select(
-    "SELECT COUNT(*) as count FROM tasks WHERE project_id = $1",
-    [id]
-  );
-  return rows[0]?.count ?? 0;
-}
-
 export async function deleteProject(id: number): Promise<void> {
   const db = await getDb();
   await db.execute("DELETE FROM projects WHERE id = $1", [id]);
@@ -402,19 +393,6 @@ export async function searchTasksByTitle(
        ORDER BY status = 'done', date_scheduled DESC, id DESC
        LIMIT $2`,
     [`%${trimmed}%`, limit]
-  );
-}
-
-export async function getIncompleteTasksForProjectIds(
-  projectIds: number[]
-): Promise<Task[]> {
-  if (projectIds.length === 0) return [];
-  const db = await getDb();
-  // SAFETY: IDs are TypeScript numbers from internal state, not user input.
-  const inList = projectIds.join(",");
-  return db.select(
-    `SELECT * FROM tasks WHERE project_id IN (${inList}) AND status != 'done' ORDER BY project_id, sort_order LIMIT 2000`,
-    []
   );
 }
 
@@ -1122,47 +1100,6 @@ export async function getProjectStats(): Promise<
   return map;
 }
 
-export async function getPreviewTasksForProjects(): Promise<Map<number, Task[]>> {
-  const db = await getDb();
-  // Fetch recent tasks per project — get a reasonable batch and group in JS
-  const rows: Task[] = await db.select(
-    `SELECT * FROM tasks
-     WHERE project_id IS NOT NULL AND status != 'done'
-     ORDER BY project_id, CASE WHEN date_scheduled IS NULL THEN 1 ELSE 0 END, date_scheduled, sort_order
-     LIMIT 500`
-  );
-  const map = new Map<number, Task[]>();
-  for (const task of rows) {
-    if (task.project_id == null) continue;
-    const existing = map.get(task.project_id) ?? [];
-    if (existing.length < 3) {
-      existing.push(task);
-      map.set(task.project_id, existing);
-    }
-  }
-  return map;
-}
-
-export async function getCompletedPreviewTasksForProjects(): Promise<Map<number, Task[]>> {
-  const db = await getDb();
-  const rows: Task[] = await db.select(
-    `SELECT * FROM tasks
-     WHERE project_id IS NOT NULL AND status = 'done'
-     ORDER BY project_id, sort_order DESC
-     LIMIT 500`
-  );
-  const map = new Map<number, Task[]>();
-  for (const task of rows) {
-    if (task.project_id == null) continue;
-    const existing = map.get(task.project_id) ?? [];
-    if (existing.length < 5) {
-      existing.push(task);
-      map.set(task.project_id, existing);
-    }
-  }
-  return map;
-}
-
 // Dashboard queries
 export async function getPlannedMinutesPerDay(
   startDate: string,
@@ -1482,16 +1419,6 @@ export async function removeWeeklyPlanProject(
   );
 }
 
-export async function getPlannedWeeksForProject(
-  projectId: number
-): Promise<string[]> {
-  const db = await getDb();
-  const rows: { week_start_date: string }[] = await db.select(
-    "SELECT week_start_date FROM weekly_plan_projects WHERE project_id = $1 ORDER BY week_start_date DESC LIMIT 50",
-    [projectId]
-  );
-  return rows.map((r) => r.week_start_date);
-}
 
 // ── Weekly Planning (Plan tab) ────────────────────────────────────────────────
 // Per-(week, project, day_offset) minimum-time commitments and per-(week,

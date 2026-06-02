@@ -135,7 +135,7 @@ DOM `CustomEvent`s can't cross Tauri webviews; QuickAdd stays fresh only via foc
 ## Out of scope / flagged to Verse
 
 - **No schema changes.** If worked-time canonicalization tempts a new column — **stop, relay DDL to Verse.**
-- **Calendar-sync and rollover write the DB directly** (audit confirmed: real divergences masked by remount). **Not** in these 5 phases. They are the **next** canonical target after Phase 4 removes the remount crutch — they'll need the same store-action reconciliation treatment, and **Verse should scope that separately.**
+- ~~**Calendar-sync and rollover write the DB directly** (audit confirmed: real divergences masked by remount). Not in these 5 phases.~~ **CLOSED as Phase 6 (2026-06-02)** — calendar sync reconciles via `loadTasksForDate` at all triggers; rollover returns `RolloverMove[]` and `rolloverTasksAction` reconciles every moved bucket via `withTaskMutated`. The remediation is now complete.
 
 ## Validation log (filled in per phase as work lands)
 
@@ -143,9 +143,12 @@ DOM `CustomEvent`s can't cross Tauri webviews; QuickAdd stays fresh only via foc
 |---|---|---|---|---|---|---|---|
 | 1 | canonical/p1-task-reconcile | ✅ | ✅ | 21 (0 new) | 30/30 | ✅ | APPROVED (bundled w/ 2) — merged to main 2026-06-02 |
 | 2 | canonical/p2-worked-time | ✅ | ✅ | 21 (0 new) | 34/34 (+4) | ✅ | APPROVED — merged to main 2026-06-02 |
-| 3 | canonical/p3-projects-ById | — | — | — | — | — | design APPROVED (derived selectors + useShallow); code staged 3a–c then 3d |
-| 4 | canonical/p4-bypass-readers | — | — | — | — | — | pending |
-| 5 | canonical/p5-cross-webview | — | — | — | — | — | pending |
+| 3 | canonical/p3-projects-ById | ✅ | ✅ | 21 (0 new) | 34/34 | ✅ | APPROVED (orphan-sweep test condition met) — merged to main 2026-06-02 |
+| 4 | canonical/p4-bypass-readers | ✅ | ✅ | 21 (0 new) | 36/36 (+2) | ✅ | APPROVED — merged to main 2026-06-02 |
+| 5 | canonical/p5-cross-webview | ✅ | ✅ | 21 (0 new) | 36/36 | ✅ | APPROVED — merged to main 2026-06-02 |
+| 6 | canonical/p6-calendar-rollover | ✅ | ✅ | 21 (0 new) | 39/39 (+3) | ✅ | APPROVED — merged to main 2026-06-02 |
+
+**STATUS: COMPLETE.** All six phases merged to `main` (local, **never pushed**). Every DB-writing path now reconciles the canonical store (reconcile-on-success / refetch-on-failure). The calendar-sync/rollover cluster (originally flagged out-of-scope below) was closed as Phase 6. A push and any `/Applications` rebuild are separate explicit calls — not inferred. main tip at completion: `f637371`.
 
 **Lint baseline:** 21 errors on post-cleanup main (pre-existing unused-vars in the deferred-#9 ProjectDetail subsystem + a broken `react-hooks/exhaustive-deps` rule ref). Each phase holds at 21 with 0 new. Phase 3 adds the `useState<Project>` ban.
 

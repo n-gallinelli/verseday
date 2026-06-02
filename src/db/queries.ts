@@ -1002,6 +1002,28 @@ export async function updateTaskDateScheduled(
   dateScheduled: string | null
 ): Promise<void> {
   const db = await getDb();
+  // Recurring-instance collision guard. The partial UNIQUE index
+  // idx_tasks_recurrence_per_date (recurrence_source_id, date_scheduled)
+  // means moving an instance onto a date that already holds a sibling of
+  // the same recurrence violates the constraint and the UPDATE throws.
+  // This happens routinely: viewing a day auto-generates that day's
+  // instance, so pulling an overdue straggler of the same recurrence onto
+  // today collides with the just-generated one. The straggler the user is
+  // acting on wins; we drop the redundant sibling on the target date first,
+  // so exactly one instance lands on that date.
+  if (dateScheduled !== null) {
+    const rows: { recurrence_source_id: number | null }[] = await db.select(
+      "SELECT recurrence_source_id FROM tasks WHERE id = $1",
+      [id]
+    );
+    const sourceId = rows[0]?.recurrence_source_id ?? null;
+    if (sourceId !== null) {
+      await db.execute(
+        "DELETE FROM tasks WHERE recurrence_source_id = $1 AND date_scheduled = $2 AND id <> $3",
+        [sourceId, dateScheduled, id]
+      );
+    }
+  }
   await db.execute(
     "UPDATE tasks SET date_scheduled = $1 WHERE id = $2",
     [dateScheduled, id]

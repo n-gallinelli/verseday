@@ -352,11 +352,16 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const pipRef = useRef<WebviewWindow | null>(null);
   // Set to true when the user clicks the hide-pip icon. Resets when
   // FocusMode unmounts, so a new focus session gets a fresh pip.
-  const pipHiddenRef = useRef(false);
+  // P-fix3: reactive (was a write-only ref, so unhide could never recreate the
+  // pip). Hiding sets it true → the creation effect's cleanup closes the pip;
+  // the "show mini timer" control sets it false → the effect recreates.
+  const [pipHidden, setPipHidden] = useState(false);
 
   useEffect(() => {
-    // Pip belongs to active sessions only — preview has nothing to mirror.
-    if (!focus || focus.mode !== "active") return;
+    // P-fix2: keep the pip alive for the whole session — preview AND active —
+    // so it survives the roll-to-next-task (active→preview) without a
+    // teardown/recreate. Gate on focus != null (closes on stop) and !pipHidden.
+    if (!focus || pipHidden) return;
 
     // Sweep-then-create. The previous adopt-existing pattern raced
     // against (a) HMR re-mounts where the old close() hadn't completed
@@ -440,7 +445,9 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       pipRef.current?.close().catch(() => {});
       pipRef.current = null;
     };
-  }, [focus?.mode === "active"]);
+    // Stable across active↔preview (focus != null), re-runs on stop (→null) and
+    // on hide/unhide.
+  }, [focus != null, pipHidden]);
 
   // Total elapsed (for time entry / display)
   const priorMs = focus?.priorElapsedMs ?? 0;
@@ -660,17 +667,23 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // dual-write window (S.4) for any consumer that wants them; PiP
   // doesn't currently use them, just renders the precomputed elapsed.
   useEffect(() => {
-    if (!focus || focus.mode !== "active" || !focusedTask) {
+    // P-fix2: mirror for preview too (only drop the key when focus is null), so
+    // the pip can render the queued task and offer a Start button. For preview,
+    // `elapsed` is 0 → elapsed+priorMs = priorMs (the prior logged time); there
+    // is no live session, so paused is false.
+    if (!focus || !focusedTask) {
       localStorage.removeItem(PIP_STATE_KEY);
       return;
     }
+    const queued = focus.mode === "preview";
     const state = {
       elapsed: elapsed + priorMs,
-      paused: focus.paused,
+      paused: focus.mode === "active" ? focus.paused : false,
       phase,
       breakRemaining,
       taskTitle: focusedTask.title,
       estimatedMinutes: focusedTask.estimated_minutes ?? null,
+      queued,
     };
     localStorage.setItem(PIP_STATE_KEY, JSON.stringify(state));
   }, [focus, focusedTask, elapsed, phase, breakRemaining, priorMs]);
@@ -687,6 +700,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const handleTogglePauseRef = useRef<() => void>(() => {});
   const handleDoneRef = useRef<() => void>(() => {});
   const handleStopRef = useRef<() => void>(() => {});
+  const handleStartSessionRef = useRef<() => void>(() => {});
   const handleTakeBreakRef = useRef<(ms: number) => void>(() => {});
   const handleSnoozeRef = useRef<() => void>(() => {});
   const handleNoBreakRef = useRef<() => void>(() => {});
@@ -712,6 +726,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       if (!cmd) return;
       localStorage.removeItem(PIP_CMD_KEY);
       if (cmd === "pause") handleTogglePauseRef.current();
+      else if (cmd === "start") handleStartSessionRef.current();
       else if (cmd === "done") handleDoneRef.current();
       else if (cmd === "stop") handleStopRef.current();
       else if (cmd === "takeBreak") handleTakeBreakRef.current(SHORT_BREAK_MS);
@@ -719,12 +734,10 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       else if (cmd === "noBreak") handleNoBreakRef.current();
       else if (cmd === "skipBreak") handleSkipBreakRef.current();
       else if (cmd === "hidePip") {
-        // Close the pip and mark as hidden for the rest of this
-        // focus session. The creation effect won't re-run unless the
-        // user starts a new session, so the pip stays gone.
-        pipHiddenRef.current = true;
-        pipRef.current?.close().catch(() => {});
-        pipRef.current = null;
+        // P-fix3: mark hidden — the creation effect (keyed on pipHidden) re-runs,
+        // its cleanup closes the pip + stops the hover monitor, and the body
+        // early-returns so it isn't recreated until the user unhides.
+        setPipHidden(true);
       }
     }, 200);
     return () => clearInterval(interval);
@@ -913,11 +926,21 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       // matters: capture focus.workedMs from the closure before
       // any stopFocus() can clear it.
       if (focus.mode === "active") {
+        // P-fix4: single commit of the live session (worked_seconds truth +
+        // break audit). We deliberately do NOT clear focus or refresh
+        // workedByTaskId here — path (c): keep focus on the completed task
+        // through the next-task lookup (so its live worked-minutes stays
+        // correct, never double-counted), repoint focus directly to `next`,
+        // THEN refresh the completed task's committed minutes.
         const workedSeconds = Math.round(focus.workedMs / 1000);
         await updateTimeEntryWorkedSeconds(focus.timeEntryId, workedSeconds);
         await stopTimeEntry(focus.timeEntryId, getBreakSeconds());
       }
+      // Raw status write (no broadcast → no self-listener re-entry), then a
+      // silent canonical reconcile so tasksById reflects done + completed_at +
+      // the future-date snap without re-firing the status listener.
       await updateTaskStatus(completedTaskId, "done");
+      await useAppStore.getState().reconcileTaskFromDb(completedTaskId);
     } catch {
       // Best effort
     }
@@ -933,14 +956,20 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       );
       if (remaining.length === 0) {
         stopFocus();
+        // Focus cleared → completed no longer the live task → refresh its
+        // committed worked-minutes (no double-count).
+        await useAppStore.getState().loadWorkedMinutes([completedTaskId]);
         return;
       }
       const next = remaining[0];
       const priorMs = (await getWorkedMinutesForTask(next.id)) * 60 * 1000;
       const history = useAppStore.getState().pageHistory;
       const prev: Page = (history[history.length - 1] as Page) ?? "daily";
-      previewFocus(next, prev, priorMs);
+      previewFocus(next, prev, priorMs); // repoint completed → next (no focus=null window)
       setZoomKey((k) => k + 1);
+      // Focus now points at `next`, so refreshing the completed task's
+      // committed minutes can't double-count it.
+      await useAppStore.getState().loadWorkedMinutes([completedTaskId]);
     } catch {
       stopFocus();
     }
@@ -948,23 +977,26 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 
   async function handleStop() {
     if (!focus) return;
-    // Preview has no time entry to close — just clear the focus state.
-    // S.5 — write worked_seconds before stopTimeEntry; capture
-    // focus.workedMs from closure before stopFocus().
     if (focus.mode === "active") {
-      const workedSeconds = Math.round(focus.workedMs / 1000);
-      try {
-        await updateTimeEntryWorkedSeconds(focus.timeEntryId, workedSeconds);
-        await stopTimeEntry(focus.timeEntryId, getBreakSeconds());
-      } catch {
-        // Best effort
+      // P-fix4: commit (worked_seconds + break audit) + refresh workedByTaskId
+      // + clear focus atomically (the canonical stop action; no double-commit).
+      // It doesn't navigate, so replicate stopFocus's nav (with its
+      // project_detail guard) back to where the session began.
+      let prev: Page = focus.previousPage ?? "daily";
+      await useAppStore.getState().stopFocusedSessionForTask(focus.taskId, getBreakSeconds());
+      if (prev === "project_detail" && useAppStore.getState().selectedProjectId === null) {
+        prev = "projects";
       }
+      if (useAppStore.getState().currentPage === "focus") setPage(prev);
+    } else {
+      // Preview has no time entry — just clear + navigate.
+      stopFocus();
     }
-    stopFocus();
   }
 
   // Keep refs in sync with latest handlers
   handleTogglePauseRef.current = handleTogglePause;
+  handleStartSessionRef.current = handleStartSession;
   handleDoneRef.current = handleDone;
   handleStopRef.current = handleStop;
   handleTakeBreakRef.current = handleTakeBreak;
@@ -1082,6 +1114,18 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 
   return (
     <div className="fixed inset-0 flex flex-col items-center z-50 overflow-hidden" style={{ background: "var(--focus-bg)" }}>
+      {/* P-fix3: re-show the mini timer (pip) after it's been hidden. Setting
+          pipHidden false re-runs the creation effect, which recreates the pip. */}
+      {pipHidden && (
+        <button
+          type="button"
+          onClick={() => setPipHidden(false)}
+          className="absolute top-4 right-4 z-10 text-[12px] text-fg-faded hover:text-fg-secondary cursor-pointer px-2.5 py-1.5 rounded-md hover:bg-overlay-hover transition-colors"
+          title="Re-open the floating mini timer"
+        >
+          Show mini timer
+        </button>
+      )}
       {/* Tunnel-in scale + fade wrapper. Plays once on mount and
           again whenever zoomKey bumps (Done → next-task transition).
           Keyed remount re-fires the CSS keyframe. Top-anchored

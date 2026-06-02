@@ -352,7 +352,13 @@ interface AppState {
    *  the inline-complete path before it reads day totals, so the day total
    *  reads committed truth (kills the under-count race). No-op if the active
    *  session isn't this task. */
-  stopFocusedSessionForTask: (taskId: number) => Promise<void>;
+  stopFocusedSessionForTask: (taskId: number, breakSeconds?: number) => Promise<void>;
+  /** P-fix4 — silently reconcile one task's canonical store entry from DB truth
+   *  (getTaskById → withTaskMutated / withTaskInserted / withTaskRemoved). No
+   *  broadcast — used after a raw, deliberately-non-broadcasting DB write (e.g.
+   *  FocusMode.handleDone's updateTaskStatus) so tasksById reflects status /
+   *  completed_at / the future-date snap without re-firing status listeners. */
+  reconcileTaskFromDb: (id: number) => Promise<void>;
   /** Canonical project map (P3). Holds ALL projects (active + archived);
    *  active/archived/completed are derived in selectors (no secondary index
    *  — small set). Populated by loadProjects; every project mutation routes
@@ -1700,17 +1706,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       throw err;
     }
   },
-  stopFocusedSessionForTask: async (taskId) => {
+  stopFocusedSessionForTask: async (taskId, breakSeconds = 0) => {
     const f = get().focus;
     if (!f || f.mode !== "active" || f.taskId !== taskId) return;
     const { timeEntryId, workedMs } = f;
     try {
-      // Commit the session's worked_seconds from the live counter (not a
-      // stale read) and close the entry. break_seconds is an audit column;
-      // worked_seconds is the truth, so 0 here is acceptable for the inline
-      // path (the Focus screen's own Done still records breaks).
+      // Commit the session's worked_seconds from the live counter (not a stale
+      // read) and close the entry. break_seconds is an audit column; the inline
+      // (DailyPlanner) caller passes 0 (no Pomodoro breaks on that path), the
+      // Focus screen's Done/Stop pass getBreakSeconds() so the real break record
+      // is preserved.
       await updateTimeEntryWorkedSeconds(timeEntryId, Math.round(workedMs / 1000));
-      await stopTimeEntry(timeEntryId);
+      await stopTimeEntry(timeEntryId, breakSeconds);
     } catch (err) {
       console.error("[appStore] stopFocusedSessionForTask commit failed", { taskId, err });
     }
@@ -1730,6 +1737,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       next.set(taskId, committed);
       return { workedByTaskId: next, focus: null };
     });
+  },
+  reconcileTaskFromDb: async (id) => {
+    try {
+      const fresh = await getTaskById(id);
+      const before = get().tasksById.get(id);
+      if (fresh) {
+        if (before) set((s) => withTaskMutated(s, before, fresh));
+        else set((s) => withTaskInserted(s, fresh));
+      } else if (before) {
+        set((s) => withTaskRemoved(s, before));
+      }
+    } catch (err) {
+      console.error("[appStore] reconcileTaskFromDb failed", { id, err });
+    }
   },
   setTaskWorkedMinutesAction: async (id, minutes) => {
     try {

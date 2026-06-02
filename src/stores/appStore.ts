@@ -176,6 +176,28 @@ function withProjectRemoved(s: AppState, project: Project): Partial<AppState> {
   return { projectsById: next };
 }
 
+/** Pure reducer for project deletion (exported for tests): remove the project
+ *  from projectsById AND mirror the DB's ON DELETE SET NULL — clear project_id
+ *  on every task that pointed at it (canonical map + taskIdsByProject index),
+ *  so no task is left referencing a deleted project. This is the audit-flagged
+ *  orphan-divergence invariant. */
+export function reduceProjectDeleted(s: AppState, id: number): Partial<AppState> {
+  const before = s.projectsById.get(id);
+  let working: AppState = before ? ({ ...s, ...withProjectRemoved(s, before) } as AppState) : s;
+  const projTaskIds = s.taskIdsByProject.get(id) ?? [];
+  for (const tid of projTaskIds) {
+    const t = working.tasksById.get(tid);
+    if (t) working = { ...working, ...withTaskMutated(working, t, { ...t, project_id: null }) } as AppState;
+  }
+  return {
+    projectsById: working.projectsById,
+    tasksById: working.tasksById,
+    taskIdsByProject: working.taskIdsByProject,
+    taskIdsByDate: working.taskIdsByDate,
+    taskIdsByWeek: working.taskIdsByWeek,
+  };
+}
+
 const FOCUS_STORAGE_KEY = "verseday_focus";
 const SIDEBAR_COLLAPSED_KEY = "verseday_sidebar_collapsed";
 
@@ -1708,29 +1730,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   deleteProjectAction: async (id) => {
-    const before = get().projectsById.get(id);
     try {
       await dbDeleteProject(id);
-      set((s) => {
-        // Remove the project AND mirror the DB's ON DELETE SET NULL: clear
-        // project_id on every task pointing at it (canonical map + project
-        // index), so no task is left referencing a deleted project.
-        let next: Partial<AppState> = before ? withProjectRemoved(s, before) : {};
-        const projTaskIds = s.taskIdsByProject.get(id) ?? [];
-        let working: AppState = { ...s, ...next } as AppState;
-        for (const tid of projTaskIds) {
-          const t = working.tasksById.get(tid);
-          if (t) working = { ...working, ...withTaskMutated(working, t, { ...t, project_id: null }) };
-        }
-        next = {
-          projectsById: working.projectsById,
-          tasksById: working.tasksById,
-          taskIdsByProject: working.taskIdsByProject,
-          taskIdsByDate: working.taskIdsByDate,
-          taskIdsByWeek: working.taskIdsByWeek,
-        };
-        return next;
-      });
+      set((s) => reduceProjectDeleted(s, id));
     } catch (err) {
       console.error("[appStore] deleteProjectAction failed", { id, err });
       throw err;

@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from "react";
 
 const QUICK_PRESETS = [
   { label: "0m", value: 0 },
+  { label: "5m", value: 5 },
   { label: "15m", value: 15 },
   { label: "30m", value: 30 },
-  { label: "45m", value: 45 },
   { label: "1h", value: 60 },
   { label: "90m", value: 90 },
 ];

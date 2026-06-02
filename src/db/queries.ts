@@ -42,6 +42,14 @@ export const PROJECT_PALETTE = [
   "#A99CE8", // Periwinkle
   "#CBA6E9", // Lavender
   "#E89CD0", // Orchid
+  "#BFCBA6", // Sage
+  "#C8A9B6", // Mauve
+  "#9DB0C9", // Slate
+  "#C99E82", // Clay
+  "#D4BC6A", // Mustard
+  "#AE82AC", // Plum
+  "#C7BCA8", // Stone
+  "#C5DCE0", // Powder
 ];
 
 /** Every color validateColor accepts: the current pastel palette PLUS every

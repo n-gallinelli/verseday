@@ -326,6 +326,13 @@ export default function DateRangeField({
           <div className="mt-3 pt-3 border-t border-line-hairline">
             {mode === "single" ? (
               <div className="flex flex-col gap-1">
+                {quickShortcuts && (
+                  <>
+                    <button type="button" onClick={() => pushBack("week")} className="text-[12px] text-fg-secondary hover:text-fg hover:bg-overlay-hover rounded-md px-1 py-1.5 text-left cursor-pointer transition-colors">Push back one week</button>
+                    <button type="button" onClick={() => pushBack("twoweeks")} className="text-[12px] text-fg-secondary hover:text-fg hover:bg-overlay-hover rounded-md px-1 py-1.5 text-left cursor-pointer transition-colors">Push back two weeks</button>
+                    <button type="button" onClick={() => pushBack("month")} className="text-[12px] text-fg-secondary hover:text-fg hover:bg-overlay-hover rounded-md px-1 py-1.5 text-left cursor-pointer transition-colors">Push back a month</button>
+                  </>
+                )}
                 <button
                   type="button"
                   onClick={addEndDate}
@@ -336,13 +343,6 @@ export default function DateRangeField({
                   </svg>
                   Add end date
                 </button>
-                {quickShortcuts && (
-                  <>
-                    <button type="button" onClick={() => pushBack("week")} className="text-[12px] text-fg-secondary hover:text-fg hover:bg-overlay-hover rounded-md px-1 py-1.5 text-left cursor-pointer transition-colors">Push back one week</button>
-                    <button type="button" onClick={() => pushBack("twoweeks")} className="text-[12px] text-fg-secondary hover:text-fg hover:bg-overlay-hover rounded-md px-1 py-1.5 text-left cursor-pointer transition-colors">Push back two weeks</button>
-                    <button type="button" onClick={() => pushBack("month")} className="text-[12px] text-fg-secondary hover:text-fg hover:bg-overlay-hover rounded-md px-1 py-1.5 text-left cursor-pointer transition-colors">Push back a month</button>
-                  </>
-                )}
               </div>
             ) : (
               <div className="flex items-center justify-between">

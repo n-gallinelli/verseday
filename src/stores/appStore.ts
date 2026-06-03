@@ -19,6 +19,7 @@ import {
   stopTimeEntry,
   toggleTaskHighlight as dbToggleTaskHighlight,
   updateTask as dbUpdateTask,
+  propagateTemplateFieldsToFutureInstances,
   updateTaskDateScheduled as dbUpdateTaskDateScheduled,
   updateTaskSortOrders as dbUpdateTaskSortOrders,
   updateTimeEntryWorkedSeconds,
@@ -1495,6 +1496,29 @@ export const useAppStore = create<AppState>((set, get) => ({
         set((s) => withTaskMutated(s, current, next));
       }
       await dbUpdateTask(patch);
+
+      // #10 — when the edited row is a recurring TEMPLATE, propagate its
+      // title/estimate to existing FUTURE-dated instances (option (a),
+      // future-only). Past/today instances stay as a historical record. Cadence
+      // edits are handled separately by setTaskRecurrenceAction (future
+      // generation only). Reconcile each touched instance from DB truth so the
+      // canonical map/indices reflect the new title/estimate.
+      if (current && isTemplate(current)) {
+        const affected = await propagateTemplateFieldsToFutureInstances(
+          patch.id,
+          patch.title,
+          patch.estimatedMinutes,
+        );
+        for (const instId of affected) {
+          const freshInst = await getTaskById(instId);
+          const beforeInst = get().tasksById.get(instId);
+          if (freshInst && beforeInst) {
+            set((s) => withTaskMutated(s, beforeInst, freshInst));
+          } else if (freshInst) {
+            set((s) => withTaskInserted(s, freshInst));
+          }
+        }
+      }
     } catch (err) {
       console.error("[appStore] updateTask failed — refetching truth", {
         patch,

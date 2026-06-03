@@ -858,6 +858,55 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [setPage, currentPage]);
 
+  // ── ↑/↓ scroll through today's tasks while not in a live session ───────────
+  // Scroll iff there's no active session: focus is null or `mode === "preview"`.
+  // A running OR paused active session is INERT — switching tasks mid-session
+  // goes through Done/Stop, so an arrow key never closes a time_entry as a side
+  // effect (no fragmented sessions, no focus:null flash, no commit guard).
+  // List source mirrors boot + complete-advance: getTasksForDate(today),
+  // non-done, ordered by sort_order — NOT the store index, which isn't
+  // guaranteed populated when you arrive via the F hotkey. previewFocus primes
+  // tasksById for the target, so selectFocusedTask resolves on the next render.
+  useEffect(() => {
+    if (currentPage !== "focus") return;
+    let navToken = 0;
+    async function onKey(e: KeyboardEvent) {
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      // Let arrows move the cursor when typing in the notes editor / a field.
+      const el = document.activeElement;
+      const isInput =
+        el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
+      if (isInput) return;
+      const f = useAppStore.getState().focus;
+      if (f && f.mode !== "preview") return; // active (running/paused) → inert
+      e.preventDefault();
+      const token = ++navToken; // ignore stale async results from older presses
+      const tasks = await getTasksForDate(todayString()).catch(() => null);
+      if (token !== navToken || !tasks) return;
+      const remaining = tasks.filter((t) => t.status !== "done");
+      if (remaining.length === 0) return;
+      const curId = useAppStore.getState().focus?.taskId;
+      const idx = remaining.findIndex((t) => t.id === curId);
+      const nextIdx =
+        idx === -1
+          ? e.key === "ArrowDown" ? 0 : remaining.length - 1
+          : e.key === "ArrowDown" ? idx + 1 : idx - 1;
+      if (nextIdx < 0 || nextIdx >= remaining.length) return; // clamp, no wrap
+      const target = remaining[nextIdx];
+      if (target.id === curId) return;
+      // workedByTaskId/getWorkedMinutesForTask are MINUTES; priorElapsedMs is MS.
+      const priorMs = (await getWorkedMinutesForTask(target.id).catch(() => 0)) * 60 * 1000;
+      if (token !== navToken) return;
+      const prev: Page =
+        useAppStore.getState().focus?.previousPage ??
+        (useAppStore.getState().pageHistory.slice(-1)[0] as Page) ??
+        "daily";
+      previewFocus(target, prev, priorMs);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [currentPage, previewFocus]);
+
   // Thin wrapper around togglePauseFocus. Pomodoro break-phase
   // adjustment (so a paused break doesn't "catch up" to wall-clock
   // time when resumed) is handled by the pause-tracking effect below

@@ -5,6 +5,7 @@ import {
   SQL_ROLLOVER_CAPTURE,
   SQL_ROLLOVER_MOVE,
   SQL_ROLLOVER_EXPIRE,
+  SQL_ROLLOVER_EXPIRE_CAPTURE,
 } from "./rolloverSql";
 
 // Branch D SQL-contract tests (#6, #10). Run the EXACT production statement
@@ -58,28 +59,42 @@ describe("rolloverUnfinishedTasks contract (#10)", () => {
     db.exec(`CREATE TABLE tasks (
       id INTEGER PRIMARY KEY, date_scheduled TEXT, status TEXT,
       rollover_count INTEGER DEFAULT 0, original_date TEXT,
-      recurrence_source_id INTEGER, external_source TEXT, sort_order INTEGER
+      recurrence_source_id INTEGER, recurrence TEXT,
+      external_source TEXT, sort_order INTEGER
     );`);
+    // Columns: id, date_scheduled, status, rollover_count, original_date,
+    //          recurrence_source_id, recurrence, external_source, sort_order
     // A: overdue count0 -> moves (count1)
-    db.exec(`INSERT INTO tasks VALUES (1,'2026-05-30','todo',0,NULL,NULL,NULL,5)`);
+    db.exec(`INSERT INTO tasks VALUES (1,'2026-05-30','todo',0,NULL,NULL,NULL,NULL,5)`);
     // B: overdue count3 -> moves (count4), NOT expired this run (expire at 4, not 3)
-    db.exec(`INSERT INTO tasks VALUES (2,'2026-05-29','todo',3,NULL,NULL,NULL,2)`);
+    db.exec(`INSERT INTO tasks VALUES (2,'2026-05-29','todo',3,NULL,NULL,NULL,NULL,2)`);
     // C: overdue count4 -> expired (date NULL)
-    db.exec(`INSERT INTO tasks VALUES (3,'2026-05-28','todo',4,NULL,NULL,NULL,9)`);
+    db.exec(`INSERT INTO tasks VALUES (3,'2026-05-28','todo',4,NULL,NULL,NULL,NULL,9)`);
     // D: done -> untouched
-    db.exec(`INSERT INTO tasks VALUES (4,'2026-05-30','done',0,NULL,NULL,NULL,1)`);
-    // E: recurrence instance -> skipped
-    db.exec(`INSERT INTO tasks VALUES (5,'2026-05-30','todo',0,NULL,10,NULL,1)`);
+    db.exec(`INSERT INTO tasks VALUES (4,'2026-05-30','done',0,NULL,NULL,NULL,NULL,1)`);
+    // E: recurrence instance (recurrence_source_id set) -> skipped
+    db.exec(`INSERT INTO tasks VALUES (5,'2026-05-30','todo',0,NULL,10,NULL,NULL,1)`);
     // F: calendar import -> skipped
-    db.exec(`INSERT INTO tasks VALUES (6,'2026-05-30','todo',0,NULL,NULL,'calendar',1)`);
+    db.exec(`INSERT INTO tasks VALUES (6,'2026-05-30','todo',0,NULL,NULL,NULL,'calendar',1)`);
     // G: already on today -> existing, keeps sort_order 1
-    db.exec(`INSERT INTO tasks VALUES (7,'${TODAY}','todo',0,NULL,NULL,NULL,1)`);
+    db.exec(`INSERT INTO tasks VALUES (7,'${TODAY}','todo',0,NULL,NULL,NULL,NULL,1)`);
+    // H: recurring TEMPLATE (recurrence set, no source_id) carrying a stale
+    //    date, count0 -> must NOT move. The recurrence_source_id guard alone
+    //    would miss this; the recurrence guard catches it.
+    db.exec(`INSERT INTO tasks VALUES (8,'2026-05-30','todo',0,NULL,NULL,'{"freq":"weekdays"}',NULL,7)`);
+    // I: recurring TEMPLATE at count4 -> must NOT expire AND must NOT appear in
+    //    the expire-capture (else a phantom RolloverMove drifts store from DB).
+    db.exec(`INSERT INTO tasks VALUES (9,'2026-05-28','todo',4,NULL,NULL,'{"freq":"weekdays"}',NULL,8)`);
     return db;
   }
 
   function rollover(db: DatabaseSync) {
     const sub = (s: string) => s.replace(/\$1/g, `'${TODAY}'`);
     const captured = db.prepare(sub(SQL_ROLLOVER_CAPTURE)).all() as { id: number }[];
+    // Mirror queries.ts: capture the expiring set BEFORE the move/expire so the
+    // caller can emit RolloverMove{toDate:null} for them.
+    const expiredCapture = db.prepare(sub(SQL_ROLLOVER_EXPIRE_CAPTURE)).all() as
+      { id: number; date_scheduled: string }[];
     db.exec(sub(SQL_ROLLOVER_MOVE));
     db.exec(sub(SQL_ROLLOVER_EXPIRE));
     // Renumber — mirrors queries.ts orchestration exactly.
@@ -92,7 +107,7 @@ describe("rolloverUnfinishedTasks contract (#10)", () => {
       const cases = ids.map((id, i) => `WHEN ${id} THEN ${base + i + 1}`).join(" ");
       db.exec(`UPDATE tasks SET sort_order = CASE id ${cases} END WHERE id IN (${idList})`);
     }
-    return captured.map((r) => r.id);
+    return { rolled: captured.map((r) => r.id), expired: expiredCapture.map((r) => r.id) };
   }
 
   const get = (db: DatabaseSync, id: number) =>
@@ -101,7 +116,7 @@ describe("rolloverUnfinishedTasks contract (#10)", () => {
 
   it("captures to-roll tasks oldest-first (deterministic order)", () => {
     const db = makeDb();
-    const rolled = rollover(db);
+    const { rolled } = rollover(db);
     expect(rolled).toEqual([2, 1]); // B (05-29) before A (05-30)
     db.close();
   });
@@ -116,12 +131,27 @@ describe("rolloverUnfinishedTasks contract (#10)", () => {
     db.close();
   });
 
-  it("skips done / recurrence / calendar tasks", () => {
+  it("skips done / recurrence instance / calendar tasks", () => {
     const db = makeDb();
     rollover(db);
     expect(get(db, 4).date_scheduled).toBe("2026-05-30"); // done
-    expect(get(db, 5).date_scheduled).toBe("2026-05-30"); // recurrence
+    expect(get(db, 5).date_scheduled).toBe("2026-05-30"); // recurrence instance
     expect(get(db, 6).date_scheduled).toBe("2026-05-30"); // calendar
+    db.close();
+  });
+
+  it("never rolls or expires a recurring TEMPLATE, even with a stale date", () => {
+    const db = makeDb();
+    const { rolled, expired } = rollover(db);
+    // H (count0 template) is not moved; I (count4 template) is not expired.
+    expect(get(db, 8).date_scheduled).toBe("2026-05-30");
+    expect(get(db, 9).date_scheduled).toBe("2026-05-28");
+    // Neither template appears in the rolled set...
+    expect(rolled).not.toContain(8);
+    expect(rolled).not.toContain(9);
+    // ...nor in the expire-capture — else the store gets a phantom expiry the
+    // DB never made (canonical store/DB drift). Only C (id 3) expires.
+    expect(expired).toEqual([3]);
     db.close();
   });
 

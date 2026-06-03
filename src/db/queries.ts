@@ -10,6 +10,7 @@ import {
   SQL_ROLLOVER_MOVE,
   SQL_ROLLOVER_EXPIRE,
 } from "./rolloverSql";
+import { createTaskSortSubquery } from "./createTaskSortSql";
 import { todayString, localDateIso, localDayStartUtc, localDayEndUtc } from "../utils/dates";
 import { emitIconsChanged } from "../utils/iconEvents";
 import type { Project, Task, DailyPlan, WeeklyShutdown, Link, CustomIcon } from "../types";
@@ -504,20 +505,19 @@ export async function createTask(input: CreateTaskInput): Promise<number> {
       ? input.estimatedMinutes
       : await getDefaultTaskEstimateMin();
 
-  // New tasks land at the top of their scope (project or date) via
-  // sort_order = min(existing) - 1 (monotonic decrement; SQLite INTEGER is
-  // 64-bit). #11 — compute that min INSIDE the INSERT as a subquery rather than
-  // a separate SELECT-then-INSERT: two concurrent creates (main + QuickAdd
-  // webview) could otherwise read the same MIN and land on an identical
-  // sort_order. A single statement evaluates the subquery against the
-  // pre-insert table state atomically. The scope filter reuses the row's own
-  // bound params ($2 project_id / $3 date_scheduled) so no extra binds.
-  const sortSubquery =
-    input.projectId != null
-      ? "(SELECT COALESCE(MIN(sort_order), 1) - 1 FROM tasks WHERE project_id = $2)"
-      : input.dateScheduled != null
-        ? "(SELECT COALESCE(MIN(sort_order), 1) - 1 FROM tasks WHERE date_scheduled = $3)"
-        : "(SELECT COALESCE(MIN(sort_order), 1) - 1 FROM tasks)";
+  // New tasks land at the top of their scope via sort_order = min(existing) - 1
+  // (monotonic decrement; SQLite INTEGER is 64-bit). #11 — compute that min
+  // INSIDE the INSERT as a subquery rather than SELECT-then-INSERT so two
+  // concurrent creates (main + QuickAdd webview) can't read the same MIN and
+  // collide. Scope precedence is date-before-project (see createTaskSortSql.ts):
+  // a dated task tops its DATE list even when it also carries an Objective —
+  // the daily planner is the primary surface and the target of new-task-to-top.
+  // The subquery reuses the row's own bound params ($2 project_id / $3
+  // date_scheduled) so no extra binds.
+  const sortSubquery = createTaskSortSubquery({
+    projectId: input.projectId,
+    dateScheduled: input.dateScheduled,
+  });
   const result = await db.execute(
     `INSERT INTO tasks (title, project_id, date_scheduled, estimated_minutes, priority, notes, sort_order)
      VALUES ($1, $2, $3, $4, $5, $6, ${sortSubquery})`,

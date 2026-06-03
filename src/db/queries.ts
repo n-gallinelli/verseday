@@ -485,18 +485,23 @@ export async function createTask(input: CreateTaskInput): Promise<number> {
       ? input.estimatedMinutes
       : await getDefaultTaskEstimateMin();
 
-  // New tasks land at the top of their scope (project or date). Achieved by
-  // assigning sort_order = min(existing) - 1 so they sort before everything
-  // else without needing to renumber siblings. SQLite INTEGER is 64-bit,
-  // monotonic decrement is fine.
-  const scopeRows: { min_sort: number | null }[] = input.projectId != null
-    ? await db.select("SELECT MIN(sort_order) as min_sort FROM tasks WHERE project_id = $1", [input.projectId])
-    : input.dateScheduled != null
-      ? await db.select("SELECT MIN(sort_order) as min_sort FROM tasks WHERE date_scheduled = $1", [input.dateScheduled])
-      : await db.select("SELECT MIN(sort_order) as min_sort FROM tasks");
-  const nextSort = (scopeRows[0]?.min_sort ?? 1) - 1;
+  // New tasks land at the top of their scope (project or date) via
+  // sort_order = min(existing) - 1 (monotonic decrement; SQLite INTEGER is
+  // 64-bit). #11 — compute that min INSIDE the INSERT as a subquery rather than
+  // a separate SELECT-then-INSERT: two concurrent creates (main + QuickAdd
+  // webview) could otherwise read the same MIN and land on an identical
+  // sort_order. A single statement evaluates the subquery against the
+  // pre-insert table state atomically. The scope filter reuses the row's own
+  // bound params ($2 project_id / $3 date_scheduled) so no extra binds.
+  const sortSubquery =
+    input.projectId != null
+      ? "(SELECT COALESCE(MIN(sort_order), 1) - 1 FROM tasks WHERE project_id = $2)"
+      : input.dateScheduled != null
+        ? "(SELECT COALESCE(MIN(sort_order), 1) - 1 FROM tasks WHERE date_scheduled = $3)"
+        : "(SELECT COALESCE(MIN(sort_order), 1) - 1 FROM tasks)";
   const result = await db.execute(
-    "INSERT INTO tasks (title, project_id, date_scheduled, estimated_minutes, priority, notes, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    `INSERT INTO tasks (title, project_id, date_scheduled, estimated_minutes, priority, notes, sort_order)
+     VALUES ($1, $2, $3, $4, $5, $6, ${sortSubquery})`,
     [
       input.title,
       input.projectId,
@@ -504,7 +509,6 @@ export async function createTask(input: CreateTaskInput): Promise<number> {
       estimatedMinutes,
       priority,
       input.notes ?? null,
-      nextSort,
     ]
   );
   return result.lastInsertId ?? 0;

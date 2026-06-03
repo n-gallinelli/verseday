@@ -8,8 +8,72 @@ pub mod calendar;
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
+/// P4 — copy-on-launch DB backup. Runs at the very start of `run()`, BEFORE the
+/// SQL plugin is registered (and therefore before any connection or migration),
+/// so a backup always captures the pre-migration state — the recovery point if
+/// a migration goes wrong. Best-effort: any failure is swallowed so a backup
+/// problem never blocks launch. macOS-only (the app's only target); the path is
+/// derived from $HOME + the known bundle identifier rather than the Tauri path
+/// resolver, which isn't available this early.
+#[cfg(target_os = "macos")]
+fn backup_database_on_launch() {
+    let home = match std::env::var("HOME") {
+        Ok(h) => h,
+        Err(_) => return,
+    };
+    let base =
+        std::path::Path::new(&home).join("Library/Application Support/com.verseday.app");
+    let src = base.join("verseday.db");
+    // Fresh install (no DB yet) → nothing to back up.
+    if !src.exists() {
+        return;
+    }
+    let backups = base.join("backups");
+    if std::fs::create_dir_all(&backups).is_err() {
+        return;
+    }
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let dest = backups.join(format!("verseday-{ts}.db"));
+    if std::fs::copy(&src, &dest).is_ok() {
+        prune_backups(&backups, 5);
+    }
+}
+
+/// Keep only the newest `keep` backups (filenames are epoch-stamped, so a
+/// lexical sort is chronological). Best-effort.
+#[cfg(target_os = "macos")]
+fn prune_backups(dir: &std::path::Path, keep: usize) {
+    let mut backups: Vec<std::path::PathBuf> = match std::fs::read_dir(dir) {
+        Ok(rd) => rd
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.starts_with("verseday-") && n.ends_with(".db"))
+                    .unwrap_or(false)
+            })
+            .collect(),
+        Err(_) => return,
+    };
+    if backups.len() <= keep {
+        return;
+    }
+    backups.sort(); // oldest first (epoch-stamped names)
+    let remove = backups.len() - keep;
+    for p in backups.into_iter().take(remove) {
+        let _ = std::fs::remove_file(p);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "macos")]
+    backup_database_on_launch();
+
     let migrations = vec![
         Migration {
             version: 1,
@@ -664,6 +728,7 @@ pub fn run() {
             commands::dismiss_quick_add,
             commands::start_pip_hover_monitor,
             commands::stop_pip_hover_monitor,
+            commands::export_database,
             #[cfg(target_os = "macos")]
             calendar::calendar_check_permission,
             #[cfg(target_os = "macos")]

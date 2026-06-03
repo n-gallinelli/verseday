@@ -179,6 +179,20 @@ export default function FocusPip() {
   const [pendingAck, setPendingAck] = useState<string | null>(null);
   const ackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // One-shot "task completed" flourish on the checkmark (green fill + check
+  // redraw + pop + ring burst), reusing the focus-screen completion vocabulary.
+  // Resets after the animation so a persisting pip (advanced to the next task)
+  // gets a fresh checkmark.
+  const [completing, setCompleting] = useState(false);
+  const completeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function completeWithFlourish() {
+    if (completing) return; // guard double-fire
+    setCompleting(true);
+    sendCommand("done");
+    if (completeTimerRef.current) clearTimeout(completeTimerRef.current);
+    completeTimerRef.current = setTimeout(() => setCompleting(false), 1100);
+  }
+
   function flashAck(message: string, cmd: string) {
     if (ackTimerRef.current) clearTimeout(ackTimerRef.current);
     setPendingAck(message);
@@ -192,6 +206,7 @@ export default function FocusPip() {
   useEffect(() => {
     return () => {
       if (ackTimerRef.current) clearTimeout(ackTimerRef.current);
+      if (completeTimerRef.current) clearTimeout(completeTimerRef.current);
     };
   }, []);
 
@@ -523,13 +538,26 @@ export default function FocusPip() {
             </button>
 
             <button
-              onClick={(e) => { e.stopPropagation(); sendCommand("done"); }}
-              className={ICON_BTN}
+              onClick={(e) => { e.stopPropagation(); completeWithFlourish(); }}
+              className={`${ICON_BTN} relative ${completing ? "animate-task-done" : ""}`}
               title="Complete task"
-              style={fanOut(1, expanded)}
+              style={{
+                ...fanOut(1, expanded),
+                ...(completing
+                  ? { background: "var(--accent-green)", color: "#fff" }
+                  : {}),
+              }}
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 8.5l3.5 3.5 6.5-7" />
+              {/* Ring burst on completion — reuses the focus-complete vocabulary. */}
+              {completing && (
+                <span
+                  aria-hidden
+                  className="absolute inset-0 rounded-full animate-focus-complete-burst pointer-events-none"
+                  style={{ border: "1.5px solid var(--accent-green)" }}
+                />
+              )}
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={completing ? "#fff" : "var(--accent-green-deep)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 8.5l3.5 3.5 6.5-7" className={completing ? "animate-check-draw" : ""} />
               </svg>
             </button>
 

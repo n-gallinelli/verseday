@@ -238,7 +238,7 @@ impl CalendarSource for EventKitSource {
         }
 
         let (year, month, day) = parse_date_iso(date_iso)?;
-        let start_ns = nsdate_for_local(year, month, day, 0, 0, 0)?;
+        let start_ns = nsdate_for_local(year, month, day)?;
         let end_ns = nsdate_for_local_plus_one_day(&start_ns)?;
 
         let predicate: Retained<NSPredicate> = unsafe {
@@ -392,14 +392,9 @@ fn parse_date_iso(s: &str) -> Result<(i32, u32, u32), String> {
     Ok((y, m, d))
 }
 
-fn nsdate_for_local(
-    year: i32,
-    month: u32,
-    day: u32,
-    hour: u32,
-    minute: u32,
-    second: u32,
-) -> Result<Retained<NSDate>, String> {
+// #40 — the only caller ever passed 0/0/0 for time-of-day (local midnight), so
+// the hour/minute/second params were dead. Set them to 0 literals inside.
+fn nsdate_for_local(year: i32, month: u32, day: u32) -> Result<Retained<NSDate>, String> {
     unsafe {
         let cal_cls = AnyClass::get(c"NSCalendar")
             .ok_or_else(|| "NSCalendar class not found".to_string())?;
@@ -414,9 +409,9 @@ fn nsdate_for_local(
         let _: () = msg_send![components, setYear: year as i64];
         let _: () = msg_send![components, setMonth: month as i64];
         let _: () = msg_send![components, setDay: day as i64];
-        let _: () = msg_send![components, setHour: hour as i64];
-        let _: () = msg_send![components, setMinute: minute as i64];
-        let _: () = msg_send![components, setSecond: second as i64];
+        let _: () = msg_send![components, setHour: 0i64];
+        let _: () = msg_send![components, setMinute: 0i64];
+        let _: () = msg_send![components, setSecond: 0i64];
 
         let date_ptr: *mut NSDate = msg_send![calendar, dateFromComponents: components];
         let _: () = msg_send![components, release];
@@ -427,10 +422,28 @@ fn nsdate_for_local(
     }
 }
 
+// #39 — add ONE CALENDAR DAY (not a fixed 86400s) so the day-end lands on the
+// next LOCAL midnight even across the two DST-transition days each year, where a
+// local day is 23h or 25h. NSCalendar handles the shift.
 fn nsdate_for_local_plus_one_day(start: &NSDate) -> Result<Retained<NSDate>, String> {
     unsafe {
-        let next_ptr: *mut NSDate =
-            msg_send![start, dateByAddingTimeInterval: 86400.0_f64];
+        let cal_cls = AnyClass::get(c"NSCalendar")
+            .ok_or_else(|| "NSCalendar class not found".to_string())?;
+        let calendar: *mut AnyObject = msg_send![cal_cls, currentCalendar];
+        if calendar.is_null() {
+            return Err("currentCalendar returned nil".to_string());
+        }
+        // NSCalendarUnitDay = 1 << 4 = 16; options 0.
+        let next_ptr: *mut NSDate = msg_send![
+            calendar,
+            dateByAddingUnit: 16usize,
+            value: 1isize,
+            toDate: start,
+            options: 0usize,
+        ];
+        if next_ptr.is_null() {
+            return Err("dateByAddingUnit returned nil".to_string());
+        }
         Retained::retain(next_ptr).ok_or_else(|| "retain failed".to_string())
     }
 }

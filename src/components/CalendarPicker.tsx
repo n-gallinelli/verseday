@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { localDateIso } from "../utils/dates";
 
 interface CalendarPickerProps {
   value: string; // YYYY-MM-DD or ""
@@ -52,7 +53,7 @@ export default function CalendarPicker({
   const [viewYear, setViewYear] = useState(initDate.getFullYear());
   const [viewMonth, setViewMonth] = useState(initDate.getMonth());
 
-  const todayIso = new Date().toISOString().split("T")[0];
+  const todayIso = localDateIso(new Date()); // #19 — local tz; toISOString() picks the wrong "today" in the evening
 
   // Calculate popover position relative to viewport. Clamps on both
   // axes so the calendar (and especially its bottom-stack of "push
@@ -128,7 +129,7 @@ export default function CalendarPicker({
     const baseIso = value || todayIso;
     const d = new Date(baseIso + "T00:00:00");
     d.setDate(d.getDate() + days);
-    onChange(d.toISOString().split("T")[0]);
+    onChange(localDateIso(d)); // #19 — local tz
     setOpen(false);
   }
 
@@ -136,7 +137,7 @@ export default function CalendarPicker({
     const baseIso = value || todayIso;
     const d = new Date(baseIso + "T00:00:00");
     d.setMonth(d.getMonth() + 1);
-    onChange(d.toISOString().split("T")[0]);
+    onChange(localDateIso(d)); // #19 — local tz
     setOpen(false);
   }
 

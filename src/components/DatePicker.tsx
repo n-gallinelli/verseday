@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { localDateIso } from "../utils/dates";
 
 interface DatePickerProps {
   selectedDate: string; // YYYY-MM-DD
@@ -11,7 +12,7 @@ interface DatePickerProps {
 const DAY_HEADERS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
 function toIso(d: Date): string {
-  return d.toISOString().split("T")[0];
+  return localDateIso(d); // #19 — local component-building; toISOString() shifts the day in the evening
 }
 
 export default function DatePicker({

@@ -9,7 +9,7 @@ import {
   SQL_ROLLOVER_MOVE,
   SQL_ROLLOVER_EXPIRE,
 } from "./rolloverSql";
-import { todayString, localDayStartUtc, localDayEndUtc } from "../utils/dates";
+import { todayString, localDateIso, localDayStartUtc, localDayEndUtc } from "../utils/dates";
 import { emitIconsChanged } from "../utils/iconEvents";
 import type { Project, Task, DailyPlan, TimeEntry, WeeklyPlan, WeeklyShutdown, Link, CustomIcon } from "../types";
 import type { DismissalReason } from "../calendar/types";
@@ -1283,22 +1283,36 @@ export async function getWorkedMinutesForTask(taskId: number): Promise<number> {
   return Math.round(rows[0]?.total ?? 0);
 }
 
+/** #7 — bucket worked seconds by LOCAL calendar day. start_time is a UTC
+ *  instant (Date.toISOString()); SQL `date(start_time)` buckets on the UTC day,
+ *  so an evening session east of UTC (or late-night work) is mis-attributed to
+ *  the wrong day. Grouping in JS via localDateIso fixes it. Pure + exported for
+ *  the integrity test. */
+export function bucketWorkedByLocalDay(
+  rows: { start_time: string; worked_seconds: number }[]
+): { date: string; minutes: number }[] {
+  const byDay = new Map<string, number>();
+  for (const r of rows) {
+    const day = localDateIso(new Date(r.start_time));
+    byDay.set(day, (byDay.get(day) ?? 0) + r.worked_seconds);
+  }
+  return Array.from(byDay.entries())
+    .map(([date, secs]) => ({ date, minutes: Math.round(secs / 60) }))
+    .filter((r) => r.minutes > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export async function getWorkedMinutesByDate(
   taskId: number
 ): Promise<{ date: string; minutes: number }[]> {
   const db = await getDb();
-  const rows: { day: string; total: number }[] = await db.select(
-    `SELECT date(start_time) as day,
-      COALESCE(SUM(worked_seconds), 0) / 60.0 as total
+  const rows: { start_time: string; worked_seconds: number }[] = await db.select(
+    `SELECT start_time, worked_seconds
     FROM time_entries
-    WHERE task_id = $1 AND end_time IS NOT NULL
-    GROUP BY date(start_time)
-    ORDER BY day`,
+    WHERE task_id = $1 AND end_time IS NOT NULL AND worked_seconds > 0`,
     [taskId]
   );
-  return rows
-    .map((r) => ({ date: r.day, minutes: Math.round(r.total) }))
-    .filter((r) => r.minutes > 0);
+  return bucketWorkedByLocalDay(rows);
 }
 
 export async function setManualWorkedMinutes(
@@ -1389,12 +1403,12 @@ export async function getSidebarPoolTasks(today: string): Promise<Task[]> {
   const db = await getDb();
   const overdueCutoff = new Date(today + "T00:00:00");
   overdueCutoff.setDate(overdueCutoff.getDate() - 3);
-  const overdueCutoffIso = overdueCutoff
-    .toISOString()
-    .split("T")[0];
+  // #1 — local-tz format; toISOString() would shift the cutoff ±1 day
+  // east-of-UTC (evening), mis-filtering the overdue window.
+  const overdueCutoffIso = localDateIso(overdueCutoff);
   const hardFloor = new Date(today + "T00:00:00");
   hardFloor.setDate(hardFloor.getDate() - 14);
-  const hardFloorIso = hardFloor.toISOString().split("T")[0];
+  const hardFloorIso = localDateIso(hardFloor);
   return db.select(
     `SELECT * FROM tasks
        WHERE status != 'done'

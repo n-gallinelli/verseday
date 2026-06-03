@@ -9,6 +9,7 @@ import {
   SQL_ROLLOVER_CAPTURE,
   SQL_ROLLOVER_MOVE,
   SQL_ROLLOVER_EXPIRE,
+  SQL_ROLLOVER_EXPIRE_CAPTURE,
 } from "./rolloverSql";
 import { todayString, localDateIso, localDayStartUtc, localDayEndUtc } from "../utils/dates";
 import { emitIconsChanged } from "../utils/iconEvents";
@@ -313,12 +314,7 @@ export async function rolloverUnfinishedTasks(today: string): Promise<RolloverMo
         )
       : [];
   const expiredRows: { id: number; date_scheduled: string }[] = await db.select(
-    `SELECT id, date_scheduled FROM tasks
-       WHERE date_scheduled < $1
-         AND status != 'done'
-         AND rollover_count >= 4
-         AND recurrence_source_id IS NULL
-         AND external_source IS NULL`,
+    SQL_ROLLOVER_EXPIRE_CAPTURE,
     [today]
   );
 

@@ -12,7 +12,7 @@ import {
 } from "./rolloverSql";
 import { todayString, localDateIso, localDayStartUtc, localDayEndUtc } from "../utils/dates";
 import { emitIconsChanged } from "../utils/iconEvents";
-import type { Project, Task, DailyPlan, TimeEntry, WeeklyPlan, WeeklyShutdown, Link, CustomIcon } from "../types";
+import type { Project, Task, DailyPlan, WeeklyShutdown, Link, CustomIcon } from "../types";
 import type { DismissalReason } from "../calendar/types";
 
 /** The colors offered in project color pickers and auto-assigned to new
@@ -823,19 +823,6 @@ export async function getCompletedTasksForDate(date: string): Promise<Task[]> {
 }
 
 // Time Entries
-export async function getTimeEntriesForDate(
-  date: string
-): Promise<TimeEntry[]> {
-  const db = await getDb();
-  return db.select(
-    `SELECT te.* FROM time_entries te
-     JOIN tasks t ON te.task_id = t.id
-     WHERE t.date_scheduled = $1 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL
-     ORDER BY te.start_time LIMIT 1000`,
-    [date]
-  );
-}
-
 export async function startTimeEntry(
   taskId: number,
   type: "pomodoro" | "tracked"
@@ -937,31 +924,6 @@ export async function getTotalWorkedMinutes(date: string): Promise<number> {
     [date]
   );
   return rows[0]?.total ?? 0;
-}
-
-// Weekly Plans
-export async function getWeeklyPlan(
-  weekStartDate: string
-): Promise<WeeklyPlan | null> {
-  const db = await getDb();
-  const rows: WeeklyPlan[] = await db.select(
-    "SELECT * FROM weekly_plans WHERE week_start_date = $1",
-    [weekStartDate]
-  );
-  return rows[0] ?? null;
-}
-
-export async function upsertWeeklyPlan(
-  weekStartDate: string,
-  focusAreas: string | null,
-  notes: string | null
-): Promise<void> {
-  const db = await getDb();
-  await db.execute(
-    `INSERT INTO weekly_plans (week_start_date, focus_areas, notes) VALUES ($1, $2, $3)
-     ON CONFLICT(week_start_date) DO UPDATE SET focus_areas = $2, notes = $3`,
-    [weekStartDate, focusAreas, notes]
-  );
 }
 
 export async function getTasksForWeek(
@@ -1209,17 +1171,6 @@ export async function updateTaskDateScheduled(
     [dateScheduled, id]
   );
   return { deletedSiblingIds, mergedData };
-}
-
-export async function updateTaskDueDate(
-  id: number,
-  dueDate: string | null
-): Promise<void> {
-  const db = await getDb();
-  await db.execute(
-    "UPDATE tasks SET due_date = $1 WHERE id = $2",
-    [dueDate, id]
-  );
 }
 
 // Weekly Shutdowns
@@ -1583,44 +1534,6 @@ function validateWeekDate(date: string): void {
   }
 }
 
-export async function getWeeklyPlanProjects(
-  weekStartDate: string
-): Promise<number[]> {
-  validateWeekDate(weekStartDate);
-  const db = await getDb();
-  const rows: { project_id: number }[] = await db.select(
-    "SELECT project_id FROM weekly_plan_projects WHERE week_start_date = $1 ORDER BY created_at",
-    [weekStartDate]
-  );
-  return rows.map((r) => r.project_id);
-}
-
-export async function addWeeklyPlanProject(
-  weekStartDate: string,
-  projectId: number
-): Promise<void> {
-  validateWeekDate(weekStartDate);
-  const db = await getDb();
-  await db.execute(
-    `INSERT INTO weekly_plan_projects (week_start_date, project_id) VALUES ($1, $2)
-     ON CONFLICT(week_start_date, project_id) DO NOTHING`,
-    [weekStartDate, projectId]
-  );
-}
-
-export async function removeWeeklyPlanProject(
-  weekStartDate: string,
-  projectId: number
-): Promise<void> {
-  validateWeekDate(weekStartDate);
-  const db = await getDb();
-  await db.execute(
-    "DELETE FROM weekly_plan_projects WHERE week_start_date = $1 AND project_id = $2",
-    [weekStartDate, projectId]
-  );
-}
-
-
 // ── Weekly Planning (Plan tab) ────────────────────────────────────────────────
 // Per-(week, project, day_offset) minimum-time commitments and per-(week,
 // project) review status. See docs/2026-05-05-weekly-planning-plan.md.
@@ -1773,11 +1686,6 @@ export async function setSetting(key: string, value: string): Promise<void> {
      ON CONFLICT(key) DO UPDATE SET value = $2`,
     [key, value]
   );
-}
-
-export async function deleteSetting(key: string): Promise<void> {
-  const db = await getDb();
-  await db.execute("DELETE FROM settings WHERE key = $1", [key]);
 }
 
 // ── Recurring Tasks ──────────────────────────────────────────────────────────

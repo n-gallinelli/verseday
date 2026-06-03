@@ -8,7 +8,6 @@ import {
 import {
   getPlannedMinutesPerDay,
   getWorkedMinutesForWeek,
-  getProjectStats,
   getCompletedShutdowns,
   type CompletedShutdown,
 } from "../db/queries";
@@ -140,17 +139,7 @@ function BarChart({
 
 // ─── Project progress row ───────────────────────────────────────────────────
 
-function ProjectProgressRow({
-  project,
-  total,
-  done,
-}: {
-  project: Project;
-  total: number;
-  done: number;
-}) {
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-
+function ProjectProgressRow({ project }: { project: Project }) {
   return (
     <div className="flex items-center gap-3 py-2">
       <div
@@ -175,9 +164,6 @@ export default function Dashboard() {
   const [workedByDay, setWorkedByDay] = useState<Map<string, number>>(
     new Map()
   );
-  const [projectStatsMap, setProjectStatsMap] = useState<
-    Map<number, { total: number; done: number; lastDate: string | null }>
-  >(new Map());
   // Recent-activity days the user has expanded to see every finished task
   // (otherwise capped at 3 with a "+N more" toggle).
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
@@ -248,15 +234,13 @@ export default function Dashboard() {
       // Prime the canonical week index/map; weekTasks + recentCompleted derive
       // from it via the selectors above.
       await useAppStore.getState().loadTasksForWeek(selectedWeek);
-      const [pbd, wbd, ps, sd] = await Promise.all([
+      const [pbd, wbd, sd] = await Promise.all([
         getPlannedMinutesPerDay(selectedWeek, fridayIso),
         getWorkedMinutesForWeek(selectedWeek, fridayIso),
-        getProjectStats(),
         getCompletedShutdowns(4),
       ]);
       setPlannedByDay(pbd);
       setWorkedByDay(wbd);
-      setProjectStatsMap(ps);
       setPastShutdowns(sd);
       setError(null);
     } catch (e) {
@@ -492,21 +476,9 @@ export default function Dashboard() {
                   Project progress
                 </h3>
                 <div className="bg-elevated border border-line-soft rounded-[10px] px-5 py-3">
-                  {activeProjects.map((p) => {
-                    const stats = projectStatsMap.get(p.id) ?? {
-                      total: 0,
-                      done: 0,
-                      lastDate: null,
-                    };
-                    return (
-                      <ProjectProgressRow
-                        key={p.id}
-                        project={p}
-                        total={stats.total}
-                        done={stats.done}
-                      />
-                    );
-                  })}
+                  {activeProjects.map((p) => (
+                    <ProjectProgressRow key={p.id} project={p} />
+                  ))}
                 </div>
               </section>
             )}

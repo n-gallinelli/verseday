@@ -29,7 +29,6 @@ import {
   getDailyPlan,
   upsertDailyPlan,
   getWorkedMinutesForTask,
-  getProjectStats,
   generateRecurringInstances,
 } from "../db/queries";
 import { todayString, localDateIso } from "../utils/dates";
@@ -133,7 +132,6 @@ export default function DailyPlanner() {
   const [arrivedIds, setArrivedIds] = useState<Set<number>>(new Set());
   // Tracks freshly-added tasks so the new row plays its entrance animation.
   const [addedIds, setAddedIds] = useState<Set<number>>(new Set());
-  const [projectStats, setProjectStats] = useState<Map<number, { total: number; done: number }>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
   // M4 — auto-sync the user's calendar into selectedDate. Owns the
@@ -425,10 +423,6 @@ export default function DailyPlanner() {
       if (isStale?.()) return;
       setWorkedMinutes(wm);
       setDailyPlan(dp);
-      // Fetch project stats for right panel
-      const pStats = await getProjectStats();
-      if (isStale?.()) return;
-      setProjectStats(pStats);
       // Fetch worked minutes per task. Read taskIdsByDate fresh from the
       // store after the loadTasksForDate above resolved — taskIds in the
       // selector's React closure may still point to the prior render.

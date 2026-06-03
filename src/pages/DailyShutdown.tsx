@@ -80,7 +80,6 @@ export default function DailyShutdown() {
     gratefulFor: "",
   });
   const [carriedIds, setCarriedIds] = useState<Set<number>>(new Set());
-  const [isShutdown, setIsShutdown] = useState(false);
   const [highlightIds, setHighlightIds] = useState<Set<number>>(new Set());
   const [workedPerTask, setWorkedPerTask] = useState<Map<number, number>>(new Map());
   const [step, setStep] = useState<1 | 2>(1);
@@ -100,9 +99,6 @@ export default function DailyShutdown() {
       void _;
       setMood(dp?.mood ?? null);
       setReflectionFields(parseReflection(dp?.reflection ?? ""));
-      setIsShutdown(
-        localStorage.getItem(SHUTDOWN_KEY_PREFIX + selectedDate) === "true"
-      );
       setCarriedIds(new Set());
       // Read fresh task data from the canonical map after loadTasksForDate
       // resolved — taskIds in the React closure may still point at the
@@ -253,7 +249,6 @@ export default function DailyShutdown() {
       return;
     }
     localStorage.setItem(SHUTDOWN_KEY_PREFIX + selectedDate, "true");
-    setIsShutdown(true);
     openSunsetOverlay();
   }
 

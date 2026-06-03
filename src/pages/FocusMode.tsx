@@ -81,7 +81,7 @@ interface FocusModeProps {
 }
 
 export default function FocusMode({ visible = true }: FocusModeProps) {
-  const { focus, stopFocus, setPage, setPendingDetailTask, previewFocus, activateFocus, updateFocusTask, currentPage } = useAppStore();
+  const { focus, stopFocus, setPage, previewFocus, activateFocus, updateFocusTask, currentPage } = useAppStore();
   const togglePauseFocus = useAppStore((s) => s.togglePauseFocus);
   const adjustFocusElapsed = useAppStore((s) => s.adjustFocusElapsed);
   const tickFocus = useAppStore((s) => s.tickFocus);

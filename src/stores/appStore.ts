@@ -807,12 +807,6 @@ export function selectTaskIdsByWeek(state: AppState, weekStart: string): number[
   return state.taskIdsByWeek.get(weekStart) ?? EMPTY_ID_LIST;
 }
 
-/** Selector: committed worked-minutes for `taskId` (closed time_entries
- *  only — excludes any live focus session). */
-export function selectWorkedMinutes(state: AppState, taskId: number): number {
-  return state.workedByTaskId.get(taskId) ?? 0;
-}
-
 /** Selector: worked-minutes for `taskId` INCLUDING the live focus session.
  *  P2 canonical derivation: committed closed-entry minutes
  *  (workedByTaskId) + the current session's minutes (focus.workedMs) — and

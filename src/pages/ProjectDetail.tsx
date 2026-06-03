@@ -186,27 +186,6 @@ function LabeledInputPill({
   );
 }
 
-// ─── Property row (right rail) ──────────────────────────────────────────────
-
-function PropertyRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1.5">
-        {label}
-      </div>
-      <div className="flex flex-wrap items-center gap-1.5">
-        {children}
-      </div>
-    </div>
-  );
-}
-
 // ─── Sortable task row ──────────────────────────────────────────────────────
 
 function formatMinutes(n: number): string {
@@ -474,7 +453,7 @@ function SortableTaskRow({
 // ─── Main component ─────────────────────────────────────────────────────────
 
 export default function ProjectDetail() {
-  const { selectedProjectId, openProject, startFocus, goBack, setPage } = useAppStore();
+  const { selectedProjectId, startFocus, goBack, setPage } = useAppStore();
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
   // M3.2.b.2 — task list now flows through the canonical store. The
   // selector returns ID list for the project; resolution against
@@ -562,14 +541,6 @@ export default function ProjectDetail() {
   // Quick-add modal — opened by clicking a day column in the "This week" grid;
   // pre-fills date_scheduled to the clicked day.
   const [quickAddDate, setQuickAddDate] = useState<string | null>(null);
-
-  // Task editing
-  const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
-  const [taskEditTitle, setTaskEditTitle] = useState("");
-  const [taskEditEstimate, setTaskEditEstimate] = useState("");
-  const [taskEditPriority, setTaskEditPriority] = useState("medium");
-  const [taskEditNotes, setTaskEditNotes] = useState("");
-  const [taskEditDate, setTaskEditDate] = useState("");
 
   // Task detail overlay
 
@@ -695,7 +666,6 @@ export default function ProjectDetail() {
     // stale so loadData skips its state writes.
     let cancelled = false;
     loadData(() => cancelled);
-    setEditingTaskId(null);
     setConfirmDeleteId(null);
     return () => {
       cancelled = true;
@@ -1008,56 +978,6 @@ export default function ProjectDetail() {
     }
   }
 
-  function startEditTask(task: Task) {
-    setEditingTaskId(task.id);
-    setTaskEditTitle(task.title);
-    setTaskEditEstimate(task.estimated_minutes?.toString() ?? "");
-    setTaskEditPriority(task.priority);
-    setTaskEditNotes(task.notes ?? "");
-    setTaskEditDate(task.date_scheduled ?? "");
-  }
-
-  function handleTaskEditKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Escape") setEditingTaskId(null);
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      saveTaskEdit();
-    }
-  }
-
-  async function saveTaskEdit() {
-    if (editingTaskId === null) return;
-    const title = taskEditTitle.trim();
-    if (!title || title.length > MAX_TITLE_LENGTH) {
-      setError(`Title must be 1–${MAX_TITLE_LENGTH} characters`);
-      return;
-    }
-    let est: number | null = null;
-    if (taskEditEstimate) {
-      est = parseInt(taskEditEstimate);
-      if (isNaN(est) || est < 1 || est > MAX_ESTIMATE_MINUTES) {
-        setError(`Estimate must be 1–${MAX_ESTIMATE_MINUTES} minutes`);
-        return;
-      }
-    }
-    try {
-      await updateTaskAction({
-        id: editingTaskId,
-        title,
-        projectId: selectedProjectId,
-        estimatedMinutes: est,
-        priority: taskEditPriority,
-        notes: taskEditNotes.trim() || null,
-        dateScheduled: taskEditDate || null,
-      });
-      setEditingTaskId(null);
-      setError(null);
-      refreshTasks();
-    } catch (e) {
-      setError(errorMessage(e, "Failed to update task"));
-    }
-  }
-
   function handleDeleteTask(id: number) {
     // Remove from UI immediately, defer actual delete for undo window
     const taskToDelete = tasks.find((t) => t.id === id);
@@ -1167,20 +1087,6 @@ export default function ProjectDetail() {
       refreshTasks();
     }
   }
-
-  // ── Derived stats ─────────────────────────────────────────────────────
-
-  const totalTasks = tasks.length;
-  const doneTasks = tasks.filter((t) => t.status === "done").length;
-  const totalEstimatedMinutes = tasks.reduce(
-    (sum, t) => sum + (t.estimated_minutes ?? 0),
-    0
-  );
-  const estimatedHours = (Math.round(totalEstimatedMinutes / 6) / 10)
-    .toFixed(1)
-    .replace(/\.0$/, "");
-  const progressPercent =
-    totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
 
   // ── Render ────────────────────────────────────────────────────────────
 
@@ -1387,69 +1293,6 @@ export default function ProjectDetail() {
                 </p>
               ) : (
                 visibleTasks.map((task) => {
-                  if (editingTaskId === task.id) {
-                    return (
-                      <div
-                        key={task.id}
-                        className="p-3 rounded-lg bg-elevated border border-line-soft space-y-2 mb-[5px]"
-                        onKeyDown={handleTaskEditKeyDown}
-                      >
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={taskEditTitle}
-                            onChange={(e) => setTaskEditTitle(e.target.value)}
-                            maxLength={MAX_TITLE_LENGTH}
-                            autoFocus
-                            className="flex-1 px-2.5 py-1.5 rounded-md bg-input border border-line-soft text-[13px] text-fg focus:outline-none focus:border-accent-blue"
-                          />
-                          <input
-                            type="number"
-                            value={taskEditEstimate}
-                            onChange={(e) =>
-                              setTaskEditEstimate(e.target.value)
-                            }
-                            min={1}
-                            max={MAX_ESTIMATE_MINUTES}
-                            placeholder="min"
-                            className="w-20 px-2.5 py-1.5 rounded-md bg-input border border-line-soft text-[13px] text-fg placeholder:text-fg-faded focus:outline-none focus:border-accent-blue"
-                          />
-                        </div>
-                        <div className="flex gap-2">
-                          <input
-                            type="date"
-                            value={taskEditDate}
-                            onChange={(e) => setTaskEditDate(e.target.value)}
-                            className="px-2.5 py-1.5 rounded-md bg-input border border-line-soft text-[12px] text-fg-secondary focus:outline-none focus:border-accent-blue"
-                          />
-                        </div>
-                        <RichTextEditor
-                          value={taskEditNotes}
-                          onChange={(html) => setTaskEditNotes(html)}
-                          placeholder="Notes..."
-                          className="w-full px-2.5 py-2 rounded-md bg-input border border-line-soft text-[12px] text-fg-secondary min-h-[60px] focus-within:border-accent-blue"
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            onClick={saveTaskEdit}
-                            className="border border-accent-blue/50 text-accent-blue-soft-fg rounded-md px-3 py-1.5 text-[12px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors"
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={() => setEditingTaskId(null)}
-                            className="border border-line-soft text-fg-muted rounded-md px-3 py-1.5 text-[12px] cursor-pointer hover:bg-overlay-hover transition-colors"
-                          >
-                            Cancel
-                          </button>
-                          <span className="text-[10px] text-fg-disabled self-center ml-auto">
-                            Cmd+Enter to save, Esc to cancel
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  }
-
                   // Render the row + an overlay for the delete-confirm
                   // prompt. Overlaying instead of replacing keeps the
                   // row's height locked so confirming/cancelling

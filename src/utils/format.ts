@@ -14,21 +14,27 @@ export function parseTimeFromTitle(title: string): {
   // unit is given.
   const tildeBare = /(?:^|\s)~(\d+(?:\.\d+)?)\s*$/;
 
+  // A parse is only valid when a real title remnant survives the strip. A bare
+  // "2h" / "~10" (no other words) strips to nothing, which isn't a titled task
+  // — return no-parse so callers keep the literal title and never create a
+  // blank task. Centralized here so all call sites inherit it identically.
   const m1 = title.match(withUnit);
   if (m1) {
     const num = parseFloat(m1[1]);
     const unit = m1[2].toLowerCase();
     const minutes = unit.startsWith("h") ? Math.round(num * 60) : Math.round(num);
-    if (minutes >= 1 && minutes <= MAX_ESTIMATE_MINUTES) {
-      return { cleanTitle: title.slice(0, m1.index).trim(), minutes };
+    const cleanTitle = title.slice(0, m1.index).trim();
+    if (minutes >= 1 && minutes <= MAX_ESTIMATE_MINUTES && cleanTitle !== "") {
+      return { cleanTitle, minutes };
     }
   }
 
   const m2 = title.match(tildeBare);
   if (m2) {
     const minutes = Math.round(parseFloat(m2[1]));
-    if (minutes >= 1 && minutes <= MAX_ESTIMATE_MINUTES) {
-      return { cleanTitle: title.slice(0, m2.index).trim(), minutes };
+    const cleanTitle = title.slice(0, m2.index).trim();
+    if (minutes >= 1 && minutes <= MAX_ESTIMATE_MINUTES && cleanTitle !== "") {
+      return { cleanTitle, minutes };
     }
   }
 

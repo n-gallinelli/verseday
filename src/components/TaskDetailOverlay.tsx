@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { activeObjectiveOptions } from "../utils/objectiveOptions";
 import { useFocusTick } from "../hooks/useFocusTick";
 import { createPortal } from "react-dom";
-import { getWorkedMinutesByDate, setTaskRecurrence, parseRecurrence, serializeRecurrence } from "../db/queries";
+import { getWorkedMinutesByDate, parseRecurrence, serializeRecurrence } from "../db/queries";
 import { parseTimeFromTitle, formatHoursMinutes } from "../utils/format";
 import { useAppStore } from "../stores/appStore";
 import DateRangeField from "./DateRangeField";
@@ -348,7 +348,7 @@ export default function TaskDetailOverlay({
   // surface reading via selectFocusedTask) sees the new values
   // immediately. M2.2 — `updateFocusTask` is now a thin primeTasks
   // wrapper; signature unchanged for callers.
-  const { focus, updateFocusTask, setFocusPriorElapsedMs } = useAppStore();
+  const { focus, updateFocusTask, setFocusPriorElapsedMs, setTaskRecurrenceAction } = useAppStore();
   const isFocusedTask = focus?.taskId === task.id;
   // Live elapsed for the active session (null if none). Used to auto-populate
   // a calendar meeting's "time spent" while it's the running focus task — the
@@ -965,11 +965,11 @@ export default function TaskDetailOverlay({
                   onChange={(freq) => {
                     setRecurrenceFreq(freq);
                     if (freq === "none") {
-                      setTaskRecurrence(task.id, null).catch(() => {});
+                      setTaskRecurrenceAction(task.id, null).catch(() => {});
                     } else if (freq === "weekly") {
-                      setTaskRecurrence(task.id, serializeRecurrence({ freq: "weekly", day: recurrenceDay, interval: recurrenceInterval })).catch(() => {});
+                      setTaskRecurrenceAction(task.id, serializeRecurrence({ freq: "weekly", day: recurrenceDay, interval: recurrenceInterval })).catch(() => {});
                     } else {
-                      setTaskRecurrence(task.id, serializeRecurrence({ freq: freq as "daily" | "weekdays" })).catch(() => {});
+                      setTaskRecurrenceAction(task.id, serializeRecurrence({ freq: freq as "daily" | "weekdays" })).catch(() => {});
                     }
                   }}
                   options={[
@@ -987,7 +987,7 @@ export default function TaskDetailOverlay({
                       onChange={(v) => {
                         const interval = parseInt(v);
                         setRecurrenceInterval(interval);
-                        setTaskRecurrence(task.id, serializeRecurrence({ freq: "weekly", day: recurrenceDay, interval })).catch(() => {});
+                        setTaskRecurrenceAction(task.id, serializeRecurrence({ freq: "weekly", day: recurrenceDay, interval })).catch(() => {});
                       }}
                       options={[
                         { value: "1", label: "Every week" },
@@ -1003,7 +1003,7 @@ export default function TaskDetailOverlay({
                       onChange={(v) => {
                         const day = parseInt(v);
                         setRecurrenceDay(day);
-                        setTaskRecurrence(task.id, serializeRecurrence({ freq: "weekly", day, interval: recurrenceInterval })).catch(() => {});
+                        setTaskRecurrenceAction(task.id, serializeRecurrence({ freq: "weekly", day, interval: recurrenceInterval })).catch(() => {});
                       }}
                       options={[
                         { value: "1", label: "Monday" },

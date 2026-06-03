@@ -557,6 +557,36 @@ export async function updateTask(input: UpdateTaskInput): Promise<void> {
   );
 }
 
+/** #10 — propagate a recurring TEMPLATE's title/estimate edit to its existing
+ *  FUTURE-dated instances (option (a), future-only). Past and today's instances
+ *  are left untouched as a historical record; done instances are never
+ *  rewritten. Returns the affected instance ids so the store can reconcile the
+ *  canonical map. No-op (returns []) for non-template ids. */
+export async function propagateTemplateFieldsToFutureInstances(
+  templateId: number,
+  title: string,
+  estimatedMinutes: number | null
+): Promise<number[]> {
+  const db = await getDb();
+  const today = todayString(); // local tz, matches date_scheduled everywhere
+  const rows: { id: number }[] = await db.select(
+    `SELECT id FROM tasks
+       WHERE recurrence_source_id = $1
+         AND date_scheduled > $2
+         AND status != 'done'`,
+    [templateId, today]
+  );
+  if (rows.length === 0) return [];
+  await db.execute(
+    `UPDATE tasks SET title = $1, estimated_minutes = $2
+       WHERE recurrence_source_id = $3
+         AND date_scheduled > $4
+         AND status != 'done'`,
+    [title, estimatedMinutes, templateId, today]
+  );
+  return rows.map((r) => r.id);
+}
+
 export async function updateTaskStatus(
   id: number,
   status: string
@@ -1032,6 +1062,20 @@ export async function updateTaskDateScheduled(
   const db = await getDb();
   let deletedSiblingIds: number[] = [];
   let mergedData = false;
+
+  // Fetch the moved row's recurrence + current date up front: the source id
+  // drives the collision merge (target date) AND the skip-on-move (#4, source
+  // date); the old date is the one we must skip so it doesn't regenerate.
+  const selfRows: {
+    recurrence_source_id: number | null;
+    date_scheduled: string | null;
+  }[] = await db.select(
+    "SELECT recurrence_source_id, date_scheduled FROM tasks WHERE id = $1",
+    [id]
+  );
+  const sourceId = selfRows[0]?.recurrence_source_id ?? null;
+  const oldDate = selfRows[0]?.date_scheduled ?? null;
+
   // Recurring-instance collision guard. The partial UNIQUE index
   // idx_tasks_recurrence_per_date (recurrence_source_id, date_scheduled)
   // means moving an instance onto a date that already holds a sibling of
@@ -1052,11 +1096,6 @@ export async function updateTaskDateScheduled(
   // worked time (worst case leaves an empty shell that the next collision
   // re-absorbs).
   if (dateScheduled !== null) {
-    const rows: { recurrence_source_id: number | null }[] = await db.select(
-      "SELECT recurrence_source_id FROM tasks WHERE id = $1",
-      [id]
-    );
-    const sourceId = rows[0]?.recurrence_source_id ?? null;
     if (sourceId !== null) {
       const sibs: {
         id: number;
@@ -1129,6 +1168,19 @@ export async function updateTaskDateScheduled(
       }
     }
   }
+
+  // #4 — skip-on-move. When a recurring instance is moved OFF its native date
+  // (to another date or to unscheduled), record a skip for the original date
+  // so the next generateRecurringInstances doesn't recreate the instance the
+  // user just relocated. Mirrors deleteTask's skip-insert. ON CONFLICT swallows
+  // a duplicate (e.g. a re-move of the same instance).
+  if (sourceId !== null && oldDate !== null && oldDate !== dateScheduled) {
+    await db.execute(
+      "INSERT INTO recurring_instance_skips (recurrence_source_id, date_scheduled) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+      [sourceId, oldDate]
+    );
+  }
+
   await db.execute(
     "UPDATE tasks SET date_scheduled = $1 WHERE id = $2",
     [dateScheduled, id]
@@ -1762,12 +1814,26 @@ export async function setTaskRecurrence(
   );
 }
 
+/** #5 — parse a SQLite datetime('now') value ("YYYY-MM-DD HH:MM:SS", UTC, no tz
+ *  marker) into a correct UTC instant. `new Date(thatString)` would parse the
+ *  space-separated form as LOCAL, mis-dating the creation instant by the tz
+ *  offset. Defensive: pass through values that already carry a 'T'/'Z' (ISO). */
+export function parseSqliteUtc(s: string): Date {
+  if (s.includes("T") || s.endsWith("Z")) return new Date(s);
+  return new Date(s.replace(" ", "T") + "Z");
+}
+
 export async function generateRecurringInstances(date: string): Promise<void> {
   const db = await getDb();
   // Get all recurring templates (tasks with recurrence set, no source_id = they are templates)
   const templates: { id: number; project_id: number | null; title: string; priority: string; estimated_minutes: number | null; notes: string | null; recurrence: string; created_at: string }[] =
+    // #6 — a template is a RULE, not a completable task. Do NOT exclude
+    // templates whose own status is 'done': if a template row ever gets marked
+    // done (e.g. via a UI path that completes the template instead of the
+    // instance), generation must keep running. Status is irrelevant to whether
+    // a template should generate — only the recurrence rule + skips are.
     await db.select(
-      "SELECT id, project_id, title, priority, estimated_minutes, notes, recurrence, created_at FROM tasks WHERE recurrence IS NOT NULL AND recurrence_source_id IS NULL AND status != 'done'",
+      "SELECT id, project_id, title, priority, estimated_minutes, notes, recurrence, created_at FROM tasks WHERE recurrence IS NOT NULL AND recurrence_source_id IS NULL",
       []
     );
 
@@ -1800,7 +1866,15 @@ export async function generateRecurringInstances(date: string): Promise<void> {
       if (interval > 1 && dayMatches) {
         // Anchor cycle to the Monday of the template's creation week.
         // Generate only when (weeks since anchor) % interval === 0.
-        const anchorMonday = mondayOf(new Date(tmpl.created_at));
+        //
+        // #5 — created_at is stored by datetime('now'), which is UTC in the
+        // form "YYYY-MM-DD HH:MM:SS" (space, no 'T'/'Z'). `new Date(thatString)`
+        // would parse it as LOCAL, mis-dating the creation instant by the tz
+        // offset and flipping the biweekly phase when creation was near a UTC
+        // day boundary. Parse it as the true UTC instant first; mondayOf then
+        // reads LOCAL components, matching how targetDate (local midnight) is
+        // built — so both Mondays are in the same (local) frame.
+        const anchorMonday = mondayOf(parseSqliteUtc(tmpl.created_at));
         const targetMonday = mondayOf(targetDate);
         const weeksDiff = Math.round(
           (targetMonday.getTime() - anchorMonday.getTime()) / (7 * 86400000)
@@ -1825,17 +1899,16 @@ export async function generateRecurringInstances(date: string): Promise<void> {
     );
     if (skipped.length > 0) continue;
 
-    // Check if instance already exists for this date
-    const existing: { id: number }[] = await db.select(
-      "SELECT id FROM tasks WHERE recurrence_source_id = $1 AND date_scheduled = $2 LIMIT 1",
-      [tmpl.id, date]
-    );
-    if (existing.length > 0) continue;
-
-    // Create instance
+    // #9 — idempotent insert. The old SELECT-exists-then-INSERT was racy: two
+    // concurrent generators (the main window + the QuickAdd webview both call
+    // this) could each pass the existence check and then both INSERT, the
+    // second throwing on the partial UNIQUE index
+    // idx_tasks_recurrence_per_date. ON CONFLICT … DO NOTHING makes a duplicate
+    // a silent no-op against that index instead of an uncaught error.
     await db.execute(
       `INSERT INTO tasks (project_id, title, priority, estimated_minutes, notes, date_scheduled, recurrence_source_id, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 999)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 999)
+       ON CONFLICT(recurrence_source_id, date_scheduled) WHERE recurrence_source_id IS NOT NULL DO NOTHING`,
       [tmpl.project_id, tmpl.title, tmpl.priority, tmpl.estimated_minutes, tmpl.notes, date, tmpl.id]
     );
   }

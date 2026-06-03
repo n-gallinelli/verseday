@@ -38,12 +38,29 @@ fn backup_database_on_launch() {
         .unwrap_or(0);
     let dest = backups.join(format!("verseday-{ts}.db"));
     if std::fs::copy(&src, &dest).is_ok() {
+        // Pair the journal sidecar(s) with the backup. If the prior session
+        // crashed mid-write a hot rollback-journal exists and verseday.db holds
+        // a not-yet-rolled-back state — copying only the db would capture a torn
+        // snapshot. Copying the sidecar(s) makes the backup a complete,
+        // restorable set. We're rollback-journal (not WAL), but copy -wal/-shm
+        // defensively. Named to match the db so a restore pairs them. Best-effort.
+        for ext in ["-journal", "-wal", "-shm"] {
+            let side_src = base.join(format!("verseday.db{ext}"));
+            if side_src.exists() {
+                let _ = std::fs::copy(
+                    &side_src,
+                    backups.join(format!("verseday-{ts}.db{ext}")),
+                );
+            }
+        }
         prune_backups(&backups, 5);
     }
 }
 
-/// Keep only the newest `keep` backups (filenames are epoch-stamped, so a
-/// lexical sort is chronological). Best-effort.
+/// Keep only the newest `keep` `.db` backups (filenames are epoch-stamped, so a
+/// lexical sort is chronological). Each removed db takes its journal sidecars
+/// with it so they don't accumulate (the `.db` filter excludes `.db-journal`
+/// etc., so they'd otherwise never be pruned). Best-effort.
 #[cfg(target_os = "macos")]
 fn prune_backups(dir: &std::path::Path, keep: usize) {
     let mut backups: Vec<std::path::PathBuf> = match std::fs::read_dir(dir) {
@@ -65,7 +82,13 @@ fn prune_backups(dir: &std::path::Path, keep: usize) {
     backups.sort(); // oldest first (epoch-stamped names)
     let remove = backups.len() - keep;
     for p in backups.into_iter().take(remove) {
-        let _ = std::fs::remove_file(p);
+        let _ = std::fs::remove_file(&p);
+        // Remove this backup's paired sidecars (verseday-<ts>.db-journal, etc.).
+        for ext in ["-journal", "-wal", "-shm"] {
+            let mut side = p.clone().into_os_string();
+            side.push(ext);
+            let _ = std::fs::remove_file(std::path::PathBuf::from(side));
+        }
     }
 }
 

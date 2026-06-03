@@ -57,6 +57,11 @@ function BarChart({
   // max would put e.g. "6" at the wrong fraction of the column).
   const yAxisMax = 8;
 
+  // Generous bar area so a day reads at its true fraction of the 8h scale
+  // (2h → 25% is a substantial bar, not a stub) — matches the weekly-shutdown
+  // "Effort by day" chart.
+  const chartHeight = 260;
+
   const yLabels: number[] = [];
   const step = 4;
   for (let i = 0; i <= yAxisMax; i += step) {
@@ -67,8 +72,12 @@ function BarChart({
 
   return (
     <div className="flex gap-2">
-      {/* Y-axis labels */}
-      <div className="flex flex-col justify-between py-1 pr-1 w-8 flex-shrink-0">
+      {/* Y-axis labels — pinned to the bar-area height so 8h/4h/0h line up
+          with the bars (not stretched to include the day-label row below). */}
+      <div
+        className="flex flex-col justify-between pr-1 w-8 flex-shrink-0"
+        style={{ height: chartHeight }}
+      >
         {yLabels.map((h) => (
           <span
             key={h}
@@ -92,7 +101,6 @@ function BarChart({
             yAxisMax > 0
               ? Math.min((worked / 60 / yAxisMax) * 100, 100)
               : 0;
-          const chartHeight = 140;
 
           return (
             <div key={date} className="flex-1 flex flex-col items-center">
@@ -103,7 +111,7 @@ function BarChart({
               >
                 {/* Worked (actual) bar — cool slate, "done" — on the left */}
                 <div
-                  className="w-[14px] rounded-t-[3px] bg-chart-bar-worked transition-all duration-300"
+                  className="w-[22px] rounded-t-[3px] bg-chart-bar-worked transition-all duration-300"
                   style={{
                     height: `${(workedPct / 100) * chartHeight}px`,
                   }}
@@ -111,7 +119,7 @@ function BarChart({
                 />
                 {/* Planned bar — warm tan, "intent" — on the right */}
                 <div
-                  className="w-[14px] rounded-t-[3px] bg-chart-bar-planned transition-all duration-300"
+                  className="w-[22px] rounded-t-[3px] bg-chart-bar-planned transition-all duration-300"
                   style={{
                     height: `${(plannedPct / 100) * chartHeight}px`,
                   }}
@@ -170,6 +178,16 @@ export default function Dashboard() {
   const [projectStatsMap, setProjectStatsMap] = useState<
     Map<number, { total: number; done: number; lastDate: string | null }>
   >(new Map());
+  // Recent-activity days the user has expanded to see every finished task
+  // (otherwise capped at 3 with a "+N more" toggle).
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+  const toggleExpandedDate = (date: string) =>
+    setExpandedDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
   const projects = useAppStore(useShallow((s) => selectProjectsByStatus(s, "active")));
   const [pastShutdowns, setPastShutdowns] = useState<CompletedShutdown[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -412,6 +430,61 @@ export default function Dashboard() {
               </div>
             </section>
 
+            {/* ── Recent activity ────────────────────────────────────── */}
+            {recentCompleted.length > 0 && (
+              <section className="mb-6 animate-slide-up animate-stagger">
+                <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-2">
+                  Recent activity
+                </h3>
+                <div className="bg-elevated border border-line-soft rounded-[10px] px-5 py-3">
+                  {recentDates.slice(0, 3).map((date) => {
+                    const tasks = recentByDate.get(date) ?? [];
+                    const isExpanded = expandedDates.has(date);
+                    const visibleTasks = isExpanded ? tasks : tasks.slice(0, 3);
+                    return (
+                      <div
+                        key={date}
+                        className="py-2 border-b border-divider last:border-b-0"
+                      >
+                        <div className="text-[11px] font-medium text-fg-secondary mb-1">
+                          {formatDateLabel(date)}
+                        </div>
+                        {visibleTasks.map((task) => (
+                          <div
+                            key={task.id}
+                            className="flex items-center gap-2 py-0.5"
+                          >
+                            <span className="text-[11px] text-accent-green">
+                              ✓
+                            </span>
+                            <span className="text-[12px] text-fg truncate">
+                              {task.title}
+                            </span>
+                            {task.estimated_minutes != null &&
+                              task.estimated_minutes > 0 && (
+                                <span className="text-[10px] text-fg-faded flex-shrink-0">
+                                  {formatHoursMinutes(task.estimated_minutes)}
+                                </span>
+                              )}
+                          </div>
+                        ))}
+                        {tasks.length > 3 && (
+                          <button
+                            onClick={() => toggleExpandedDate(date)}
+                            className="text-[10px] text-fg-faded hover:text-fg-secondary mt-0.5 block cursor-pointer transition-colors"
+                          >
+                            {isExpanded
+                              ? "Show less"
+                              : `+${tasks.length - 3} more`}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
             {/* ── Project progress ───────────────────────────────────── */}
             {activeProjects.length > 0 && (
               <section className="mb-6 animate-slide-up animate-stagger">
@@ -432,54 +505,6 @@ export default function Dashboard() {
                         total={stats.total}
                         done={stats.done}
                       />
-                    );
-                  })}
-                </div>
-              </section>
-            )}
-
-            {/* ── Recent activity ────────────────────────────────────── */}
-            {recentCompleted.length > 0 && (
-              <section className="animate-slide-up animate-stagger">
-                <h3 className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-2">
-                  Recent activity
-                </h3>
-                <div className="bg-elevated border border-line-soft rounded-[10px] px-5 py-3">
-                  {recentDates.slice(0, 3).map((date) => {
-                    const tasks = recentByDate.get(date) ?? [];
-                    return (
-                      <div
-                        key={date}
-                        className="py-2 border-b border-divider last:border-b-0"
-                      >
-                        <div className="text-[11px] font-medium text-fg-secondary mb-1">
-                          {formatDateLabel(date)}
-                        </div>
-                        {tasks.slice(0, 3).map((task) => (
-                          <div
-                            key={task.id}
-                            className="flex items-center gap-2 py-0.5"
-                          >
-                            <span className="text-[11px] text-accent-green">
-                              ✓
-                            </span>
-                            <span className="text-[12px] text-fg truncate">
-                              {task.title}
-                            </span>
-                            {task.estimated_minutes != null &&
-                              task.estimated_minutes > 0 && (
-                                <span className="text-[10px] text-fg-faded flex-shrink-0">
-                                  {formatHoursMinutes(task.estimated_minutes)}
-                                </span>
-                              )}
-                          </div>
-                        ))}
-                        {tasks.length > 3 && (
-                          <span className="text-[10px] text-fg-faded mt-0.5 block">
-                            +{tasks.length - 3} more
-                          </span>
-                        )}
-                      </div>
                     );
                   })}
                 </div>

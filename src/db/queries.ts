@@ -1014,21 +1014,43 @@ export async function hasWeekBeenPlanned(weekStartDate: string): Promise<boolean
 // guard, so the caller (store action) can reconcile them out of the canonical
 // map/indices via withTaskRemoved — otherwise they linger as ghost rows until
 // a reload. Empty array when nothing was dropped.
+/** Result of a reschedule that may have absorbed a colliding recurring
+ *  sibling. `deletedSiblingIds` are rows the store must drop from
+ *  `tasksById`; `mergedData` is true only when *real* data (worked time,
+ *  notes, or a done-status) was carried over — the signal for an optional
+ *  non-blocking "merged" toast. When true the store must also reconcile the
+ *  keeper from DB truth (its notes/status/worked-minutes changed). */
+export interface RescheduleResult {
+  deletedSiblingIds: number[];
+  mergedData: boolean;
+}
+
 export async function updateTaskDateScheduled(
   id: number,
   dateScheduled: string | null
-): Promise<number[]> {
+): Promise<RescheduleResult> {
   const db = await getDb();
   let deletedSiblingIds: number[] = [];
+  let mergedData = false;
   // Recurring-instance collision guard. The partial UNIQUE index
   // idx_tasks_recurrence_per_date (recurrence_source_id, date_scheduled)
   // means moving an instance onto a date that already holds a sibling of
   // the same recurrence violates the constraint and the UPDATE throws.
   // This happens routinely: viewing a day auto-generates that day's
   // instance, so pulling an overdue straggler of the same recurrence onto
-  // today collides with the just-generated one. The straggler the user is
-  // acting on wins; we drop the redundant sibling on the target date first,
-  // so exactly one instance lands on that date.
+  // today collides with the just-generated one.
+  //
+  // #1 (P1) — MERGE, not hard-delete. The moved instance (`id`) is the
+  // keeper; the colliding sibling(s) are absorbed into it and then deleted.
+  // CRITICAL ORDERING: time_entries are reassigned to the keeper BEFORE the
+  // sibling row is deleted. `time_entries.task_id` is `ON DELETE CASCADE`
+  // and FK enforcement is ON at runtime (verified empirically), so deleting
+  // a sibling that still owned time_entries would cascade-destroy them. The
+  // tauri-plugin-sql JS layer has no transaction API (pooled connections),
+  // so atomicity is achieved by failure-safe ordering + per-statement
+  // atomicity: reassign-then-delete means an interruption can never lose
+  // worked time (worst case leaves an empty shell that the next collision
+  // re-absorbs).
   if (dateScheduled !== null) {
     const rows: { recurrence_source_id: number | null }[] = await db.select(
       "SELECT recurrence_source_id FROM tasks WHERE id = $1",
@@ -1036,20 +1058,74 @@ export async function updateTaskDateScheduled(
     );
     const sourceId = rows[0]?.recurrence_source_id ?? null;
     if (sourceId !== null) {
-      // Capture the colliding sibling id(s) before deleting so the store can
-      // drop them from tasksById. Hard delete — fine for the common case (a
-      // freshly auto-generated, empty instance). A sibling that already had
-      // time_entries/notes would lose them; rare, flagged for a future guard.
-      const sibs: { id: number }[] = await db.select(
-        "SELECT id FROM tasks WHERE recurrence_source_id = $1 AND date_scheduled = $2 AND id <> $3",
+      const sibs: {
+        id: number;
+        notes: string | null;
+        status: string;
+        completed_at: string | null;
+      }[] = await db.select(
+        "SELECT id, notes, status, completed_at FROM tasks WHERE recurrence_source_id = $1 AND date_scheduled = $2 AND id <> $3",
         [sourceId, dateScheduled, id]
       );
       deletedSiblingIds = sibs.map((r) => r.id);
       if (deletedSiblingIds.length > 0) {
-        await db.execute(
-          "DELETE FROM tasks WHERE recurrence_source_id = $1 AND date_scheduled = $2 AND id <> $3",
-          [sourceId, dateScheduled, id]
+        const idList = deletedSiblingIds.join(",");
+
+        // 1) Reassign the siblings' worked time to the keeper FIRST.
+        const reassigned = await db.execute(
+          `UPDATE time_entries SET task_id = $1 WHERE task_id IN (${idList})`,
+          [id]
         );
+
+        // 2) Fold sibling notes + done-status into the keeper.
+        const keeperRows: {
+          notes: string | null;
+          status: string;
+          completed_at: string | null;
+        }[] = await db.select(
+          "SELECT notes, status, completed_at FROM tasks WHERE id = $1",
+          [id]
+        );
+        const keeper = keeperRows[0];
+        const keeperNotes = keeper?.notes ?? null;
+        const keeperDone = keeper?.status === "done";
+
+        const sibNotes = sibs
+          .map((s) => s.notes)
+          .filter((n): n is string => n != null && n.trim() !== "");
+        const doneSib = sibs.find((s) => s.status === "done");
+        const sibDone = doneSib != null;
+
+        // Done if either side is done. Preserve a real completion stamp:
+        // keep the keeper's if it was already done, else inherit the
+        // sibling's completed_at (when the work was actually finished).
+        const nextStatus = keeperDone || sibDone ? "done" : keeper?.status;
+        const nextCompletedAt = keeperDone
+          ? keeper?.completed_at ?? null
+          : sibDone
+            ? doneSib?.completed_at ?? null
+            : keeper?.completed_at ?? null;
+        const mergedNotes =
+          [keeperNotes, ...sibNotes]
+            .filter((n): n is string => n != null && n.trim() !== "")
+            .join("\n\n") || null;
+
+        const notesChanged = mergedNotes !== keeperNotes;
+        const statusChanged = nextStatus !== keeper?.status;
+        if (notesChanged || statusChanged) {
+          await db.execute(
+            "UPDATE tasks SET notes = $1, status = $2, completed_at = $3 WHERE id = $4",
+            [mergedNotes, nextStatus, nextCompletedAt, id]
+          );
+        }
+
+        // Real data absorbed → caller may surface a non-blocking toast.
+        mergedData =
+          (reassigned.rowsAffected ?? 0) > 0 || sibNotes.length > 0 || sibDone;
+
+        // 3) Delete the now-empty shells. Their time_entries already moved
+        //    to the keeper in step 1, so the FK cascade deletes nothing.
+        await db.execute(`DELETE FROM tasks WHERE id IN (${idList})`, []);
       }
     }
   }
@@ -1057,7 +1133,7 @@ export async function updateTaskDateScheduled(
     "UPDATE tasks SET date_scheduled = $1 WHERE id = $2",
     [dateScheduled, id]
   );
-  return deletedSiblingIds;
+  return { deletedSiblingIds, mergedData };
 }
 
 export async function updateTaskDueDate(

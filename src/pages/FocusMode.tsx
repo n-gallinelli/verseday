@@ -535,6 +535,10 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const focusMode = focus?.mode ?? null;
   const isPaused = focus?.mode === "active" ? focus.paused : true;
   const lastTickRef = useRef<number>(0);
+  // Monotonic companion to lastTickRef. performance.now() freezes during machine
+  // sleep and ignores wall-clock jumps, so comparing its delta against
+  // lastTickRef's wall delta separates real awake work from suspend/jump gaps.
+  const lastMonoRef = useRef<number>(0);
   const prevPausedRef = useRef(isPaused);
   // Read the break-continuity setting on mount and on each task start, so a
   // Settings toggle applies to the next focus session without a reload.
@@ -562,10 +566,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   useEffect(() => {
     if (focusMode !== "active" || isPaused) return;
     lastTickRef.current = Date.now();
-    // P0-1 — the effect (re)starts here on activate/unpause, and lastTickRef
-    // is freshly reset, so any suspended span is already dropped. Discard a
-    // resume flag that arrived while paused/inactive so it can't later zero a
-    // legitimate first second once we resume counting.
+    lastMonoRef.current = performance.now();
+    // P0-1 — the effect (re)starts here on activate/unpause, and the tick
+    // references are freshly reset, so any suspended span is already dropped.
+    // Discard a resume flag that arrived while paused/inactive so it can't
+    // later zero a legitimate first second once we resume counting.
     clearFocusResume();
 
     const interval = setInterval(() => {
@@ -573,14 +578,19 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       if (!current || current.mode !== "active" || current.paused) return;
 
       const now = Date.now();
-      const delta = now - lastTickRef.current;
-      // Always advance the reference so the NEXT tick computes a normal small
-      // delta even when this one is dropped (sleep/lid-close gap).
+      const mono = performance.now();
+      const wallDelta = now - lastTickRef.current;
+      const monoDelta = mono - lastMonoRef.current;
+      // Always advance BOTH references so the NEXT tick computes normal small
+      // deltas even when this one is dropped (sleep / lid-close / clock jump).
       lastTickRef.current = now;
-      // P0-1 — drop a suspended span: zero if the OS just signalled resume
-      // (primary), or if the delta exceeds the missed-wake backstop. Normal
-      // ticks and sub-cap throttle catch-up pass through in full.
-      const worked = clampWorkedDelta(delta, consumeFocusResume());
+      lastMonoRef.current = mono;
+      // #2 + #3 — synchronous wall-vs-monotonic cross-check decides how much of
+      // this span was really worked: a sleep/clock-jump (clocks diverge) credits
+      // only the awake monotonic delta; a continuously-awake span (incl.
+      // throttled/occluded catch-up) is kept in full. The OS resume flag is a
+      // redundant backstop.
+      const worked = clampWorkedDelta(wallDelta, monoDelta, consumeFocusResume());
       if (worked > 0) tickFocus(worked);
 
       // Read latest workedMs after the tick — `current` was sampled

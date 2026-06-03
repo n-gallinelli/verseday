@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import type { Task } from "../../types";
 
@@ -12,6 +12,7 @@ interface Props {
   onCreate: (title: string) => Promise<void>;
   onUpdateTitle: (id: number, title: string) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
+  onOpenTaskDetail: (task: Task) => void;
 }
 
 // Lightweight line-by-line task list for week-level project intent.
@@ -23,6 +24,7 @@ export default function PlanTaskList({
   onCreate,
   onUpdateTitle,
   onDelete,
+  onOpenTaskDetail,
 }: Props) {
   return (
     <div className="space-y-1">
@@ -32,6 +34,7 @@ export default function PlanTaskList({
           task={task}
           onUpdateTitle={onUpdateTitle}
           onDelete={onDelete}
+          onOpenTaskDetail={onOpenTaskDetail}
         />
       ))}
       <NewTaskRow onCreate={onCreate} />
@@ -43,21 +46,35 @@ function TaskRow({
   task,
   onUpdateTitle,
   onDelete,
+  onOpenTaskDetail,
 }: {
   task: Task;
   onUpdateTitle: (id: number, title: string) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
+  onOpenTaskDetail: (task: Task) => void;
 }) {
   const [draft, setDraft] = useState(task.title);
   const [savedAt, setSavedAt] = useState(task.title);
+  // Click the title → open the full task detail (matches the rest of the app).
+  // The hover pencil flips the row into inline-rename mode so quick week-
+  // planning edits are still one keystroke away.
+  const [editing, setEditing] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Whole row is the drag handle — gives the user a generous target
-  // and matches the ScheduleTab DraggableTaskRow pattern. The input
-  // and the delete button stop pointer-event propagation so clicking
-  // them doesn't trigger drag start; PointerSensor's 5px activation
-  // distance also means a plain click anywhere on the row doesn't
-  // register as a drag.
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  // Whole row is the drag handle — gives the user a generous target and
+  // matches the ScheduleTab DraggableTaskRow pattern. The rename input, pencil,
+  // and delete button stop pointer-event propagation so clicking them never
+  // starts a drag; the TITLE intentionally does NOT, so it stays draggable.
+  // PointerSensor's 5px activation distance is what disambiguates: a plain
+  // click on the title opens the detail overlay, a >5px drag reschedules.
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `${PLAN_TASK_DRAG_PREFIX}${task.id}`,
     data: { taskId: task.id, taskTitle: task.title },
@@ -86,27 +103,68 @@ function TaskRow({
       className={`group/row flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-overlay-hover cursor-grab active:cursor-grabbing touch-none ${isDragging ? "opacity-30" : ""}`}
     >
       <span className="w-1.5 h-1.5 rounded-full bg-fg-faded flex-shrink-0" />
-      <input
-        type="text"
-        value={draft}
-        onMouseDown={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          save(e.target.value);
-        }}
-        onBlur={() => {
-          // Flush any pending debounce immediately on blur so we don't
-          // lose the last edit if the user navigates away.
-          if (debounceRef.current) {
-            clearTimeout(debounceRef.current);
-            debounceRef.current = null;
-            save(draft);
-          }
-        }}
-        className="flex-1 bg-transparent text-[13px] text-fg outline-none placeholder:text-fg-disabled cursor-text"
-        placeholder="(empty — will delete)"
-      />
+      {editing ? (
+        <input
+          ref={inputRef}
+          type="text"
+          value={draft}
+          onMouseDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            save(e.target.value);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === "Escape") {
+              e.preventDefault();
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
+          onBlur={() => {
+            // Flush any pending debounce immediately so the last edit isn't lost.
+            if (debounceRef.current) {
+              clearTimeout(debounceRef.current);
+              debounceRef.current = null;
+              save(draft);
+            }
+            setEditing(false);
+          }}
+          className="flex-1 bg-transparent text-[13px] text-fg outline-none placeholder:text-fg-disabled cursor-text"
+          placeholder="(empty — will delete)"
+        />
+      ) : (
+        <button
+          type="button"
+          // No stopPropagation: the title stays part of the row's drag handle
+          // (move >5px → drag to a day), while a plain click (<5px, the
+          // PointerSensor threshold) falls through to open the detail overlay.
+          onClick={() => onOpenTaskDetail(task)}
+          title="Open task details"
+          className="flex-1 min-w-0 text-left truncate bg-transparent text-[13px] text-fg cursor-grab active:cursor-grabbing"
+        >
+          {task.title}
+        </button>
+      )}
+      {!editing && (
+        <button
+          type="button"
+          onMouseDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          // Re-seed from the live task.title (not the once-initialized draft):
+          // the title can have changed via the detail overlay since mount.
+          onClick={() => {
+            setDraft(task.title);
+            setSavedAt(task.title);
+            setEditing(true);
+          }}
+          title="Rename"
+          className="opacity-0 group-hover/row:opacity-100 w-5 h-5 rounded flex items-center justify-center text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer transition-opacity flex-shrink-0"
+        >
+          <svg width="11" height="11" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9.5 1.5l3 3L5 12l-3.5.5L2 9z" />
+          </svg>
+        </button>
+      )}
       <button
         type="button"
         onMouseDown={(e) => e.stopPropagation()}

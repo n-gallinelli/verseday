@@ -160,6 +160,7 @@ export default function PlanProjectPanel({
             onCreate={onCreateTask}
             onUpdateTitle={onUpdateTaskTitle}
             onDelete={onDeleteTask}
+            onOpenTaskDetail={onOpenTaskDetail}
           />
         </div>
 

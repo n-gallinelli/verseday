@@ -1,4 +1,5 @@
 import { getDb } from "./database";
+import { desktopDir, join } from "@tauri-apps/api/path";
 import {
   SQL_TOTAL_WORKED_MINUTES_FOR_DATE,
   SQL_CLOSE_ORPHANED_TIME_ENTRIES,
@@ -467,6 +468,24 @@ export async function getDefaultTaskEstimateMin(): Promise<number> {
     return DEFAULT_TASK_ESTIMATE_FALLBACK_MIN;
   }
   return parsed;
+}
+
+/** P4 — export a CONSISTENT snapshot of the DB to the Desktop. Uses
+ *  `VACUUM INTO`, not a file copy: the live DB may have an open rollback
+ *  journal / in-flight writes, so a raw copy can be torn. VACUUM INTO writes a
+ *  transactionally-consistent standalone copy. The destination is a SQL string
+ *  LITERAL (not a bindable param), so single quotes in the path are escaped by
+ *  doubling. Returns the destination path. */
+export async function exportDatabaseToDesktop(): Promise<string> {
+  const db = await getDb();
+  const dir = await desktopDir();
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const dest = await join(dir, `verseday-export-${stamp}.db`);
+  const escaped = dest.replace(/'/g, "''");
+  await db.execute(`VACUUM INTO '${escaped}'`);
+  return dest;
 }
 
 export async function createTask(input: CreateTaskInput): Promise<number> {

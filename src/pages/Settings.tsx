@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import {
   getSetting,
   setSetting,
+  exportDatabaseToDesktop,
   DEFAULT_TASK_ESTIMATE_FALLBACK_MIN,
 } from "../db/queries";
 import CalendarSettings from "../components/settings/CalendarSettings";
@@ -66,7 +66,8 @@ export default function Settings() {
   async function handleExportDatabase() {
     setExportState({ kind: "busy" });
     try {
-      const path = await invoke<string>("export_database");
+      // VACUUM INTO snapshot (consistent even with the live DB open) → Desktop.
+      const path = await exportDatabaseToDesktop();
       setExportState({ kind: "done", path });
     } catch (e) {
       setExportState({ kind: "error", message: e instanceof Error ? e.message : String(e) });

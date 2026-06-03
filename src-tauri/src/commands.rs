@@ -47,29 +47,9 @@ pub fn dismiss_quick_add(app_handle: tauri::AppHandle, state: tauri::State<Quick
     }
 }
 
-// ── Manual database export (P4) ────────────────────────────────────────
-/// Copy the live SQLite DB to the user's Desktop with a timestamped name and
-/// return the destination path. A dependency-free "export now" — no file dialog
-/// plugin required. The frontend surfaces the returned path (and can reveal it).
-#[tauri::command]
-pub fn export_database(app_handle: tauri::AppHandle) -> Result<String, String> {
-    let data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?;
-    let src = data_dir.join("verseday.db");
-    if !src.exists() {
-        return Err("No database to export yet.".into());
-    }
-    let desktop = app_handle.path().desktop_dir().map_err(|e| e.to_string())?;
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let dest = desktop.join(format!("verseday-export-{ts}.db"));
-    std::fs::copy(&src, &dest).map_err(|e| e.to_string())?;
-    Ok(dest.to_string_lossy().to_string())
-}
+// Manual DB export (P4) lives frontend-side: queries.ts exportDatabaseToDesktop
+// runs `VACUUM INTO` for a transactionally-consistent snapshot (a raw file copy
+// of the live DB can be torn). No Rust command needed.
 
 // ── Platform-specific implementations ──────────────────────────────────
 

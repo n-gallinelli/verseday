@@ -728,7 +728,6 @@ pub fn run() {
             commands::dismiss_quick_add,
             commands::start_pip_hover_monitor,
             commands::stop_pip_hover_monitor,
-            commands::export_database,
             #[cfg(target_os = "macos")]
             calendar::calendar_check_permission,
             #[cfg(target_os = "macos")]

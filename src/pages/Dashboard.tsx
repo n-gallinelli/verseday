@@ -35,10 +35,6 @@ function formatWeekHeader(mondayIso: string): string {
   })}`;
 }
 
-function formatMinutesToHours(minutes: number): string {
-  return (Math.round(minutes / 6) / 10).toFixed(1).replace(/\.0$/, "");
-}
-
 // ─── Bar chart ──────────────────────────────────────────────────────────────
 
 function BarChart({
@@ -114,7 +110,7 @@ function BarChart({
                   style={{
                     height: `${(workedPct / 100) * chartHeight}px`,
                   }}
-                  title={`Worked: ${formatMinutesToHours(worked)}h`}
+                  title={`Worked: ${formatHoursMinutes(worked)}`}
                 />
                 {/* Planned bar — warm tan, "intent" — on the right */}
                 <div
@@ -122,7 +118,7 @@ function BarChart({
                   style={{
                     height: `${(plannedPct / 100) * chartHeight}px`,
                   }}
-                  title={`Planned: ${formatMinutesToHours(planned)}h`}
+                  title={`Planned: ${formatHoursMinutes(planned)}`}
                 />
               </div>
               {/* Day label */}
@@ -376,12 +372,12 @@ export default function Dashboard() {
             {/* ── Week summary ────────────────────────────────────────── */}
             <div className="mb-8 animate-slide-up animate-stagger">
               <div className="text-[36px] font-semibold leading-none font-display text-fg">
-                {formatMinutesToHours(totalWorkedMinutes)}h
+                {formatHoursMinutes(totalWorkedMinutes)}
                 <span className="text-[14px] font-normal text-fg-faded ml-2">worked</span>
               </div>
               <div className="flex items-center gap-4 mt-2">
                 <span className="text-[13px] text-fg-muted">
-                  {formatMinutesToHours(totalPlannedMinutes)}h planned
+                  {formatHoursMinutes(totalPlannedMinutes)} planned
                 </span>
                 <span className="text-[13px] text-fg-muted">
                   {completedTasks}/{totalTasks} tasks done

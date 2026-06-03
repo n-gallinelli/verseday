@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { selectAllProjects, useAppStore } from "../stores/appStore";
 import {
-  getWeeklyShutdown,
   upsertWeeklyShutdown,
   getTasksCompletedInWeek,
   getWorkedMinutesPerProjectPerDay,

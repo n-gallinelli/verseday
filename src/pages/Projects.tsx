@@ -9,7 +9,6 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
-  type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -236,7 +235,7 @@ export default function Projects() {
     });
   }
 
-  function handleDragStart(_event: DragStartEvent) {
+  function handleDragStart() {
     setExpandedProjectIds(new Set());
   }
 

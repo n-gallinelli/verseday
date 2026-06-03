@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   getSetting,
   setSetting,
@@ -62,6 +63,17 @@ export default function Settings() {
   const [exportState, setExportState] = useState<
     { kind: "idle" } | { kind: "busy" } | { kind: "done"; path: string } | { kind: "error"; message: string }
   >({ kind: "idle" });
+  // P4(a) — newest copy-on-launch backup time (epoch ms), undefined while
+  // loading, null when none exists. Best-effort: a read failure shows "Unknown".
+  const [lastBackupMs, setLastBackupMs] = useState<number | null | undefined>(undefined);
+
+  // Read the latest backup timestamp once on mount. Never throws — a failure
+  // leaves it null so a silent backup gap is visible as "No backup yet".
+  useEffect(() => {
+    invoke<number | null>("get_last_backup_at")
+      .then((ms) => setLastBackupMs(ms ?? null))
+      .catch(() => setLastBackupMs(null));
+  }, []);
 
   async function handleExportDatabase() {
     setExportState({ kind: "busy" });
@@ -73,6 +85,18 @@ export default function Settings() {
       setExportState({ kind: "error", message: e instanceof Error ? e.message : String(e) });
     }
   }
+
+  const lastBackupLabel =
+    lastBackupMs === undefined
+      ? null // still loading — render nothing yet
+      : lastBackupMs === null
+        ? "No backup yet"
+        : `Last backup: ${new Date(lastBackupMs).toLocaleString(undefined, {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          })}`;
 
   useEffect(() => {
     async function load() {
@@ -329,6 +353,11 @@ export default function Settings() {
                   Save a copy of your data to the Desktop. A backup is also made
                   automatically each time the app launches.
                 </div>
+                {lastBackupLabel && (
+                  <div className="text-[11px] text-fg-faded mt-1">
+                    {lastBackupLabel}
+                  </div>
+                )}
                 {exportState.kind === "done" && (
                   <div className="text-[11px] text-accent-green mt-1 truncate">
                     Exported to {exportState.path}

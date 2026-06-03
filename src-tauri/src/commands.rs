@@ -51,6 +51,34 @@ pub fn dismiss_quick_add(app_handle: tauri::AppHandle, state: tauri::State<Quick
 // runs `VACUUM INTO` for a transactionally-consistent snapshot (a raw file copy
 // of the live DB can be torn). No Rust command needed.
 
+/// P4(a) — newest copy-on-launch backup's timestamp, as epoch milliseconds, or
+/// None when the backups dir is missing/empty. Uses the file MTIME (robust
+/// regardless of the epoch-vs-readable filename format). Best-effort: every
+/// failure collapses to None via `?`, so the command never errors — a silent
+/// backup gap surfaces as "No backup yet" rather than a thrown error.
+#[tauri::command]
+pub fn get_last_backup_at(app_handle: tauri::AppHandle) -> Option<i64> {
+    let backups = app_handle.path().app_data_dir().ok()?.join("backups");
+    let mut newest: Option<std::time::SystemTime> = None;
+    for entry in std::fs::read_dir(&backups).ok()?.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !(name.starts_with("verseday-") && name.ends_with(".db")) {
+            continue;
+        }
+        if let Ok(mtime) = entry.metadata().and_then(|m| m.modified()) {
+            if newest.map_or(true, |n| mtime > n) {
+                newest = Some(mtime);
+            }
+        }
+    }
+    let millis = newest?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_millis() as i64;
+    Some(millis)
+}
+
 // ── Platform-specific implementations ──────────────────────────────────
 
 #[cfg(target_os = "macos")]

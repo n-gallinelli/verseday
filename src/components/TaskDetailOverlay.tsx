@@ -32,12 +32,12 @@ const ESTIMATE_PRESETS = [
 ];
 
 const WORKED_PRESETS = [
+  { label: "5m", value: "5" },
+  { label: "10m", value: "10" },
   { label: "15m", value: "15" },
   { label: "30m", value: "30" },
-  { label: "45m", value: "45" },
   { label: "1h", value: "60" },
   { label: "1h 30m", value: "90" },
-  { label: "2h", value: "120" },
 ];
 
 interface TaskDetailOverlayProps {

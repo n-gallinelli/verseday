@@ -15,6 +15,9 @@ import {
   rolloverUnfinishedTasks as dbRolloverUnfinishedTasks,
   setTaskRecurrence as dbSetTaskRecurrence,
   setManualWorkedMinutes as dbSetManualWorkedMinutes,
+  getWorkedSecondsForTask,
+  deleteEstimateBackfillEntries,
+  ESTIMATE_BACKFILL_ENTRY_TYPE,
   setTaskStatusFromUI,
   stopTimeEntry,
   toggleTaskHighlight as dbToggleTaskHighlight,
@@ -1652,6 +1655,30 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (fresh) {
         if (before) set((s) => withTaskMutated(s, before, fresh));
         else set((s) => withTaskInserted(s, fresh));
+      }
+
+      // Estimate backfill (Verse Option 1). Completing an UNtimed task that
+      // carries an estimate stamps a tagged 'estimate_backfill' time entry so
+      // its time-spent reflects the estimate; reopening strips it.
+      //  - guard on RAW worked_seconds (not rounded minutes) so 1–29s of real
+      //    time doesn't read as 0 and stack an estimate on top;
+      //  - skip the active focus task — its live time commits separately
+      //    (prevents the live→committed double-count);
+      //  - fires on every untimed completion, incl. default estimates.
+      if (status === "done") {
+        const est = fresh?.estimated_minutes ?? 0;
+        if (est > 0 && get().focus?.taskId !== id) {
+          const workedSec = await getWorkedSecondsForTask(id);
+          if (workedSec === 0) {
+            await dbSetManualWorkedMinutes(id, est, ESTIMATE_BACKFILL_ENTRY_TYPE);
+            await get().loadWorkedMinutes([id]);
+          }
+        }
+      } else if (current?.status === "done") {
+        // Reopen (done → not-done): strip the backfill so reopened work starts
+        // clean. Blanket delete — at most one such entry per task.
+        await deleteEstimateBackfillEntries(id);
+        await get().loadWorkedMinutes([id]);
       }
     } catch (err) {
       console.error("[appStore] setTaskStatus failed — refetching truth", {

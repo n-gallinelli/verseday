@@ -1413,9 +1413,39 @@ export async function getWorkedMinutesByDate(
   return bucketWorkedByLocalDay(rows);
 }
 
+/** Tag on the synthetic entry created when an untimed task is completed and its
+ *  time-spent is backfilled from the estimate. Used to strip it on reopen and
+ *  to separate it from real tracked time. NOT excluded from any worked-time
+ *  read — backfilled time counts in totals (that's the feature). */
+export const ESTIMATE_BACKFILL_ENTRY_TYPE = "estimate_backfill";
+
+/** Raw committed worked seconds for a task (closed entries only), UNrounded —
+ *  callers that must distinguish 0 from 1–29s (which getWorkedMinutesForTask
+ *  rounds to 0) use this, e.g. the estimate backfill guard. */
+export async function getWorkedSecondsForTask(taskId: number): Promise<number> {
+  const db = await getDb();
+  const rows: { total: number }[] = await db.select(
+    `SELECT COALESCE(SUM(worked_seconds), 0) as total
+     FROM time_entries WHERE task_id = $1 AND end_time IS NOT NULL`,
+    [taskId]
+  );
+  return rows[0]?.total ?? 0;
+}
+
+/** Strip the estimate-backfill entry for a task (at most one). Called when a
+ *  done task is reopened, so reopened work no longer carries the assumed time. */
+export async function deleteEstimateBackfillEntries(taskId: number): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "DELETE FROM time_entries WHERE task_id = $1 AND entry_type = $2",
+    [taskId, ESTIMATE_BACKFILL_ENTRY_TYPE]
+  );
+}
+
 export async function setManualWorkedMinutes(
   taskId: number,
-  targetMinutes: number
+  targetMinutes: number,
+  entryType: string = "tracked"
 ): Promise<void> {
   const db = await getDb();
   // Current worked minutes (sums closed entries only). S.5 — reads
@@ -1438,8 +1468,8 @@ export async function setManualWorkedMinutes(
     // Add an adjustment entry for the difference.
     const startTime = new Date(Date.now() - diff * 60 * 1000).toISOString();
     await db.execute(
-      "INSERT INTO time_entries (task_id, start_time, end_time, entry_type, worked_seconds) VALUES ($1, $2, $3, 'tracked', $4)",
-      [taskId, startTime, now, diff * 60]
+      "INSERT INTO time_entries (task_id, start_time, end_time, entry_type, worked_seconds) VALUES ($1, $2, $3, $4, $5)",
+      [taskId, startTime, now, entryType, diff * 60]
     );
     return;
   }
@@ -1455,8 +1485,8 @@ export async function setManualWorkedMinutes(
   if (targetMinutes > 0) {
     const startTime = new Date(Date.now() - targetMinutes * 60 * 1000).toISOString();
     await db.execute(
-      "INSERT INTO time_entries (task_id, start_time, end_time, entry_type, worked_seconds) VALUES ($1, $2, $3, 'tracked', $4)",
-      [taskId, startTime, now, targetMinutes * 60]
+      "INSERT INTO time_entries (task_id, start_time, end_time, entry_type, worked_seconds) VALUES ($1, $2, $3, $4, $5)",
+      [taskId, startTime, now, entryType, targetMinutes * 60]
     );
   }
 }

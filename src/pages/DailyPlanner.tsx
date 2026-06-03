@@ -517,10 +517,7 @@ export default function DailyPlanner() {
     let est = newTaskEstimate;
     if (est == null) {
       const parsed = parseTimeFromTitle(title);
-      // Only apply the parse when a real title remnant survives. A bare "~10"
-      // (no other words) strips to an empty title — treat that as no-parse:
-      // keep the literal title, set no estimate, never create a blank task.
-      if (parsed.minutes != null && parsed.cleanTitle.trim() !== "") {
+      if (parsed.minutes != null) {
         title = parsed.cleanTitle;
         est = parsed.minutes;
       }

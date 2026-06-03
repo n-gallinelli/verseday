@@ -86,7 +86,12 @@ function StackedBarChart({
   } | null>(null);
 
   return (
-    <div className="flex items-end gap-3 h-[180px] w-full relative">
+    <div className="w-full relative">
+      {/* Bar-plotting area — an explicit, generous height so a day reads at
+          its true fraction of the 8h scale (e.g. 2h → 25% is a substantial
+          bar, not a stub). Day labels live in a separate row BELOW this
+          height so they never eat into the bars' vertical room. */}
+      <div className="flex items-end gap-3 h-[260px] w-full">
       {weekDates.map((date, idx) => {
         const inner = workedByDay.get(date);
         const total = dayTotals[idx];
@@ -101,7 +106,7 @@ function StackedBarChart({
           : [];
 
         return (
-          <div key={date} className="flex-1 flex flex-col items-center min-w-0">
+          <div key={date} className="flex-1 h-full flex flex-col items-center min-w-0">
             <div className="flex-1 w-full flex flex-col justify-end relative">
               {total > 0 ? (
                 <div
@@ -143,17 +148,25 @@ function StackedBarChart({
                 <div className="w-full h-[4px] rounded-full bg-overlay-hover" />
               )}
             </div>
-            <div className="mt-2 text-center">
-              <div className="text-[11px] font-medium text-fg-secondary">
-                {DAY_NAMES_SHORT[idx]}
-              </div>
-              <div className="text-[10px] text-fg-faded tabular-nums">
-                {total > 0 ? formatHoursMinutes(Math.round(total)) : "—"}
-              </div>
-            </div>
           </div>
         );
       })}
+      </div>
+
+      {/* Day labels — a separate row below the bar area so they don't
+          shrink the bars. Columns mirror the bar row's flex layout. */}
+      <div className="flex gap-3 w-full mt-2">
+        {weekDates.map((date, idx) => (
+          <div key={date} className="flex-1 text-center min-w-0">
+            <div className="text-[11px] font-medium text-fg-secondary">
+              {DAY_NAMES_SHORT[idx]}
+            </div>
+            <div className="text-[10px] text-fg-faded tabular-nums">
+              {dayTotals[idx] > 0 ? formatHoursMinutes(Math.round(dayTotals[idx])) : "—"}
+            </div>
+          </div>
+        ))}
+      </div>
 
       {/* Custom tooltip — anchored to the top-right INSIDE the chart
           area so wrapping long project names grows the tooltip

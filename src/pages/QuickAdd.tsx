@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { getProjects, createTask } from "../db/queries";
 import { todayString } from "../utils/dates";
+import { parseTimeFromTitle } from "../utils/format";
 import { activeObjectiveOptions } from "../utils/objectiveOptions";
 import ProjectGlyph from "../components/ProjectGlyph";
 import { useCustomIcons } from "../hooks/useCustomIcons";
@@ -140,11 +141,24 @@ export default function QuickAdd() {
     setSubmitting(true);
     try {
       const date = todayString();
+      // Smart time parsing — mirror DailyPlanner (parseTimeFromTitle): when no
+      // manual estimate preset is chosen, pull a duration out of the title
+      // ("~10", "2h", "30 min") so the quick-add bar estimates exactly like the
+      // daily add row does.
+      let taskTitle = trimmed;
+      let est = estimateMinutes;
+      if (est == null) {
+        const parsed = parseTimeFromTitle(taskTitle);
+        if (parsed.minutes != null) {
+          taskTitle = parsed.cleanTitle;
+          est = parsed.minutes;
+        }
+      }
       await createTask({
-        title: trimmed,
+        title: taskTitle,
         projectId,
         dateScheduled: date,
-        estimatedMinutes: estimateMinutes,
+        estimatedMinutes: est,
         priority: "medium",
       });
       // Cross-webview notify: this is a separate window with its own store,

@@ -3,6 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import Button from "./Button";
 import ProjectGlyph from "./ProjectGlyph";
 import { useCustomIcons } from "../hooks/useCustomIcons";
+import { localDateIso } from "../utils/dates";
 import {
   selectProjectsByStatus,
   selectTaskIdsByDate,
@@ -48,7 +49,7 @@ interface SummaryOverlayProps {
 function addDays(iso: string, n: number): string {
   const d = new Date(iso + "T00:00:00");
   d.setDate(d.getDate() + n);
-  return d.toISOString().split("T")[0];
+  return localDateIso(d); // #30 — local tz; toISOString() shifts the week range ±1 in the evening
 }
 
 function formatLongDate(iso: string): string {

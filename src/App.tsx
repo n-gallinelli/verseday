@@ -22,6 +22,7 @@ import TaskDetailOverlayHost from "./components/TaskDetailOverlayHost";
 import SummaryOverlayHost from "./components/SummaryOverlayHost";
 import SunsetOverlayHost from "./components/SunsetOverlayHost";
 import { useAppStore, markFocusResume } from "./stores/appStore";
+import { todayString } from "./utils/dates";
 import {
   closeOrphanedTimeEntries,
   getTasksForDate,
@@ -301,7 +302,7 @@ function MainApp() {
         e.preventDefault();
         (async () => {
           try {
-            const today = new Date().toISOString().split("T")[0];
+            const today = todayString(); // local tz — toISOString() picks the wrong day in the evening east of UTC
             const tasks = await getTasksForDate(today);
             const incomplete = tasks.filter((t) => t.status !== "done");
             if (incomplete.length === 0) {

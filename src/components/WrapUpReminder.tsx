@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAppStore } from "../stores/appStore";
+import { todayString, localDateIso } from "../utils/dates";
 import VerseDayLogo from "./VerseDayLogo";
 
 const WRAPUP_HOUR = 16;
@@ -14,7 +15,7 @@ const COMPLETED_KEY_PREFIX = "verseday_wrapup_";
 const SNOOZE_KEY = "verseday_wrapup_snooze";
 
 function getTodayIso(): string {
-  return new Date().toISOString().split("T")[0];
+  return todayString(); // #28 — local tz; toISOString() flips the per-day key in the evening
 }
 
 // True any time at or after 4:30 PM today — broader than the previous
@@ -61,7 +62,7 @@ function cleanupStaleKeys(): void {
     const cutoffIso = (() => {
       const d = new Date();
       d.setDate(d.getDate() - 7);
-      return d.toISOString().split("T")[0];
+      return localDateIso(d); // #28 — local tz
     })();
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {

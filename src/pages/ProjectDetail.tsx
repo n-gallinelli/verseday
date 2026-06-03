@@ -36,6 +36,7 @@ import { errorMessage } from "../utils/errors";
 import CalendarPicker from "../components/CalendarPicker";
 import DateRangeField from "../components/DateRangeField";
 import { parseTimeFromTitle } from "../utils/format";
+import { localDateIso } from "../utils/dates";
 import RichTextEditor from "../components/RichTextEditor";
 import ProjectIconPicker from "../components/ProjectIconPicker";
 import type { Task } from "../types";
@@ -64,7 +65,7 @@ function getCurrentWeekdayDates(): string[] {
   for (let i = 0; i < 5; i++) {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
-    dates.push(d.toISOString().split("T")[0]);
+    dates.push(localDateIso(d)); // #67 — local tz; toISOString() shifts the weekday columns in the evening
   }
   return dates;
 }

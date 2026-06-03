@@ -1,6 +1,6 @@
 {
   "name": "verseday",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "//engines": "Node >= 24 required for `npm test`: the worked-seconds integrity suite uses the built-in node:sqlite (stable in 24, experimental). The app build (vite) has no such floor.",

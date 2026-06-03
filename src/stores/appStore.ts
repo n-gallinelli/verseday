@@ -78,6 +78,67 @@ function indexRemove<K>(idx: Map<K, number[]>, key: K, id: number): Map<K, numbe
   return next;
 }
 
+/** A bucket-ordering key, compared element-by-element ascending. Single-date
+ *  and single-project buckets order by [sort_order]; the week bucket spans
+ *  Mon..Sun across dates so it orders by [date_scheduled, sort_order]. */
+type IndexKey = readonly (number | string)[];
+
+function compareIndexKeys(a: IndexKey, b: IndexKey): number {
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const av = a[i];
+    const bv = b[i];
+    if (av === bv) continue;
+    if (av === undefined) return -1;
+    if (bv === undefined) return 1;
+    return av < bv ? -1 : 1;
+  }
+  return 0;
+}
+
+/** Splice `id` into the index entry at `key`, keeping the entry ascending by
+ *  `keyOf`. Stable: an id whose key ties an existing member lands AFTER it —
+ *  matching loadTasksFor*'s `ORDER BY ... sort_order` and the DB's placement
+ *  rules (new rows get MIN-1 → front; recurring instances 999 → back; calendar
+ *  imports 0 → among the zeros). Mirrors indexAppend: no-op (same Map) when
+ *  `id` is already present; returns a NEW Map only on change. */
+function indexInsertOrdered<K>(
+  idx: Map<K, number[]>,
+  key: K,
+  id: number,
+  keyOf: (id: number) => IndexKey,
+): Map<K, number[]> {
+  const existing = idx.get(key);
+  if (existing && existing.includes(id)) return idx;
+  const arr = existing ?? [];
+  const target = keyOf(id);
+  let i = 0;
+  while (i < arr.length && compareIndexKeys(keyOf(arr[i]), target) <= 0) i++;
+  const nextArr = arr.slice();
+  nextArr.splice(i, 0, id);
+  const next = new Map(idx);
+  next.set(key, nextArr);
+  return next;
+}
+
+/** Order key for single-date / single-project buckets: sort_order only. An id
+ *  absent from `map` (a transient index/map gap) yields +∞, so it appends
+ *  rather than producing a NaN comparison (#4). */
+const sortKeyOf = (map: Map<number, Task>) => (id: number): IndexKey => {
+  const t = map.get(id);
+  return [t ? t.sort_order : Infinity];
+};
+
+/** Order key for the week bucket (spans dates): (date_scheduled, sort_order),
+ *  matching loadTasksForWeek's ORDER BY and the flat-array reads in Dashboard /
+ *  SummaryOverlay. Without the date term a later-date task at a negative
+ *  sort_order would jump ahead of an earlier date. Missing id → (+∞, +∞). */
+const weekKeyOf = (map: Map<number, Task>) => (id: number): IndexKey => {
+  const t = map.get(id);
+  if (!t || t.date_scheduled == null) return ["￿", Infinity];
+  return [t.date_scheduled, t.sort_order];
+};
+
 /** A recurring-task TEMPLATE (the definition/source): recurrence set, no
  *  source pointer of its own. Templates are kept OUT of the date/week/project
  *  list indices (P4) — they live in tasksById only, surfaced via
@@ -98,11 +159,11 @@ export function withTaskInserted(s: AppState, task: Task): Partial<AppState> {
   let nextProjIdx = s.taskIdsByProject;
   const tpl = isTemplate(task);
   if (!tpl && task.date_scheduled !== null) {
-    nextDateIdx = indexAppend(nextDateIdx, task.date_scheduled, task.id);
-    nextWeekIdx = indexAppend(nextWeekIdx, weekStartFromDate(task.date_scheduled), task.id);
+    nextDateIdx = indexInsertOrdered(nextDateIdx, task.date_scheduled, task.id, sortKeyOf(nextMap));
+    nextWeekIdx = indexInsertOrdered(nextWeekIdx, weekStartFromDate(task.date_scheduled), task.id, weekKeyOf(nextMap));
   }
   if (!tpl && task.project_id !== null) {
-    nextProjIdx = indexAppend(nextProjIdx, task.project_id, task.id);
+    nextProjIdx = indexInsertOrdered(nextProjIdx, task.project_id, task.id, sortKeyOf(nextMap));
   }
   return {
     tasksById: nextMap,
@@ -158,8 +219,12 @@ export function withTaskMutated(s: AppState, before: Task, after: Task): Partial
       nextWeekIdx = indexRemove(nextWeekIdx, weekStartFromDate(beforeDate), after.id);
     }
     if (afterDate !== null) {
-      nextDateIdx = indexAppend(nextDateIdx, afterDate, after.id);
-      nextWeekIdx = indexAppend(nextWeekIdx, weekStartFromDate(afterDate), after.id);
+      // Ordered insert, not append: updateTaskDateScheduled keeps the moved
+      // task's sort_order, so a reschedule must land it in sort_order position
+      // in the new bucket — matching what loadTasksForDate would produce on
+      // reload. Appending drifts the store from the DB until the next load.
+      nextDateIdx = indexInsertOrdered(nextDateIdx, afterDate, after.id, sortKeyOf(nextMap));
+      nextWeekIdx = indexInsertOrdered(nextWeekIdx, weekStartFromDate(afterDate), after.id, weekKeyOf(nextMap));
     }
   }
   const beforeProj = isTemplate(before) ? null : before.project_id;
@@ -169,7 +234,7 @@ export function withTaskMutated(s: AppState, before: Task, after: Task): Partial
       nextProjIdx = indexRemove(nextProjIdx, beforeProj, after.id);
     }
     if (afterProj !== null) {
-      nextProjIdx = indexAppend(nextProjIdx, afterProj, after.id);
+      nextProjIdx = indexInsertOrdered(nextProjIdx, afterProj, after.id, sortKeyOf(nextMap));
     }
   }
   return {

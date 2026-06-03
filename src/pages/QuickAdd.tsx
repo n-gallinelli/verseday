@@ -149,7 +149,10 @@ export default function QuickAdd() {
       let est = estimateMinutes;
       if (est == null) {
         const parsed = parseTimeFromTitle(taskTitle);
-        if (parsed.minutes != null) {
+        // Same guard as DailyPlanner: a bare "~10" strips to an empty title —
+        // treat as no-parse (keep the literal title, no estimate), never a
+        // blank task.
+        if (parsed.minutes != null && parsed.cleanTitle.trim() !== "") {
           taskTitle = parsed.cleanTitle;
           est = parsed.minutes;
         }

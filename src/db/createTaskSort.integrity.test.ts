@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { DatabaseSync } from "node:sqlite";
+import { createTaskSortSubquery } from "./createTaskSortSql";
 
 // #11 — createTask computes sort_order = min(scope) - 1 INSIDE the INSERT as a
 // subquery (single atomic statement) instead of SELECT-then-INSERT. This pins
@@ -49,6 +50,43 @@ describe("#11 createTask sort_order subquery", () => {
     db.prepare(INSERT_DATE_SCOPE).run("X", "2026-06-11", "2026-06-11");
     expect(sortOrderOf(db, "A")).toBe(0);
     expect(sortOrderOf(db, "X")).toBe(0); // different date scope, unaffected by A
+    db.close();
+  });
+});
+
+// Pin the PRODUCTION scope-selection (createTaskSortSubquery), not a copied
+// INSERT — so the date-before-project precedence is actually guarded.
+describe("createTaskSortSubquery scope precedence", () => {
+  it("date takes precedence over project when BOTH are present", () => {
+    expect(createTaskSortSubquery({ projectId: 7, dateScheduled: "2026-06-10" }))
+      .toContain("date_scheduled = $3");
+  });
+
+  it("project scope when there is no date", () => {
+    expect(createTaskSortSubquery({ projectId: 7, dateScheduled: null }))
+      .toContain("project_id = $2");
+  });
+
+  it("global scope when neither is present (no WHERE)", () => {
+    expect(createTaskSortSubquery({ projectId: null, dateScheduled: null }))
+      .not.toContain("WHERE");
+  });
+
+  // End-to-end: run the SELECTED production subquery and prove a dated+project
+  // task lands at the top of its DATE bucket, not its project bucket.
+  it("a dated task with an Objective gets the date-top sort_order, not project-top", () => {
+    const db = makeDb();
+    // Project 7 sits at sort_order -5 (on another date); today's date bucket is at 0, -1.
+    db.exec(`INSERT INTO tasks (title, project_id, date_scheduled, sort_order) VALUES
+      ('p',  7,    '2026-06-09', -5),
+      ('d1', NULL, '2026-06-10',  0),
+      ('d2', NULL, '2026-06-10', -1)`);
+    const sub = createTaskSortSubquery({ projectId: 7, dateScheduled: "2026-06-10" });
+    const sql = `INSERT INTO tasks (title, project_id, date_scheduled, sort_order)
+      VALUES ('new', 7, '2026-06-10', ${sub.replace("$3", "'2026-06-10'").replace("$2", "7")})`;
+    db.exec(sql);
+    // date-MIN was -1 → new = -2 (top of date). NOT project-MIN(-5)-1 = -6.
+    expect(sortOrderOf(db, "new")).toBe(-2);
     db.close();
   });
 });

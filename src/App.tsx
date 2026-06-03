@@ -321,6 +321,9 @@ function MainApp() {
               }
             }
             if (!target) target = incomplete[0];
+            // #8 — commit any in-flight session before starting a new one, so
+            // its live workedMs isn't abandoned when focus is overwritten.
+            await useAppStore.getState().endActiveFocusSession();
             const priorMin = await getWorkedMinutesForTask(target.id);
             const entryId = await startTimeEntry(target.id, "tracked");
             const prev = useAppStore.getState().currentPage;

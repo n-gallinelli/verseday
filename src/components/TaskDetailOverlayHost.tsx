@@ -112,6 +112,8 @@ export default function TaskDetailOverlayHost() {
     // those duplicates.
     closeTaskDetail();
     try {
+      // #8 — commit any in-flight session before overwriting focus.
+      await useAppStore.getState().endActiveFocusSession();
       const priorMinutes = await getWorkedMinutesForTask(t.id);
       const entryId = await startTimeEntry(t.id, "tracked");
       const prevPage = useAppStore.getState().currentPage;

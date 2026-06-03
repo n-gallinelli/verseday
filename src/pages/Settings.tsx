@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import {
   getSetting,
   setSetting,
+  exportDatabaseToDesktop,
   DEFAULT_TASK_ESTIMATE_FALLBACK_MIN,
 } from "../db/queries";
 import CalendarSettings from "../components/settings/CalendarSettings";
@@ -57,6 +58,21 @@ export default function Settings() {
   const [breakContinuity, setBreakContinuity] = useState<BreakContinuity>("reset");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const taskDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Manual DB export (P4) — null = idle, otherwise the last result message.
+  const [exportState, setExportState] = useState<
+    { kind: "idle" } | { kind: "busy" } | { kind: "done"; path: string } | { kind: "error"; message: string }
+  >({ kind: "idle" });
+
+  async function handleExportDatabase() {
+    setExportState({ kind: "busy" });
+    try {
+      // VACUUM INTO snapshot (consistent even with the live DB open) → Desktop.
+      const path = await exportDatabaseToDesktop();
+      setExportState({ kind: "done", path });
+    } catch (e) {
+      setExportState({ kind: "error", message: e instanceof Error ? e.message : String(e) });
+    }
+  }
 
   useEffect(() => {
     async function load() {
@@ -294,6 +310,45 @@ export default function Settings() {
               </h3>
             </div>
             <RepeatingTasksSettings />
+          </section>
+
+          <section>
+            <div className="flex items-center gap-2 mb-4">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--text-faded)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 4.5C2 3.5 4.2 2.5 7 2.5s5 1 5 2v5c0 1-2.2 2-5 2s-5-1-5-2v-5Z" />
+                <path d="M2 7c0 1 2.2 2 5 2s5-1 5-2" />
+              </svg>
+              <h3 className="uppercase [font-size:var(--font-size-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded" style={{ fontWeight: 500 }}>
+                Data
+              </h3>
+            </div>
+            <div className="flex items-center justify-between py-2">
+              <div className="min-w-0 pr-4">
+                <div className="text-[13px] text-fg">Export database</div>
+                <div className="text-[11px] text-fg-faded">
+                  Save a copy of your data to the Desktop. A backup is also made
+                  automatically each time the app launches.
+                </div>
+                {exportState.kind === "done" && (
+                  <div className="text-[11px] text-accent-green mt-1 truncate">
+                    Exported to {exportState.path}
+                  </div>
+                )}
+                {exportState.kind === "error" && (
+                  <div className="text-[11px] text-accent-red mt-1">
+                    Export failed: {exportState.message}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={handleExportDatabase}
+                disabled={exportState.kind === "busy"}
+                className="flex-shrink-0 rounded-lg border border-line-medium text-fg-secondary px-4 py-1.5 text-[13px] font-medium cursor-pointer hover:bg-overlay-hover transition-colors disabled:opacity-50 disabled:cursor-default"
+                style={{ borderWidth: "0.5px" }}
+              >
+                {exportState.kind === "busy" ? "Exporting…" : "Export"}
+              </button>
+            </div>
           </section>
 
         </div>

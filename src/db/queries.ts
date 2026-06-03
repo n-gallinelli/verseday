@@ -1,4 +1,5 @@
 import { getDb } from "./database";
+import { desktopDir, join } from "@tauri-apps/api/path";
 import {
   SQL_TOTAL_WORKED_MINUTES_FOR_DATE,
   SQL_CLOSE_ORPHANED_TIME_ENTRIES,
@@ -469,6 +470,24 @@ export async function getDefaultTaskEstimateMin(): Promise<number> {
   return parsed;
 }
 
+/** P4 — export a CONSISTENT snapshot of the DB to the Desktop. Uses
+ *  `VACUUM INTO`, not a file copy: the live DB may have an open rollback
+ *  journal / in-flight writes, so a raw copy can be torn. VACUUM INTO writes a
+ *  transactionally-consistent standalone copy. The destination is a SQL string
+ *  LITERAL (not a bindable param), so single quotes in the path are escaped by
+ *  doubling. Returns the destination path. */
+export async function exportDatabaseToDesktop(): Promise<string> {
+  const db = await getDb();
+  const dir = await desktopDir();
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const dest = await join(dir, `verseday-export-${stamp}.db`);
+  const escaped = dest.replace(/'/g, "''");
+  await db.execute(`VACUUM INTO '${escaped}'`);
+  return dest;
+}
+
 export async function createTask(input: CreateTaskInput): Promise<number> {
   const priority = input.priority ?? "medium";
   validatePriority(priority);
@@ -485,18 +504,23 @@ export async function createTask(input: CreateTaskInput): Promise<number> {
       ? input.estimatedMinutes
       : await getDefaultTaskEstimateMin();
 
-  // New tasks land at the top of their scope (project or date). Achieved by
-  // assigning sort_order = min(existing) - 1 so they sort before everything
-  // else without needing to renumber siblings. SQLite INTEGER is 64-bit,
-  // monotonic decrement is fine.
-  const scopeRows: { min_sort: number | null }[] = input.projectId != null
-    ? await db.select("SELECT MIN(sort_order) as min_sort FROM tasks WHERE project_id = $1", [input.projectId])
-    : input.dateScheduled != null
-      ? await db.select("SELECT MIN(sort_order) as min_sort FROM tasks WHERE date_scheduled = $1", [input.dateScheduled])
-      : await db.select("SELECT MIN(sort_order) as min_sort FROM tasks");
-  const nextSort = (scopeRows[0]?.min_sort ?? 1) - 1;
+  // New tasks land at the top of their scope (project or date) via
+  // sort_order = min(existing) - 1 (monotonic decrement; SQLite INTEGER is
+  // 64-bit). #11 — compute that min INSIDE the INSERT as a subquery rather than
+  // a separate SELECT-then-INSERT: two concurrent creates (main + QuickAdd
+  // webview) could otherwise read the same MIN and land on an identical
+  // sort_order. A single statement evaluates the subquery against the
+  // pre-insert table state atomically. The scope filter reuses the row's own
+  // bound params ($2 project_id / $3 date_scheduled) so no extra binds.
+  const sortSubquery =
+    input.projectId != null
+      ? "(SELECT COALESCE(MIN(sort_order), 1) - 1 FROM tasks WHERE project_id = $2)"
+      : input.dateScheduled != null
+        ? "(SELECT COALESCE(MIN(sort_order), 1) - 1 FROM tasks WHERE date_scheduled = $3)"
+        : "(SELECT COALESCE(MIN(sort_order), 1) - 1 FROM tasks)";
   const result = await db.execute(
-    "INSERT INTO tasks (title, project_id, date_scheduled, estimated_minutes, priority, notes, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    `INSERT INTO tasks (title, project_id, date_scheduled, estimated_minutes, priority, notes, sort_order)
+     VALUES ($1, $2, $3, $4, $5, $6, ${sortSubquery})`,
     [
       input.title,
       input.projectId,
@@ -504,7 +528,6 @@ export async function createTask(input: CreateTaskInput): Promise<number> {
       estimatedMinutes,
       priority,
       input.notes ?? null,
-      nextSort,
     ]
   );
   return result.lastInsertId ?? 0;

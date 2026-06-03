@@ -47,6 +47,10 @@ pub fn dismiss_quick_add(app_handle: tauri::AppHandle, state: tauri::State<Quick
     }
 }
 
+// Manual DB export (P4) lives frontend-side: queries.ts exportDatabaseToDesktop
+// runs `VACUUM INTO` for a transactionally-consistent snapshot (a raw file copy
+// of the live DB can be torn). No Rust command needed.
+
 // ── Platform-specific implementations ──────────────────────────────────
 
 #[cfg(target_os = "macos")]

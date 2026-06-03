@@ -67,11 +67,19 @@ Don't edit the source. Write the next migration:
 - Use SQLite's standard rebuild idiom for tables that need new CHECK
   constraints, column type changes, or PRIMARY KEY shape changes:
   `CREATE TABLE new (...) → INSERT-SELECT FROM old → DROP old → ALTER RENAME`.
-- The rebuild idiom must run with `PRAGMA foreign_keys = ON` if the table
-  has only outbound FKs (no inbound references). Verify on a fresh DB
-  before merging. If there are inbound FKs, prepend
-  `PRAGMA foreign_keys = OFF;` to the migration body and let sqlx's
-  implicit transaction restore it.
+- The rebuild idiom for a table with only outbound FKs (no inbound
+  references) is safe under the runtime's `foreign_keys = ON` (sqlx's
+  default; verified empirically — see the audit-remediation plan). Verify
+  `foreign_key_check` is clean on a fresh DB before merging.
+- **Do NOT** try to disable enforcement by prepending
+  `PRAGMA foreign_keys = OFF;` to a migration body: **that PRAGMA is a no-op
+  inside a transaction**, and sqlx wraps every migration in one, so it
+  silently does nothing (#12). If a table has INBOUND FKs and you must
+  rebuild it, you cannot toggle enforcement mid-migration. Use one of:
+  (a) `PRAGMA legacy_alter_table = ON` + the standard 12-step table-rebuild
+  procedure (which is safe with FKs on), or (b) `PRAGMA foreign_keys` set at
+  the connection level *before* migrations run (outside any transaction).
+  Whichever you pick, run `foreign_key_check` after and confirm it's clean.
 - Pre-flight any data loss: query for rows that will violate the new
   CHECK before merging, surface the count, get explicit acknowledgment.
   Do **not** add `WHERE` clauses to the INSERT-SELECT that silently drop

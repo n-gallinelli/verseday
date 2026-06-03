@@ -354,6 +354,13 @@ interface AppState {
    *  reads committed truth (kills the under-count race). No-op if the active
    *  session isn't this task. */
   stopFocusedSessionForTask: (taskId: number, breakSeconds?: number) => Promise<void>;
+  /** #8 — commit whatever focus session is currently active (write its live
+   *  workedMs to the time entry, refresh committed minutes, clear focus) before
+   *  a NEW session starts. No-op if nothing is active. Centralizes the
+   *  start-focus guard so external handlers (Cmd+F, ProjectDetail, the detail
+   *  overlay) can't abandon an in-flight session's worked time by overwriting
+   *  focus. Delegates to stopFocusedSessionForTask for the actual commit. */
+  endActiveFocusSession: () => Promise<void>;
   /** P-fix4 — silently reconcile one task's canonical store entry from DB truth
    *  (getTaskById → withTaskMutated / withTaskInserted / withTaskRemoved). No
    *  broadcast — used after a raw, deliberately-non-broadcasting DB write (e.g.
@@ -1761,6 +1768,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       next.set(taskId, committed);
       return { workedByTaskId: next, focus: null };
     });
+  },
+  endActiveFocusSession: async () => {
+    const f = get().focus;
+    if (f && f.mode === "active") {
+      await get().stopFocusedSessionForTask(f.taskId);
+    }
   },
   reconcileTaskFromDb: async (id) => {
     try {

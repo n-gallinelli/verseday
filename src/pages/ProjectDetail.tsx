@@ -990,11 +990,12 @@ export default function ProjectDetail() {
   }
 
   async function handleStartFocus(task: Task) {
-    if (useAppStore.getState().focus) {
-      setError("A focus session is already active");
-      return;
-    }
+    // Clicking Focus on the already-focused task is a no-op.
+    if (useAppStore.getState().focus?.taskId === task.id) return;
     try {
+      // #8 — commit any in-flight session (instead of refusing to start) so the
+      // outgoing session's worked time is saved before focus is overwritten.
+      await useAppStore.getState().endActiveFocusSession();
       const priorMinutes = await getWorkedMinutesForTask(task.id);
       const priorMs = priorMinutes * 60 * 1000;
       const entryId = await startTimeEntry(task.id, "tracked");

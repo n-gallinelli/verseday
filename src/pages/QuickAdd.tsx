@@ -24,15 +24,24 @@ export default function QuickAdd() {
   // eslint-disable-next-line no-restricted-syntax -- QuickAdd is a separate Tauri webview; the canonical projectsById store doesn't cross the webview boundary, so it reads getProjects(false) from the shared DB on focus. Promoting this to cross-webview events is Phase 5.
   const [projects, setProjects] = useState<Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const projectPickerRef = useRef<HTMLDivElement>(null);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const resetFields = useCallback(() => {
+    // Cancel a pending success-flash dismiss so a re-show (onFocusChanged)
+    // can't be yanked closed by a stale timer from the previous add.
+    if (flashTimerRef.current) {
+      clearTimeout(flashTimerRef.current);
+      flashTimerRef.current = null;
+    }
     setTitle("");
     setProjectId(null);
     setEstimateMinutes(null);
     setSubmitting(false);
+    setSubmitted(false);
     setShowProjectPicker(false);
   }, []);
 
@@ -166,7 +175,13 @@ export default function QuickAdd() {
       // it to re-read today's bucket from the DB so the task shows up
       // immediately. Awaited so delivery is guaranteed before we dismiss.
       await emit("verseday:task-created", { date });
-      hideWindow();
+      // Brief success flash so the user gets confirmation the task landed
+      // before the window vanishes — otherwise the bar just blinks away with
+      // no acknowledgement. `submitting` stays true so Enter can't re-fire
+      // during the flash. The window is hidden, not destroyed, so this
+      // component stays mounted and the timer runs to completion.
+      setSubmitted(true);
+      flashTimerRef.current = setTimeout(hideWindow, 600);
     } catch (e) {
       console.error("QuickAdd: failed to create task", e);
       setSubmitting(false);
@@ -252,7 +267,37 @@ export default function QuickAdd() {
         {/* Divider between header and input */}
         <div className="h-px bg-line-hairline mx-4" />
 
-        {/* Input bar */}
+        <style>{`
+          @keyframes qaCheckPop {
+            0% { opacity: 0; transform: scale(0.6); }
+            60% { transform: scale(1.08); }
+            100% { opacity: 1; transform: scale(1); }
+          }
+          @keyframes qaCheckDraw {
+            from { stroke-dashoffset: 16; }
+            to { stroke-dashoffset: 0; }
+          }
+          .qa-added-icon { animation: qaCheckPop 0.28s ease-out both; }
+          .qa-added-icon path { stroke-dasharray: 16; animation: qaCheckDraw 0.3s ease-out 0.1s both; }
+          .qa-added-text { animation: qaCheckPop 0.3s ease-out 0.06s both; }
+        `}</style>
+
+        {/* Success flash — shown for ~600ms after a task is added, then the
+            window dismisses. Matches the input bar's height (px-5 py-4) so
+            there's no layout jump when it swaps in. */}
+        {submitted ? (
+          <div className="flex items-center justify-center gap-2.5 px-5 py-4">
+            <span className="qa-added-icon flex items-center justify-center w-[18px] h-[18px] rounded-full bg-accent-green/15 flex-shrink-0">
+              <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2.5 6.2L4.8 8.5L9.5 3.5" />
+              </svg>
+            </span>
+            <span className="qa-added-text text-[14px] font-medium text-accent-green">
+              Task added
+            </span>
+          </div>
+        ) : (
+        /* Input bar */
         <div
           onKeyDown={handleKeyDown}
           className="flex items-center gap-3 px-5 py-4 relative"
@@ -378,7 +423,8 @@ export default function QuickAdd() {
             </div>
           )}
         </div>
-      </div>
+        </div>
+        )}
       </div>
     </div>
   );

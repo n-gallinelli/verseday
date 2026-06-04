@@ -22,7 +22,7 @@ import TaskDetailOverlayHost from "./components/TaskDetailOverlayHost";
 import SummaryOverlayHost from "./components/SummaryOverlayHost";
 import SunsetOverlayHost from "./components/SunsetOverlayHost";
 import { useAppStore, markFocusResume } from "./stores/appStore";
-import { todayString } from "./utils/dates";
+import { todayString, logicalDayIso } from "./utils/dates";
 import {
   closeOrphanedTimeEntries,
   getTasksForDate,
@@ -184,6 +184,46 @@ function MainApp() {
       })
       .catch((err) => console.error("system-resumed listen failed:", err));
     return () => unlisten?.();
+  }, []);
+
+  // Day-rollover reset. The app process survives a window close on macOS, so
+  // the in-memory store can hold yesterday's shutdown state (sunset overlay
+  // open over the daily-shutdown page) into the next day's reopen. On every
+  // re-focus, if the logical day (3am boundary) has advanced past the day the
+  // shutdown surface belongs to, dismiss the overlay and route back to today's
+  // Daily Plan. Re-focus-only by design: focus/visibilitychange can't fire
+  // mid-interaction, so this can't yank a view the user is actively using
+  // (Verse-confirmed — a timer could, hence no interval). State is read fresh
+  // via getState() at fire time, so the listeners never re-register.
+  useEffect(() => {
+    const lastLogicalDay = { current: logicalDayIso() };
+
+    const check = () => {
+      const today = logicalDayIso();
+      if (today === lastLogicalDay.current) return;
+      lastLogicalDay.current = today;
+
+      const s = useAppStore.getState();
+      const onShutdownSurface =
+        s.sunsetOverlayOpen ||
+        s.currentPage === "daily_shutdown" ||
+        s.currentPage === "shutdown";
+      if (!onShutdownSurface) return;
+
+      s.closeSunsetOverlay();
+      s.setSelectedDate(todayString());
+      s.setPage("daily");
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") check();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", check);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", check);
+    };
   }, []);
 
   // QuickAdd lives in a separate webview with its own store, so a task it

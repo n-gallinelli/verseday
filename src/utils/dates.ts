@@ -21,6 +21,20 @@ export function todayString(): string {
 }
 
 /**
+ * The "logical day" (local-tz YYYY-MM-DD) for a wall-clock instant, where the
+ * day boundary is `cutoffHour` (default 3am) rather than midnight. Times
+ * between midnight and the cutoff map to the previous calendar day — so a
+ * late-night shutdown reopened before 3am still reads as the same day, while
+ * reopening after 3am reads as the next day. Built on `localDateIso` so it
+ * stays in local tz (never UTC).
+ */
+export function logicalDayIso(d: Date = new Date(), cutoffHour = 3): string {
+  const shifted = new Date(d);
+  shifted.setHours(shifted.getHours() - cutoffHour);
+  return localDateIso(shifted);
+}
+
+/**
  * Monday of the local week containing `date` (default: now), as
  * YYYY-MM-DD. Sunday counts as the previous week's Monday — matches
  * the convention `selectedWeek` has always followed.

@@ -19,6 +19,7 @@ import {
 } from "../db/queries";
 import RichTextEditor from "../components/RichTextEditor";
 import VerseDayLogo from "../components/VerseDayLogo";
+import { breakEndClock } from "../utils/breakClock";
 import { todayString } from "../utils/dates";
 import {
   getBreakContinuity,
@@ -1198,7 +1199,10 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-0 flex flex-col items-center z-50 overflow-hidden" style={{ background: "var(--focus-bg)" }}>
+    <div
+      className={`fixed inset-0 flex flex-col items-center z-50 overflow-hidden${isOnBreak ? " focus-break-bg" : ""}`}
+      style={isOnBreak ? undefined : { background: "var(--focus-bg)" }}
+    >
       {/* P-fix3: re-show the mini timer (pip) after it's been hidden. Setting
           pipHidden false re-runs the creation effect, which recreates the pip. */}
       {pipHidden && (
@@ -1236,6 +1240,19 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
             onTakeLong={() => handleTakeBreak(LONG_BREAK_MS)}
             onSnooze={handleSnooze}
             onNo={handleNoBreak}
+          />
+        </div>
+      ) : isOnBreak ? (
+        /* Break takes over the whole surface (ambient wash on the container
+           above + this centered composition). The two-column work layout is
+           never rendered during a break — single break surface, no split
+           logic. Presentation-only: Skip reuses handleSkipBreak and the tick's
+           countdown→0 ends the break; no state-machine changes here. */
+        <div className="relative flex flex-col items-center mt-4">
+          <BreakScreen
+            taskTitle={task.title}
+            remainingMs={breakRemaining}
+            onSkip={handleSkipBreak}
           />
         </div>
       ) : (
@@ -1340,31 +1357,25 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
               <div className="flex flex-col items-center relative">
                 <button
                   onClick={() => {
-                    if (isQueued || isOnBreak || focus?.mode !== "active") return;
+                    if (isQueued || focus?.mode !== "active") return;
                     setActualOpen((v) => !v);
                   }}
-                  disabled={isQueued || isOnBreak || focus?.mode !== "active"}
+                  disabled={isQueued || focus?.mode !== "active"}
                   className={`text-[26px] font-medium tabular-nums leading-none bg-transparent border-0 p-0 ${
-                    !isQueued && !isOnBreak && focus?.mode === "active"
+                    !isQueued && focus?.mode === "active"
                       ? "cursor-pointer hover:opacity-80"
                       : "cursor-default"
                   } transition-opacity`}
                   style={{
                     letterSpacing: "-1px",
-                    color: isOnBreak
-                      ? "var(--focus-ring-progress)"
-                      : isQueued || paused
-                        ? "var(--text-faded)"
-                        : "var(--focus-glow-base)",
+                    color: isQueued || paused ? "var(--text-faded)" : "var(--focus-glow-base)",
                   }}
-                  title={!isQueued && !isOnBreak && focus?.mode === "active" ? "Click to adjust" : undefined}
+                  title={!isQueued && focus?.mode === "active" ? "Click to adjust" : undefined}
                 >
-                  {isOnBreak
-                    ? formatCountdown(breakRemaining)
-                    : formatTime(totalWorkedMs)}
+                  {formatTime(totalWorkedMs)}
                 </button>
                 <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-fg-faded mt-1">
-                  {isOnBreak ? "Break" : "Actual"}
+                  Actual
                 </span>
 
                 {actualOpen && focus?.mode === "active" && (
@@ -1433,18 +1444,10 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                 )}
               </div>
 
-              {/* Start / Pause / Resume pill — green vibrant primary
-                  CTA. During break this becomes Skip, since pause
-                  doesn't apply to break countdowns. */}
-              {isOnBreak ? (
-                <button
-                  onClick={handleSkipBreak}
-                  className="inline-flex items-center justify-center gap-2 px-5 min-w-[120px] h-11 rounded-full bg-overlay-hover text-fg-secondary text-[13px] font-medium uppercase tracking-[0.1em] cursor-pointer hover:bg-overlay-pressed transition-colors"
-                >
-                  Skip
-                </button>
-              ) : (
-                <button
+              {/* Start / Pause / Resume pill — green vibrant primary CTA.
+                  (Break has its own full-screen surface now, so no Skip
+                  variant here.) */}
+              <button
                   onClick={isQueued ? handleStartSession : handleTogglePause}
                   className={`inline-flex items-center justify-center gap-2 px-5 min-w-[120px] h-11 rounded-full text-[13px] font-medium uppercase tracking-[0.1em] cursor-pointer transition-colors ${
                     isQueued || paused
@@ -1469,7 +1472,6 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                     </>
                   )}
                 </button>
-              )}
           </div>
           </div>
 
@@ -1492,6 +1494,54 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         </div>
       )}
       </div>
+    </div>
+  );
+}
+
+// ── BreakScreen ─────────────────────────────────────────────────────────────
+// Active-break takeover (phase === "break"). The whole focus surface becomes a
+// calm rest screen: breathing logo, a hero countdown, the "ends at" clock, the
+// task title dimmed for context (task.title only — focus surfaces are
+// task-only, never the objective), and Skip. Presentation-only — the parent
+// owns the timing (countdown→0 ends the break; Skip = handleSkipBreak).
+function BreakScreen({
+  taskTitle,
+  remainingMs,
+  onSkip,
+}: {
+  taskTitle: string;
+  remainingMs: number;
+  onSkip: () => void;
+}) {
+  // now is read at render; the parent re-renders every second as the countdown
+  // ticks, so the "ends" label stays correct. breakEndClock is pure + tested.
+  const endsAt = breakEndClock(Date.now(), remainingMs);
+  return (
+    <div className="relative flex flex-col items-center text-center max-w-[560px] px-8 animate-scale-in">
+      <div className="mb-8 break-logo-pulse">
+        <VerseDayLogo size={72} />
+      </div>
+      <div
+        className="text-[72px] font-semibold leading-none tabular-nums tracking-tight font-display"
+        style={{ letterSpacing: "-2px", color: "var(--accent-green-deep)" }}
+      >
+        {formatCountdown(remainingMs)}
+      </div>
+      <p className="text-[15px] text-fg-secondary mt-4">
+        On a break · ends {endsAt}
+      </p>
+      <p
+        className="text-[14px] text-fg-secondary mt-10 max-w-[420px] line-clamp-2"
+        style={{ opacity: 0.5 }}
+      >
+        {taskTitle}
+      </p>
+      <button
+        onClick={onSkip}
+        className="mt-8 inline-flex items-center justify-center px-5 min-w-[120px] h-11 rounded-full bg-overlay-hover text-fg-secondary text-[13px] font-medium uppercase tracking-[0.1em] cursor-pointer hover:bg-overlay-pressed transition-colors"
+      >
+        Skip
+      </button>
     </div>
   );
 }

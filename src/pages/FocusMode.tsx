@@ -28,6 +28,7 @@ import {
 } from "../utils/focusSettings";
 import { getEmptyDayMessage } from "../utils/format";
 import { playBreakChime as playChime } from "../utils/sounds";
+import { workElapsedMs } from "../utils/pomodoro";
 import type { Page } from "../types";
 
 // If the user doesn't engage with the break prompt within this window,
@@ -616,7 +617,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       if (phase === "work") {
         // breakCarryRef carries prior-session work in "continue" mode; 0 in
         // "reset" mode and after a >= 2-min idle gap.
-        const we = raw - totalBreakTimeRef.current + breakCarryRef.current;
+        const we = workElapsedMs(raw, totalBreakTimeRef.current, breakCarryRef.current);
         lastWorkElapsedRef.current = we;
 
         // Check if we've hit a pomodoro boundary
@@ -650,7 +651,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           // current work elapsed (post-break-time deduction) so the
           // next pomodoro cycle starts counting from here.
           totalBreakTimeRef.current += breakDuration;
-          workCycleStartRef.current = raw - totalBreakTimeRef.current;
+          workCycleStartRef.current = workElapsedMs(raw, totalBreakTimeRef.current, breakCarryRef.current);
           setPhase("work");
           setBreakRemaining(0);
           playChime();
@@ -959,29 +960,30 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 
   function handleNoBreak() {
     setPrompt(null);
-    // Start a new work cycle from current position
-    const we = elapsed - totalBreakTimeRef.current;
-    workCycleStartRef.current = we;
+    // Start a new work cycle from current position. workElapsedMs includes
+    // breakCarry — same formula the tick uses, so currentCycleElapsed resets to
+    // ~0 (not ~breakCarry, which would re-fire the prompt instantly).
+    workCycleStartRef.current = workElapsedMs(elapsed, totalBreakTimeRef.current, breakCarryRef.current);
     snoozeThresholdRef.current = null;
     setPhase("work");
   }
 
   function handleSnooze() {
     setPrompt(null);
-    // Re-prompt in 5 minutes of work time
-    const we = elapsed - totalBreakTimeRef.current;
-    snoozeThresholdRef.current = we + SNOOZE_MS;
+    // Re-prompt in 5 minutes of work time (same work-elapsed formula as the tick).
+    snoozeThresholdRef.current =
+      workElapsedMs(elapsed, totalBreakTimeRef.current, breakCarryRef.current) + SNOOZE_MS;
     // Revert the pomodoro count since we snoozed (it was incremented when prompt showed)
     setCompletedPomodoros((c) => Math.max(0, c - 1));
     setPhase("work");
   }
 
   function handleSkipBreak() {
-    // End break early
+    // End break early. Account for the partial break taken FIRST, then anchor
+    // the new cycle with the shared work-elapsed formula (incl. breakCarry).
     const breakElapsed = Date.now() - breakStartRef.current;
     totalBreakTimeRef.current += breakElapsed;
-    const we = elapsed - totalBreakTimeRef.current;
-    workCycleStartRef.current = we;
+    workCycleStartRef.current = workElapsedMs(elapsed, totalBreakTimeRef.current, breakCarryRef.current);
     setPhase("work");
     setBreakRemaining(0);
   }

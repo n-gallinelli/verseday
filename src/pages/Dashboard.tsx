@@ -65,8 +65,18 @@ function BarChart({
   if (yLabels[yLabels.length - 1] !== yAxisMax) yLabels.push(yAxisMax);
   yLabels.reverse();
 
+  // Custom hover tooltip — native `title` renders slowly/unreliably in the
+  // Tauri WKWebView, so we surface the exact worked/planned time ourselves
+  // (mirrors the WeeklyShutdown "Effort by day" chart).
+  const [hover, setHover] = useState<{
+    label: string;
+    minutes: number;
+    color: string;
+    day: string;
+  } | null>(null);
+
   return (
-    <div className="flex gap-2">
+    <div className="flex gap-2 relative">
       {/* Y-axis labels — pinned to the bar-area height so 8h/4h/0h line up
           with the bars (not stretched to include the day-label row below). */}
       <div
@@ -96,6 +106,10 @@ function BarChart({
             yAxisMax > 0
               ? Math.min((worked / 60 / yAxisMax) * 100, 100)
               : 0;
+          // A bar with time but a sub-4px height still gets a hittable sliver;
+          // a true-zero day stays 0 (nothing to report on hover).
+          const barPx = (pct: number, value: number) =>
+            value > 0 ? Math.max((pct / 100) * chartHeight, 4) : 0;
 
           return (
             <div key={date} className="flex-1 flex flex-col items-center">
@@ -107,18 +121,22 @@ function BarChart({
                 {/* Worked (actual) bar — cool slate, "done" — on the left */}
                 <div
                   className="w-[22px] rounded-t-[3px] bg-chart-bar-worked transition-all duration-300"
-                  style={{
-                    height: `${(workedPct / 100) * chartHeight}px`,
-                  }}
-                  title={`Worked: ${formatHoursMinutes(worked)}`}
+                  style={{ height: `${barPx(workedPct, worked)}px` }}
+                  onMouseEnter={() =>
+                    worked > 0 &&
+                    setHover({ label: "Worked", minutes: worked, color: "var(--chart-bar-worked)", day: DAY_NAMES[i] })
+                  }
+                  onMouseLeave={() => setHover(null)}
                 />
                 {/* Planned bar — warm tan, "intent" — on the right */}
                 <div
                   className="w-[22px] rounded-t-[3px] bg-chart-bar-planned transition-all duration-300"
-                  style={{
-                    height: `${(plannedPct / 100) * chartHeight}px`,
-                  }}
-                  title={`Planned: ${formatHoursMinutes(planned)}`}
+                  style={{ height: `${barPx(plannedPct, planned)}px` }}
+                  onMouseEnter={() =>
+                    planned > 0 &&
+                    setHover({ label: "Planned", minutes: planned, color: "var(--chart-bar-planned)", day: DAY_NAMES[i] })
+                  }
+                  onMouseLeave={() => setHover(null)}
                 />
               </div>
               {/* Day label */}
@@ -129,6 +147,22 @@ function BarChart({
           );
         })}
       </div>
+
+      {/* Tooltip — anchored top-right inside the chart so it never clips. */}
+      {hover && (
+        <div
+          className="absolute top-0 right-0 flex items-center gap-2 px-3 py-1.5 rounded-md bg-elevated pointer-events-none animate-fade-in z-10"
+          style={{ border: "0.5px solid var(--border-soft)", boxShadow: "var(--shadow-card)" }}
+        >
+          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: hover.color }} />
+          <span className="text-[12px] text-fg-secondary">
+            {hover.day} · {hover.label}
+          </span>
+          <span className="text-[12px] font-medium text-fg tabular-nums">
+            {formatHoursMinutes(Math.round(hover.minutes))}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

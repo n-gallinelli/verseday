@@ -891,7 +891,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
       if (isInput) return;
       const f = useAppStore.getState().focus;
-      if (f && f.mode !== "preview") return; // active (running/paused) → inert
+      // A RUNNING session (active & not paused) stays inert — a stray arrow
+      // shouldn't kill a live timer. Preview / no-session / a PAUSED session
+      // can switch; a paused session's open time_entry is committed first
+      // (below) so switching never orphans it.
+      if (f && f.mode === "active" && !f.paused) return;
       e.preventDefault();
       const token = ++navToken; // ignore stale async results from older presses
       const tasks = await getTasksForDate(todayString()).catch(() => null);
@@ -910,10 +914,23 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       // workedByTaskId/getWorkedMinutesForTask are MINUTES; priorElapsedMs is MS.
       const priorMs = (await getWorkedMinutesForTask(target.id).catch(() => 0)) * 60 * 1000;
       if (token !== navToken) return;
+      // Capture the return-to page BEFORE committing — endActiveFocusSession
+      // nulls `focus`, so reading previousPage after would miss it.
       const prev: Page =
         useAppStore.getState().focus?.previousPage ??
         (useAppStore.getState().pageHistory.slice(-1)[0] as Page) ??
         "daily";
+      // Commit a PAUSED active session before switching so its open time_entry
+      // is closed, not orphaned — routes into the proven Done/Stop commit path
+      // (stopFocusedSessionForTask), which guards + leaves focus null. Re-read
+      // focus right before the commit (it may have changed during the awaits),
+      // and re-check the nav token after the await before the synchronous
+      // previewFocus so a newer keypress wins.
+      const live = useAppStore.getState().focus;
+      if (live && live.mode === "active") {
+        await useAppStore.getState().endActiveFocusSession();
+        if (token !== navToken) return;
+      }
       previewFocus(target, prev, priorMs);
     }
     window.addEventListener("keydown", onKey);

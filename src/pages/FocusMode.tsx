@@ -969,6 +969,19 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 
   // Break prompt responses
   function handleTakeBreak(durationMs: number) {
+    // If the work session is paused, resume it — the break countdown rides the
+    // same per-second tick, which is gated on !paused, so a break taken while
+    // paused would sit frozen at full. Clear pauseStartRef FIRST: this commit
+    // batches paused=false with the setPhase("break") below, so the
+    // pause-tracking effect runs seeing both and would otherwise slide
+    // breakStartRef forward by the pause duration (opening the break above its
+    // full time). With pauseStartRef null its resume-slide guard is false, so
+    // the break starts at exactly `durationMs`.
+    const f = useAppStore.getState().focus;
+    if (f && f.mode === "active" && f.paused) {
+      pauseStartRef.current = null;
+      togglePauseFocus();
+    }
     setPrompt(null);
     setBreakDuration(durationMs);
     breakStartRef.current = Date.now();

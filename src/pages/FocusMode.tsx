@@ -403,7 +403,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           url: "/#focus-pip",
           title: "Focus",
           width: 220,
-          height: 68,
+          height: 80,
           resizable: false,
           alwaysOnTop: true,
           // macOS: join every Space so the pip rides along to whatever
@@ -1557,9 +1557,9 @@ function BreakScreen({
       </p>
       <button
         onClick={onSkip}
-        className="mt-8 inline-flex items-center justify-center px-5 min-w-[120px] h-11 rounded-full bg-overlay-hover text-fg-secondary text-[13px] font-medium uppercase tracking-[0.1em] cursor-pointer hover:bg-overlay-pressed transition-colors"
+        className="mt-8 inline-flex items-center justify-center px-5 min-w-[120px] h-11 rounded-full bg-overlay-hover text-fg-secondary text-[13px] font-medium cursor-pointer hover:bg-overlay-pressed transition-colors"
       >
-        Skip
+        End early
       </button>
     </div>
   );

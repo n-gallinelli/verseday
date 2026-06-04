@@ -124,13 +124,18 @@ export function formatDigest(digest: WeeklyDigest): string {
   if (digest.isEmpty) {
     return `${header}\n\nNothing was completed this week.`;
   }
+  // Round before formatting so the copied digest matches the on-screen preview
+  // exactly (the preview Math.rounds too) — no "60m" vs "1h" split at a
+  // fractional-minute boundary.
   const blocks = digest.groups.map((g) => {
     const heading = g.goal ? `## ${g.name} — ${g.goal}` : `## ${g.name}`;
-    const bullets = g.tasks.map((t) => `- ${t.title} (${formatHoursMinutes(t.workedMinutes)})`).join("\n");
-    const total = `Total: ${formatHoursMinutes(g.totalMinutes)} · ${g.count} ${g.count === 1 ? "task" : "tasks"}`;
+    const bullets = g.tasks
+      .map((t) => `- ${t.title} (${formatHoursMinutes(Math.round(t.workedMinutes))})`)
+      .join("\n");
+    const total = `Total: ${formatHoursMinutes(Math.round(g.totalMinutes))} · ${g.count} ${g.count === 1 ? "task" : "tasks"}`;
     return `${heading}\n${bullets}\n${total}`;
   });
-  const weekTotal = `Week total: ${formatHoursMinutes(digest.totalMinutes)} · ${digest.totalCount} ${
+  const weekTotal = `Week total: ${formatHoursMinutes(Math.round(digest.totalMinutes))} · ${digest.totalCount} ${
     digest.totalCount === 1 ? "task" : "tasks"
   }`;
   return `${header}\n\n${blocks.join("\n\n")}\n\n${weekTotal}`;

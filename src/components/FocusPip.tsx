@@ -4,13 +4,12 @@ import { LogicalSize } from "@tauri-apps/api/dpi";
 import VerseDayLogo from "./VerseDayLogo";
 import { playBreakChime as playCalm } from "../utils/sounds";
 
-// Compact baseline for work/break readouts. The prompt phase grows
-// 20px taller (a small bump, NOT the original 320×140 popup) so the
-// "Break?" header and three pills can sit in two rows without
-// cramping. Width is pinned at 220 across phases so the pip stays
-// pip-shaped.
-const PIP_SIZE_COMPACT = { width: 220, height: 60 };
-const PIP_SIZE_PROMPT = { width: 220, height: 80 };
+// ONE fixed pip size for every phase — the pip window never resizes. Sized to
+// the tallest content (the break prompt's header + 3 pills); work/break/ack
+// readouts center within it. A constant size means switching phases (e.g.
+// declining a break) never shrinks the window, and it removes the setSize
+// docking jitter the per-phase resize used to cause.
+const PIP_SIZE = { width: 220, height: 80 };
 
 // Pip surface color — themed via --focus-pip-bg so the pip reads
 // white in light mode and dark in night mode against the desktop.
@@ -220,19 +219,14 @@ export default function FocusPip() {
     document.body.style.margin = "0";
   }, []);
 
-  // Resize per phase. Compact for work/break, slightly taller for
-  // the prompt to give Break? + three pills room. Watch for jitter
-  // if the user docks the pip to the bottom of the screen — Tauri's
-  // setSize anchors to the top, so a 20px height bump grows
-  // downward.
+  // Pin the window to one size, ONCE on mount — never per phase. (The window is
+  // also created at this size in FocusMode; this is a belt-and-suspenders set in
+  // case anything reset it.) No phase dependency → no resize on phase change.
   useEffect(() => {
-    if (!state) return;
-    const target =
-      state.phase === "prompt" ? PIP_SIZE_PROMPT : PIP_SIZE_COMPACT;
     getCurrentWebviewWindow()
-      .setSize(new LogicalSize(target.width, target.height))
+      .setSize(new LogicalSize(PIP_SIZE.width, PIP_SIZE.height))
       .catch(() => {});
-  }, [state?.phase]);
+  }, []);
 
   useEffect(() => {
     function load() {
@@ -342,7 +336,7 @@ export default function FocusPip() {
     return (
       <div
         data-tauri-drag-region
-        className="select-none flex items-center justify-center w-full h-full"
+        className="select-none flex items-center justify-center w-full h-screen"
         style={{
           background: PIP_BG,
           borderRadius: 18,
@@ -370,7 +364,7 @@ export default function FocusPip() {
     return (
       <div
         data-tauri-drag-region
-        className="select-none flex flex-col w-full h-full px-2.5 py-2"
+        className="select-none flex flex-col justify-center w-full h-screen px-2.5 py-2"
         style={{
           background: PIP_BG,
           borderRadius: 18,
@@ -400,7 +394,7 @@ export default function FocusPip() {
             <ClockIcon />
           </button>
           <button
-            onClick={() => flashAck("Continue working", "noBreak")}
+            onClick={() => flashAck("Break skipped", "noBreak")}
             className="w-7 h-7 rounded-full flex items-center justify-center text-fg-faded border border-line-hairline hover:text-fg-secondary hover:border-line-soft hover:bg-overlay-hover cursor-pointer transition-colors"
             title="No — keep working"
             aria-label="Decline break"
@@ -415,8 +409,8 @@ export default function FocusPip() {
   // ── BREAK COUNTDOWN ────────────────────────────────────────────────
   if (state.phase === "break") {
     return (
-      <div data-tauri-drag-region className="px-3.5 py-2.5 select-none overflow-hidden" style={{ background: PIP_BG, borderRadius: 18 }} onMouseDown={handlePipMouseDown}>
-        <div className="flex items-center gap-2.5">
+      <div data-tauri-drag-region className="px-3.5 h-screen flex items-center select-none overflow-hidden" style={{ background: PIP_BG, borderRadius: 18 }} onMouseDown={handlePipMouseDown}>
+        <div className="flex items-center gap-2.5 w-full">
           <div className="flex-1 min-w-0">
             <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-0.5">Break</div>
             <div className="text-[20px] font-medium tabular-nums text-accent-green-deep leading-none" style={{ letterSpacing: "-0.5px" }}>
@@ -441,7 +435,7 @@ export default function FocusPip() {
   return (
     <div
       data-tauri-drag-region
-      className="select-none overflow-hidden relative"
+      className="select-none overflow-hidden relative h-screen"
       style={{ background: PIP_BG, borderRadius: 18, border: "0.5px solid var(--focus-pip-border)" }}
       onMouseDown={handlePipMouseDown}
     >

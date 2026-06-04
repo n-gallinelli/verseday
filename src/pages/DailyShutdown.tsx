@@ -217,8 +217,10 @@ export default function DailyShutdown() {
 
   async function carryAllToTomorrow() {
     const tomorrow = getTomorrowDate();
+    // Calendar-imported tasks are pinned to their event date — never carry
+    // them forward (the data layer also rejects it as a backstop).
     const toCarry = tasks.filter(
-      (t) => t.status !== "done" && !carriedIds.has(t.id)
+      (t) => t.status !== "done" && !carriedIds.has(t.id) && t.external_source == null
     );
     try {
       await Promise.all(
@@ -410,7 +412,7 @@ export default function DailyShutdown() {
                   <h3 className="text-[13px] font-medium text-fg-secondary">
                     Didn&rsquo;t get to
                   </h3>
-                  {incompleteTasks.filter((t) => !carriedIds.has(t.id)).length > 0 && (
+                  {incompleteTasks.filter((t) => !carriedIds.has(t.id) && t.external_source == null).length > 0 && (
                     <button
                       onClick={carryAllToTomorrow}
                       className="text-[11px] text-accent-blue-soft-fg hover:text-accent-blue cursor-pointer"
@@ -460,6 +462,12 @@ export default function DailyShutdown() {
                           <span className="text-[10px] tabular-nums shrink-0 w-[68px] text-right relative">
                             {isCarried ? (
                               <span className="text-accent-green">Moved →</span>
+                            ) : task.external_source === "calendar" ? (
+                              // Calendar events are pinned to their date — no
+                              // carry control; just show the estimate if any.
+                              <span className="text-fg-faded">
+                                {est > 0 ? formatHoursMinutes(est) : ""}
+                              </span>
                             ) : (
                               <>
                                 <span className={`text-fg-faded transition-opacity ${est > 0 ? "group-hover/row:opacity-0" : "opacity-0"}`}>

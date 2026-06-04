@@ -883,3 +883,40 @@ select {
   }
 }
 
+/* Break screen — a calm sage→peach wash over the whole focus surface so the
+   resting state is obvious at a glance, not just a tiny label. Built from the
+   soft-bg tokens (light + dark variants both defined), drifting slowly. */
+@keyframes breakWashDrift {
+  0% { background-position: 50% 0%; }
+  100% { background-position: 50% 100%; }
+}
+.focus-break-bg {
+  background: linear-gradient(
+    170deg,
+    var(--accent-green-soft-bg) 0%,
+    var(--focus-ambient-neutral) 45%,
+    var(--accent-orange-soft-bg) 100%
+  );
+  background-size: 100% 200%;
+  animation: breakWashDrift 14s ease-in-out infinite alternate;
+}
+
+/* Gentle breathing pulse on the break-screen logo. */
+@keyframes breakLogoPulse {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+.break-logo-pulse {
+  animation: breakLogoPulse 5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .focus-break-bg {
+    animation: none;
+    background-position: 50% 50%;
+  }
+  .break-logo-pulse {
+    animation: none;
+  }
+}
+

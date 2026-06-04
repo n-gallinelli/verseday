@@ -12,6 +12,7 @@ import {
   SQL_ROLLOVER_EXPIRE_CAPTURE,
 } from "./rolloverSql";
 import { createTaskSortSubquery } from "./createTaskSortSql";
+import { assertReschedulable } from "./rescheduleGuard";
 import { todayString, localDateIso, localDayStartUtc, localDayEndUtc } from "../utils/dates";
 import { emitIconsChanged } from "../utils/iconEvents";
 import type { Project, Task, DailyPlan, WeeklyShutdown, Link, CustomIcon } from "../types";
@@ -1050,10 +1051,18 @@ export async function updateTaskDateScheduled(
   const selfRows: {
     recurrence_source_id: number | null;
     date_scheduled: string | null;
+    external_source: string | null;
   }[] = await db.select(
-    "SELECT recurrence_source_id, date_scheduled FROM tasks WHERE id = $1",
+    "SELECT recurrence_source_id, date_scheduled, external_source FROM tasks WHERE id = $1",
     [id]
   );
+  // Calendar-imported tasks can't be manually re-dated — their date is owned by
+  // the calendar. Throw BEFORE any merge/skip/update side effect. Reached only
+  // by the carry buttons (already filtered in the UI, so this is their backstop)
+  // and the drag wrapper setTaskDateScheduled, whose refetch-and-revert snaps an
+  // optimistic drag back cleanly. The calendar importer uses its own upsert path,
+  // so this never blocks import.
+  assertReschedulable(selfRows[0]?.external_source);
   const sourceId = selfRows[0]?.recurrence_source_id ?? null;
   const oldDate = selfRows[0]?.date_scheduled ?? null;
 

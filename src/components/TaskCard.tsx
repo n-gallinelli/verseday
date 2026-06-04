@@ -282,12 +282,22 @@ function TaskCardImpl({
             onToggle(task);
           }}
           title={task.status === "done" ? "Mark as not done" : "Mark complete"}
-          className={`w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
+          className={`relative w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
             task.status === "done"
               ? `bg-accent-green border-accent-green hover:bg-accent-green-hover hover:border-accent-green-hover${justCompleted ? " animate-task-done" : ""}`
               : "border-line-strong hover:border-accent-green"
           }`}
         >
+          {/* One-shot positive burst on completion — a green ring that pops
+              outward from the checkbox. pointer-events-none + absolute so it
+              never affects layout or the click target. */}
+          {justCompleted && (
+            <span
+              aria-hidden
+              className="absolute inset-0 rounded-full pointer-events-none animate-task-done-burst"
+              style={{ border: "2px solid var(--accent-green)" }}
+            />
+          )}
           <svg
             width="11"
             height="11"

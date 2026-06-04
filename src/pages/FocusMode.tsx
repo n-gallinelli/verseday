@@ -404,6 +404,17 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           height: 68,
           resizable: false,
           alwaysOnTop: true,
+          // macOS: join every Space so the pip rides along to whatever
+          // desktop the user switches to, staying at the same screen
+          // position — a constant reminder that a focus session is live,
+          // no matter which desktop they're on. (Maps to NSWindow
+          // collectionBehavior canJoinAllSpaces.) No-op on other platforms.
+          // Known boundary: this covers standard desktops/Spaces, NOT a
+          // single-app FULLSCREEN Space (its own Space) — the pip won't
+          // float over a fullscreened app. Lifting that needs Rust-side
+          // NSWindow collection-behavior flags tao doesn't expose; left as
+          // a deliberate follow-up rather than bundled here.
+          visibleOnAllWorkspaces: true,
           decorations: false,
           transparent: true,
           skipTaskbar: true,

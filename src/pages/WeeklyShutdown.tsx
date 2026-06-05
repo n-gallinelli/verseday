@@ -509,9 +509,12 @@ export default function WeeklyShutdown() {
     0
   );
 
-  // Per-day objectives summary: for each day, list { project, minutes },
-  // sorted by minutes desc.
-  const objectivesByDay = new Map<string, { project: Project | null; minutes: number }[]>();
+  // Per-day projects-addressed summary: for each day, list { project, minutes },
+  // sorted by minutes desc. Unassigned time is EXCLUDED here — this section is
+  // "which projects got worked on each day", so the day total below also reflects
+  // assigned-project time only (the chart + "Total this week" still count all
+  // time, including unassigned).
+  const objectivesByDay = new Map<string, { project: Project; minutes: number }[]>();
   for (const date of weekDates) {
     const inner = workedByDay.get(date);
     if (!inner) {
@@ -519,14 +522,12 @@ export default function WeeklyShutdown() {
       continue;
     }
     const list = Array.from(inner.entries())
-      .filter(([, mins]) => mins > 0)
+      .filter(([projectId, mins]) => mins > 0 && projectId !== UNASSIGNED_PROJECT_ID)
       .map(([projectId, minutes]) => ({
-        project:
-          projectId === UNASSIGNED_PROJECT_ID
-            ? null
-            : projectMap.get(projectId) ?? null,
+        project: projectMap.get(projectId),
         minutes,
       }))
+      .filter((x): x is { project: Project; minutes: number } => x.project != null)
       .sort((a, b) => b.minutes - a.minutes);
     objectivesByDay.set(date, list);
   }
@@ -679,11 +680,11 @@ export default function WeeklyShutdown() {
             </div>
           </section>
 
-          {/* Per-day objectives summary — quick read of what each day
-              actually went into. */}
+          {/* Per-day projects-addressed summary — quick read of which projects
+              each day actually went into (unassigned time excluded). */}
           <section>
             <h3 className="text-[14px] font-medium text-fg mb-4 font-display">
-              By day
+              Projects addressed by day
             </h3>
             <div className="space-y-4">
               {weekDates.map((date, idx) => {
@@ -702,13 +703,13 @@ export default function WeeklyShutdown() {
                     <div className="flex-1 min-w-0">
                       {items.length === 0 ? (
                         <p className="text-[12px] text-fg-disabled italic">
-                          No tracked time
+                          No project time
                         </p>
                       ) : (
                         <div className="flex flex-wrap gap-2">
                           {items.map(({ project, minutes }) => (
                             <div
-                              key={project?.id ?? "unassigned"}
+                              key={project.id}
                               className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-elevated"
                               style={{
                                 border: "0.5px solid var(--border-hairline)",
@@ -716,12 +717,10 @@ export default function WeeklyShutdown() {
                             >
                               <span
                                 className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                                style={{
-                                  backgroundColor: project?.color ?? "var(--text-disabled)",
-                                }}
+                                style={{ backgroundColor: project.color }}
                               />
                               <span className="text-[12px] text-fg-secondary truncate max-w-[200px]">
-                                {project?.name ?? "Unassigned"}
+                                {project.name}
                               </span>
                               <span className="text-[11px] text-fg-faded tabular-nums">
                                 {formatHoursMinutes(Math.round(minutes))}

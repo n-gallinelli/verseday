@@ -825,6 +825,10 @@ export async function startTimeEntry(
   type: "pomodoro" | "tracked"
 ): Promise<number> {
   const db = await getDb();
+  // INVARIANT (Stage 3 boot reconcile): an OPEN row (end_time NULL) == a live
+  // focus session. This is the ONLY path that deliberately leaves end_time NULL.
+  // Any future INSERT INTO time_entries (import/sync/backfill) MUST set end_time,
+  // or reconcileFocusOnBoot will treat it as a phantom session on next launch.
   const result = await db.execute(
     "INSERT INTO time_entries (task_id, start_time, entry_type) VALUES ($1, $2, $3)",
     [taskId, new Date().toISOString(), type]

@@ -1124,7 +1124,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       priorElapsedMs,
     };
     get().primeTasks([task]);
-    persistFocus(focus);
+    // #2a — do NOT persist a preview. Preview is a focus-screen-scoped staging
+    // state with no canonical record (no timeEntryId); persisting it let a stale
+    // preview survive a relaunch and surface as "Focusing…" on the Daily Plan.
+    // In-memory only; an active session persists when activateFocus runs.
     set({ focus });
   },
   activateFocus: (timeEntryId) => {
@@ -1215,6 +1218,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   restoreFocus: async () => {
     const persisted = loadPersistedFocus();
     if (!persisted) return;
+    // #2b — a persisted PREVIEW is stale. previewFocus no longer writes one
+    // (#2a), but an existing one may linger in localStorage from before this
+    // fix. Preview is focus-screen-scoped with no canonical record; restoring
+    // it would surface as "Focusing…" on the Daily Plan at boot. Flush it and
+    // don't restore. Self-defending: only "active" focus (which carries a
+    // timeEntryId reconciled against the DB below) is ever restored.
+    if (persisted.focus.mode === "preview") {
+      persistFocus(null);
+      return;
+    }
     // Prime the cache so selectFocusedTask resolves on first render.
     // Legacy persisted shape carries a Task snapshot — use it directly.
     // Modern shape (post-M2.2) has only taskId; fall back to a one-shot

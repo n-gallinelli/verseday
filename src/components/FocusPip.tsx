@@ -1,8 +1,10 @@
 import { useEffect, useState, useRef } from "react";
 import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { emit, listen } from "@tauri-apps/api/event";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import VerseDayLogo from "./VerseDayLogo";
 import { playBreakChime as playCalm } from "../utils/sounds";
+import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, type PipState } from "../utils/pipEvents";
 
 // ONE fixed pip size for every phase — the pip window never resizes. Sized to
 // the tallest content (the break prompt's header + 3 pills); work/break/ack
@@ -15,20 +17,6 @@ const PIP_SIZE = { width: 220, height: 80 };
 // white in light mode and dark in night mode against the desktop.
 const PIP_BG = "var(--focus-pip-bg)";
 
-const PIP_STATE_KEY = "verseday_pip_state";
-const PIP_CMD_KEY = "verseday_pip_cmd";
-
-interface PipState {
-  elapsed: number;
-  paused: boolean;
-  phase: "work" | "break" | "prompt";
-  breakRemaining: number;
-  taskTitle: string;
-  estimatedMinutes: number | null;
-  // P-fix2: the session is queued (preview, not yet started). The pip stays
-  // alive across the roll-to-next-task; its primary button starts the session.
-  queued: boolean;
-}
 
 function formatTime(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -57,7 +45,7 @@ function formatCountdown(ms: number): string {
 }
 
 function sendCommand(cmd: string) {
-  localStorage.setItem(PIP_CMD_KEY, cmd);
+  void emit(PIP_CMD_EVENT, cmd);
 }
 
 // Icon set for the break-prompt buttons. All three render at 16px,
@@ -155,8 +143,10 @@ function fanOut(slot: number, expanded: boolean): React.CSSProperties {
 }
 const BTN_SECONDARY = "px-2.5 py-1 rounded-[6px] text-[11px] bg-overlay-hover text-fg-muted cursor-pointer hover:bg-overlay-pressed transition-colors";
 
-const FOCUS_STORAGE_KEY = "verseday_focus";
-const ORPHAN_TIMEOUT_MS = 2000;
+// No state/heartbeat event for this long ⟹ the main window is gone (crash /
+// closed without a clean teardown) → the pip self-closes. Comfortably above the
+// 1s heartbeat cadence so a paused session (heartbeat-only) never trips it.
+const LIVENESS_TIMEOUT_MS = 2500;
 
 export default function FocusPip() {
   const [state, setState] = useState<PipState | null>(null);
@@ -170,7 +160,7 @@ export default function FocusPip() {
   // ISN'T key and DOM hover dispatch is suppressed by macOS.
   const [externallyHovered, setExternallyHovered] = useState(false);
   const expanded = cssHovered || externallyHovered;
-  const orphanStartRef = useRef<number | null>(null);
+  const lastSeenRef = useRef<number>(Date.now());
   // Transient acknowledgment text — shown for ~1.2s after the user
   // clicks Snooze ("5 more minutes") or No ("Continue working") on
   // the break prompt, so the click registers visually before the pip
@@ -228,46 +218,52 @@ export default function FocusPip() {
       .catch(() => {});
   }, []);
 
+  // Stage 4 — receive state over a Tauri event (was the verseday_pip_state
+  // localStorage poll). The main window emits on change + a 1s heartbeat; a
+  // `null` payload is a clean teardown (no session) → close. lastSeenRef tracks
+  // the newest event; the liveness interval self-closes if the main window goes
+  // silent (crash / close with no clean teardown) — replacing the old
+  // verseday_focus blob orphan read.
   useEffect(() => {
-    function load() {
-      try {
-        const raw = localStorage.getItem(PIP_STATE_KEY);
-        if (raw) {
-          orphanStartRef.current = null;
-          setState((prev) => {
-            const parsed = JSON.parse(raw) as PipState;
-            if (prev && prev.phase !== parsed.phase) {
-              if (parsed.phase === "prompt" || (prev.phase === "break" && parsed.phase === "work")) {
-                playCalm();
-              }
-            }
-            return parsed;
-          });
-        } else {
-          setState(null);
-          // Orphan self-close: if no PiP state and no focus state for 2+ seconds, close
-          const focusRaw = localStorage.getItem(FOCUS_STORAGE_KEY);
-          if (!focusRaw) {
-            if (orphanStartRef.current === null) {
-              orphanStartRef.current = Date.now();
-            } else if (Date.now() - orphanStartRef.current >= ORPHAN_TIMEOUT_MS) {
-              try {
-                getCurrentWebviewWindow().close().catch(() => {});
-              } catch {
-                // silent
-              }
-            }
-          } else {
-            orphanStartRef.current = null;
+    let unlisten: (() => void) | undefined;
+    listen<PipState | null>(PIP_STATE_EVENT, (e) => {
+      lastSeenRef.current = Date.now();
+      const next = e.payload;
+      if (!next) {
+        setState(null);
+        getCurrentWebviewWindow().close().catch(() => {});
+        return;
+      }
+      setState((prev) => {
+        if (prev && prev.phase !== next.phase) {
+          if (next.phase === "prompt" || (prev.phase === "break" && next.phase === "work")) {
+            playCalm();
           }
         }
-      } catch {
-        setState(null);
+        return next;
+      });
+    })
+      .then((un) => {
+        unlisten = un;
+        // Ask main to push current state — but only AFTER the listener is
+        // registered, else a fast answer races ahead of it and is lost (the pip
+        // would blank until the next heartbeat). Deterministic no-blank.
+        void emit(PIP_READY_EVENT);
+      })
+      .catch(() => {});
+
+    // Liveness — close if the main window has gone silent past the timeout.
+    lastSeenRef.current = Date.now();
+    const liveness = setInterval(() => {
+      if (Date.now() - lastSeenRef.current > LIVENESS_TIMEOUT_MS) {
+        getCurrentWebviewWindow().close().catch(() => {});
       }
-    }
-    load();
-    const interval = setInterval(load, 200);
-    return () => clearInterval(interval);
+    }, 1000);
+
+    return () => {
+      unlisten?.();
+      clearInterval(liveness);
+    };
   }, []);
 
   // Listen for the Rust-side hover monitor. Edge-triggered events

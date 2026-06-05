@@ -1,6 +1,13 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { WebviewWindow, getAllWebviewWindows, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
+import { emit, listen } from "@tauri-apps/api/event";
+import {
+  PIP_STATE_EVENT,
+  PIP_CMD_EVENT,
+  PIP_READY_EVENT,
+  type PipState,
+} from "../utils/pipEvents";
 import { useAppStore, selectFocusedTask, consumeFocusResume, clearFocusResume } from "../stores/appStore";
 import { clampWorkedDelta } from "../utils/workedTime";
 import {
@@ -73,8 +80,6 @@ function formatCountdown(ms: number): string {
   return `${pad(minutes)}:${pad(seconds)}`;
 }
 
-const PIP_STATE_KEY = "verseday_pip_state";
-const PIP_CMD_KEY = "verseday_pip_cmd";
 
 
 type BootStatus = "loading" | "empty" | "error";
@@ -748,17 +753,22 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // pausedAtMs / pausedAccumMs are still in the payload through the
   // dual-write window (S.4) for any consumer that wants them; PiP
   // doesn't currently use them, just renders the precomputed elapsed.
+  // Stage 4 — broadcast over a Tauri event (was the verseday_pip_state
+  // localStorage channel). pipStateRef holds the latest payload for the
+  // heartbeat + the pip's on-mount "ready" pull.
+  const pipStateRef = useRef<PipState | null>(null);
   useEffect(() => {
-    // P-fix2: mirror for preview too (only drop the key when focus is null), so
+    // P-fix2: mirror for preview too (only emit null when focus is null), so
     // the pip can render the queued task and offer a Start button. For preview,
     // `elapsed` is 0 → elapsed+priorMs = priorMs (the prior logged time); there
     // is no live session, so paused is false.
     if (!focus || !focusedTask) {
-      localStorage.removeItem(PIP_STATE_KEY);
+      pipStateRef.current = null;
+      void emit(PIP_STATE_EVENT, null);
       return;
     }
     const queued = focus.mode === "preview";
-    const state = {
+    const state: PipState = {
       elapsed: elapsed + priorMs,
       paused: focus.mode === "active" ? focus.paused : false,
       phase,
@@ -767,14 +777,41 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       estimatedMinutes: focusedTask.estimated_minutes ?? null,
       queued,
     };
-    localStorage.setItem(PIP_STATE_KEY, JSON.stringify(state));
+    pipStateRef.current = state;
+    void emit(PIP_STATE_EVENT, state);
   }, [focus, focusedTask, elapsed, phase, breakRemaining, priorMs]);
 
-  // Clean up PiP state on unmount
+  // Heartbeat — re-emit the current state every 1s while a session exists. While
+  // RUNNING the broadcast above already emits per tick; this matters while
+  // PAUSED (workedMs frozen → the broadcast effect is idle), so the pip keeps
+  // receiving liveness and doesn't self-close mid-pause. Gated on focusMode (not
+  // `focus`, which churns each tick) so it isn't torn down every second.
+  useEffect(() => {
+    if (!focusMode) return;
+    const hb = setInterval(() => {
+      void emit(PIP_STATE_EVENT, pipStateRef.current);
+    }, 1000);
+    return () => clearInterval(hb);
+  }, [focusMode]);
+
+  // The pip asks for state on mount (it only gets future emits) — push the
+  // current payload immediately so it's never blank for up to a heartbeat.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen(PIP_READY_EVENT, () => {
+      void emit(PIP_STATE_EVENT, pipStateRef.current);
+    })
+      .then((un) => {
+        unlisten = un;
+      })
+      .catch(() => {});
+    return () => unlisten?.();
+  }, []);
+
+  // Tell the pip there's no session on unmount (clean teardown → it self-closes).
   useEffect(() => {
     return () => {
-      localStorage.removeItem(PIP_STATE_KEY);
-      localStorage.removeItem(PIP_CMD_KEY);
+      void emit(PIP_STATE_EVENT, null);
     };
   }, []);
 
@@ -801,12 +838,13 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     return () => clearTimeout(t);
   }, [phase]);
 
-  // Listen for PiP commands
+  // Listen for PiP commands (Stage 4 — Tauri event, was the verseday_pip_cmd
+  // localStorage poll). All handlers go through *Ref.current so the listener is
+  // registered once. Event delivery has no per-tick drop window.
   useEffect(() => {
-    const interval = setInterval(() => {
-      const cmd = localStorage.getItem(PIP_CMD_KEY);
-      if (!cmd) return;
-      localStorage.removeItem(PIP_CMD_KEY);
+    let unlisten: (() => void) | undefined;
+    listen<string>(PIP_CMD_EVENT, (e) => {
+      const cmd = e.payload;
       if (cmd === "pause") handleTogglePauseRef.current();
       else if (cmd === "start") handleStartSessionRef.current();
       else if (cmd === "done") handleDoneRef.current();
@@ -821,12 +859,12 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         // early-returns so it isn't recreated until the user unhides.
         setPipHidden(true);
       }
-    }, 200);
-    return () => clearInterval(interval);
-    // #8 — `elapsed` was in the deps but is never read here (all handlers go
-    // through *Ref.current). It made this 200ms poller tear down and rebuild
-    // every second, opening a per-tick window where a PiP pause/stop click
-    // could be dropped. Deps are only the values actually read in the body.
+    })
+      .then((un) => {
+        unlisten = un;
+      })
+      .catch(() => {});
+    return () => unlisten?.();
   }, [SHORT_BREAK_MS]);
 
   // Listen for Space shortcut from App.tsx

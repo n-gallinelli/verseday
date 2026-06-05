@@ -351,6 +351,40 @@ export type FocusState =
       workedMs: number;
     };
 
+// Stage 1 of the focus single-source refactor (docs/2026-06-04-focus-single-
+// source-refactor-plan.md). `session` is the canonical mirror of a RUNNING
+// session — "running ⟺ session !== null". For now it's derived from the active
+// `focus` at every focus write (see sessionFromFocus/withSession); later stages
+// make it DB-sourced and split `focus` into session + focusView. Until then the
+// invariant session !== null ⟺ focus?.mode === "active" must always hold
+// (guarded by appStore.session.test.ts).
+export interface SessionState {
+  timeEntryId: number;
+  taskId: number;
+  workedMs: number;
+  paused: boolean;
+}
+
+/** Canonical session derived from a focus state — null for preview/none. */
+export function sessionFromFocus(focus: FocusState | null): SessionState | null {
+  if (!focus || focus.mode !== "active") return null;
+  return {
+    timeEntryId: focus.timeEntryId,
+    taskId: focus.taskId,
+    workedMs: focus.workedMs,
+    paused: focus.paused,
+  };
+}
+
+/** Wrap a store patch that sets `focus` so `session` is mirrored in the SAME
+ *  commit — the single funnel for every focus write, so the invariant can't
+ *  drift. */
+export function withSession<T extends { focus: FocusState | null }>(
+  patch: T,
+): T & { session: SessionState | null } {
+  return { ...patch, session: sessionFromFocus(patch.focus) };
+}
+
 interface AppState {
   currentPage: Page;
   pageHistory: Page[];
@@ -358,6 +392,8 @@ interface AppState {
   selectedWeek: string;
   selectedProjectId: number | null;
   focus: FocusState | null;
+  /** Canonical mirror of the running session (Stage 1). See SessionState. */
+  session: SessionState | null;
   pendingDetailTask: Task | null;
   /** ID of the task whose detail overlay is currently open. `null` = closed.
    *  Read by the singleton TaskDetailOverlayHost mounted at the App shell.
@@ -857,6 +893,13 @@ export function selectFocusedTask(state: AppState): Task | null {
   return state.tasksById.get(f.taskId) ?? null;
 }
 
+/** The running session, or null. Canonical "are we focusing?" read — consumers
+ *  use this instead of `!!focus` / `focus?.mode === "active"` so the source can
+ *  later move off the FocusState union without touching call sites (Stage 1). */
+export function selectRunningSession(state: AppState): SessionState | null {
+  return state.session;
+}
+
 /** Selector: per-row task lookup. Stable reference — the same `Task`
  *  identity flows out across renders unless the entry was rewritten.
  *  Used by TaskCard's per-row subscription (M3.2.b.4). */
@@ -1062,6 +1105,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedWeek: mondayOfWeek(),
   selectedProjectId: null,
   focus: null,
+  session: null,
   pendingDetailTask: null,
   selectedTaskDetailId: null,
   taskDetailAutoFocusTitle: false,
@@ -1088,7 +1132,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const f = get().focus;
     if (prev === "focus" && page !== "focus" && f?.mode === "preview") {
       persistFocus(null);
-      set((s) => ({
+      set((s) => withSession({
         focus: null,
         currentPage: page,
         pageHistory: [...s.pageHistory.slice(-19), prev],
@@ -1135,7 +1179,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // state with no canonical record (no timeEntryId); persisting it let a stale
     // preview survive a relaunch and surface as "Focusing…" on the Daily Plan.
     // In-memory only; an active session persists when activateFocus runs.
-    set({ focus });
+    set(withSession({ focus })); // preview → session null
   },
   activateFocus: (timeEntryId) => {
     const f = get().focus;
@@ -1153,7 +1197,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       workedMs: 0,
     };
     persistFocus(next);
-    set({ focus: next });
+    set(withSession({ focus: next }));
   },
   updateFocusTask: (patch) => {
     // M2.2 — `task` is no longer on FocusState; this action is a thin
@@ -1175,7 +1219,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!f || f.taskId !== taskId) return;
     const next = { ...f, priorElapsedMs: priorMs } as FocusState;
     persistFocus(next);
-    set({ focus: next });
+    set(withSession({ focus: next }));
   },
   startFocus: (task, timeEntryId, previousPage, priorElapsedMs = 0) => {
     // Sets focus state only — does NOT navigate to the immersive Focus page.
@@ -1202,7 +1246,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
     get().primeTasks([task]);
     persistFocus(focus);
-    set({ focus });
+    set(withSession({ focus }));
   },
   stopFocus: () => {
     const state = get();
@@ -1216,9 +1260,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Inline pauses (DailyPlanner row, etc.) must not whisk the user
     // back to wherever the timer was originally started.
     if (state.currentPage === "focus") {
-      set({ focus: null, currentPage: prev });
+      set(withSession({ focus: null, currentPage: prev }));
     } else {
-      set({ focus: null });
+      set(withSession({ focus: null }));
     }
     return prev;
   },
@@ -1307,7 +1351,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     // Restore the (auto-paused) session state but do NOT navigate to the Focus
     // screen — the app should open to the Daily Plan by default. The restored
     // session is still there to resume from the daily row / Focus screen / PiP.
-    set({ focus: restored });
+    set(withSession({ focus: restored }));
   },
   togglePauseFocus: () => {
     // S.5 — flag flip only. Under the worked-seconds model, pause is
@@ -1322,7 +1366,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!f || f.mode !== "active") return;
     const next: FocusState = { ...f, paused: !f.paused };
     persistFocus(next);
-    set({ focus: next });
+    set(withSession({ focus: next }));
   },
   adjustFocusElapsed: (desiredElapsedMs) => {
     // S.5 — workedMs write only. The legacy back-solve against
@@ -1332,7 +1376,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!f || f.mode !== "active") return;
     const next: FocusState = { ...f, workedMs: Math.max(0, desiredElapsedMs) };
     persistFocus(next);
-    set({ focus: next });
+    set(withSession({ focus: next }));
   },
   tickFocus: (deltaMs) => {
     // S.2 — increments workedMs while the session is running. No-op if
@@ -1361,7 +1405,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (deltaMs <= 0) return;
     const next: FocusState = { ...f, workedMs: f.workedMs + deltaMs };
     persistFocus(next);
-    set({ focus: next });
+    set(withSession({ focus: next }));
   },
   setPendingDetailTask: (task) => set({ pendingDetailTask: task }),
   openTaskDetail: (id, opts) =>
@@ -1872,7 +1916,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => {
       const next = new Map(s.workedByTaskId);
       next.set(taskId, committed);
-      return { workedByTaskId: next, focus: null };
+      return withSession({ workedByTaskId: next, focus: null });
     });
   },
   endActiveFocusSession: async () => {

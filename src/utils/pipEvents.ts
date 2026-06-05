@@ -8,9 +8,11 @@ export const PIP_READY_EVENT = "verseday:pip-ready"; // pip → main: push state
 
 // ONE pip window size for every phase — the pip never resizes (declining a break
 // can't shrink it; no setSize churn). Shared so the window-creation size
-// (FocusMode) and the content's pinned size (FocusPip) can't drift. Sized to the
-// compact running/paused state; the break prompt is tightened to fit this height.
-export const PIP_SIZE = { width: 220, height: 64 };
+// (FocusMode) and the content's pinned size (FocusPip) can't drift. Height is set
+// by the break prompt — its tallest phase: header (~16px) + mb-1 (4px) + 24px
+// button row + py-1.5 (12px) ≈ 56px floor; 58 leaves ~2px slack. The running/
+// paused view is shorter and centers in the remaining space.
+export const PIP_SIZE = { width: 220, height: 58 };
 
 export interface PipState {
   elapsed: number;

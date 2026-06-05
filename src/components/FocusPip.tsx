@@ -166,18 +166,35 @@ export default function FocusPip() {
   const [pendingAck, setPendingAck] = useState<string | null>(null);
   const ackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // One-shot "task completed" flourish on the checkmark (green fill + check
-  // redraw + pop + ring burst), reusing the focus-screen completion vocabulary.
-  // Resets after the animation so a persisting pip (advanced to the next task)
-  // gets a fresh checkmark.
+  // ── Completion sequence (Option C — strike + hand-off) ──────────────
+  // Clicking the checkmark plays a full-pip "officially done" takeover: the
+  // finished task's title strikes through, a green check draws, then the panel
+  // slides out — handing off to the next task, which slides in. The title is
+  // SNAPSHOT at click time so the takeover keeps showing the task we just
+  // finished even as the main window pushes the next task's state in the
+  // background (we send "done" immediately, so the data write isn't delayed by
+  // the animation). COMPLETE_MS must match the pipComplete keyframe duration.
   const [completing, setCompleting] = useState(false);
+  const [completingTitle, setCompletingTitle] = useState("");
+  const [slideInNext, setSlideInNext] = useState(false);
   const completeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const slideInTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const COMPLETE_MS = 850;
   function completeWithFlourish() {
     if (completing) return; // guard double-fire
+    setCompletingTitle(state?.taskTitle ?? "");
     setCompleting(true);
     sendCommand("done");
     if (completeTimerRef.current) clearTimeout(completeTimerRef.current);
-    completeTimerRef.current = setTimeout(() => setCompleting(false), 1100);
+    completeTimerRef.current = setTimeout(() => {
+      setCompleting(false);
+      // By now the main window has pushed the next task into `state` (emitted on
+      // "done"); slide it in. Cleared after the entrance so heartbeat-driven
+      // state updates don't replay the slide.
+      setSlideInNext(true);
+      if (slideInTimerRef.current) clearTimeout(slideInTimerRef.current);
+      slideInTimerRef.current = setTimeout(() => setSlideInNext(false), 340);
+    }, COMPLETE_MS);
   }
 
   function flashAck(message: string, cmd: string) {
@@ -194,6 +211,7 @@ export default function FocusPip() {
     return () => {
       if (ackTimerRef.current) clearTimeout(ackTimerRef.current);
       if (completeTimerRef.current) clearTimeout(completeTimerRef.current);
+      if (slideInTimerRef.current) clearTimeout(slideInTimerRef.current);
     };
   }, []);
 
@@ -318,6 +336,47 @@ export default function FocusPip() {
     };
   }, []);
 
+  // ── COMPLETION TAKEOVER — full-pip "officially done" hand-off ─────────
+  // Takes precedence over every phase: renders the SNAPSHOT of the task we
+  // just finished (title struck through + green check), then slides out. Sits
+  // before the null check so completing the last task still plays even if the
+  // main window has already torn `state` down.
+  if (completing) {
+    return (
+      <div
+        data-tauri-drag-region
+        className="select-none w-full h-screen overflow-hidden animate-pip-complete"
+        style={{
+          background: PIP_BG,
+          borderRadius: 18,
+          border: "0.5px solid var(--focus-pip-border)",
+          boxShadow: "var(--shadow-card)",
+        }}
+        onMouseDown={handlePipMouseDown}
+      >
+        <div className="flex flex-col justify-center h-full px-4">
+          <div className="flex items-center gap-2">
+            <span className="relative flex-1 min-w-0 text-[14px] font-medium text-fg-faded truncate leading-snug">
+              {completingTitle}
+              <span
+                aria-hidden
+                className="absolute left-0 top-1/2 h-px bg-fg-faded animate-pip-strike pointer-events-none"
+              />
+            </span>
+            <span className="flex-shrink-0 w-[18px] h-[18px] rounded-full bg-accent-green flex items-center justify-center">
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 8.5l3.5 3.5 6.5-7" className="animate-check-draw" />
+              </svg>
+            </span>
+          </div>
+          <div className="text-[11px] font-medium text-accent-green-deep leading-snug mt-1">
+            Done
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!state) {
     return null;
   }
@@ -346,7 +405,7 @@ export default function FocusPip() {
     );
   }
 
-  // ── BREAK PROMPT — two compact rows, tightened to fit the 220×64 pip ──
+  // ── BREAK PROMPT — two compact rows, tightened to fit the 220×58 pip ──
   // Header row: centered "Ready for a break?" anchor at small weight.
   // Action row: three icon buttons (thumbs up / clock / x) — icon-only
   // keeps the pip uncluttered at this width; tooltips carry the
@@ -433,7 +492,7 @@ export default function FocusPip() {
       style={{ background: PIP_BG, borderRadius: 18, border: "0.5px solid var(--focus-pip-border)" }}
       onMouseDown={handlePipMouseDown}
     >
-      <div className="flex items-center gap-2 pl-4 pr-2 py-2 w-full h-full">
+      <div className={`flex items-center gap-2 pl-4 pr-2 py-2 w-full h-full ${slideInNext ? "animate-pip-slide-in" : ""}`}>
         {/* Title + timer — purely informational. Fades on hover so the
             icon row can take the space without overlapping.
             pr-12 reserves space for the absolute-positioned pause
@@ -525,27 +584,17 @@ export default function FocusPip() {
               </svg>
             </button>
 
+            {/* Complete — feedback lives in the full-pip completion takeover
+                (strike + hand-off), not on this tiny button, so it stays a
+                plain icon here. */}
             <button
               onClick={(e) => { e.stopPropagation(); completeWithFlourish(); }}
-              className={`${ICON_BTN} relative ${completing ? "animate-task-done" : ""}`}
+              className={ICON_BTN}
               title="Complete task"
-              style={{
-                ...fanOut(1, expanded),
-                ...(completing
-                  ? { background: "var(--accent-green)", color: "#fff" }
-                  : {}),
-              }}
+              style={fanOut(1, expanded)}
             >
-              {/* Ring burst on completion — reuses the focus-complete vocabulary. */}
-              {completing && (
-                <span
-                  aria-hidden
-                  className="absolute inset-0 rounded-full animate-focus-complete-burst pointer-events-none"
-                  style={{ border: "1.5px solid var(--accent-green)" }}
-                />
-              )}
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={completing ? "#fff" : "var(--accent-green-deep)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 8.5l3.5 3.5 6.5-7" className={completing ? "animate-check-draw" : ""} />
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 8.5l3.5 3.5 6.5-7" />
               </svg>
             </button>
 

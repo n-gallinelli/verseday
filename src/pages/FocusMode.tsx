@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
+import { WebviewWindow, getAllWebviewWindows, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, selectFocusedTask, consumeFocusResume, clearFocusResume } from "../stores/appStore";
 import { clampWorkedDelta } from "../utils/workedTime";
@@ -37,7 +37,11 @@ import type { Page } from "../types";
 // pip + main-window prompt from nagging indefinitely.
 const PROMPT_AUTO_DISMISS_MS = 30_000;
 
-const CHECKPOINT_INTERVAL_MS = 30_000;
+// Stage 2 of the focus single-source refactor: the DB open-row worked_seconds
+// checkpoint is the bounded-loss record. Tightened 30s → 15s; an immediate
+// flush also fires on pause / window-blur / tab-hide / stop / app-close, so
+// ~15s is only the WORST case on a hard crash with no clean exit signal.
+const CHECKPOINT_INTERVAL_MS = 15_000;
 
 // Defaults — overridden by settings loaded on mount
 const DEFAULT_WORK_MIN = 25;
@@ -676,18 +680,58 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // and the live focus.workedMs is counted exactly once at the app layer.
   // On a force-quit the row keeps this checkpointed worked_seconds; the next
   // boot's closeOrphanedTimeEntries sets end_time and it re-enters the totals.
+  // Stage 2 — write the running session's CLAMPED workedMs to the open row's
+  // worked_seconds. Absolute SET (idempotent across repeated flushes), end_time
+  // untouched (stays NULL so the #15 aggregate guard keeps excluding it). Reads
+  // live state via getState() so it's safe to call from any handler. Writes
+  // regardless of paused — pause flushes the value AS-OF the pause.
+  const flushCheckpoint = useCallback(() => {
+    const f = useAppStore.getState().focus;
+    if (!f || f.mode !== "active") return;
+    updateTimeEntryWorkedSeconds(f.timeEntryId, Math.round(f.workedMs / 1000)).catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (focusMode !== "active") return;
     const checkpoint = setInterval(() => {
       const f = useAppStore.getState().focus;
-      if (!f || f.mode !== "active" || f.paused) return;
-      updateTimeEntryWorkedSeconds(
-        f.timeEntryId,
-        Math.round(f.workedMs / 1000)
-      ).catch(() => {});
+      if (!f || f.mode !== "active" || f.paused) return; // no new time while paused
+      flushCheckpoint();
     }, CHECKPOINT_INTERVAL_MS);
     return () => clearInterval(checkpoint);
-  }, [focusTaskId, focusMode]);
+  }, [focusTaskId, focusMode, flushCheckpoint]);
+
+  // Immediate flush on the bounded-loss exit signals so worst-case loss is only
+  // ~15s on a HARD crash. pause / window-blur / tab-hide while running, plus the
+  // Tauri close-request (covers a clean quit, which may not fire blur first).
+  // Stop already persists via stopFocusedSessionForTask (closes the row).
+  useEffect(() => {
+    if (focusMode !== "active") return;
+    const onHidden = () => {
+      if (document.visibilityState === "hidden") flushCheckpoint();
+    };
+    window.addEventListener("blur", flushCheckpoint);
+    document.addEventListener("visibilitychange", onHidden);
+    let unlistenClose: (() => void) | undefined;
+    getCurrentWebviewWindow()
+      .onCloseRequested(() => {
+        flushCheckpoint();
+      })
+      .then((un) => {
+        unlistenClose = un;
+      })
+      .catch(() => {});
+    return () => {
+      window.removeEventListener("blur", flushCheckpoint);
+      document.removeEventListener("visibilitychange", onHidden);
+      unlistenClose?.();
+    };
+  }, [focusMode, flushCheckpoint]);
+
+  // Flush the instant a running session pauses (the value is final until resume).
+  useEffect(() => {
+    if (isPaused) flushCheckpoint();
+  }, [isPaused, flushCheckpoint]);
 
   // Broadcast state to PiP window — active sessions only. Preview has
   // no live state to mirror; the pip stays closed.

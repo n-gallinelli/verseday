@@ -601,7 +601,7 @@ export default function WeeklyShutdown() {
                 Weekly summary
               </h3>
               <p className="text-[11px] text-fg-faded mb-3 leading-snug">
-                A Claude-ready recap of your week.
+                Paste the summary into Claude for your weekly narrative.
               </p>
 
               {/* Audience toggle — full-width segmented. */}
@@ -652,8 +652,6 @@ export default function WeeklyShutdown() {
                   </button>
                 </div>
               )}
-
-              <p className="text-[10px] text-fg-faded mt-3">Runs locally.</p>
             </div>
             </div>
           </section>

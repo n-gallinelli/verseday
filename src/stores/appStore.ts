@@ -706,7 +706,14 @@ function persistSidebarCollapsed(v: boolean): void {
 }
 
 function persistFocus(focus: FocusState | null): void {
-  if (focus) {
+  // Only an ACTIVE session is ever persisted. Preview is a focus-screen-scoped
+  // staging state with no canonical record (no timeEntryId); persisting it let
+  // a stale preview survive a relaunch and surface as "Focusing…" on the Daily
+  // Plan. Narrowing here (vs at each caller) makes "previews are never
+  // persisted" true everywhere at once — e.g. setFocusPriorElapsedMs persists
+  // unconditionally and isFocusedTask is true in preview, so editing a staged
+  // task's estimate would otherwise re-write a preview. Preview/null clears the key.
+  if (focus && focus.mode === "active") {
     localStorage.setItem(FOCUS_STORAGE_KEY, JSON.stringify(focus));
   } else {
     localStorage.removeItem(FOCUS_STORAGE_KEY);

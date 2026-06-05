@@ -798,7 +798,7 @@ select {
 /* Dashboard chart bars — a calm fade-up entrance on load / week change, instead
    of the old height "fill" grow (which read as the bars pumping up). Bars sit at
    their true height immediately and ease in. Per-column stagger via inline
-   animation-delay. transform-origin bottom keeps the rise anchored to the axis. */
+   animation-delay. */
 @keyframes dashboardBarRise {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }

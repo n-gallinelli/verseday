@@ -53,6 +53,10 @@ function BarChart({
   // Generous bar area so a day reads at its true fraction of the 8h scale
   // (2h → 25% is a substantial bar, not a stub).
   const chartHeight = 260;
+  // Reserved space ABOVE a full-height bar for its value label, so a 8h day's
+  // label can't overflow/clip the card: the row is chartHeight + this, bars
+  // still max at chartHeight (scale stays accurate), the label lives in the gap.
+  const labelHeadroom = 18;
 
   return (
     <div>
@@ -63,7 +67,7 @@ function BarChart({
       <div
         key={`${weekDates.join(",")}|${weekDates.some((d) => (workedByDay.get(d) ?? 0) > 0 || (plannedByDay.get(d) ?? 0) > 0) ? "1" : "0"}`}
         className="flex items-end gap-3"
-        style={{ height: chartHeight, borderBottom: "0.5px solid var(--border-hairline)" }}
+        style={{ height: chartHeight + labelHeadroom, borderBottom: "0.5px solid var(--border-hairline)" }}
       >
         {weekDates.map((date, i) => {
           const planned = plannedByDay.get(date) ?? 0;

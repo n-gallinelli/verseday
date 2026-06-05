@@ -1003,7 +1003,13 @@ export default function DailyPlanner() {
           <div className="flex-1" />
           {/* Focus button — inline */}
           {(() => {
-            const isFocusing = !!focus;
+            // The pill must mean "a session is actually running," not "a focus
+            // object exists." Gate on active mode (a real session with an open
+            // time_entry) — a preview (task merely staged on the focus screen,
+            // nothing running) is NOT focusing and falls through to the
+            // "Start focusing" / null branch. Mirrors FocusMode's own
+            // active-only mount gate (App.tsx).
+            const isFocusing = focus?.mode === "active";
             // M2.6 — pause symmetry. When the active session is paused,
             // the pill drops its accent-blue tint, the dot stops
             // pulsing, and the label flips from "Focusing…" to "Paused"

@@ -767,11 +767,8 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // Without this dep, the PiP would keep showing the stale title — the
   // exact regression the entity refactor exists to prevent.
   //
-  // S.3 — `elapsed` here is derived from focus.workedMs (the new
-  // tick-counter source of truth), not from wall-clock derivation.
-  // pausedAtMs / pausedAccumMs are still in the payload through the
-  // dual-write window (S.4) for any consumer that wants them; PiP
-  // doesn't currently use them, just renders the precomputed elapsed.
+  // `elapsed` is session.workedMs + priorMs (the precomputed display value);
+  // the PiP just renders it.
   // Stage 4 — broadcast over a Tauri event (was the verseday_pip_state
   // localStorage channel). pipStateRef holds the latest payload for the
   // heartbeat + the pip's on-mount "ready" pull.
@@ -1047,11 +1044,9 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     togglePauseFocus();
   }
 
-  // S.6 — pause-start tracking for the Pomodoro break-phase adjustment.
-  // The store action no longer carries pausedAtMs (worked-seconds
-  // model retired wall-clock fields). Local ref records when the
-  // user paused; on resume during break phase, advance breakStartRef
-  // so the break countdown effectively pauses too.
+  // Pause-start tracking for the Pomodoro break-phase adjustment. Local ref
+  // records when the user paused; on resume during break phase, advance
+  // breakStartRef so the break countdown effectively pauses too.
   const pauseStartRef = useRef<number | null>(null);
   useEffect(() => {
     if (focus?.mode !== "active") {
@@ -1258,11 +1253,8 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     if (!focus || focus.mode !== "active") return;
     const newMs = Math.max(focus.priorElapsedMs, targetMs);
     const desiredElapsed = newMs - focus.priorElapsedMs;
-    // S.3 — adjustFocusElapsed is now a dual-write: sets workedMs
-    // directly (which the displayed counter reads) AND back-solves
-    // pausedAccumMs (which wall-clock-derived queries still need
-    // through S.4/S.5). No local elapsed state to update — the
-    // store action's set() triggers the re-render via focus.workedMs.
+    // adjustFocusElapsed sets session.workedMs directly; the store set()
+    // triggers the re-render. No local elapsed state to update.
     adjustFocusElapsed(desiredElapsed);
   }
 
@@ -1306,13 +1298,12 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   }
   if (!settingsLoaded) return null;
 
-  // From here on, focus is non-null. The discriminated union narrows
-  // timeEntryId / startedAt to the active branch automatically.
-  // M2.2 — task comes from selectFocusedTask (cache-backed) so a rename
-  // made elsewhere reflects here on the next render. previewFocus /
-  // startFocus / restoreFocus all prime the cache, so a null result
-  // here means a brief race during a focus task swap; render nothing
-  // for that frame rather than half-state, the next render resolves.
+  // From here on, focus (the readFocus view) is non-null.
+  // Task comes from selectFocusedTask (cache-backed) so a rename made elsewhere
+  // reflects here on the next render. previewFocus / startFocus /
+  // reconcileFocusOnBoot all prime the cache, so a null result here means a
+  // brief race during a focus task swap; render nothing for that frame rather
+  // than half-state, the next render resolves.
   const task = focusedTask;
   if (!task) return null;
   const isQueued = focus.mode === "preview";

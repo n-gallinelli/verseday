@@ -54,6 +54,12 @@ const CHECKPOINT_INTERVAL_MS = 15_000;
 // logic is unchanged by deriving a read-only view that reproduces the old union
 // shape exactly (session → active, else focusView → preview). Deterministic, so
 // a preview can never be read as running. The STORE no longer holds a union.
+//
+// DRIFT GUARD: this is a DERIVED READ-ONLY view-model — it relies on
+// session-precedence + the store's mutual exclusivity. NEVER store or persist it.
+// A "is a session running?" check goes through `session` / selectRunningSession,
+// NOT readFocus().mode === "active" (that's only for this component's display
+// logic). Don't reintroduce a stored union.
 type FocusCompat =
   | ({ mode: "active" } & SessionState)
   | ({ mode: "preview" } & FocusView)

@@ -342,6 +342,13 @@ export default function WeeklyShutdown() {
   const [summaryCopied, setSummaryCopied] = useState(false);
   const [summaryGenerating, setSummaryGenerating] = useState(false);
 
+  // Chart-height parity WITHOUT follow: the chart matches the right column's
+  // COLLAPSED height, then freezes. The measure effect early-returns while the
+  // summary is expanded (summaryDigest !== null), so generating the digest grows
+  // the column downward without resizing the chart.
+  const rightColRef = useRef<HTMLDivElement>(null);
+  const [chartH, setChartH] = useState<number | null>(null);
+
   const fridayIso = getFridayIso(selectedWeek);
   const todayMonday = getMondayOfWeek();
   const weekDates = getWeekdayDates(selectedWeek);
@@ -390,6 +397,19 @@ export default function WeeklyShutdown() {
     setSummaryDigest(null);
     setSummaryCopied(false);
   }, [selectedWeek]);
+
+  // Measure the right column's collapsed height and pin the chart to it. The
+  // early-return is the freeze: while expanded we never read the grown height,
+  // so the chart stays put when the summary opens. Re-runs (and re-aligns) on
+  // mount, when the collapsed content settles (worked/tasks data lands), and on
+  // week-change (digest resets to null). No ResizeObserver — the collapsed
+  // height is effectively static, so per-transition measurement is enough and
+  // avoids RO/disconnect timing. useLayoutEffect measures before paint.
+  useLayoutEffect(() => {
+    if (summaryDigest !== null) return;
+    const el = rightColRef.current;
+    if (el) setChartH(el.offsetHeight);
+  }, [summaryDigest, completedThisWeek.length, selectedWeek]);
 
   // ── Actions ───────────────────────────────────────────────────────────
 
@@ -550,8 +570,11 @@ export default function WeeklyShutdown() {
               "how much"; the summary is a secondary on-demand export.
               items-start (not stretch) so the two short right-column
               cards don't stretch the chart taller than its own content. */}
-          <section className="flex gap-6 items-stretch">
-            <div className="flex-1 min-w-0 rounded-lg bg-elevated/40 p-5 flex flex-col" style={{ border: "0.5px solid var(--border-hairline)" }}>
+          <section className="flex gap-6 items-start">
+            <div
+              className="flex-1 min-w-0 rounded-lg bg-elevated/40 p-5 flex flex-col"
+              style={{ border: "0.5px solid var(--border-hairline)", height: chartH ?? undefined }}
+            >
               <div className="text-[11px] uppercase tracking-[0.06em] text-fg-faded mb-3 flex-shrink-0">
                 Effort by day
               </div>
@@ -563,7 +586,7 @@ export default function WeeklyShutdown() {
                 />
               </div>
             </div>
-            <div className="w-[200px] flex-shrink-0 flex flex-col gap-6">
+            <div ref={rightColRef} className="w-[200px] flex-shrink-0 flex flex-col gap-6">
             {/* Card 1 — week totals. */}
             <div
               className="rounded-lg bg-elevated/40 px-5 py-5 flex flex-col items-start"

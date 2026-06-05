@@ -795,6 +795,18 @@ select {
   animation: taskAdded 260ms ease-out both;
 }
 
+/* Dashboard chart bars — a calm fade-up entrance on load / week change, instead
+   of the old height "fill" grow (which read as the bars pumping up). Bars sit at
+   their true height immediately and ease in. Per-column stagger via inline
+   animation-delay. */
+@keyframes dashboardBarRise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-dashboard-bar {
+  animation: dashboardBarRise 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
 /* A green ring that bursts outward from the checkbox the moment a daily task
    is marked done — a quick, positive "nice, done" beat. A restrained sibling
    of the focus-complete burst, sized for a list row. Pairs with the existing
@@ -848,6 +860,7 @@ select {
   .animate-check-draw,
   .animate-task-arrived,
   .animate-task-added,
+  .animate-dashboard-bar,
   .animate-completion-glow,
   .animate-focus-complete-burst,
   .animate-focus-complete-core {

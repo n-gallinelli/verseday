@@ -93,8 +93,13 @@ function BarChart({
         ))}
       </div>
 
-      {/* Bars */}
-      <div className="flex-1 flex items-end gap-3">
+      {/* Bars. Keyed on the week + whether data has arrived, so the fade-up
+          entrance replays when the async data lands and on week navigation
+          (instead of the old height-grow that "filled" the bars on load). */}
+      <div
+        key={`${weekDates.join(",")}|${weekDates.some((d) => (workedByDay.get(d) ?? 0) > 0 || (plannedByDay.get(d) ?? 0) > 0) ? "1" : "0"}`}
+        className="flex-1 flex items-end gap-3"
+      >
         {weekDates.map((date, i) => {
           const planned = plannedByDay.get(date) ?? 0;
           const worked = workedByDay.get(date) ?? 0;
@@ -120,8 +125,8 @@ function BarChart({
               >
                 {/* Worked (actual) bar — cool slate, "done" — on the left */}
                 <div
-                  className="w-[22px] rounded-t-[3px] bg-chart-bar-worked transition-all duration-300"
-                  style={{ height: `${barPx(workedPct, worked)}px` }}
+                  className="w-[22px] rounded-t-[3px] bg-chart-bar-worked animate-dashboard-bar"
+                  style={{ height: `${barPx(workedPct, worked)}px`, animationDelay: `${i * 40}ms` }}
                   onMouseEnter={() =>
                     worked > 0 &&
                     setHover({ label: "Worked", minutes: worked, color: "var(--chart-bar-worked)", day: DAY_NAMES[i] })
@@ -130,8 +135,8 @@ function BarChart({
                 />
                 {/* Planned bar — warm tan, "intent" — on the right */}
                 <div
-                  className="w-[22px] rounded-t-[3px] bg-chart-bar-planned transition-all duration-300"
-                  style={{ height: `${barPx(plannedPct, planned)}px` }}
+                  className="w-[22px] rounded-t-[3px] bg-chart-bar-planned animate-dashboard-bar"
+                  style={{ height: `${barPx(plannedPct, planned)}px`, animationDelay: `${i * 40}ms` }}
                   onMouseEnter={() =>
                     planned > 0 &&
                     setHover({ label: "Planned", minutes: planned, color: "var(--chart-bar-planned)", day: DAY_NAMES[i] })

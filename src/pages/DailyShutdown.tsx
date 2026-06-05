@@ -100,6 +100,17 @@ export default function DailyShutdown() {
   const [summaryCopied, setSummaryCopied] = useState(false);
   const [allProjects, setAllProjects] = useState<Project[]>([]);
 
+  // Collapsed top-right rundown dropdown. The window Esc handler (deps
+  // [setPage], so it never re-binds on open-change) reads dropdownOpenRef —
+  // NOT the open state — to avoid a stale closure leaving the page while the
+  // dropdown is open. triggerRef/panelRef let the outside-click handler exclude
+  // its own elements so the opening click doesn't immediately close it.
+  const [rundownOpen, setRundownOpen] = useState(false);
+  const dropdownOpenRef = useRef(false);
+  dropdownOpenRef.current = rundownOpen;
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedDateRef = useRef(selectedDate);
   selectedDateRef.current = selectedDate;
@@ -188,11 +199,19 @@ export default function DailyShutdown() {
     };
   }, []);
 
-  // Escape: leave shutdown back to the daily plan. Skip while typing in any
-  // textarea/input so the user can hit Escape to blur first.
+  // Escape: close the rundown dropdown first (if open), else leave shutdown
+  // back to the daily plan. Skip leaving while typing in any textarea/input so
+  // the user can hit Escape to blur first. Reads dropdownOpenRef — not the
+  // state — because this effect's deps are [setPage] and never re-bind on
+  // open-change (the state would be a stale closure).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
+      if (dropdownOpenRef.current) {
+        e.preventDefault();
+        setRundownOpen(false);
+        return;
+      }
       const el = document.activeElement;
       const isInput =
         el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
@@ -206,6 +225,20 @@ export default function DailyShutdown() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [setPage]);
+
+  // Outside-click closes the rundown dropdown. Exclude the trigger AND the panel
+  // so the click that opens it (or a click inside it) doesn't immediately close
+  // it. Only bound while open.
+  useEffect(() => {
+    if (!rundownOpen) return;
+    function onDown(e: MouseEvent) {
+      const target = e.target as Node;
+      if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setRundownOpen(false);
+    }
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [rundownOpen]);
 
   function handleMoodChange(value: string | null) {
     setMood(value);
@@ -364,61 +397,81 @@ export default function DailyShutdown() {
       {/* ── Body — two-step flow ────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-[760px] mx-auto px-6 pt-5 pb-8 space-y-8">
-          {/* Step indicator — Review breadcrumb is clickable from step 2 */}
-          <div className="flex items-center gap-2 text-[12px] text-fg-secondary">
-            {step === 2 ? (
-              <button
-                onClick={() => setStep(1)}
-                className="cursor-pointer hover:text-fg transition-colors"
-              >
-                Review
-              </button>
-            ) : (
-              <span className="text-fg font-medium">Review</span>
+          {/* Step indicator (left) + the rundown dropdown (top-right, step 1). */}
+          <div className="flex items-center justify-between gap-2 text-[12px] text-fg-secondary">
+            <div className="flex items-center gap-2">
+              {step === 2 ? (
+                <button
+                  onClick={() => setStep(1)}
+                  className="cursor-pointer hover:text-fg transition-colors"
+                >
+                  Review
+                </button>
+              ) : (
+                <span className="text-fg font-medium">Review</span>
+              )}
+              <span className="text-fg-faded">→</span>
+              <span className={step === 2 ? "text-fg font-medium" : ""}>Reflect</span>
+            </div>
+
+            {/* Daily rundown — collapsed trigger; drops a Dan/Cam picker +
+                Copy for Claude. Copy stays synchronous in its own click
+                (digest is the pre-memoized summaryDigest), so it lands in
+                WKWebView. The trigger only toggles open — no async. */}
+            {step === 1 && (
+              <div className="relative">
+                <button
+                  ref={triggerRef}
+                  onClick={() => setRundownOpen((o) => !o)}
+                  aria-expanded={rundownOpen}
+                  className="px-3 py-1.5 rounded-md text-[12px] border border-line-soft text-fg-secondary hover:bg-overlay-hover cursor-pointer transition-colors flex items-center gap-1.5"
+                >
+                  Daily rundown
+                  <span className={`text-[9px] transition-transform ${rundownOpen ? "rotate-180" : ""}`}>▾</span>
+                </button>
+
+                {rundownOpen && (
+                  <div
+                    ref={panelRef}
+                    className="absolute right-0 top-full mt-1.5 z-20 w-[200px] rounded-lg bg-elevated px-3 py-3 animate-fade-in"
+                    style={{ border: "0.5px solid var(--border-soft)", boxShadow: "var(--shadow-card)" }}
+                  >
+                    <p className="text-[11px] text-fg-faded mb-2 leading-snug">
+                      Today&rsquo;s completed work, framed for your audience.
+                    </p>
+                    {/* Audience toggle — full-width segmented */}
+                    <div
+                      className="flex rounded-md overflow-hidden mb-2"
+                      style={{ border: "0.5px solid var(--border-hairline)" }}
+                    >
+                      {(["dan", "cam"] as SummaryAudience[]).map((a) => (
+                        <button
+                          key={a}
+                          onClick={() => setSummaryAudience(a)}
+                          className={`flex-1 px-2 py-1.5 text-[12px] cursor-pointer transition-colors ${
+                            summaryAudience === a
+                              ? "bg-accent-blue-soft text-accent-blue-soft-fg font-medium"
+                              : "text-fg-secondary hover:bg-overlay-hover"
+                          }`}
+                        >
+                          {AUDIENCE_LABELS[a]}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      onClick={handleCopyRundown}
+                      className="w-full px-3 py-1.5 rounded-md text-[12px] border border-accent-blue/50 text-accent-blue-soft-fg hover:bg-accent-blue-soft cursor-pointer transition-colors"
+                    >
+                      {summaryCopied ? "Copied!" : "Copy for Claude"}
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
-            <span className="text-fg-faded">→</span>
-            <span className={step === 2 ? "text-fg font-medium" : ""}>Reflect</span>
           </div>
 
           {step === 1 && (
             <>
-              {/* ── Daily rundown → one-click Claude prompt export ───────── */}
-              <section>
-                <h3 className="text-[13px] font-medium text-fg-secondary mb-1">
-                  Daily rundown
-                </h3>
-                <p className="text-[12px] text-fg-faded mb-3">
-                  Copy a Claude-ready prompt of today&rsquo;s completed work, framed for your audience.
-                </p>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* Audience toggle */}
-                  <div
-                    className="inline-flex rounded-md overflow-hidden"
-                    style={{ border: "0.5px solid var(--border-hairline)" }}
-                  >
-                    {(["dan", "cam"] as SummaryAudience[]).map((a) => (
-                      <button
-                        key={a}
-                        onClick={() => setSummaryAudience(a)}
-                        className={`px-3 py-1.5 text-[12px] cursor-pointer transition-colors ${
-                          summaryAudience === a
-                            ? "bg-accent-blue-soft text-accent-blue-soft-fg font-medium"
-                            : "text-fg-secondary hover:bg-overlay-hover"
-                        }`}
-                      >
-                        {AUDIENCE_LABELS[a]}
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    onClick={handleCopyRundown}
-                    className="px-3 py-1.5 rounded-md text-[12px] border border-accent-blue/50 text-accent-blue-soft-fg hover:bg-accent-blue-soft cursor-pointer transition-colors"
-                  >
-                    {summaryCopied ? "Copied!" : "Copy for Claude"}
-                  </button>
-                </div>
-              </section>
-
               {/* Done today — task cards */}
               <section>
                 <div className="flex items-baseline justify-between mb-2">

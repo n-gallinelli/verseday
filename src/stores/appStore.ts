@@ -319,18 +319,10 @@ export function clearFocusResume(): void {
   focusResumePending = false;
 }
 
-// Discriminated union: a focus session is either *preview* (task picked,
-// shown on the focus screen, but no time entry created — what the user
-// sees when they click the Focus icon) or *active* (running session with
-// a real time entry). The mode tag lets TypeScript narrow timeEntryId /
-// startedAt accesses to the active branch and catch any code path that
-// touches them in preview by mistake.
-// S.6 — wall-clock fields (startedAt, pausedAtMs, pausedAccumMs)
-// retired. workedMs is the sole source of truth for session-only
-// elapsed; tickFocus increments it while running, togglePauseFocus
-// flips a flag that gates the increment. taskId remains the canonical
-// task reference (M2.2); selectFocusedTask resolves task data from the
-// canonical tasksById map (M3.2.a).
+// workedMs is the sole source of truth for session-only elapsed; tickFocus
+// increments it while running, togglePauseFocus flips a flag that gates the
+// increment. taskId is the canonical task reference; selectFocusedTask resolves
+// task data from the canonical tasksById map.
 // Stage 5 of the focus single-source refactor — the old FocusState union is
 // split into two orthogonal store fields so a preview can NEVER be read as
 // running:
@@ -677,25 +669,16 @@ interface AppState {
    *  (DB source of truth) and caps+closes crash orphans, in one pass. Replaces
    *  the old restoreFocus + separate closeOrphanedTimeEntries call. */
   reconcileFocusOnBoot: () => Promise<void>;
-  /** Toggle pause on the active focus session. Manages pausedAtMs /
-   *  pausedAccumMs internally. No-op if focus is null or in preview mode.
-   *  M2.1 — wired from FocusMode/PiP/DailyPlan in M2.2/M2.3. */
+  /** Toggle pause on the running session (session.paused). No-op if there is
+   *  no session. */
   togglePauseFocus: () => void;
-  /** Override the focus session's *displayed* elapsed by back-solving
-   *  pausedAccumMs against the current reference (pausedAtMs if paused,
-   *  now otherwise). Replaces the direct `pausedAccumRef.current = ...`
-   *  mutation in FocusMode.applyActualMs. The desiredElapsedMs argument
-   *  is the on-screen elapsed *excluding* priorElapsedMs (i.e. what the
-   *  helper at src/utils/focusElapsed.ts returns minus priorElapsedMs).
-   *  No-op if focus is null or in preview mode. */
+  /** Override the running session's workedMs directly (the *displayed* elapsed
+   *  excluding priorElapsedMs). No-op if there is no session. */
   adjustFocusElapsed: (desiredElapsedMs: number) => void;
-  /** Increment the running session's workedMs by deltaMs. No-op if
-   *  focus is null, in preview mode, or paused. Caller passes
-   *  `Date.now() - lastTickAt` (not a fixed 1000ms) so JS event-loop
-   *  stalls don't drift the counter. Persists on every call —
-   *  per-second localStorage write is cheap; the persisted value is
-   *  the answer if the app crashes between writes. Added in S.2 of
-   *  the worked-seconds simplification. */
+  /** Increment the running session's workedMs by deltaMs. No-op if there is no
+   *  session or it is paused. Caller passes `Date.now() - lastTickAt` (not a
+   *  fixed 1000ms) so JS event-loop stalls don't drift the counter. The DB
+   *  open-row worked_seconds checkpoint (Stage 2) is the crash record. */
   tickFocus: (deltaMs: number) => void;
   setPendingDetailTask: (task: Task | null) => void;
   /** Toggle the sidebar (smart: focus pages flip the ephemeral override; other pages flip the persisted preference). */
@@ -1016,13 +999,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
   previewFocus: (task, previousPage, priorElapsedMs = 0) => {
-    // Stages a task on the focus screen — no time entry, no startedAt.
-    // The user transitions to active by hitting Play (FocusMode calls
-    // activateFocus after creating the time entry).
-    //
-    // M2.2 — primes the canonical tasksById map so selectFocusedTask
-    // resolves synchronously. The store no longer carries a task
-    // snapshot; consumers read live task data through the selector.
+    // Stages a task on the focus screen — no time entry. The user transitions
+    // to a running session by hitting Play (FocusMode calls activateFocus after
+    // creating the time entry). Primes the canonical tasksById map so
+    // selectFocusedTask resolves synchronously.
     get().primeTasks([task]);
     // Preview staging only → focusView (never a session, never persisted).
     // session cleared so "running ⟺ session !== null" holds.
@@ -1045,13 +1025,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
   updateFocusTask: (patch) => {
-    // M2.2 — `task` is no longer on FocusState; this action is a thin
-    // primeTasks wrapper that preserves the existing API for callers
-    // that want to splice an in-memory change to the focused task
-    // (FocusMode's notes/title/estimate auto-saves; TaskDetailOverlay's
-    // mirror writes). M3.2 may collapse this into the canonical
-    // `updateTask` action depending on whether the wrapper still earns
-    // its keep.
+    // A thin primeTasks wrapper for callers that splice an in-memory change to
+    // the focused task (FocusMode's notes/title/estimate auto-saves;
+    // TaskDetailOverlay's mirror writes). Task data lives in the canonical
+    // tasksById map; session/focusView only hold the taskId.
     const focusedId = get().session?.taskId ?? get().focusView?.taskId;
     if (focusedId == null) return;
     const current = get().tasksById.get(focusedId);
@@ -1116,10 +1093,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     return prev;
   },
   reconcileFocusOnBoot: async () => {
-    // Stage 3 — ONE open-rows query is the boot source of truth (NOT
-    // localStorage / loadPersistedFocus anymore). The most-recently-started
-    // open time_entry is the live session; every older open row is a crash
-    // orphan. Collapses the old restoreFocus + separate
+    // Stage 3 — ONE open-rows query is the boot source of truth (the DB, not
+    // localStorage). The most-recently-started open time_entry is the live
+    // session; every older open row is a crash orphan. Collapses the old
+    // restoreFocus + separate
     // closeOrphanedTimeEntries(activeEntryId) into a single pass.
     let openRows: { id: number; task_id: number; worked_seconds: number; start_time: string }[];
     try {
@@ -1181,14 +1158,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
   togglePauseFocus: () => {
-    // S.5 — flag flip only. Under the worked-seconds model, pause is
-    // a flag; tickFocus is gated on !paused, so workedMs naturally
-    // freezes during pauses. The legacy pausedAtMs/pausedAccumMs
-    // accounting (M2.1) is no longer needed — wall-clock-derived
-    // queries are gone (this commit), the displayed counter reads
-    // focus.workedMs directly (S.3), and break_seconds no longer
-    // captures pause time (the paused-time portion of getBreakSeconds
-    // dropped this commit).
+    // Flag flip only — tickFocus is gated on !paused, so workedMs freezes
+    // naturally during a pause; the displayed counter reads session.workedMs.
     const s = get().session;
     if (!s) return;
     set({ session: { ...s, paused: !s.paused } });
@@ -1200,27 +1171,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ session: { ...s, workedMs: Math.max(0, desiredElapsedMs) } });
   },
   tickFocus: (deltaMs) => {
-    // S.2 — increments workedMs while the session is running. No-op if
-    // focus is null, in preview mode, or paused. Caller passes the
-    // wall-clock delta since the last tick (Date.now() - lastTickAt),
-    // not a fixed cadence — JS event-loop stalls or background-tab
-    // throttling don't drift the counter; a stalled tick catches up
-    // on the next iteration.
+    // Increments the running session's workedMs. No-op if there is no session
+    // or it is paused. Caller passes the wall-clock delta since the last tick
+    // (Date.now() - lastTickAt), not a fixed cadence — JS event-loop stalls or
+    // background throttling don't drift the counter; a stalled tick catches up.
     //
-    // INVARIANT (P0-1): this adds deltaMs unguarded. The sleep/lid-close
-    // clamp lives at the SOLE caller — FocusMode's tick — because it must
-    // consume the one-shot OS-resume flag (which doesn't belong in the
-    // store). FocusMode's tick is the only thing that may call tickFocus.
-    // Do NOT add another caller; that would route worked time around the
-    // clamp (see utils/workedTime.ts, docs/...-stability-hardening-plan.md).
+    // INVARIANT (P0-1): this adds deltaMs unguarded. The sleep/lid-close clamp
+    // lives at the SOLE caller — FocusMode's tick — because it must consume the
+    // one-shot OS-resume flag (which doesn't belong in the store). FocusMode's
+    // tick is the only thing that may call tickFocus. Do NOT add another caller;
+    // that would route worked time around the clamp (utils/workedTime.ts).
     //
-    // Persists on every call. localStorage write-per-second is cheap;
-    // the persisted value IS the answer if the app crashes.
-    //
-    // Wall-clock fields (startedAt/pausedAtMs/pausedAccumMs) are NOT
-    // touched here — the dual-write seam in S.4 keeps them maintained
-    // separately so wall-clock-derived queries continue to work
-    // until the S.5 atomic cutover.
+    // Crash record is the DB open-row worked_seconds checkpoint (Stage 2), not
+    // localStorage — the store no longer persists the session.
     const s = get().session;
     if (!s || s.paused) return;
     if (deltaMs <= 0) return;

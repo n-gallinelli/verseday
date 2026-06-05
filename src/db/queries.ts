@@ -825,6 +825,10 @@ export async function startTimeEntry(
   type: "pomodoro" | "tracked"
 ): Promise<number> {
   const db = await getDb();
+  // INVARIANT (Stage 3 boot reconcile): an OPEN row (end_time NULL) == a live
+  // focus session. This is the ONLY path that deliberately leaves end_time NULL.
+  // Any future INSERT INTO time_entries (import/sync/backfill) MUST set end_time,
+  // or reconcileFocusOnBoot will treat it as a phantom session on next launch.
   const result = await db.execute(
     "INSERT INTO time_entries (task_id, start_time, entry_type) VALUES ($1, $2, $3)",
     [taskId, new Date().toISOString(), type]
@@ -850,6 +854,18 @@ export async function stopTimeEntry(
  *  closed row and clears focus rather than letting Resume → Stop
  *  write to a closed row.
  *  Added in S.2 of docs/2026-05-07-worked-seconds-simplification.md. */
+export async function getOpenTimeEntries(): Promise<
+  { id: number; task_id: number; worked_seconds: number; start_time: string }[]
+> {
+  const db = await getDb();
+  // Stage 3 boot reconcile: the most-recent open row is the live session; the
+  // rest are crash orphans. Source of truth, replacing the localStorage blob.
+  return db.select(
+    "SELECT id, task_id, worked_seconds, start_time FROM time_entries WHERE end_time IS NULL ORDER BY start_time DESC",
+    [],
+  );
+}
+
 export async function getTimeEntryById(
   id: number,
 ): Promise<{ id: number; end_time: string | null; worked_seconds: number } | null> {

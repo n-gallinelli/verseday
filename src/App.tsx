@@ -24,7 +24,6 @@ import SunsetOverlayHost from "./components/SunsetOverlayHost";
 import { useAppStore, markFocusResume } from "./stores/appStore";
 import { todayString, logicalDayIso } from "./utils/dates";
 import {
-  closeOrphanedTimeEntries,
   getTasksForDate,
   startTimeEntry,
   getWorkedMinutesForTask,
@@ -77,7 +76,7 @@ export default function App() {
 }
 
 function MainApp() {
-  const { currentPage, focus, restoreFocus, setPage, startFocus, pageHistory, goBack } = useAppStore();
+  const { currentPage, focus, reconcileFocusOnBoot, setPage, startFocus, pageHistory, goBack } = useAppStore();
   const startupDone = useRef(false);
   const [pageKey, setPageKey] = useState(0);
   const prevPageRef = useRef(currentPage);
@@ -101,7 +100,7 @@ function MainApp() {
       void useAppStore.getState().loadProjects();
       // Defensive: close any stray focus-pip window that survived
       // a previous app session (force-quit, crash, etc). Must run
-      // BEFORE restoreFocus() — restoring a persisted focus state
+      // BEFORE reconcileFocusOnBoot() — restoring a session
       // immediately mounts FocusMode, which spawns a fresh pip; we
       // don't want a zombie left over to coexist with it.
       try {
@@ -115,17 +114,10 @@ function MainApp() {
         // Non-critical — sweep is a safety net, not load-bearing.
       }
 
-      await restoreFocus();
-      // M3.5 — always run orphan cleanup, but exclude the active
-      // session's time entry so the persisted focus's open row
-      // isn't capped to 4h on every launch. Pre-M3.5 the gate
-      // skipped cleanup entirely whenever a focus restored, which
-      // left older orphans (from prior crashes between sessions)
-      // permanently open.
-      const restored = useAppStore.getState().focus;
-      const activeEntryId =
-        restored?.mode === "active" ? restored.timeEntryId : null;
-      await closeOrphanedTimeEntries(activeEntryId);
+      // Stage 3 — one boot reconcile against the open time_entry rows: restores
+      // the live session (auto-paused) and caps+closes crash orphans. Replaces
+      // the old restoreFocus + separate closeOrphanedTimeEntries pass.
+      await reconcileFocusOnBoot();
 
       // Global quick-add shortcut — toggles the quick-add window.
       // When showing: captures the frontmost app first so dismiss can
@@ -170,7 +162,7 @@ function MainApp() {
     return () => {
       unregister("CmdOrCtrl+Shift+A").catch(() => {});
     };
-  }, [restoreFocus]);
+  }, [reconcileFocusOnBoot]);
 
   // P0-1 — OS resume signal. The native side observes
   // NSWorkspaceDidWakeNotification and emits `system-resumed` on a real wake

@@ -10,6 +10,9 @@ import {
   getTasksForProject,
   getTasksForWeek,
   getTimeEntryById,
+  getOpenTimeEntries,
+  closeOrphanedTimeEntries,
+  getWorkedMinutesForTask,
   getWorkedMinutesForTaskIds,
   getRecurringTemplates,
   rolloverUnfinishedTasks as dbRolloverUnfinishedTasks,
@@ -692,7 +695,10 @@ interface AppState {
   setFocusPriorElapsedMs: (taskId: number, priorMs: number) => void;
   startFocus: (task: Task, timeEntryId: number, previousPage: Page, priorElapsedMs?: number) => void;
   stopFocus: () => Page;
-  restoreFocus: () => Promise<void>;
+  /** Stage 3 boot reconcile — restores a session from the open time_entry rows
+   *  (DB source of truth) and caps+closes crash orphans, in one pass. Replaces
+   *  the old restoreFocus + separate closeOrphanedTimeEntries call. */
+  reconcileFocusOnBoot: () => Promise<void>;
   /** Toggle pause on the active focus session. Manages pausedAtMs /
    *  pausedAccumMs internally. No-op if focus is null or in preview mode.
    *  M2.1 — wired from FocusMode/PiP/DailyPlan in M2.2/M2.3. */
@@ -1266,91 +1272,70 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     return prev;
   },
-  restoreFocus: async () => {
-    const persisted = loadPersistedFocus();
-    if (!persisted) return;
-    // #2b — a persisted PREVIEW is stale. previewFocus no longer writes one
-    // (#2a), but an existing one may linger in localStorage from before this
-    // fix. Preview is focus-screen-scoped with no canonical record; restoring
-    // it would surface as "Focusing…" on the Daily Plan at boot. Flush it and
-    // don't restore. Self-defending: only "active" focus (which carries a
-    // timeEntryId reconciled against the DB below) is ever restored.
-    if (persisted.focus.mode === "preview") {
+  reconcileFocusOnBoot: async () => {
+    // Stage 3 — ONE open-rows query is the boot source of truth (NOT
+    // localStorage / loadPersistedFocus anymore). The most-recently-started
+    // open time_entry is the live session; every older open row is a crash
+    // orphan. Collapses the old restoreFocus + separate
+    // closeOrphanedTimeEntries(activeEntryId) into a single pass.
+    let openRows: { id: number; task_id: number; worked_seconds: number; start_time: string }[];
+    try {
+      openRows = await getOpenTimeEntries();
+    } catch {
+      // DB read failed — leave focus null rather than crash on boot. The
+      // normal stop path remains the safety net.
+      return;
+    }
+    if (openRows.length === 0) {
+      // No live session. Clear any vestigial localStorage blob so nothing
+      // downstream (or a future reader) treats it as state.
       persistFocus(null);
       return;
     }
-    // Prime the cache so selectFocusedTask resolves on first render.
-    // Legacy persisted shape carries a Task snapshot — use it directly.
-    // Modern shape (post-M2.2) has only taskId; fall back to a one-shot
-    // getTaskById fetch and prime asynchronously. Until that resolves,
-    // FocusMode renders null (the cache-miss branch returns null), which
-    // is invisible — millisecond order. M3.2 replaces this with the
-    // canonical store-owned tasksById rehydration, removing the fetch.
-    if (persisted.legacyTaskSnapshot) {
-      get().primeTasks([persisted.legacyTaskSnapshot]);
-    } else {
-      const { taskId } = persisted.focus;
-      void getTaskById(taskId)
-        .then((t) => {
-          if (t) get().primeTasks([t]);
-        })
-        .catch(() => {
-          // Best effort — the host will refetch on first overlay open
-          // or list refresh anyway.
-        });
+
+    // Newest open row = the live session; cap + close the rest as orphans.
+    // The orphan SQL preserves each row's checkpointed worked_seconds (Stage 2),
+    // so a same-task orphan correctly re-enters that task's prior total below —
+    // no #2b-style "worked_seconds === 0" backfill needed; the live checkpoint
+    // already owns the value.
+    const live = openRows[0];
+    try {
+      await closeOrphanedTimeEntries(live.id);
+    } catch {
+      // Best effort — any still-open orphans get re-capped on the next boot.
     }
 
-    // S.2 R1 — orphan-entry-referenced-by-focus check. If the time
-    // entry the focus points at is already closed (e.g.
-    // closeOrphanedTimeEntries closed it during a prior run), don't
-    // restore the focus; that would let a future Resume → Stop write
-    // to a closed row. Land any locally-tracked workedMs on the
-    // closed row first (only if its worked_seconds is currently 0 —
-    // don't clobber a real backfill or prior write), then clear focus.
-    if (persisted.focus.mode === "active") {
-      try {
-        const entry = await getTimeEntryById(persisted.focus.timeEntryId);
-        if (entry && entry.end_time !== null) {
-          if ((entry.worked_seconds ?? 0) === 0 && persisted.focus.workedMs > 0) {
-            await updateTimeEntryWorkedSeconds(
-              persisted.focus.timeEntryId,
-              Math.round(persisted.focus.workedMs / 1000),
-            );
-          }
-          persistFocus(null);
-          return;
-        }
-      } catch {
-        // DB read failed. Fall through and restore focus normally —
-        // worse to crash on boot than to dangle a focus reference;
-        // closeOrphanedTimeEntries (called after restoreFocus in
-        // App.tsx) plus the existing stop path are the next safety net.
-      }
+    // Prior worked time for this task = the baseline (priorElapsedMs). The live
+    // row is still open, so the #15 guard (end_time IS NOT NULL) excludes it;
+    // the just-closed orphans are now included. The live row's own
+    // worked_seconds (DB-authoritative ONLY — no max(DB, localStorage)) is the
+    // session's workedMs.
+    let priorElapsedMs = 0;
+    try {
+      priorElapsedMs = (await getWorkedMinutesForTask(live.task_id)) * 60 * 1000;
+    } catch {
+      priorElapsedMs = 0;
     }
+    // Prime the focused task so selectFocusedTask resolves on first render.
+    void getTaskById(live.task_id)
+      .then((t) => {
+        if (t) get().primeTasks([t]);
+      })
+      .catch(() => {});
 
-    // S.3 — auto-pause on relaunch (user mental model: "quit = paused").
-    // Under the worked-seconds model this is a free flag flip:
-    // workedMs was preserved correctly across the quit, so on
-    // relaunch we just force-pause and the user clicks Resume to
-    // continue. Already-paused sessions stay paused (the test below
-    // is idempotent). Unlike the wall-clock-era pause-on-relaunch
-    // milestone, no math is needed — no checkpoint lookup, no
-    // pausedAtMs computation, no orphan-cap clamp. Just the flag.
-    let restored = persisted.focus;
-    if (restored.mode === "active" && !restored.paused) {
-      restored = { ...restored, paused: true };
-    }
-
-    // S.2 R3 — flush the (possibly migrated, possibly auto-paused)
-    // shape to localStorage immediately so the next launch sees the
-    // new shape and the migration shim becomes a no-op. Without
-    // this, every boot re-runs the shim against unchanged old-shape
-    // JSON.
-    persistFocus(restored);
-
-    // Restore the (auto-paused) session state but do NOT navigate to the Focus
-    // screen — the app should open to the Daily Plan by default. The restored
-    // session is still there to resume from the daily row / Focus screen / PiP.
+    // S.3 — auto-pause on relaunch (user mental model: "quit = paused"). The
+    // user resumes from the daily row / Focus screen / PiP; we don't navigate
+    // to the Focus screen (app opens to the Daily Plan).
+    const restored: FocusState = {
+      mode: "active",
+      taskId: live.task_id,
+      timeEntryId: live.id,
+      previousPage: "daily",
+      priorElapsedMs,
+      paused: true,
+      workedMs: live.worked_seconds * 1000,
+    };
+    persistFocus(restored); // keep the vestigial blob in sync (removed Stage 6)
     set(withSession({ focus: restored }));
   },
   togglePauseFocus: () => {

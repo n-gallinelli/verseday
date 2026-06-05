@@ -47,127 +47,86 @@ function BarChart({
   workedByDay: Map<string, number>;
 }) {
   // Fixed 8h y-axis — a standard working day. Days that exceed it cap at the
-  // top (Math.min below); rare and acceptable. Step 4 keeps the labels (8/4/0)
-  // evenly spaced AND at their true heights (a step that doesn't divide the
-  // max would put e.g. "6" at the wrong fraction of the column).
+  // top (Math.min below); rare and acceptable.
   const yAxisMax = 8;
 
   // Generous bar area so a day reads at its true fraction of the 8h scale
-  // (2h → 25% is a substantial bar, not a stub) — matches the weekly-shutdown
-  // "Effort by day" chart.
+  // (2h → 25% is a substantial bar, not a stub).
   const chartHeight = 260;
 
-  const yLabels: number[] = [];
-  const step = 4;
-  for (let i = 0; i <= yAxisMax; i += step) {
-    yLabels.push(i);
-  }
-  if (yLabels[yLabels.length - 1] !== yAxisMax) yLabels.push(yAxisMax);
-  yLabels.reverse();
-
-  // Custom hover tooltip — native `title` renders slowly/unreliably in the
-  // Tauri WKWebView, so we surface the exact worked/planned time ourselves
-  // (mirrors the WeeklyShutdown "Effort by day" chart).
-  const [hover, setHover] = useState<{
-    label: string;
-    minutes: number;
-    color: string;
-    day: string;
-  } | null>(null);
-
   return (
-    <div className="flex gap-2 relative">
-      {/* Y-axis labels — pinned to the bar-area height so 8h/4h/0h line up
-          with the bars (not stretched to include the day-label row below). */}
-      <div
-        className="flex flex-col justify-between pr-1 w-8 flex-shrink-0"
-        style={{ height: chartHeight }}
-      >
-        {yLabels.map((h) => (
-          <span
-            key={h}
-            className="text-[10px] text-fg-faded tabular-nums text-right"
-          >
-            {h}h
-          </span>
-        ))}
-      </div>
-
+    <div>
       {/* Bars. Keyed on the week + whether data has arrived, so the fade-up
-          entrance replays when the async data lands and on week navigation
-          (instead of the old height-grow that "filled" the bars on load). */}
+          entrance replays when the async data lands and on week navigation.
+          Faint baseline replaces the old y-axis ticks — the per-bar value
+          labels carry the numbers now, so one reference system, not three. */}
       <div
         key={`${weekDates.join(",")}|${weekDates.some((d) => (workedByDay.get(d) ?? 0) > 0 || (plannedByDay.get(d) ?? 0) > 0) ? "1" : "0"}`}
-        className="flex-1 flex items-end gap-3"
+        className="flex items-end gap-3"
+        style={{ height: chartHeight, borderBottom: "0.5px solid var(--border-hairline)" }}
       >
         {weekDates.map((date, i) => {
           const planned = plannedByDay.get(date) ?? 0;
           const worked = workedByDay.get(date) ?? 0;
           const plannedPct =
-            yAxisMax > 0
-              ? Math.min((planned / 60 / yAxisMax) * 100, 100)
-              : 0;
+            yAxisMax > 0 ? Math.min((planned / 60 / yAxisMax) * 100, 100) : 0;
           const workedPct =
-            yAxisMax > 0
-              ? Math.min((worked / 60 / yAxisMax) * 100, 100)
-              : 0;
-          // A bar with time but a sub-4px height still gets a hittable sliver;
-          // a true-zero day stays 0 (nothing to report on hover).
+            yAxisMax > 0 ? Math.min((worked / 60 / yAxisMax) * 100, 100) : 0;
+          // A bar with time but a sub-4px height still gets a visible sliver;
+          // a true-zero day stays 0 (and renders no label — no judgmental "0h").
           const barPx = (pct: number, value: number) =>
             value > 0 ? Math.max((pct / 100) * chartHeight, 4) : 0;
 
+          // worked-left / planned-right, spread across the (~109px) day column
+          // so the two value labels never collide; each label is colored to its
+          // bar so the outward offset still reads as belonging to it. Label sits
+          // directly above its bar (rises with the bar), rendered only when > 0.
           return (
-            <div key={date} className="flex-1 flex flex-col items-center">
-              {/* Bar pair */}
-              <div
-                className="w-full flex items-end justify-center gap-[3px]"
-                style={{ height: chartHeight }}
-              >
-                {/* Worked (actual) bar — cool slate, "done" — on the left */}
+            <div key={date} className="flex-1 flex items-end justify-center gap-6">
+              {/* Worked (actual) — cool slate, "done" — on the left */}
+              <div className="flex flex-col items-center justify-end">
+                {worked > 0 && (
+                  <span
+                    className="text-[10px] font-normal tabular-nums mb-1 whitespace-nowrap"
+                    style={{ color: "var(--chart-bar-worked)" }}
+                  >
+                    {formatHoursMinutes(worked)}
+                  </span>
+                )}
                 <div
-                  className="w-[22px] rounded-t-[3px] bg-chart-bar-worked animate-chart-bar"
+                  className="w-[28px] rounded-t-[3px] bg-chart-bar-worked animate-chart-bar"
                   style={{ height: `${barPx(workedPct, worked)}px`, animationDelay: `${i * 40}ms` }}
-                  onMouseEnter={() =>
-                    worked > 0 &&
-                    setHover({ label: "Worked", minutes: worked, color: "var(--chart-bar-worked)", day: DAY_NAMES[i] })
-                  }
-                  onMouseLeave={() => setHover(null)}
-                />
-                {/* Planned bar — warm tan, "intent" — on the right */}
-                <div
-                  className="w-[22px] rounded-t-[3px] bg-chart-bar-planned animate-chart-bar"
-                  style={{ height: `${barPx(plannedPct, planned)}px`, animationDelay: `${i * 40}ms` }}
-                  onMouseEnter={() =>
-                    planned > 0 &&
-                    setHover({ label: "Planned", minutes: planned, color: "var(--chart-bar-planned)", day: DAY_NAMES[i] })
-                  }
-                  onMouseLeave={() => setHover(null)}
                 />
               </div>
-              {/* Day label */}
-              <span className="text-[10px] text-fg-faded mt-1.5">
-                {DAY_NAMES[i]}
-              </span>
+              {/* Planned — warm tan, "intent" — on the right */}
+              <div className="flex flex-col items-center justify-end">
+                {planned > 0 && (
+                  <span
+                    className="text-[10px] font-normal tabular-nums mb-1 whitespace-nowrap"
+                    style={{ color: "var(--chart-bar-planned)" }}
+                  >
+                    {formatHoursMinutes(planned)}
+                  </span>
+                )}
+                <div
+                  className="w-[28px] rounded-t-[3px] bg-chart-bar-planned animate-chart-bar"
+                  style={{ height: `${barPx(plannedPct, planned)}px`, animationDelay: `${i * 40}ms` }}
+                />
+              </div>
             </div>
           );
         })}
       </div>
 
-      {/* Tooltip — anchored top-right inside the chart so it never clips. */}
-      {hover && (
-        <div
-          className="absolute top-0 right-0 flex items-center gap-2 px-3 py-1.5 rounded-md bg-elevated pointer-events-none animate-fade-in z-10"
-          style={{ border: "0.5px solid var(--border-soft)", boxShadow: "var(--shadow-card)" }}
-        >
-          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: hover.color }} />
-          <span className="text-[12px] text-fg-secondary">
-            {hover.day} · {hover.label}
-          </span>
-          <span className="text-[12px] font-medium text-fg tabular-nums">
-            {formatHoursMinutes(Math.round(hover.minutes))}
-          </span>
-        </div>
-      )}
+      {/* Day labels — a separate row below the baseline so they never eat into
+          the bars' vertical room. Columns mirror the bar row's flex layout. */}
+      <div className="flex gap-3 mt-1.5">
+        {weekDates.map((date, i) => (
+          <div key={date} className="flex-1 text-center">
+            <span className="text-[10px] text-fg-faded">{DAY_NAMES[i]}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

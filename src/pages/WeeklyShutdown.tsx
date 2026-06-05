@@ -518,10 +518,13 @@ export default function WeeklyShutdown() {
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-[900px] mx-auto px-7 py-7 space-y-9">
 
-          {/* Top: bar chart (center) + total stat (right). The chart
-              gives an instant read of where effort went each day; the
-              stat is the bottom-line "how much" at a glance. */}
-          <section className="flex gap-6 items-stretch">
+          {/* Top: bar chart (left) + a right column stacking the week
+              totals and the summary utility. The chart gives an instant
+              read of where effort went; the totals are the bottom-line
+              "how much"; the summary is a secondary on-demand export.
+              items-start (not stretch) so the two short right-column
+              cards don't stretch the chart taller than its own content. */}
+          <section className="flex gap-6 items-start">
             <div className="flex-1 min-w-0 rounded-lg bg-elevated/40 p-5" style={{ border: "0.5px solid var(--border-hairline)" }}>
               <div className="text-[11px] uppercase tracking-[0.06em] text-fg-faded mb-3">
                 Effort by day
@@ -532,8 +535,10 @@ export default function WeeklyShutdown() {
                 projects={projects}
               />
             </div>
+            <div className="w-[200px] flex-shrink-0 flex flex-col gap-6">
+            {/* Card 1 — week totals. */}
             <div
-              className="w-[180px] flex-shrink-0 rounded-lg bg-elevated/40 px-5 py-5 flex flex-col justify-center items-start"
+              className="rounded-lg bg-elevated/40 px-5 py-5 flex flex-col items-start"
               style={{ border: "0.5px solid var(--border-hairline)" }}
             >
               <div className="text-[11px] uppercase tracking-[0.06em] text-fg-faded mb-2">
@@ -554,29 +559,33 @@ export default function WeeklyShutdown() {
                 </div>
               )}
             </div>
-          </section>
 
-          {/* ── Weekly summary → Claude prompt export (directly below the chart) ── */}
-          <section className="pt-2" style={{ borderTop: "0.5px solid var(--border-hairline)" }}>
-            <h3 className="text-[14px] font-medium text-fg mt-6 mb-1 font-display">
-              Weekly summary
-            </h3>
-            <p className="text-[12px] text-fg-faded mb-4">
-              Copy a Claude-ready prompt of this week&rsquo;s completed work, framed for your audience.
-              Paste it into Claude — no API, nothing leaves your machine until you do.
-            </p>
+            {/* Card 2 — Weekly summary → Claude-prompt export. A secondary
+                on-demand utility, not a section to read: the digest is built
+                on Generate and copied to the clipboard intact (visible on
+                paste into Claude); the card only confirms the total as a
+                sanity check. No inline group preview, no modal. */}
+            <div
+              className="rounded-lg bg-elevated/40 px-5 py-5"
+              style={{ border: "0.5px solid var(--border-hairline)" }}
+            >
+              <h3 className="text-[13px] font-medium text-fg mb-1 font-display">
+                Weekly summary
+              </h3>
+              <p className="text-[11px] text-fg-faded mb-3 leading-snug">
+                A Claude-ready recap of your week.
+              </p>
 
-            <div className="flex items-center gap-2 mb-4 flex-wrap">
-              {/* Audience toggle */}
+              {/* Audience toggle — full-width segmented. */}
               <div
-                className="inline-flex rounded-md overflow-hidden"
+                className="flex rounded-md overflow-hidden mb-2"
                 style={{ border: "0.5px solid var(--border-hairline)" }}
               >
                 {(["dan", "cam"] as SummaryAudience[]).map((a) => (
                   <button
                     key={a}
                     onClick={() => setSummaryAudience(a)}
-                    className={`px-3 py-1.5 text-[12px] cursor-pointer transition-colors ${
+                    className={`flex-1 px-2 py-1.5 text-[12px] cursor-pointer transition-colors ${
                       summaryAudience === a
                         ? "bg-accent-pink-soft text-accent-pink-bright font-medium"
                         : "text-fg-secondary hover:bg-overlay-hover"
@@ -590,60 +599,35 @@ export default function WeeklyShutdown() {
               <button
                 onClick={handleGenerateSummary}
                 disabled={summaryGenerating}
-                className="px-3 py-1.5 rounded-md text-[12px] border border-line-soft text-fg-secondary hover:bg-overlay-hover cursor-pointer transition-colors disabled:opacity-50"
+                className="w-full px-3 py-1.5 rounded-md text-[12px] border border-line-soft text-fg-secondary hover:bg-overlay-hover cursor-pointer transition-colors disabled:opacity-50"
               >
                 {summaryGenerating ? "Generating…" : summaryDigest ? "Regenerate" : "Generate summary"}
               </button>
 
               {summaryDigest && (
-                <button
-                  onClick={handleCopySummary}
-                  className="px-3 py-1.5 rounded-md text-[12px] border border-accent-pink-bright/60 text-accent-pink-bright hover:bg-accent-pink-soft cursor-pointer transition-colors"
-                >
-                  {summaryCopied ? "Copied!" : "Copy for Claude"}
-                </button>
-              )}
-            </div>
-
-            {summaryDigest &&
-              (summaryDigest.isEmpty ? (
-                <p className="text-[12px] text-fg-disabled italic">
-                  Nothing completed this week — Copy still grabs a short &ldquo;quiet week&rdquo; note.
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  {summaryDigest.groups.map((g) => (
-                    <div
-                      key={g.projectId ?? "none"}
-                      className="rounded-lg bg-elevated/40 p-4"
-                      style={{ border: "0.5px solid var(--border-hairline)" }}
-                    >
-                      <div className="flex items-baseline justify-between gap-3 mb-2">
-                        <h4 className="text-[13px] font-medium text-fg truncate">{g.name}</h4>
-                        <span className="text-[10px] text-fg-faded tabular-nums shrink-0">
-                          {formatHoursMinutes(Math.round(g.totalMinutes))} · {g.count}{" "}
-                          {g.count === 1 ? "task" : "tasks"}
-                        </span>
-                      </div>
-                      {g.goal && <p className="text-[11px] text-fg-faded mb-2">{g.goal}</p>}
-                      <div className="space-y-1">
-                        {g.tasks.map((t, i) => (
-                          <div key={i} className="flex items-center gap-2 text-[12px]">
-                            <span className="flex-1 text-fg-secondary truncate">{t.title}</span>
-                            <span className="text-[10px] text-fg-faded tabular-nums shrink-0">
-                              {formatHoursMinutes(Math.round(t.workedMinutes))}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  <p className="text-[11px] text-fg-faded tabular-nums">
-                    Week total: {formatHoursMinutes(Math.round(summaryDigest.totalMinutes))} ·{" "}
-                    {summaryDigest.totalCount} {summaryDigest.totalCount === 1 ? "task" : "tasks"}
-                  </p>
+                <div className="mt-3">
+                  {summaryDigest.isEmpty ? (
+                    <p className="text-[11px] text-fg-disabled italic mb-2">
+                      Nothing completed this week yet.
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-fg-faded tabular-nums mb-2">
+                      Week total: {formatHoursMinutes(Math.round(summaryDigest.totalMinutes))} ·{" "}
+                      {summaryDigest.totalCount} {summaryDigest.totalCount === 1 ? "task" : "tasks"}
+                    </p>
+                  )}
+                  <button
+                    onClick={handleCopySummary}
+                    className="w-full px-3 py-1.5 rounded-md text-[12px] border border-accent-pink-bright/60 text-accent-pink-bright hover:bg-accent-pink-soft cursor-pointer transition-colors"
+                  >
+                    {summaryCopied ? "Copied!" : "Copy for Claude"}
+                  </button>
                 </div>
-              ))}
+              )}
+
+              <p className="text-[10px] text-fg-faded mt-3">Runs locally.</p>
+            </div>
+            </div>
           </section>
 
           {/* Per-day objectives summary — quick read of what each day

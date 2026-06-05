@@ -17,6 +17,7 @@ import {
 import {
   selectOrphanAndOverdueTasks,
   selectProjectsByStatus,
+  selectRunningSession,
   selectTaskIdsByDate,
   selectUnscheduledTasksByProject,
   useAppStore,
@@ -60,6 +61,9 @@ const MAX_ESTIMATE_MINUTES = 480;
 
 export default function DailyPlanner() {
   const { selectedDate, setSelectedDate, startFocus, stopFocus, openProject, focus, setPage, pendingDetailTask, setPendingDetailTask } = useAppStore();
+  // Canonical "are we focusing?" read (Stage 1). selectRunningSession is the
+  // single source consumers migrate to off the FocusState union.
+  const runningSession = useAppStore(selectRunningSession);
   const selectedTaskDetailId = useAppStore((s) => s.selectedTaskDetailId);
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
   const primeTasks = useAppStore((s) => s.primeTasks);
@@ -1004,18 +1008,18 @@ export default function DailyPlanner() {
           {/* Focus button — inline */}
           {(() => {
             // The pill must mean "a session is actually running," not "a focus
-            // object exists." Gate on active mode (a real session with an open
-            // time_entry) — a preview (task merely staged on the focus screen,
-            // nothing running) is NOT focusing and falls through to the
-            // "Start focusing" / null branch. Mirrors FocusMode's own
-            // active-only mount gate (App.tsx).
-            const isFocusing = focus?.mode === "active";
+            // object exists." Read the canonical running session (Stage 1
+            // selector) — a preview (task merely staged on the focus screen,
+            // nothing running) yields no session and falls through to the
+            // "Start focusing" / null branch. selectRunningSession is the
+            // single "are we focusing?" source consumers migrate to.
+            const isFocusing = !!runningSession;
             // M2.6 — pause symmetry. When the active session is paused,
             // the pill drops its accent-blue tint, the dot stops
             // pulsing, and the label flips from "Focusing…" to "Paused"
             // — matching the row pill's paused treatment in M2.3 and
             // the PiP's paused treatment.
-            const isPaused = focus?.mode === "active" && focus.paused;
+            const isPaused = !!runningSession?.paused;
             const nextTask = tasks.find((t) => t.status !== "done");
 
             if (isFocusing) {

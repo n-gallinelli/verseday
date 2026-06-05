@@ -4,14 +4,12 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import VerseDayLogo from "./VerseDayLogo";
 import { playBreakChime as playCalm } from "../utils/sounds";
-import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, type PipState } from "../utils/pipEvents";
+import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_SIZE, type PipState } from "../utils/pipEvents";
 
-// ONE fixed pip size for every phase — the pip window never resizes. Sized to
-// the tallest content (the break prompt's header + 3 pills); work/break/ack
-// readouts center within it. A constant size means switching phases (e.g.
-// declining a break) never shrinks the window, and it removes the setSize
-// docking jitter the per-phase resize used to cause.
-const PIP_SIZE = { width: 220, height: 80 };
+// ONE fixed pip size for every phase — the pip window never resizes (a constant
+// size means declining a break can't shrink it, and there's no setSize docking
+// jitter). Sized to the compact running/paused readout; the break prompt is
+// tightened to fit. Lives in pipEvents.ts so window + content can't drift.
 
 // Pip surface color — themed via --focus-pip-bg so the pip reads
 // white in light mode and dark in night mode against the desktop.
@@ -348,7 +346,7 @@ export default function FocusPip() {
     );
   }
 
-  // ── BREAK PROMPT — two rows, fits in 220×88 ────────────────────────
+  // ── BREAK PROMPT — two compact rows, tightened to fit the 220×64 pip ──
   // Header row: centered "Ready for a break?" anchor at small weight.
   // Action row: three icon buttons (thumbs up / clock / x) — icon-only
   // keeps the pip uncluttered at this width; tooltips carry the
@@ -360,7 +358,7 @@ export default function FocusPip() {
     return (
       <div
         data-tauri-drag-region
-        className="select-none flex flex-col justify-center w-full h-screen px-2.5 py-2"
+        className="select-none flex flex-col justify-center w-full h-screen px-2.5 py-1.5"
         style={{
           background: PIP_BG,
           borderRadius: 18,
@@ -369,13 +367,13 @@ export default function FocusPip() {
         }}
         onMouseDown={handlePipMouseDown}
       >
-        <p className="text-[13px] font-medium text-fg text-center mb-2 leading-tight">
+        <p className="text-[13px] font-medium text-fg text-center mb-1 leading-tight">
           Ready for a break?
         </p>
         <div className="flex items-center justify-center gap-2.5 flex-1">
           <button
             onClick={() => sendCommand("takeBreak")}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-white bg-accent-green-deep hover:opacity-90 cursor-pointer transition-opacity"
+            className="w-6 h-6 rounded-full flex items-center justify-center text-white bg-accent-green-deep hover:opacity-90 cursor-pointer transition-opacity"
             title="Yes — take a 5 min break"
             aria-label="Take a 5 minute break"
           >
@@ -383,7 +381,7 @@ export default function FocusPip() {
           </button>
           <button
             onClick={() => flashAck("5 more minutes", "snooze5")}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-secondary border border-line-soft hover:border-line-strong hover:bg-overlay-hover cursor-pointer transition-colors"
+            className="w-6 h-6 rounded-full flex items-center justify-center text-fg-secondary border border-line-soft hover:border-line-strong hover:bg-overlay-hover cursor-pointer transition-colors"
             title="Remind me in 5 min"
             aria-label="Remind me in 5 minutes"
           >
@@ -391,7 +389,7 @@ export default function FocusPip() {
           </button>
           <button
             onClick={() => flashAck("Break skipped", "noBreak")}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-faded border border-line-hairline hover:text-fg-secondary hover:border-line-soft hover:bg-overlay-hover cursor-pointer transition-colors"
+            className="w-6 h-6 rounded-full flex items-center justify-center text-fg-faded border border-line-hairline hover:text-fg-secondary hover:border-line-soft hover:bg-overlay-hover cursor-pointer transition-colors"
             title="No — keep working"
             aria-label="Decline break"
           >

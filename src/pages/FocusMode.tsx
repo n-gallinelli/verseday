@@ -6,6 +6,7 @@ import {
   PIP_STATE_EVENT,
   PIP_CMD_EVENT,
   PIP_READY_EVENT,
+  PIP_SIZE,
   type PipState,
 } from "../utils/pipEvents";
 import { useAppStore, selectFocusedTask, consumeFocusResume, clearFocusResume, type SessionState, type FocusView } from "../stores/appStore";
@@ -430,8 +431,10 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         const pip = new WebviewWindow("focus-pip", {
           url: "/#focus-pip",
           title: "Focus",
-          width: 220,
-          height: 80,
+          // Shared with FocusPip's pinned size (pipEvents.PIP_SIZE) so the window
+          // and its content can't drift.
+          width: PIP_SIZE.width,
+          height: PIP_SIZE.height,
           resizable: false,
           alwaysOnTop: true,
           // macOS: join every Space so the pip rides along to whatever

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef, useLayoutEffect } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { selectAllProjects, useAppStore } from "../stores/appStore";
 import {
@@ -92,33 +92,56 @@ function StackedBarChart({
     dayLabel: string;
   } | null>(null);
 
+  // Bar heights are computed in PIXELS off a measured bar-area height, not as
+  // %-of-flex — WKWebView (Tauri's engine) is unreliable at resolving a child's
+  // % height against a flex-1 parent and can silently collapse the bars to 0
+  // (build stays green). We measure the bar area with a ResizeObserver and scale
+  // each bar to that pixel height. Segment heights stay % since their parent (the
+  // column bar) now has an explicit pixel height, which WKWebView resolves fine.
+  const barAreaRef = useRef<HTMLDivElement>(null);
+  const [areaH, setAreaH] = useState(0);
+  useLayoutEffect(() => {
+    const el = barAreaRef.current;
+    if (!el) return;
+    const measure = () => setAreaH(el.clientHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Keyed so the fade-up entrance replays when async data lands and on week
+  // navigation (mirrors the Dashboard chart), instead of the old height-grow.
+  const animKey = `${weekDates.join(",")}|${dayTotals.some((t) => t > 0) ? "1" : "0"}`;
+
   return (
-    <div className="w-full relative">
-      {/* Bar-plotting area — an explicit, generous height so a day reads at
-          its true fraction of the 8h scale (e.g. 2h → 25% is a substantial
-          bar, not a stub). Day labels live in a separate row BELOW this
-          height so they never eat into the bars' vertical room. */}
-      <div className="flex items-end gap-3 h-[260px] w-full">
-      {weekDates.map((date, idx) => {
-        const inner = workedByDay.get(date);
-        const total = dayTotals[idx];
-        const heightPct = Math.min(100, (total / Y_AXIS_MAX_MINUTES) * 100);
+    <div className="w-full h-full relative flex flex-col">
+      {/* Bar-plotting area — fills the available card height (chart now adapts
+          to the right column's height). Day labels live in a separate row BELOW
+          so they never eat into the bars' vertical room. */}
+      <div ref={barAreaRef} className="flex-1 min-h-[200px] w-full">
+        <div key={animKey} className="flex items-end gap-3 w-full" style={{ height: areaH }}>
+        {weekDates.map((date, idx) => {
+          const inner = workedByDay.get(date);
+          const total = dayTotals[idx];
+          const heightPct = Math.min(100, (total / Y_AXIS_MAX_MINUTES) * 100);
+          // Pixel height off the measured area; a true-zero day keeps a 4px sliver.
+          const barH = total > 0 ? Math.max((heightPct / 100) * areaH, 4) : 4;
 
-        // Sort segments by minutes desc so the largest project sits at
-        // the bottom of the stack (visually anchors the bar).
-        const segments = inner
-          ? Array.from(inner.entries())
-              .filter(([, mins]) => mins > 0)
-              .sort((a, b) => b[1] - a[1])
-          : [];
+          // Sort segments by minutes desc so the largest project sits at
+          // the bottom of the stack (visually anchors the bar).
+          const segments = inner
+            ? Array.from(inner.entries())
+                .filter(([, mins]) => mins > 0)
+                .sort((a, b) => b[1] - a[1])
+            : [];
 
-        return (
-          <div key={date} className="flex-1 h-full flex flex-col items-center min-w-0">
-            <div className="flex-1 w-full flex flex-col justify-end relative">
+          return (
+            <div key={date} className="flex-1 min-w-0 flex flex-col items-center">
               {total > 0 ? (
                 <div
-                  className="w-full rounded-t-md overflow-hidden flex flex-col-reverse transition-all"
-                  style={{ height: `${heightPct}%`, minHeight: "4px" }}
+                  className="w-full rounded-t-md overflow-hidden flex flex-col-reverse animate-chart-bar"
+                  style={{ height: barH, animationDelay: `${idx * 40}ms` }}
                 >
                   {segments.map(([projectId, minutes]) => {
                     const project =
@@ -152,17 +175,20 @@ function StackedBarChart({
                   })}
                 </div>
               ) : (
-                <div className="w-full h-[4px] rounded-full bg-overlay-hover" />
+                <div
+                  className="w-full rounded-full bg-overlay-hover animate-chart-bar"
+                  style={{ height: 4, animationDelay: `${idx * 40}ms` }}
+                />
               )}
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+        </div>
       </div>
 
       {/* Day labels — a separate row below the bar area so they don't
           shrink the bars. Columns mirror the bar row's flex layout. */}
-      <div className="flex gap-3 w-full mt-2">
+      <div className="flex gap-3 w-full mt-2 flex-shrink-0">
         {weekDates.map((date, idx) => (
           <div key={date} className="flex-1 text-center min-w-0">
             <div className="text-[11px] font-medium text-fg-secondary">
@@ -524,16 +550,18 @@ export default function WeeklyShutdown() {
               "how much"; the summary is a secondary on-demand export.
               items-start (not stretch) so the two short right-column
               cards don't stretch the chart taller than its own content. */}
-          <section className="flex gap-6 items-start">
-            <div className="flex-1 min-w-0 rounded-lg bg-elevated/40 p-5" style={{ border: "0.5px solid var(--border-hairline)" }}>
-              <div className="text-[11px] uppercase tracking-[0.06em] text-fg-faded mb-3">
+          <section className="flex gap-6 items-stretch">
+            <div className="flex-1 min-w-0 rounded-lg bg-elevated/40 p-5 flex flex-col" style={{ border: "0.5px solid var(--border-hairline)" }}>
+              <div className="text-[11px] uppercase tracking-[0.06em] text-fg-faded mb-3 flex-shrink-0">
                 Effort by day
               </div>
-              <StackedBarChart
-                weekDates={weekDates}
-                workedByDay={workedByDay}
-                projects={projects}
-              />
+              <div className="flex-1 min-h-0">
+                <StackedBarChart
+                  weekDates={weekDates}
+                  workedByDay={workedByDay}
+                  projects={projects}
+                />
+              </div>
             </div>
             <div className="w-[200px] flex-shrink-0 flex flex-col gap-6">
             {/* Card 1 — week totals. */}

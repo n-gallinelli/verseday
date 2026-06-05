@@ -125,7 +125,7 @@ function BarChart({
               >
                 {/* Worked (actual) bar — cool slate, "done" — on the left */}
                 <div
-                  className="w-[22px] rounded-t-[3px] bg-chart-bar-worked animate-dashboard-bar"
+                  className="w-[22px] rounded-t-[3px] bg-chart-bar-worked animate-chart-bar"
                   style={{ height: `${barPx(workedPct, worked)}px`, animationDelay: `${i * 40}ms` }}
                   onMouseEnter={() =>
                     worked > 0 &&
@@ -135,7 +135,7 @@ function BarChart({
                 />
                 {/* Planned bar — warm tan, "intent" — on the right */}
                 <div
-                  className="w-[22px] rounded-t-[3px] bg-chart-bar-planned animate-dashboard-bar"
+                  className="w-[22px] rounded-t-[3px] bg-chart-bar-planned animate-chart-bar"
                   style={{ height: `${barPx(plannedPct, planned)}px`, animationDelay: `${i * 40}ms` }}
                   onMouseEnter={() =>
                     planned > 0 &&

@@ -1,71 +1,49 @@
 import { describe, it, expect } from "vitest";
-import { sessionFromFocus, withSession, type FocusState } from "./appStore";
+import { selectRunningSession, selectFocusedTask, type SessionState, type FocusView } from "./appStore";
+import type { Task } from "../types";
 
-// Stage 1 of the focus single-source refactor. The non-negotiable invariant
-// (docs/2026-06-04-focus-single-source-refactor-plan.md):
-//   session !== null  ⟺  focus?.mode === "active"
-// Every focus write in appStore funnels through withSession (which derives
-// session via sessionFromFocus), so proving the helpers' ⟺ proves the invariant
-// for all set sites.
+// Stage 5 — the FocusState union is split into two orthogonal store fields:
+// `session` (canonical running) and `focusView` (preview staging). A preview can
+// never be read as running because they're different fields. These pin the
+// selectors that encode that: running ⟺ session !== null; the focused task is
+// the session's, else the preview's.
+// minimal AppState slice for the pure selectors under test
+const st = (p: { session: SessionState | null; focusView: FocusView | null; tasksById?: Map<number, Task> }) =>
+  p as unknown as Parameters<typeof selectFocusedTask>[0];
 
-const active: FocusState = {
-  mode: "active",
-  taskId: 7,
+const session: SessionState = {
   timeEntryId: 42,
-  previousPage: "daily",
-  priorElapsedMs: 0,
-  paused: false,
-  workedMs: 123000,
-};
-const preview: FocusState = {
-  mode: "preview",
   taskId: 7,
+  paused: false,
+  workedMs: 1000,
   previousPage: "daily",
   priorElapsedMs: 0,
 };
+const view: FocusView = { taskId: 9, previousPage: "daily", priorElapsedMs: 0 };
+const task7 = { id: 7, title: "seven" } as Task;
+const task9 = { id: 9, title: "nine" } as Task;
+const tasksById = new Map<number, Task>([[7, task7], [9, task9]]);
 
-describe("sessionFromFocus — the session/focus invariant", () => {
-  it("active focus → a session (⟺ holds)", () => {
-    const s = sessionFromFocus(active);
-    expect(s).not.toBeNull();
-    expect(s).toEqual({ timeEntryId: 42, taskId: 7, workedMs: 123000, paused: false });
+describe("selectRunningSession — running ⟺ session !== null", () => {
+  it("returns the session when running", () => {
+    expect(selectRunningSession(st({ session, focusView: null }))).toBe(session);
   });
-
-  it("preview focus → null (not focusing)", () => {
-    expect(sessionFromFocus(preview)).toBeNull();
+  it("a preview is NOT running (null)", () => {
+    expect(selectRunningSession(st({ session: null, focusView: view }))).toBeNull();
   });
-
-  it("no focus → null", () => {
-    expect(sessionFromFocus(null)).toBeNull();
-  });
-
-  it("mirrors paused", () => {
-    expect(sessionFromFocus({ ...active, paused: true })?.paused).toBe(true);
-  });
-
-  it("⟺ over a representative set: session !== null exactly when mode === active", () => {
-    const cases: (FocusState | null)[] = [
-      active,
-      { ...active, paused: true },
-      preview,
-      null,
-    ];
-    for (const f of cases) {
-      expect(sessionFromFocus(f) !== null).toBe(f?.mode === "active");
-    }
+  it("nothing focused → null", () => {
+    expect(selectRunningSession(st({ session: null, focusView: null }))).toBeNull();
   });
 });
 
-describe("withSession — the single funnel every focus write uses", () => {
-  it("adds a derived session matching sessionFromFocus, preserving the patch", () => {
-    const patch = withSession({ focus: active, currentPage: "daily" as const });
-    expect(patch.focus).toBe(active);
-    expect(patch.currentPage).toBe("daily");
-    expect(patch.session).toEqual(sessionFromFocus(active));
+describe("selectFocusedTask — session first, then preview, else null", () => {
+  it("resolves the running session's task", () => {
+    expect(selectFocusedTask(st({ session, focusView: null, tasksById }))).toBe(task7);
   });
-
-  it("clears session for a preview or null focus patch", () => {
-    expect(withSession({ focus: preview }).session).toBeNull();
-    expect(withSession({ focus: null }).session).toBeNull();
+  it("resolves the previewed task when not running", () => {
+    expect(selectFocusedTask(st({ session: null, focusView: view, tasksById }))).toBe(task9);
+  });
+  it("null when neither is set", () => {
+    expect(selectFocusedTask(st({ session: null, focusView: null, tasksById }))).toBeNull();
   });
 });

@@ -348,8 +348,8 @@ export default function TaskDetailOverlay({
   // surface reading via selectFocusedTask) sees the new values
   // immediately. M2.2 — `updateFocusTask` is now a thin primeTasks
   // wrapper; signature unchanged for callers.
-  const { focus, updateFocusTask, setFocusPriorElapsedMs, setTaskRecurrenceAction } = useAppStore();
-  const isFocusedTask = focus?.taskId === task.id;
+  const { session, focusView, updateFocusTask, setFocusPriorElapsedMs, setTaskRecurrenceAction } = useAppStore();
+  const isFocusedTask = (session?.taskId ?? focusView?.taskId) === task.id;
   // Live elapsed for the active session (null if none). Used to auto-populate
   // a calendar meeting's "time spent" while it's the running focus task — the
   // value ticks live but stays editable.

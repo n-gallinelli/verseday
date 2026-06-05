@@ -86,7 +86,7 @@ function BarChart({
           // bar so the outward offset still reads as belonging to it. Label sits
           // directly above its bar (rises with the bar), rendered only when > 0.
           return (
-            <div key={date} className="flex-1 flex items-end justify-center gap-6">
+            <div key={date} className="flex-1 flex items-end justify-center gap-2">
               {/* Worked (actual) — cool slate, "done" — on the left */}
               <div className="flex flex-col items-center justify-end">
                 {worked > 0 && (

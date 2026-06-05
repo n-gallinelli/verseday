@@ -21,11 +21,10 @@ import {
   buildSummaryPrompt,
   AUDIENCE_LABELS,
   type SummaryAudience,
-  type SummaryDigest,
 } from "../utils/summary";
 import MoodSelector from "../components/MoodSelector";
 import CalendarChip from "../components/CalendarChip";
-import type { Task } from "../types";
+import type { Task, Project } from "../types";
 
 const SHUTDOWN_KEY_PREFIX = "daily-shutdown-";
 
@@ -92,11 +91,14 @@ export default function DailyShutdown() {
   const [workedPerTask, setWorkedPerTask] = useState<Map<number, number>>(new Map());
   const [step, setStep] = useState<1 | 2>(1);
 
-  // ── Daily summary → Claude-prompt export (mirrors WeeklyShutdown) ──────
+  // ── Daily rundown → Claude-prompt export (one-click copy) ──────────────
+  // The digest is PRE-COMPUTED into a memo (not built inside the click): an
+  // `await getProjects()` between the click and clipboard.writeText would lose
+  // the user-gesture in WKWebView and the copy would silently fail. So projects
+  // (incl. archived) load on mount and the copy handler is fully synchronous.
   const [summaryAudience, setSummaryAudience] = useState<SummaryAudience>("dan");
-  const [summaryDigest, setSummaryDigest] = useState<SummaryDigest | null>(null);
   const [summaryCopied, setSummaryCopied] = useState(false);
-  const [summaryGenerating, setSummaryGenerating] = useState(false);
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedDateRef = useRef(selectedDate);
@@ -106,11 +108,15 @@ export default function DailyShutdown() {
 
   const loadData = useCallback(async () => {
     try {
-      const [_, dp] = await Promise.all([
+      const [_, dp, allProj] = await Promise.all([
         loadTasksForDate(selectedDate),
         getDailyPlan(selectedDate),
+        // ALL projects incl. archived, so a completed task on an archived
+        // objective still groups under it in the rundown digest.
+        getProjects(true),
       ]);
       void _;
+      setAllProjects(allProj);
       setMood(dp?.mood ?? null);
       setReflectionFields(parseReflection(dp?.reflection ?? ""));
       setCarriedIds(new Set());
@@ -292,46 +298,31 @@ export default function DailyShutdown() {
   const completedTasks = tasks.filter((t) => t.status === "done");
   const incompleteTasks = tasks.filter((t) => t.status !== "done");
 
-  // ── Daily summary handlers ────────────────────────────────────────────
-  // Stale digest from another day misleads — drop it when the day changes.
-  useEffect(() => {
-    setSummaryDigest(null);
-    setSummaryCopied(false);
-  }, [selectedDate]);
+  // ── Daily rundown → Claude prompt ─────────────────────────────────────
+  // Pre-computed so the copy handler stays synchronous (see state note above).
+  // Recomputes on day/data change, so there's no stale digest to reset.
+  const summaryDigest = useMemo(
+    () =>
+      buildSummaryDigest({
+        startIso: selectedDate,
+        endIso: selectedDate, // single day
+        tasks: tasks.filter((t) => t.status === "done"),
+        projects: allProjects,
+        workedByTaskId: workedPerTask,
+      }),
+    [selectedDate, tasks, allProjects, workedPerTask],
+  );
 
-  async function handleGenerateSummary() {
-    setSummaryGenerating(true);
-    try {
-      // Today's completed tasks + ALL projects (incl. archived, so an archived
-      // objective's task keeps its grouping) + the already-loaded worked map.
-      const done = tasks.filter((t) => t.status === "done");
-      const allProjects = await getProjects(true);
-      setSummaryDigest(
-        buildSummaryDigest({
-          startIso: selectedDate,
-          endIso: selectedDate, // single day
-          tasks: done,
-          projects: allProjects,
-          workedByTaskId: workedPerTask,
-        }),
-      );
-      setSummaryCopied(false);
-    } catch (e) {
-      setError(errorMessage(e, "Failed to build summary"));
-    } finally {
-      setSummaryGenerating(false);
-    }
-  }
-
-  async function handleCopySummary() {
-    if (!summaryDigest) return;
-    try {
-      await navigator.clipboard.writeText(buildSummaryPrompt(summaryAudience, summaryDigest, "day"));
-      setSummaryCopied(true);
-      setTimeout(() => setSummaryCopied(false), 2000);
-    } catch (e) {
-      setError(errorMessage(e, "Failed to copy to clipboard"));
-    }
+  function handleCopyRundown() {
+    // writeText is invoked directly in the click gesture (digest already built),
+    // with no await before it → the user-gesture isn't lost in WKWebView.
+    navigator.clipboard
+      .writeText(buildSummaryPrompt(summaryAudience, summaryDigest, "day"))
+      .then(() => {
+        setSummaryCopied(true);
+        setTimeout(() => setSummaryCopied(false), 2000);
+      })
+      .catch((e) => setError(errorMessage(e, "Failed to copy to clipboard")));
   }
 
   const REFLECTION_FIELDS: { key: keyof ReflectionFields; label: string; placeholder: string }[] = [
@@ -391,6 +382,43 @@ export default function DailyShutdown() {
 
           {step === 1 && (
             <>
+              {/* ── Daily rundown → one-click Claude prompt export ───────── */}
+              <section>
+                <h3 className="text-[13px] font-medium text-fg-secondary mb-1">
+                  Daily rundown
+                </h3>
+                <p className="text-[12px] text-fg-faded mb-3">
+                  Copy a Claude-ready prompt of today&rsquo;s completed work, framed for your audience.
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Audience toggle */}
+                  <div
+                    className="inline-flex rounded-md overflow-hidden"
+                    style={{ border: "0.5px solid var(--border-hairline)" }}
+                  >
+                    {(["dan", "cam"] as SummaryAudience[]).map((a) => (
+                      <button
+                        key={a}
+                        onClick={() => setSummaryAudience(a)}
+                        className={`px-3 py-1.5 text-[12px] cursor-pointer transition-colors ${
+                          summaryAudience === a
+                            ? "bg-accent-blue-soft text-accent-blue-soft-fg font-medium"
+                            : "text-fg-secondary hover:bg-overlay-hover"
+                        }`}
+                      >
+                        {AUDIENCE_LABELS[a]}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={handleCopyRundown}
+                    className="px-3 py-1.5 rounded-md text-[12px] border border-accent-blue/50 text-accent-blue-soft-fg hover:bg-accent-blue-soft cursor-pointer transition-colors"
+                  >
+                    {summaryCopied ? "Copied!" : "Copy for Claude"}
+                  </button>
+                </div>
+              </section>
+
               {/* Done today — task cards */}
               <section>
                 <div className="flex items-baseline justify-between mb-2">
@@ -549,96 +577,6 @@ export default function DailyShutdown() {
                 ) : (
                   <p className="text-[12px] text-fg-disabled">The path is clear.</p>
                 )}
-              </section>
-
-              {/* ── Daily rundown → Claude prompt export ─────────────────── */}
-              <section className="pt-2" style={{ borderTop: "0.5px solid var(--border-hairline)" }}>
-                <h3 className="text-[13px] font-medium text-fg-secondary mt-2 mb-1">
-                  Daily rundown
-                </h3>
-                <p className="text-[12px] text-fg-faded mb-3">
-                  Copy a Claude-ready prompt of today&rsquo;s completed work, framed for your audience.
-                  Paste it into Claude — no API, nothing leaves your machine until you do.
-                </p>
-
-                <div className="flex items-center gap-2 mb-3 flex-wrap">
-                  {/* Audience toggle */}
-                  <div
-                    className="inline-flex rounded-md overflow-hidden"
-                    style={{ border: "0.5px solid var(--border-hairline)" }}
-                  >
-                    {(["dan", "cam"] as SummaryAudience[]).map((a) => (
-                      <button
-                        key={a}
-                        onClick={() => setSummaryAudience(a)}
-                        className={`px-3 py-1.5 text-[12px] cursor-pointer transition-colors ${
-                          summaryAudience === a
-                            ? "bg-accent-blue-soft text-accent-blue-soft-fg font-medium"
-                            : "text-fg-secondary hover:bg-overlay-hover"
-                        }`}
-                      >
-                        {AUDIENCE_LABELS[a]}
-                      </button>
-                    ))}
-                  </div>
-
-                  <button
-                    onClick={handleGenerateSummary}
-                    disabled={summaryGenerating}
-                    className="px-3 py-1.5 rounded-md text-[12px] border border-line-soft text-fg-secondary hover:bg-overlay-hover cursor-pointer transition-colors disabled:opacity-50"
-                  >
-                    {summaryGenerating ? "Generating…" : summaryDigest ? "Regenerate" : "Generate summary"}
-                  </button>
-
-                  {summaryDigest && (
-                    <button
-                      onClick={handleCopySummary}
-                      className="px-3 py-1.5 rounded-md text-[12px] border border-accent-blue/50 text-accent-blue-soft-fg hover:bg-accent-blue-soft cursor-pointer transition-colors"
-                    >
-                      {summaryCopied ? "Copied!" : "Copy for Claude"}
-                    </button>
-                  )}
-                </div>
-
-                {summaryDigest &&
-                  (summaryDigest.isEmpty ? (
-                    <p className="text-[12px] text-fg-disabled italic">
-                      Nothing completed today — Copy still grabs a short &ldquo;quiet day&rdquo; note.
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {summaryDigest.groups.map((g) => (
-                        <div
-                          key={g.projectId ?? "none"}
-                          className="rounded-md bg-elevated/50 p-3"
-                          style={{ border: "0.5px solid var(--border-hairline)" }}
-                        >
-                          <div className="flex items-baseline justify-between gap-3 mb-1.5">
-                            <h4 className="text-[12px] font-medium text-fg truncate">{g.name}</h4>
-                            <span className="text-[10px] text-fg-faded tabular-nums shrink-0">
-                              {formatHoursMinutes(Math.round(g.totalMinutes))} · {g.count}{" "}
-                              {g.count === 1 ? "task" : "tasks"}
-                            </span>
-                          </div>
-                          {g.goal && <p className="text-[11px] text-fg-faded mb-1.5">{g.goal}</p>}
-                          <div className="space-y-1">
-                            {g.tasks.map((t, i) => (
-                              <div key={i} className="flex items-center gap-2 text-[12px]">
-                                <span className="flex-1 text-fg-secondary truncate">{t.title}</span>
-                                <span className="text-[10px] text-fg-faded tabular-nums shrink-0">
-                                  {formatHoursMinutes(Math.round(t.workedMinutes))}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                      <p className="text-[11px] text-fg-faded tabular-nums">
-                        Day total: {formatHoursMinutes(Math.round(summaryDigest.totalMinutes))} ·{" "}
-                        {summaryDigest.totalCount} {summaryDigest.totalCount === 1 ? "task" : "tasks"}
-                      </p>
-                    </div>
-                  ))}
               </section>
 
             </>

@@ -6,6 +6,12 @@ export const PIP_STATE_EVENT = "verseday:pip-state"; // main → pip: PipState |
 export const PIP_CMD_EVENT = "verseday:pip-cmd"; // pip → main: command string
 export const PIP_READY_EVENT = "verseday:pip-ready"; // pip → main: push state now
 
+// ONE pip window size for every phase — the pip never resizes (declining a break
+// can't shrink it; no setSize churn). Shared so the window-creation size
+// (FocusMode) and the content's pinned size (FocusPip) can't drift. Sized to the
+// compact running/paused state; the break prompt is tightened to fit this height.
+export const PIP_SIZE = { width: 220, height: 64 };
+
 export interface PipState {
   elapsed: number;
   paused: boolean;

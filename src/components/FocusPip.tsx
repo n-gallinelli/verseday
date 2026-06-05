@@ -245,13 +245,12 @@ export default function FocusPip() {
     })
       .then((un) => {
         unlisten = un;
+        // Ask main to push current state — but only AFTER the listener is
+        // registered, else a fast answer races ahead of it and is lost (the pip
+        // would blank until the next heartbeat). Deterministic no-blank.
+        void emit(PIP_READY_EVENT);
       })
       .catch(() => {});
-
-    // Ask the main window to push the current state immediately (events only
-    // deliver future emits, so without this the pip is blank until the next
-    // heartbeat).
-    void emit(PIP_READY_EVENT);
 
     // Liveness — close if the main window has gone silent past the timeout.
     lastSeenRef.current = Date.now();

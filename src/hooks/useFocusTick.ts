@@ -13,7 +13,7 @@ import { useAppStore } from "../stores/appStore";
  * naturally freezes for every subscriber without per-hook gating.
  */
 export function useFocusTick(): number | null {
-  const focus = useAppStore((s) => s.focus);
-  if (!focus || focus.mode !== "active") return null;
-  return focus.workedMs + focus.priorElapsedMs;
+  const session = useAppStore((s) => s.session);
+  if (!session) return null;
+  return session.workedMs + session.priorElapsedMs;
 }

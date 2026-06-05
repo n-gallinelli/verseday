@@ -294,7 +294,6 @@ export function reduceProjectDeleted(s: AppState, id: number): Partial<AppState>
   };
 }
 
-const FOCUS_STORAGE_KEY = "verseday_focus";
 const SIDEBAR_COLLAPSED_KEY = "verseday_sidebar_collapsed";
 
 // P0-1 — one-shot OS-resume flag (sleep/lid-close worked-time guard).
@@ -332,60 +331,37 @@ export function clearFocusResume(): void {
 // flips a flag that gates the increment. taskId remains the canonical
 // task reference (M2.2); selectFocusedTask resolves task data from the
 // canonical tasksById map (M3.2.a).
-export type FocusState =
-  | {
-      mode: "preview";
-      taskId: number;
-      previousPage: Page;
-      priorElapsedMs: number;
-    }
-  | {
-      mode: "active";
-      taskId: number;
-      timeEntryId: number;
-      previousPage: Page;
-      priorElapsedMs: number;
-      /** Pause is a flag — tickFocus is gated on !paused, so workedMs
-       *  freezes naturally during pauses. No wall-clock bookkeeping. */
-      paused: boolean;
-      /** Worked time this session, in ms. Incremented by tickFocus
-       *  every ~1s while running. The live truth between start and
-       *  stop; written to time_entries.worked_seconds on stop. */
-      workedMs: number;
-    };
-
-// Stage 1 of the focus single-source refactor (docs/2026-06-04-focus-single-
-// source-refactor-plan.md). `session` is the canonical mirror of a RUNNING
-// session — "running ⟺ session !== null". For now it's derived from the active
-// `focus` at every focus write (see sessionFromFocus/withSession); later stages
-// make it DB-sourced and split `focus` into session + focusView. Until then the
-// invariant session !== null ⟺ focus?.mode === "active" must always hold
-// (guarded by appStore.session.test.ts).
+// Stage 5 of the focus single-source refactor — the old FocusState union is
+// split into two orthogonal store fields so a preview can NEVER be read as
+// running:
+//   session   = the canonical RUNNING session, backed by a real open
+//               time_entry. Non-null ⟺ a timer is running. workedMs / paused
+//               live here. (DB-sourced on boot; see reconcileFocusOnBoot.)
+//   focusView = the focus-screen STAGING state for a preview (a task staged,
+//               not yet started). Non-null ⟺ previewing; session is null then.
+// They are mutually exclusive. selectFocusedTask reads taskId from session ??
+// focusView; selectRunningSession reads session only.
 export interface SessionState {
   timeEntryId: number;
   taskId: number;
-  workedMs: number;
+  /** Pause is a flag — tickFocus is gated on !paused, so workedMs freezes
+   *  naturally during pauses. */
   paused: boolean;
+  /** Worked time this session, in ms. Incremented by tickFocus ~1s while
+   *  running; checkpointed to time_entries.worked_seconds. */
+  workedMs: number;
+  /** Page to return to when the session stops (stop navigation). */
+  previousPage: Page;
+  /** Prior logged time for the task (baseline); displayed counter =
+   *  priorElapsedMs + workedMs. */
+  priorElapsedMs: number;
 }
 
-/** Canonical session derived from a focus state — null for preview/none. */
-export function sessionFromFocus(focus: FocusState | null): SessionState | null {
-  if (!focus || focus.mode !== "active") return null;
-  return {
-    timeEntryId: focus.timeEntryId,
-    taskId: focus.taskId,
-    workedMs: focus.workedMs,
-    paused: focus.paused,
-  };
-}
-
-/** Wrap a store patch that sets `focus` so `session` is mirrored in the SAME
- *  commit — the single funnel for every focus write, so the invariant can't
- *  drift. */
-export function withSession<T extends { focus: FocusState | null }>(
-  patch: T,
-): T & { session: SessionState | null } {
-  return { ...patch, session: sessionFromFocus(patch.focus) };
+/** Focus-screen staging for a previewed (not-yet-started) task. */
+export interface FocusView {
+  taskId: number;
+  previousPage: Page;
+  priorElapsedMs: number;
 }
 
 interface AppState {
@@ -394,9 +370,11 @@ interface AppState {
   selectedDate: string;
   selectedWeek: string;
   selectedProjectId: number | null;
-  focus: FocusState | null;
-  /** Canonical mirror of the running session (Stage 1). See SessionState. */
+  /** The canonical running session (a real open time_entry), or null. */
   session: SessionState | null;
+  /** Focus-screen preview staging (task staged, not running), or null.
+   *  Mutually exclusive with `session`; never persisted. */
+  focusView: FocusView | null;
   pendingDetailTask: Task | null;
   /** ID of the task whose detail overlay is currently open. `null` = closed.
    *  Read by the singleton TaskDetailOverlayHost mounted at the App shell.
@@ -747,132 +725,6 @@ function persistSidebarCollapsed(v: boolean): void {
   }
 }
 
-function persistFocus(focus: FocusState | null): void {
-  // Only an ACTIVE session is ever persisted. Preview is a focus-screen-scoped
-  // staging state with no canonical record (no timeEntryId); persisting it let
-  // a stale preview survive a relaunch and surface as "Focusing…" on the Daily
-  // Plan. Narrowing here (vs at each caller) makes "previews are never
-  // persisted" true everywhere at once — e.g. setFocusPriorElapsedMs persists
-  // unconditionally and isFocusedTask is true in preview, so editing a staged
-  // task's estimate would otherwise re-write a preview. Preview/null clears the key.
-  if (focus && focus.mode === "active") {
-    localStorage.setItem(FOCUS_STORAGE_KEY, JSON.stringify(focus));
-  } else {
-    localStorage.removeItem(FOCUS_STORAGE_KEY);
-  }
-}
-
-/** Loader shape includes the legacy `task: Task` snapshot so restoreFocus
- *  can prime the cache from it on relaunch. The returned FocusState has
- *  no `task` field (M2.2 retired it); the caller picks the snapshot off
- *  this struct, primes the cache, then sets focus. */
-type LoadedFocus = { focus: FocusState; legacyTaskSnapshot: Task | null };
-
-function loadPersistedFocus(): LoadedFocus | null {
-  try {
-    const raw = localStorage.getItem(FOCUS_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<FocusState> & {
-      mode?: "preview" | "active";
-      task?: Task;
-      taskId?: number;
-    };
-    // Back-compat: pre-mode entries default to "active" so users with a
-    // live session at upgrade time keep it.
-    const mode = parsed.mode ?? "active";
-
-    // Migration: legacy shape only had `task: Task`. Backfill taskId
-    // from the snapshot, hand the snapshot to restoreFocus to prime
-    // the cache, then drop it from the returned focus state.
-    const legacyTask = parsed.task as Task | undefined;
-    const taskId = parsed.taskId ?? legacyTask?.id;
-    if (taskId === undefined) {
-      // Corrupt or pre-task-shape entry — drop it.
-      localStorage.removeItem(FOCUS_STORAGE_KEY);
-      return null;
-    }
-
-    if (mode === "preview") {
-      return {
-        focus: {
-          mode: "preview",
-          taskId,
-          previousPage: parsed.previousPage ?? "daily",
-          priorElapsedMs: parsed.priorElapsedMs ?? 0,
-        },
-        legacyTaskSnapshot: legacyTask ?? null,
-      };
-    }
-
-    // mode === "active" — pause field defaults for pre-rev-2 entries.
-    const active = parsed as Partial<Extract<FocusState, { mode: "active" }>>;
-    if (active.timeEntryId === undefined) {
-      // Active sessions need a time entry id. Corrupt.
-      localStorage.removeItem(FOCUS_STORAGE_KEY);
-      return null;
-    }
-    // S.6 — defensive retention of the pre-S.2 in-flight migration shim.
-    // Modern persisted state has workedMs and lacks startedAt/pausedAtMs/
-    // pausedAccumMs (S.6 retired those). Legacy state (from a build
-    // pre-dating S.2) has the wall-clock fields but no workedMs.
-    // - workedMs present → use it directly. No-op shim.
-    // - workedMs missing → derive from the legacy wall-clock formula
-    //   one final time, then immediately persist the modern shape
-    //   (restoreFocus calls persistFocus right after — R3) so this
-    //   path runs exactly once per legacy persisted entry.
-    //
-    // If the previous session was running (paused === false), force-
-    // pause on derive — the worked-seconds model treats quit time as
-    // not-worked, but the wall-clock formula included quit-window
-    // elapsed up to the moment of relaunch. Force-pause prevents
-    // ticking from that inflated value when the user resumes.
-    const paused = active.paused ?? false;
-    const persistedWorkedMs = (active as Partial<Extract<FocusState, { mode: "active" }>>)
-      .workedMs;
-    let workedMs: number;
-    let resolvedPaused = paused;
-    if (persistedWorkedMs !== undefined) {
-      workedMs = persistedWorkedMs;
-    } else {
-      // Legacy derive path. Read the (now-extinct) wall-clock fields
-      // from `parsed` directly — they're not on the FocusState type
-      // anymore, but JSON.parse returns them if present in storage.
-      const legacy = parsed as Partial<{
-        startedAt: number;
-        pausedAtMs: number | null;
-        pausedAccumMs: number;
-      }>;
-      const startedAt = legacy.startedAt;
-      if (startedAt === undefined) {
-        // No workedMs and no startedAt → can't derive. Drop.
-        localStorage.removeItem(FOCUS_STORAGE_KEY);
-        return null;
-      }
-      const legacyPausedAtMs = legacy.pausedAtMs ?? null;
-      const legacyPausedAccumMs = legacy.pausedAccumMs ?? 0;
-      const now = Date.now();
-      const openPause = paused && legacyPausedAtMs !== null ? now - legacyPausedAtMs : 0;
-      workedMs = Math.max(0, now - startedAt - legacyPausedAccumMs - openPause);
-      // Force-pause if the legacy state was running.
-      if (!paused) resolvedPaused = true;
-    }
-    return {
-      focus: {
-        mode: "active",
-        taskId,
-        timeEntryId: active.timeEntryId,
-        previousPage: active.previousPage ?? "daily",
-        priorElapsedMs: active.priorElapsedMs ?? 0,
-        paused: resolvedPaused,
-        workedMs,
-      },
-      legacyTaskSnapshot: legacyTask ?? null,
-    };
-  } catch {
-    localStorage.removeItem(FOCUS_STORAGE_KEY);
-    return null;
-  }
-}
 
 /** Selector: resolves the open detail overlay's task from the canonical
  *  tasksById map (M3.2.a). Returns null when the overlay is closed or
@@ -894,14 +746,13 @@ export function selectTaskDetailTask(state: AppState): Task | null {
  *  only taskId (no embedded snapshot to prime from). FocusMode and the
  *  PiP broadcast handle the null case. */
 export function selectFocusedTask(state: AppState): Task | null {
-  const f = state.focus;
-  if (!f) return null;
-  return state.tasksById.get(f.taskId) ?? null;
+  // The focused task is the running session's, or the previewed one.
+  const taskId = state.session?.taskId ?? state.focusView?.taskId ?? null;
+  if (taskId === null) return null;
+  return state.tasksById.get(taskId) ?? null;
 }
 
-/** The running session, or null. Canonical "are we focusing?" read — consumers
- *  use this instead of `!!focus` / `focus?.mode === "active"` so the source can
- *  later move off the FocusState union without touching call sites (Stage 1). */
+/** The running session, or null. Canonical "are we focusing?" read. */
 export function selectRunningSession(state: AppState): SessionState | null {
   return state.session;
 }
@@ -943,9 +794,9 @@ export function selectTaskIdsByWeek(state: AppState, weekStart: string): number[
  *  index refreshed (see commitFocusedSessionForTask), so there's no gap. */
 export function selectWorkedMinutesWithLive(state: AppState, taskId: number): number {
   const committed = state.workedByTaskId.get(taskId) ?? 0;
-  const f = state.focus;
-  if (f && f.mode === "active" && f.taskId === taskId) {
-    return committed + Math.round(f.workedMs / 60000);
+  const s = state.session;
+  if (s && s.taskId === taskId) {
+    return committed + Math.round(s.workedMs / 60000);
   }
   return committed;
 }
@@ -1110,8 +961,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedDate: todayString(),
   selectedWeek: mondayOfWeek(),
   selectedProjectId: null,
-  focus: null,
   session: null,
+  focusView: null,
   pendingDetailTask: null,
   selectedTaskDetailId: null,
   taskDetailAutoFocusTitle: false,
@@ -1131,15 +982,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPage: (page) => {
     const prev = get().currentPage;
     if (prev === page) return;
-    // Preview focus is scoped to the focus screen visit. Leaving focus
+    // Preview staging is scoped to the focus-screen visit. Leaving focus
     // discards the preview so a fresh "next task" loads on next entry —
-    // otherwise a queued task could go stale across navigation, or a
-    // persisted preview could pin yesterday's pick.
-    const f = get().focus;
-    if (prev === "focus" && page !== "focus" && f?.mode === "preview") {
-      persistFocus(null);
-      set((s) => withSession({
-        focus: null,
+    // otherwise a queued task could go stale across navigation. (A running
+    // session is unaffected: it lives in `session`, not focusView.)
+    if (prev === "focus" && page !== "focus" && get().focusView) {
+      set((s) => ({
+        focusView: null,
         currentPage: page,
         pageHistory: [...s.pageHistory.slice(-19), prev],
       }));
@@ -1174,36 +1023,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     // M2.2 — primes the canonical tasksById map so selectFocusedTask
     // resolves synchronously. The store no longer carries a task
     // snapshot; consumers read live task data through the selector.
-    const focus: FocusState = {
-      mode: "preview",
-      taskId: task.id,
-      previousPage,
-      priorElapsedMs,
-    };
     get().primeTasks([task]);
-    // #2a — do NOT persist a preview. Preview is a focus-screen-scoped staging
-    // state with no canonical record (no timeEntryId); persisting it let a stale
-    // preview survive a relaunch and surface as "Focusing…" on the Daily Plan.
-    // In-memory only; an active session persists when activateFocus runs.
-    set(withSession({ focus })); // preview → session null
+    // Preview staging only → focusView (never a session, never persisted).
+    // session cleared so "running ⟺ session !== null" holds.
+    set({ focusView: { taskId: task.id, previousPage, priorElapsedMs }, session: null });
   },
   activateFocus: (timeEntryId) => {
-    const f = get().focus;
-    if (!f || f.mode !== "preview") return;
-    // Pause fields init to false / null / 0 on every active-mode
-    // transition (here from preview, and in startFocus below). Replaces
-    // FocusMode's reset-on-task-change effect at :177-181.
-    const next: FocusState = {
-      mode: "active",
-      taskId: f.taskId,
-      timeEntryId,
-      previousPage: f.previousPage,
-      priorElapsedMs: f.priorElapsedMs,
-      paused: false,
-      workedMs: 0,
-    };
-    persistFocus(next);
-    set(withSession({ focus: next }));
+    const v = get().focusView;
+    if (!v) return;
+    // Preview → running: promote focusView to a session (open time_entry).
+    set({
+      session: {
+        timeEntryId,
+        taskId: v.taskId,
+        previousPage: v.previousPage,
+        priorElapsedMs: v.priorElapsedMs,
+        paused: false,
+        workedMs: 0,
+      },
+      focusView: null,
+    });
   },
   updateFocusTask: (patch) => {
     // M2.2 — `task` is no longer on FocusState; this action is a thin
@@ -1213,19 +1052,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     // mirror writes). M3.2 may collapse this into the canonical
     // `updateTask` action depending on whether the wrapper still earns
     // its keep.
-    const f = get().focus;
-    if (!f) return;
-    const current = get().tasksById.get(f.taskId);
+    const focusedId = get().session?.taskId ?? get().focusView?.taskId;
+    if (focusedId == null) return;
+    const current = get().tasksById.get(focusedId);
     if (!current) return;
     const nextTask = { ...current, ...patch };
     get().primeTasks([nextTask]);
   },
   setFocusPriorElapsedMs: (taskId, priorMs) => {
-    const f = get().focus;
-    if (!f || f.taskId !== taskId) return;
-    const next = { ...f, priorElapsedMs: priorMs } as FocusState;
-    persistFocus(next);
-    set(withSession({ focus: next }));
+    // Patch whichever holds this task — the running session or the preview.
+    const s = get().session;
+    if (s && s.taskId === taskId) {
+      set({ session: { ...s, priorElapsedMs: priorMs } });
+      return;
+    }
+    const v = get().focusView;
+    if (v && v.taskId === taskId) {
+      set({ focusView: { ...v, priorElapsedMs: priorMs } });
+    }
   },
   startFocus: (task, timeEntryId, previousPage, priorElapsedMs = 0) => {
     // Sets focus state only — does NOT navigate to the immersive Focus page.
@@ -1241,34 +1085,33 @@ export const useAppStore = create<AppState>((set, get) => ({
     //
     // M2.2 — primes the cache so selectFocusedTask resolves
     // synchronously. Initializes pause fields.
-    const focus: FocusState = {
-      mode: "active",
-      taskId: task.id,
-      timeEntryId,
-      previousPage,
-      priorElapsedMs,
-      paused: false,
-      workedMs: 0,
-    };
     get().primeTasks([task]);
-    persistFocus(focus);
-    set(withSession({ focus }));
+    set({
+      session: {
+        timeEntryId,
+        taskId: task.id,
+        previousPage,
+        priorElapsedMs,
+        paused: false,
+        workedMs: 0,
+      },
+      focusView: null,
+    });
   },
   stopFocus: () => {
     const state = get();
-    let prev = state.focus?.previousPage ?? "daily";
+    let prev = state.session?.previousPage ?? state.focusView?.previousPage ?? "daily";
     // Guard against stale project_detail (#7)
     if (prev === "project_detail" && state.selectedProjectId === null) {
       prev = "projects";
     }
-    persistFocus(null);
-    // Only navigate when stopping from the immersive Focus screen.
-    // Inline pauses (DailyPlanner row, etc.) must not whisk the user
+    // Clear both surfaces. Only navigate when stopping from the immersive Focus
+    // screen — inline pauses (DailyPlanner row, etc.) must not whisk the user
     // back to wherever the timer was originally started.
     if (state.currentPage === "focus") {
-      set(withSession({ focus: null, currentPage: prev }));
+      set({ session: null, focusView: null, currentPage: prev });
     } else {
-      set(withSession({ focus: null }));
+      set({ session: null, focusView: null });
     }
     return prev;
   },
@@ -1287,9 +1130,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     if (openRows.length === 0) {
-      // No live session. Clear any vestigial localStorage blob so nothing
-      // downstream (or a future reader) treats it as state.
-      persistFocus(null);
+      // No live session.
+      set({ session: null, focusView: null });
       return;
     }
 
@@ -1326,17 +1168,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     // S.3 — auto-pause on relaunch (user mental model: "quit = paused"). The
     // user resumes from the daily row / Focus screen / PiP; we don't navigate
     // to the Focus screen (app opens to the Daily Plan).
-    const restored: FocusState = {
-      mode: "active",
-      taskId: live.task_id,
-      timeEntryId: live.id,
-      previousPage: "daily",
-      priorElapsedMs,
-      paused: true,
-      workedMs: live.worked_seconds * 1000,
-    };
-    persistFocus(restored); // keep the vestigial blob in sync (removed Stage 6)
-    set(withSession({ focus: restored }));
+    set({
+      session: {
+        timeEntryId: live.id,
+        taskId: live.task_id,
+        previousPage: "daily",
+        priorElapsedMs,
+        paused: true,
+        workedMs: live.worked_seconds * 1000,
+      },
+      focusView: null,
+    });
   },
   togglePauseFocus: () => {
     // S.5 — flag flip only. Under the worked-seconds model, pause is
@@ -1347,21 +1189,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     // focus.workedMs directly (S.3), and break_seconds no longer
     // captures pause time (the paused-time portion of getBreakSeconds
     // dropped this commit).
-    const f = get().focus;
-    if (!f || f.mode !== "active") return;
-    const next: FocusState = { ...f, paused: !f.paused };
-    persistFocus(next);
-    set(withSession({ focus: next }));
+    const s = get().session;
+    if (!s) return;
+    set({ session: { ...s, paused: !s.paused } });
   },
   adjustFocusElapsed: (desiredElapsedMs) => {
-    // S.5 — workedMs write only. The legacy back-solve against
-    // pausedAccumMs is gone; wall-clock-derived queries are gone too.
-    // The displayed counter reads focus.workedMs.
-    const f = get().focus;
-    if (!f || f.mode !== "active") return;
-    const next: FocusState = { ...f, workedMs: Math.max(0, desiredElapsedMs) };
-    persistFocus(next);
-    set(withSession({ focus: next }));
+    // S.5 — workedMs write only. The displayed counter reads session.workedMs.
+    const s = get().session;
+    if (!s) return;
+    set({ session: { ...s, workedMs: Math.max(0, desiredElapsedMs) } });
   },
   tickFocus: (deltaMs) => {
     // S.2 — increments workedMs while the session is running. No-op if
@@ -1385,12 +1221,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     // touched here — the dual-write seam in S.4 keeps them maintained
     // separately so wall-clock-derived queries continue to work
     // until the S.5 atomic cutover.
-    const f = get().focus;
-    if (!f || f.mode !== "active" || f.paused) return;
+    const s = get().session;
+    if (!s || s.paused) return;
     if (deltaMs <= 0) return;
-    const next: FocusState = { ...f, workedMs: f.workedMs + deltaMs };
-    persistFocus(next);
-    set(withSession({ focus: next }));
+    set({ session: { ...s, workedMs: s.workedMs + deltaMs } });
   },
   setPendingDetailTask: (task) => set({ pendingDetailTask: task }),
   openTaskDetail: (id, opts) =>
@@ -1571,7 +1405,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     for (const ids of s.taskIdsByDate.values()) for (const id of ids) keep.add(id);
     for (const ids of s.taskIdsByProject.values()) for (const id of ids) keep.add(id);
     for (const ids of s.taskIdsByWeek.values()) for (const id of ids) keep.add(id);
-    if (s.focus) keep.add(s.focus.taskId);
+    if (s.session) keep.add(s.session.taskId);
+    if (s.focusView) keep.add(s.focusView.taskId);
     if (s.selectedTaskDetailId !== null) keep.add(s.selectedTaskDetailId);
     if (s.pendingDetailTask) keep.add(s.pendingDetailTask.id);
     for (const list of selectUnscheduledTasksByProject(s.tasksById).values())
@@ -1716,7 +1551,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       //  - fires on every untimed completion, incl. default estimates.
       if (status === "done") {
         const est = fresh?.estimated_minutes ?? 0;
-        if (est > 0 && get().focus?.taskId !== id) {
+        if (est > 0 && get().session?.taskId !== id) {
           const workedSec = await getWorkedSecondsForTask(id);
           if (workedSec === 0) {
             await dbSetManualWorkedMinutes(id, est, ESTIMATE_BACKFILL_ENTRY_TYPE);
@@ -1873,8 +1708,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   stopFocusedSessionForTask: async (taskId, breakSeconds = 0) => {
-    const f = get().focus;
-    if (!f || f.mode !== "active" || f.taskId !== taskId) return;
+    const f = get().session;
+    if (!f || f.taskId !== taskId) return;
     const { timeEntryId, workedMs } = f;
     try {
       // Commit the session's worked_seconds from the live counter (not a stale
@@ -1897,16 +1732,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (err) {
       console.error("[appStore] stopFocusedSessionForTask refresh failed", { taskId, err });
     }
-    persistFocus(null);
     set((s) => {
       const next = new Map(s.workedByTaskId);
       next.set(taskId, committed);
-      return withSession({ workedByTaskId: next, focus: null });
+      return { workedByTaskId: next, session: null, focusView: null };
     });
   },
   endActiveFocusSession: async () => {
-    const f = get().focus;
-    if (f && f.mode === "active") {
+    const f = get().session;
+    if (f) {
       await get().stopFocusedSessionForTask(f.taskId);
     }
   },

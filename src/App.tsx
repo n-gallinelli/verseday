@@ -76,7 +76,7 @@ export default function App() {
 }
 
 function MainApp() {
-  const { currentPage, focus, reconcileFocusOnBoot, setPage, startFocus, pageHistory, goBack } = useAppStore();
+  const { currentPage, session, reconcileFocusOnBoot, setPage, startFocus, pageHistory, goBack } = useAppStore();
   const startupDone = useRef(false);
   const [pageKey, setPageKey] = useState(0);
   const prevPageRef = useRef(currentPage);
@@ -318,7 +318,7 @@ function MainApp() {
 
       // F on a page with an active focus session: jump back to the
       // immersive screen instead of starting a new one.
-      if (key === "f" && useAppStore.getState().focus) {
+      if (key === "f" && (useAppStore.getState().session || useAppStore.getState().focusView)) {
         e.preventDefault();
         setPage("focus");
         return;
@@ -480,7 +480,7 @@ function MainApp() {
           spans "focus page open OR active session running"; unmount
           fires only when both are false, which is when the pip should
           actually close. */}
-      {(currentPage === "focus" || focus?.mode === "active") && (
+      {(currentPage === "focus" || !!session) && (
         <FocusMode visible={currentPage === "focus"} />
       )}
 

@@ -8,7 +8,7 @@ import {
   PIP_READY_EVENT,
   type PipState,
 } from "../utils/pipEvents";
-import { useAppStore, selectFocusedTask, consumeFocusResume, clearFocusResume } from "../stores/appStore";
+import { useAppStore, selectFocusedTask, consumeFocusResume, clearFocusResume, type SessionState, type FocusView } from "../stores/appStore";
 import { clampWorkedDelta } from "../utils/workedTime";
 import {
   stopTimeEntry,
@@ -49,6 +49,26 @@ const PROMPT_AUTO_DISMISS_MS = 30_000;
 // flush also fires on pause / window-blur / tab-hide / stop / app-close, so
 // ~15s is only the WORST case on a hard crash with no clean exit signal.
 const CHECKPOINT_INTERVAL_MS = 15_000;
+
+// Stage 5 — the store split focus into session + focusView. FocusMode's internal
+// logic is unchanged by deriving a read-only view that reproduces the old union
+// shape exactly (session → active, else focusView → preview). Deterministic, so
+// a preview can never be read as running. The STORE no longer holds a union.
+//
+// DRIFT GUARD: this is a DERIVED READ-ONLY view-model — it relies on
+// session-precedence + the store's mutual exclusivity. NEVER store or persist it.
+// A "is a session running?" check goes through `session` / selectRunningSession,
+// NOT readFocus().mode === "active" (that's only for this component's display
+// logic). Don't reintroduce a stored union.
+type FocusCompat =
+  | ({ mode: "active" } & SessionState)
+  | ({ mode: "preview" } & FocusView)
+  | null;
+function readFocus(s: { session: SessionState | null; focusView: FocusView | null }): FocusCompat {
+  if (s.session) return { mode: "active", ...s.session };
+  if (s.focusView) return { mode: "preview", ...s.focusView };
+  return null;
+}
 
 // Defaults — overridden by settings loaded on mount
 const DEFAULT_WORK_MIN = 25;
@@ -92,7 +112,11 @@ interface FocusModeProps {
 }
 
 export default function FocusMode({ visible = true }: FocusModeProps) {
-  const { focus, stopFocus, setPage, previewFocus, activateFocus, updateFocusTask, currentPage } = useAppStore();
+  const { stopFocus, setPage, previewFocus, activateFocus, updateFocusTask, currentPage } = useAppStore();
+  const session = useAppStore((s) => s.session);
+  const focusView = useAppStore((s) => s.focusView);
+  // Read-only view reproducing the old union for this component's internals.
+  const focus = readFocus({ session, focusView });
   const togglePauseFocus = useAppStore((s) => s.togglePauseFocus);
   const adjustFocusElapsed = useAppStore((s) => s.adjustFocusElapsed);
   const tickFocus = useAppStore((s) => s.tickFocus);
@@ -163,12 +187,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
             }
           }
           if (cancelledValidate) return;
-          useAppStore.setState({ focus: null });
-          try {
-            localStorage.removeItem("verseday_focus");
-          } catch {
-            // private mode / quota — non-fatal
-          }
+          useAppStore.setState({ session: null, focusView: null });
         }
       })();
       return () => {
@@ -220,7 +239,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // activates the focus session. The play button calls this in preview
   // mode; in active mode it calls handlePause instead.
   const handleStartSession = useCallback(async () => {
-    const f = useAppStore.getState().focus;
+    const f = readFocus(useAppStore.getState());
     if (!f || f.mode !== "preview") return;
     try {
       const entryId = await startTimeEntry(f.taskId, "tracked");
@@ -596,7 +615,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     clearFocusResume();
 
     const interval = setInterval(() => {
-      const current = useAppStore.getState().focus;
+      const current = readFocus(useAppStore.getState());
       if (!current || current.mode !== "active" || current.paused) return;
 
       const now = Date.now();
@@ -618,7 +637,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       // Read latest workedMs after the tick — `current` was sampled
       // before tickFocus; for Pomodoro thresholds we want the
       // post-tick value.
-      const latest = useAppStore.getState().focus;
+      const latest = readFocus(useAppStore.getState());
       if (!latest || latest.mode !== "active") return;
       const raw = latest.workedMs;
       // Stamp the last active tick (for the break-continuity idle-gap test).
@@ -691,7 +710,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // live state via getState() so it's safe to call from any handler. Writes
   // regardless of paused — pause flushes the value AS-OF the pause.
   const flushCheckpoint = useCallback(() => {
-    const f = useAppStore.getState().focus;
+    const f = readFocus(useAppStore.getState());
     if (!f || f.mode !== "active") return;
     updateTimeEntryWorkedSeconds(f.timeEntryId, Math.round(f.workedMs / 1000)).catch(() => {});
   }, []);
@@ -699,7 +718,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   useEffect(() => {
     if (focusMode !== "active") return;
     const checkpoint = setInterval(() => {
-      const f = useAppStore.getState().focus;
+      const f = readFocus(useAppStore.getState());
       if (!f || f.mode !== "active" || f.paused) return; // no new time while paused
       flushCheckpoint();
     }, CHECKPOINT_INTERVAL_MS);
@@ -890,7 +909,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   useEffect(() => {
     function onStatusChanged(e: Event) {
       const ce = e as CustomEvent<{ taskId: number; status: string }>;
-      const f = useAppStore.getState().focus;
+      const f = readFocus(useAppStore.getState());
       if (!f) return;
       if (ce.detail.taskId !== f.taskId) return;
       if (ce.detail.status !== "done") return;
@@ -944,7 +963,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         (el as HTMLElement).blur();
         return;
       }
-      const f = useAppStore.getState().focus;
+      const f = readFocus(useAppStore.getState());
       if (!f) return;
       e.preventDefault();
       setPage("daily");
@@ -972,7 +991,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       const isInput =
         el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
       if (isInput) return;
-      const f = useAppStore.getState().focus;
+      const f = readFocus(useAppStore.getState());
       // A RUNNING session (active & not paused) stays inert — a stray arrow
       // shouldn't kill a live timer. Preview / no-session / a PAUSED session
       // can switch; a paused session's open time_entry is committed first
@@ -984,7 +1003,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       if (token !== navToken || !tasks) return;
       const remaining = tasks.filter((t) => t.status !== "done");
       if (remaining.length === 0) return;
-      const curId = useAppStore.getState().focus?.taskId;
+      const curId = readFocus(useAppStore.getState())?.taskId;
       const idx = remaining.findIndex((t) => t.id === curId);
       const nextIdx =
         idx === -1
@@ -999,7 +1018,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       // Capture the return-to page BEFORE committing — endActiveFocusSession
       // nulls `focus`, so reading previousPage after would miss it.
       const prev: Page =
-        useAppStore.getState().focus?.previousPage ??
+        readFocus(useAppStore.getState())?.previousPage ??
         (useAppStore.getState().pageHistory.slice(-1)[0] as Page) ??
         "daily";
       // Commit a PAUSED active session before switching so its open time_entry
@@ -1008,7 +1027,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       // focus right before the commit (it may have changed during the awaits),
       // and re-check the nav token after the await before the synchronous
       // previewFocus so a newer keypress wins.
-      const live = useAppStore.getState().focus;
+      const live = readFocus(useAppStore.getState());
       if (live && live.mode === "active") {
         await useAppStore.getState().endActiveFocusSession();
         if (token !== navToken) return;
@@ -1059,7 +1078,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     // breakStartRef forward by the pause duration (opening the break above its
     // full time). With pauseStartRef null its resume-slide guard is false, so
     // the break starts at exactly `durationMs`.
-    const f = useAppStore.getState().focus;
+    const f = readFocus(useAppStore.getState());
     if (f && f.mode === "active" && f.paused) {
       pauseStartRef.current = null;
       togglePauseFocus();

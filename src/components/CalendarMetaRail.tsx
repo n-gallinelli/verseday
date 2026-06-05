@@ -7,8 +7,34 @@
 // user's *own* notes (tasks.notes). The event description from the
 // calendar lives in tasks.external_notes and renders here.
 
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Task } from "../types";
 import type { Attendee } from "../calendar/types";
+import { htmlToSegments, type NoteSegment } from "../utils/linkify";
+
+/** Render parsed note segments: text (newlines preserved by the container's
+ *  whitespace-pre-wrap) and links opened via the Tauri opener — never a raw
+ *  target=_blank, and the parser only ever emits http(s) links. */
+function renderSegments(segments: NoteSegment[]): React.ReactNode[] {
+  return segments.map((seg, i) => {
+    if (seg.type === "link") {
+      return (
+        <a
+          key={i}
+          href={seg.url}
+          onClick={(e) => {
+            e.preventDefault();
+            openUrl(seg.url).catch(() => {});
+          }}
+          className="text-accent-blue hover:underline break-all cursor-pointer"
+        >
+          {seg.label}
+        </a>
+      );
+    }
+    return <span key={i}>{seg.content}</span>;
+  });
+}
 
 interface Props {
   task: Task;
@@ -120,6 +146,8 @@ export default function CalendarMetaRail({ task, timeControl }: Props) {
   const organizer = task.external_organizer_email?.trim() || null;
   const rawDescription = task.external_notes?.trim() || null;
   const description = rawDescription ? cleanDescription(rawDescription) : null;
+  // Detect markup so plain-text descriptions keep the simpler linkify path.
+  const descriptionIsHtml = description ? /<[a-z][\s\S]*>/i.test(description) : false;
 
   // The location field is sometimes a Zoom/Meet/Teams URL itself —
   // detect and render as a link if so.
@@ -202,9 +230,17 @@ export default function CalendarMetaRail({ task, timeControl }: Props) {
 
       {description && (
         <Section label="Description">
-          <p className="text-[13px] text-fg-secondary whitespace-pre-wrap leading-relaxed break-words">
-            {renderTextWithLinks(description)}
-          </p>
+          {/* Google Calendar descriptions arrive as HTML. Render them as
+              readable structured text (lists get bullet/number markers) via the
+              inert DOMParser walk — NO innerHTML, http(s)-only links — which is
+              the right safety posture for this MORE-untrusted external field,
+              doubly so in Tauri where an injected script could reach IPC. Plain-
+              text descriptions keep the bare-URL linkify + pre-wrap path. */}
+          <div className="text-[13px] text-fg-secondary whitespace-pre-wrap leading-relaxed break-words">
+            {descriptionIsHtml
+              ? renderSegments(htmlToSegments(description, { maxChars: Infinity, listMarkers: true }))
+              : renderTextWithLinks(description)}
+          </div>
         </Section>
       )}
     </div>

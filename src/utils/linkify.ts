@@ -54,9 +54,21 @@ export function parseNotes(text: string): NoteSegment[] {
 const BLOCK_TAGS = new Set(["P", "DIV", "LI", "BR", "H1", "H2", "H3", "H4", "H5", "H6"]);
 const PREVIEW_MAX_CHARS = 200;
 
+export interface HtmlToSegmentsOptions {
+  /** Cap on total characters emitted. Defaults to the 200-char preview-pill
+   *  budget; pass Infinity to render a full description with no truncation. */
+  maxChars?: number;
+  /** Prefix list items with markers ("• " for <ul>, "1. " for <ol>) so the
+   *  structure is readable as plain text. Off by default (the preview pill
+   *  doesn't want bullets); enabled for full descriptions. */
+  listMarkers?: boolean;
+}
+
 /** Parse HTML notes into rendered segments. Inserts \n between block siblings. */
-export function htmlToSegments(html: string): NoteSegment[] {
+export function htmlToSegments(html: string, opts: HtmlToSegmentsOptions = {}): NoteSegment[] {
   if (!html) return [];
+  const maxChars = opts.maxChars ?? PREVIEW_MAX_CHARS;
+  const listMarkers = opts.listMarkers ?? false;
   // DOMParser is always available in the Tauri webview.
   const doc = new DOMParser().parseFromString(html, "text/html");
   const segments: NoteSegment[] = [];
@@ -65,14 +77,14 @@ export function htmlToSegments(html: string): NoteSegment[] {
 
   function pushText(content: string) {
     if (truncated || !content) return;
-    const remaining = PREVIEW_MAX_CHARS - charsEmitted;
+    const remaining = maxChars - charsEmitted;
     if (remaining <= 0) {
       truncated = true;
       return;
     }
     if (content.length > remaining) {
       segments.push({ type: "text", content: content.slice(0, remaining) + "…" });
-      charsEmitted = PREVIEW_MAX_CHARS;
+      charsEmitted = maxChars;
       truncated = true;
       return;
     }
@@ -82,7 +94,7 @@ export function htmlToSegments(html: string): NoteSegment[] {
 
   function pushLink(label: string, url: string) {
     if (truncated || !label) return;
-    const remaining = PREVIEW_MAX_CHARS - charsEmitted;
+    const remaining = maxChars - charsEmitted;
     if (remaining <= 0) {
       truncated = true;
       return;
@@ -93,7 +105,7 @@ export function htmlToSegments(html: string): NoteSegment[] {
       label === url && label.length > 40 ? shortenUrl(url) : label;
     if (display.length > remaining) {
       segments.push({ type: "link", label: display.slice(0, remaining) + "…", url });
-      charsEmitted = PREVIEW_MAX_CHARS;
+      charsEmitted = maxChars;
       truncated = true;
       return;
     }
@@ -125,6 +137,32 @@ export function htmlToSegments(html: string): NoteSegment[] {
     // <br> is a hard line break with no children
     if (tag === "BR") {
       pushText("\n");
+      return;
+    }
+
+    // Lists get readable markers when requested: each <li> is prefixed with
+    // "• " (<ul>) or "1. " (<ol>, sequential) and closed with a newline.
+    // Whitespace-only text nodes between items are skipped so the parser's
+    // inter-tag indentation doesn't inject blank lines.
+    if (listMarkers && (tag === "OL" || tag === "UL")) {
+      let idx = 0;
+      for (const child of Array.from(el.childNodes)) {
+        if (truncated) return;
+        if (child.nodeType === Node.ELEMENT_NODE && (child as Element).tagName === "LI") {
+          idx += 1;
+          pushText(tag === "OL" ? `${idx}. ` : "• ");
+          for (const liChild of Array.from(child.childNodes)) {
+            walk(liChild);
+            if (truncated) return;
+          }
+          const lastSeg = segments[segments.length - 1];
+          if (lastSeg && lastSeg.type === "text" && !lastSeg.content.endsWith("\n")) {
+            pushText("\n");
+          }
+        } else if (!(child.nodeType === Node.TEXT_NODE && !(child.textContent || "").trim())) {
+          walk(child);
+        }
+      }
       return;
     }
 

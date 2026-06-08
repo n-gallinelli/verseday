@@ -310,15 +310,23 @@ function PropertyRow({
   label,
   children,
   hint,
+  labelAction,
 }: {
   label: string;
   children: React.ReactNode;
   hint?: React.ReactNode;
+  // Optional control rendered on the right side of the label row (e.g. an
+  // "Open objective" link). Kept on the label line so it doesn't disturb
+  // the control below.
+  labelAction?: React.ReactNode;
 }) {
   return (
     <div>
-      <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1.5">
-        {label}
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded">
+          {label}
+        </div>
+        {labelAction}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         {children}
@@ -348,7 +356,7 @@ export default function TaskDetailOverlay({
   // surface reading via selectFocusedTask) sees the new values
   // immediately. M2.2 — `updateFocusTask` is now a thin primeTasks
   // wrapper; signature unchanged for callers.
-  const { session, focusView, updateFocusTask, setFocusPriorElapsedMs, setTaskRecurrenceAction } = useAppStore();
+  const { session, focusView, updateFocusTask, setFocusPriorElapsedMs, setTaskRecurrenceAction, openProject } = useAppStore();
   const isFocusedTask = (session?.taskId ?? focusView?.taskId) === task.id;
   // Live elapsed for the active session (null if none). Used to auto-populate
   // a calendar meeting's "time spent" while it's the running focus task — the
@@ -804,7 +812,39 @@ export default function TaskDetailOverlay({
             />
           ) : (
           <div className="w-[320px] flex-shrink-0 border-l border-line-hairline bg-rail px-6 py-7 overflow-y-auto space-y-6">
-            <PropertyRow label="Objective">
+            <PropertyRow
+              label="Objective"
+              labelAction={
+                projectId ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Close this task overlay before navigating so the
+                      // project-detail modal doesn't stack on top of it.
+                      onClose();
+                      openProject(parseInt(projectId));
+                    }}
+                    className="flex items-center gap-0.5 text-[11px] font-medium text-accent-blue hover:text-accent-blue-hover transition-colors cursor-pointer"
+                    title="Open objective details"
+                  >
+                    Open
+                    <svg
+                      width="11"
+                      height="11"
+                      viewBox="0 0 12 12"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M3.5 8.5L8.5 3.5" />
+                      <path d="M5 3.5H8.5V7" />
+                    </svg>
+                  </button>
+                ) : undefined
+              }
+            >
               <ProjectPicker
                 value={projectId}
                 projects={objectiveOptions}

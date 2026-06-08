@@ -1,17 +1,18 @@
-// Weekly Summary → Claude-prompt export (pure core).
+// Summary → Claude-prompt export (pure core), period-neutral (day | week).
 //
-// Turns a week's completed work into (a) a grouped digest and (b) a
+// Turns a period's completed work into (a) a grouped digest and (b) a
 // Claude-ready prompt = audience preamble + digest, for clipboard paste into
 // Claude Desktop. No API, no key, no network — the UI only copies text.
 //
-// Everything here is pure and unit-tested (weeklySummary.test.ts). The UI in
-// WeeklyShutdown.tsx feeds it completed tasks + worked minutes + projects and
-// copies the assembled prompt.
+// Pure + unit-tested (summary.test.ts). WeeklyShutdown (period "week") and
+// DailyShutdown (period "day") feed it completed tasks + worked minutes +
+// projects and copy the assembled prompt.
 
 import { formatHoursMinutes } from "./format";
 import { formatMonthDay } from "./dates";
 
 export type SummaryAudience = "dan" | "cam";
+export type SummaryPeriod = "day" | "week";
 
 // Minimal input shapes — structural subsets of Task / Project, so the UI can
 // pass real tasks/projects straight through, and tests can build plain literals.
@@ -39,7 +40,7 @@ export interface DigestGroup {
   totalMinutes: number;
   count: number;
 }
-export interface WeeklyDigest {
+export interface SummaryDigest {
   startIso: string;
   endIso: string;
   groups: DigestGroup[];
@@ -51,20 +52,21 @@ export interface WeeklyDigest {
 const NO_OBJECTIVE = "No objective";
 
 /**
- * Group a week's completed tasks by project/objective with worked-time totals.
- * The caller passes ALL projects including archived, so an archived objective
- * still groups under itself (archived ≠ unattributed). "No objective" is for a
- * genuinely null project_id (or the rare since-deleted project not in the map).
- * Groups are ordered by worked time (desc), ties by name; "No objective" always
- * sorts last. Tasks within a group sort by worked time (desc), ties by title.
+ * Group a period's completed tasks by project/objective with worked-time
+ * totals. Period-agnostic (a day is just startIso === endIso). The caller
+ * passes ALL projects including archived, so an archived objective still groups
+ * under itself (archived ≠ unattributed); "No objective" is for a genuinely
+ * null project_id (or the rare since-deleted project not in the map). Groups
+ * order by worked time (desc), ties by name; "No objective" sorts last. Tasks
+ * within a group sort by worked time (desc), ties by title.
  */
-export function buildWeeklyDigest(args: {
+export function buildSummaryDigest(args: {
   startIso: string;
   endIso: string;
   tasks: SummaryTask[];
   projects: SummaryProject[];
   workedByTaskId: Map<number, number>;
-}): WeeklyDigest {
+}): SummaryDigest {
   const { startIso, endIso, tasks, projects, workedByTaskId } = args;
   const projById = new Map(projects.map((p) => [p.id, p]));
 
@@ -109,20 +111,32 @@ export function buildWeeklyDigest(args: {
   return { startIso, endIso, groups, totalMinutes, totalCount, isEmpty: totalCount === 0 };
 }
 
-/** "Week of Jun 2–Jun 8" */
-export function formatWeekRange(startIso: string, endIso: string): string {
+/** "Week of Jun 2–Jun 8" — week-only header helper. */
+function formatWeekRange(startIso: string, endIso: string): string {
   return `Week of ${formatMonthDay(startIso)}–${formatMonthDay(endIso)}`;
+}
+
+/** "Thursday, Jun 4" — day-only header helper. */
+function formatDayHeader(iso: string): string {
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 /**
  * The human-readable digest body (the {DIGEST} embedded in the prompt). Empty
- * weeks render a single grounded line so the prompt still produces a graceful
- * "quiet week" note rather than inviting invention.
+ * periods render a single grounded line so the prompt still produces a graceful
+ * "quiet" note rather than inviting invention. Header, footer-total label, and
+ * empty-state wording all vary by period.
  */
-export function formatDigest(digest: WeeklyDigest): string {
-  const header = formatWeekRange(digest.startIso, digest.endIso);
+export function formatSummaryDigest(digest: SummaryDigest, period: SummaryPeriod): string {
+  const header =
+    period === "week" ? formatWeekRange(digest.startIso, digest.endIso) : formatDayHeader(digest.startIso);
+  const periodWord = period === "week" ? "this week" : "today";
   if (digest.isEmpty) {
-    return `${header}\n\nNothing was completed this week.`;
+    return `${header}\n\nNothing was completed ${periodWord}.`;
   }
   // Round before formatting so the copied digest matches the on-screen preview
   // exactly (the preview Math.rounds too) — no "60m" vs "1h" split at a
@@ -135,10 +149,11 @@ export function formatDigest(digest: WeeklyDigest): string {
     const total = `Total: ${formatHoursMinutes(Math.round(g.totalMinutes))} · ${g.count} ${g.count === 1 ? "task" : "tasks"}`;
     return `${heading}\n${bullets}\n${total}`;
   });
-  const weekTotal = `Week total: ${formatHoursMinutes(Math.round(digest.totalMinutes))} · ${digest.totalCount} ${
+  const totalLabel = period === "week" ? "Week total" : "Day total";
+  const grandTotal = `${totalLabel}: ${formatHoursMinutes(Math.round(digest.totalMinutes))} · ${digest.totalCount} ${
     digest.totalCount === 1 ? "task" : "tasks"
   }`;
-  return `${header}\n\n${blocks.join("\n\n")}\n\n${weekTotal}`;
+  return `${header}\n\n${blocks.join("\n\n")}\n\n${grandTotal}`;
 }
 
 // ── Prompt wording (Nick tunes this) ────────────────────────────────────────
@@ -151,12 +166,21 @@ export const AUDIENCE_DIRECTIVES: Record<SummaryAudience, string> = {
 export const AUDIENCE_LABELS: Record<SummaryAudience, string> = { dan: "Dan", cam: "Cam" };
 
 /** Builds the full prompt: preamble (with the audience directive) + the digest. */
-export function buildPrompt(audience: SummaryAudience, digest: WeeklyDigest): string {
+export function buildSummaryPrompt(
+  audience: SummaryAudience,
+  digest: SummaryDigest,
+  period: SummaryPeriod,
+): string {
   const directive = AUDIENCE_DIRECTIVES[audience];
+  const opener =
+    period === "week"
+      ? `Write a weekly rundown of our efforts this week, ${directive}`
+      : `Write a rundown of our efforts today, ${directive}`;
+  const completedLine = period === "week" ? "This week's completed work:" : "Today's completed work:";
   return [
-    `Write a weekly rundown of our efforts this week, ${directive} Tie what we completed back to the impact and the why — what each effort moved forward and why it matters. Keep it sharp and succinct. Ground everything strictly in the completed work below; do not invent metrics or overstate impact.`,
+    `${opener} Tie what we completed back to the impact and the why — what each effort moved forward and why it matters. Keep it sharp and succinct. Ground everything strictly in the completed work below; do not invent metrics or overstate impact.`,
     "",
-    "This week's completed work:",
-    formatDigest(digest),
+    completedLine,
+    formatSummaryDigest(digest, period),
   ].join("\n");
 }

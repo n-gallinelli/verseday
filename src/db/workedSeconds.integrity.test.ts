@@ -7,29 +7,28 @@ import {
 import { selectWorkedMinutesWithLive } from "../stores/appStore";
 
 type SelState = Parameters<typeof selectWorkedMinutesWithLive>[0];
-type Focus = SelState["focus"];
+type Sess = SelState["session"];
 
 // P2 canonical worked-minutes derivation: committed (workedByTaskId, closed
-// entries only) + the live focus session (focus.workedMs), counted exactly
-// once. These pin the two invariants Verse flagged: the steady-state combine
-// (and that priorElapsedMs is NOT added — it's the committed baseline already
-// in workedByTaskId) and the stop-handoff continuity (no double/under-count
-// across session stop).
-function activeFocus(taskId: number, workedMs: number, priorElapsedMs: number): Focus {
+// entries only) + the live session (session.workedMs), counted exactly once.
+// These pin the two invariants Verse flagged: the steady-state combine (and
+// that priorElapsedMs is NOT added — it's the committed baseline already in
+// workedByTaskId) and the stop-handoff continuity (no double/under-count across
+// session stop). Stage 5: reads `session`, not the retired `focus` union.
+function activeSession(taskId: number, workedMs: number, priorElapsedMs: number): Sess {
   return {
-    mode: "active",
     taskId,
     timeEntryId: 99,
     previousPage: "daily",
     priorElapsedMs,
     paused: false,
     workedMs,
-  } as Focus;
+  } as Sess;
 }
-function combined(committedMin: number, focus: Focus, taskId = 1): number {
+function combined(committedMin: number, session: Sess, taskId = 1): number {
   const state = {
     workedByTaskId: new Map<number, number>([[1, committedMin]]),
-    focus,
+    session,
   } as SelState;
   return selectWorkedMinutesWithLive(state, taskId);
 }
@@ -38,12 +37,12 @@ describe("P2 worked-minutes derivation (steady-state + stop-handoff)", () => {
   it("steady state: committed + live session, counted once; priorElapsedMs NOT added", () => {
     // Committed 30m (closed entries) + a live session of 10m (600_000 ms),
     // priorElapsedMs = 30m (the committed baseline). Must be 40, not 70.
-    expect(combined(30, activeFocus(1, 600_000, 1_800_000))).toBe(40);
+    expect(combined(30, activeSession(1, 600_000, 1_800_000))).toBe(40);
   });
 
   it("live add applies only to the actively-focused task", () => {
     // Focus is on task 2 → task 1 shows committed only.
-    expect(combined(30, activeFocus(2, 600_000, 0))).toBe(30);
+    expect(combined(30, activeSession(2, 600_000, 0))).toBe(30);
   });
 
   it("no live session (focus null) → committed only", () => {
@@ -53,7 +52,7 @@ describe("P2 worked-minutes derivation (steady-state + stop-handoff)", () => {
   it("stop handoff is continuous: pre-stop (C+live) == post-stop (refreshed committed, focus cleared)", () => {
     const C = 30; // committed before stop (session still open, excluded)
     const sessionMin = 10; // live session minutes
-    const preStop = combined(C, activeFocus(1, sessionMin * 60_000, C * 60_000));
+    const preStop = combined(C, activeSession(1, sessionMin * 60_000, C * 60_000));
     // stopFocusedSessionForTask commits the session then, in ONE set, refreshes
     // committed to C+session AND clears focus — so the displayed value is
     // unchanged across the handoff (never C+2*session, never C).

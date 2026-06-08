@@ -1,34 +1,20 @@
 import { useEffect, useState, useRef } from "react";
 import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { emit, listen } from "@tauri-apps/api/event";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import VerseDayLogo from "./VerseDayLogo";
 import { playBreakChime as playCalm } from "../utils/sounds";
+import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_SIZE, type PipState } from "../utils/pipEvents";
 
-// ONE fixed pip size for every phase — the pip window never resizes. Sized to
-// the tallest content (the break prompt's header + 3 pills); work/break/ack
-// readouts center within it. A constant size means switching phases (e.g.
-// declining a break) never shrinks the window, and it removes the setSize
-// docking jitter the per-phase resize used to cause.
-const PIP_SIZE = { width: 220, height: 80 };
+// ONE fixed pip size for every phase — the pip window never resizes (a constant
+// size means declining a break can't shrink it, and there's no setSize docking
+// jitter). Sized to the compact running/paused readout; the break prompt is
+// tightened to fit. Lives in pipEvents.ts so window + content can't drift.
 
 // Pip surface color — themed via --focus-pip-bg so the pip reads
 // white in light mode and dark in night mode against the desktop.
 const PIP_BG = "var(--focus-pip-bg)";
 
-const PIP_STATE_KEY = "verseday_pip_state";
-const PIP_CMD_KEY = "verseday_pip_cmd";
-
-interface PipState {
-  elapsed: number;
-  paused: boolean;
-  phase: "work" | "break" | "prompt";
-  breakRemaining: number;
-  taskTitle: string;
-  estimatedMinutes: number | null;
-  // P-fix2: the session is queued (preview, not yet started). The pip stays
-  // alive across the roll-to-next-task; its primary button starts the session.
-  queued: boolean;
-}
 
 function formatTime(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -57,7 +43,7 @@ function formatCountdown(ms: number): string {
 }
 
 function sendCommand(cmd: string) {
-  localStorage.setItem(PIP_CMD_KEY, cmd);
+  void emit(PIP_CMD_EVENT, cmd);
 }
 
 // Icon set for the break-prompt buttons. All three render at 16px,
@@ -155,8 +141,10 @@ function fanOut(slot: number, expanded: boolean): React.CSSProperties {
 }
 const BTN_SECONDARY = "px-2.5 py-1 rounded-[6px] text-[11px] bg-overlay-hover text-fg-muted cursor-pointer hover:bg-overlay-pressed transition-colors";
 
-const FOCUS_STORAGE_KEY = "verseday_focus";
-const ORPHAN_TIMEOUT_MS = 2000;
+// No state/heartbeat event for this long ⟹ the main window is gone (crash /
+// closed without a clean teardown) → the pip self-closes. Comfortably above the
+// 1s heartbeat cadence so a paused session (heartbeat-only) never trips it.
+const LIVENESS_TIMEOUT_MS = 2500;
 
 export default function FocusPip() {
   const [state, setState] = useState<PipState | null>(null);
@@ -170,7 +158,7 @@ export default function FocusPip() {
   // ISN'T key and DOM hover dispatch is suppressed by macOS.
   const [externallyHovered, setExternallyHovered] = useState(false);
   const expanded = cssHovered || externallyHovered;
-  const orphanStartRef = useRef<number | null>(null);
+  const lastSeenRef = useRef<number>(Date.now());
   // Transient acknowledgment text — shown for ~1.2s after the user
   // clicks Snooze ("5 more minutes") or No ("Continue working") on
   // the break prompt, so the click registers visually before the pip
@@ -178,18 +166,35 @@ export default function FocusPip() {
   const [pendingAck, setPendingAck] = useState<string | null>(null);
   const ackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // One-shot "task completed" flourish on the checkmark (green fill + check
-  // redraw + pop + ring burst), reusing the focus-screen completion vocabulary.
-  // Resets after the animation so a persisting pip (advanced to the next task)
-  // gets a fresh checkmark.
+  // ── Completion sequence (Option C — strike + hand-off) ──────────────
+  // Clicking the checkmark plays a full-pip "officially done" takeover: the
+  // finished task's title strikes through, a green check draws, then the panel
+  // slides out — handing off to the next task, which slides in. The title is
+  // SNAPSHOT at click time so the takeover keeps showing the task we just
+  // finished even as the main window pushes the next task's state in the
+  // background (we send "done" immediately, so the data write isn't delayed by
+  // the animation). COMPLETE_MS must match the pipComplete keyframe duration.
   const [completing, setCompleting] = useState(false);
+  const [completingTitle, setCompletingTitle] = useState("");
+  const [slideInNext, setSlideInNext] = useState(false);
   const completeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const slideInTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const COMPLETE_MS = 850;
   function completeWithFlourish() {
     if (completing) return; // guard double-fire
+    setCompletingTitle(state?.taskTitle ?? "");
     setCompleting(true);
     sendCommand("done");
     if (completeTimerRef.current) clearTimeout(completeTimerRef.current);
-    completeTimerRef.current = setTimeout(() => setCompleting(false), 1100);
+    completeTimerRef.current = setTimeout(() => {
+      setCompleting(false);
+      // By now the main window has pushed the next task into `state` (emitted on
+      // "done"); slide it in. Cleared after the entrance so heartbeat-driven
+      // state updates don't replay the slide.
+      setSlideInNext(true);
+      if (slideInTimerRef.current) clearTimeout(slideInTimerRef.current);
+      slideInTimerRef.current = setTimeout(() => setSlideInNext(false), 340);
+    }, COMPLETE_MS);
   }
 
   function flashAck(message: string, cmd: string) {
@@ -206,6 +211,7 @@ export default function FocusPip() {
     return () => {
       if (ackTimerRef.current) clearTimeout(ackTimerRef.current);
       if (completeTimerRef.current) clearTimeout(completeTimerRef.current);
+      if (slideInTimerRef.current) clearTimeout(slideInTimerRef.current);
     };
   }, []);
 
@@ -228,46 +234,52 @@ export default function FocusPip() {
       .catch(() => {});
   }, []);
 
+  // Stage 4 — receive state over a Tauri event (was the verseday_pip_state
+  // localStorage poll). The main window emits on change + a 1s heartbeat; a
+  // `null` payload is a clean teardown (no session) → close. lastSeenRef tracks
+  // the newest event; the liveness interval self-closes if the main window goes
+  // silent (crash / close with no clean teardown) — replacing the old
+  // verseday_focus blob orphan read.
   useEffect(() => {
-    function load() {
-      try {
-        const raw = localStorage.getItem(PIP_STATE_KEY);
-        if (raw) {
-          orphanStartRef.current = null;
-          setState((prev) => {
-            const parsed = JSON.parse(raw) as PipState;
-            if (prev && prev.phase !== parsed.phase) {
-              if (parsed.phase === "prompt" || (prev.phase === "break" && parsed.phase === "work")) {
-                playCalm();
-              }
-            }
-            return parsed;
-          });
-        } else {
-          setState(null);
-          // Orphan self-close: if no PiP state and no focus state for 2+ seconds, close
-          const focusRaw = localStorage.getItem(FOCUS_STORAGE_KEY);
-          if (!focusRaw) {
-            if (orphanStartRef.current === null) {
-              orphanStartRef.current = Date.now();
-            } else if (Date.now() - orphanStartRef.current >= ORPHAN_TIMEOUT_MS) {
-              try {
-                getCurrentWebviewWindow().close().catch(() => {});
-              } catch {
-                // silent
-              }
-            }
-          } else {
-            orphanStartRef.current = null;
+    let unlisten: (() => void) | undefined;
+    listen<PipState | null>(PIP_STATE_EVENT, (e) => {
+      lastSeenRef.current = Date.now();
+      const next = e.payload;
+      if (!next) {
+        setState(null);
+        getCurrentWebviewWindow().close().catch(() => {});
+        return;
+      }
+      setState((prev) => {
+        if (prev && prev.phase !== next.phase) {
+          if (next.phase === "prompt" || (prev.phase === "break" && next.phase === "work")) {
+            playCalm();
           }
         }
-      } catch {
-        setState(null);
+        return next;
+      });
+    })
+      .then((un) => {
+        unlisten = un;
+        // Ask main to push current state — but only AFTER the listener is
+        // registered, else a fast answer races ahead of it and is lost (the pip
+        // would blank until the next heartbeat). Deterministic no-blank.
+        void emit(PIP_READY_EVENT);
+      })
+      .catch(() => {});
+
+    // Liveness — close if the main window has gone silent past the timeout.
+    lastSeenRef.current = Date.now();
+    const liveness = setInterval(() => {
+      if (Date.now() - lastSeenRef.current > LIVENESS_TIMEOUT_MS) {
+        getCurrentWebviewWindow().close().catch(() => {});
       }
-    }
-    load();
-    const interval = setInterval(load, 200);
-    return () => clearInterval(interval);
+    }, 1000);
+
+    return () => {
+      unlisten?.();
+      clearInterval(liveness);
+    };
   }, []);
 
   // Listen for the Rust-side hover monitor. Edge-triggered events
@@ -324,6 +336,47 @@ export default function FocusPip() {
     };
   }, []);
 
+  // ── COMPLETION TAKEOVER — full-pip "officially done" hand-off ─────────
+  // Takes precedence over every phase: renders the SNAPSHOT of the task we
+  // just finished (title struck through + green check), then slides out. Sits
+  // before the null check so completing the last task still plays even if the
+  // main window has already torn `state` down.
+  if (completing) {
+    return (
+      <div
+        data-tauri-drag-region
+        className="select-none w-full h-screen overflow-hidden animate-pip-complete"
+        style={{
+          background: PIP_BG,
+          borderRadius: 18,
+          border: "0.5px solid var(--focus-pip-border)",
+          boxShadow: "var(--shadow-card)",
+        }}
+        onMouseDown={handlePipMouseDown}
+      >
+        <div className="flex flex-col justify-center h-full px-4">
+          <div className="flex items-center gap-2">
+            <span className="relative flex-1 min-w-0 text-[14px] font-medium text-fg-faded truncate leading-snug">
+              {completingTitle}
+              <span
+                aria-hidden
+                className="absolute left-0 top-1/2 h-px bg-fg-faded animate-pip-strike pointer-events-none"
+              />
+            </span>
+            <span className="flex-shrink-0 w-[18px] h-[18px] rounded-full bg-accent-green flex items-center justify-center">
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 8.5l3.5 3.5 6.5-7" className="animate-check-draw" />
+              </svg>
+            </span>
+          </div>
+          <div className="text-[11px] font-medium text-accent-green-deep leading-snug mt-1">
+            Done
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!state) {
     return null;
   }
@@ -352,7 +405,7 @@ export default function FocusPip() {
     );
   }
 
-  // ── BREAK PROMPT — two rows, fits in 220×88 ────────────────────────
+  // ── BREAK PROMPT — two compact rows, tightened to fit the 220×58 pip ──
   // Header row: centered "Ready for a break?" anchor at small weight.
   // Action row: three icon buttons (thumbs up / clock / x) — icon-only
   // keeps the pip uncluttered at this width; tooltips carry the
@@ -364,7 +417,7 @@ export default function FocusPip() {
     return (
       <div
         data-tauri-drag-region
-        className="select-none flex flex-col justify-center w-full h-screen px-2.5 py-2"
+        className="select-none flex flex-col justify-center w-full h-screen px-2.5 py-1.5"
         style={{
           background: PIP_BG,
           borderRadius: 18,
@@ -373,13 +426,13 @@ export default function FocusPip() {
         }}
         onMouseDown={handlePipMouseDown}
       >
-        <p className="text-[13px] font-medium text-fg text-center mb-2 leading-tight">
+        <p className="text-[13px] font-medium text-fg text-center mb-1 leading-tight">
           Ready for a break?
         </p>
         <div className="flex items-center justify-center gap-2.5 flex-1">
           <button
             onClick={() => sendCommand("takeBreak")}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-white bg-accent-green-deep hover:opacity-90 cursor-pointer transition-opacity"
+            className="w-6 h-6 rounded-full flex items-center justify-center text-white bg-accent-green-deep hover:opacity-90 cursor-pointer transition-opacity"
             title="Yes — take a 5 min break"
             aria-label="Take a 5 minute break"
           >
@@ -387,7 +440,7 @@ export default function FocusPip() {
           </button>
           <button
             onClick={() => flashAck("5 more minutes", "snooze5")}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-secondary border border-line-soft hover:border-line-strong hover:bg-overlay-hover cursor-pointer transition-colors"
+            className="w-6 h-6 rounded-full flex items-center justify-center text-fg-secondary border border-line-soft hover:border-line-strong hover:bg-overlay-hover cursor-pointer transition-colors"
             title="Remind me in 5 min"
             aria-label="Remind me in 5 minutes"
           >
@@ -395,7 +448,7 @@ export default function FocusPip() {
           </button>
           <button
             onClick={() => flashAck("Break skipped", "noBreak")}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-fg-faded border border-line-hairline hover:text-fg-secondary hover:border-line-soft hover:bg-overlay-hover cursor-pointer transition-colors"
+            className="w-6 h-6 rounded-full flex items-center justify-center text-fg-faded border border-line-hairline hover:text-fg-secondary hover:border-line-soft hover:bg-overlay-hover cursor-pointer transition-colors"
             title="No — keep working"
             aria-label="Decline break"
           >
@@ -439,7 +492,7 @@ export default function FocusPip() {
       style={{ background: PIP_BG, borderRadius: 18, border: "0.5px solid var(--focus-pip-border)" }}
       onMouseDown={handlePipMouseDown}
     >
-      <div className="flex items-center gap-2 pl-4 pr-2 py-2 w-full h-full">
+      <div className={`flex items-center gap-2 pl-4 pr-2 py-2 w-full h-full ${slideInNext ? "animate-pip-slide-in" : ""}`}>
         {/* Title + timer — purely informational. Fades on hover so the
             icon row can take the space without overlapping.
             pr-12 reserves space for the absolute-positioned pause
@@ -531,27 +584,17 @@ export default function FocusPip() {
               </svg>
             </button>
 
+            {/* Complete — feedback lives in the full-pip completion takeover
+                (strike + hand-off), not on this tiny button, so it stays a
+                plain icon here. */}
             <button
               onClick={(e) => { e.stopPropagation(); completeWithFlourish(); }}
-              className={`${ICON_BTN} relative ${completing ? "animate-task-done" : ""}`}
+              className={ICON_BTN}
               title="Complete task"
-              style={{
-                ...fanOut(1, expanded),
-                ...(completing
-                  ? { background: "var(--accent-green)", color: "#fff" }
-                  : {}),
-              }}
+              style={fanOut(1, expanded)}
             >
-              {/* Ring burst on completion — reuses the focus-complete vocabulary. */}
-              {completing && (
-                <span
-                  aria-hidden
-                  className="absolute inset-0 rounded-full animate-focus-complete-burst pointer-events-none"
-                  style={{ border: "1.5px solid var(--accent-green)" }}
-                />
-              )}
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={completing ? "#fff" : "var(--accent-green-deep)"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 8.5l3.5 3.5 6.5-7" className={completing ? "animate-check-draw" : ""} />
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--accent-green-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 8.5l3.5 3.5 6.5-7" />
               </svg>
             </button>
 

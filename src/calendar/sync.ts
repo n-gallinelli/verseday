@@ -26,6 +26,12 @@ import type { CalendarEvent } from "./types";
 
 const SETTING_LAST_SYNCED_AT = "calendar.last_synced_at";
 
+// `selfStatus` values that mean "the current user has not accepted this
+// invite" — these events are excluded from import. Everything else
+// ('accepted', 'organizer', 'none', 'unknown') is importable. See
+// step 4 of the sync algorithm below.
+const NON_ACCEPTED_SELF_STATUSES = new Set(["declined", "tentative", "pending"]);
+
 // ───────────────────────────────────────────────────────────────────
 // Per-date TTL (Verse Q1: in-memory Map, capped ≤64 to bound long-
 // session navigation through many dates — weekly views are 7-date
@@ -129,10 +135,19 @@ export async function syncCalendarEventsForDate(
     dateIso,
   });
 
-  // 4. Filter excluded calendars + cancelled events.
+  // 4. Filter excluded calendars + cancelled events + events the user
+  //    hasn't accepted. We only import events you've actually accepted:
+  //    skip any where you're an invitee who declined, is still pending,
+  //    or marked tentative. Events you organized ("organizer"), accepted
+  //    ("accepted"), or that have no current-user RSVP to make ("none" —
+  //    solo personal blocks) still import. See `selfStatus` in types.ts
+  //    and `self_participation_status` in src-tauri/src/calendar.rs.
   const excluded: Set<string> = await getExcludedCalendarIds();
   const candidates = events.filter(
-    (ev) => !excluded.has(ev.calendarId) && ev.status !== "cancelled",
+    (ev) =>
+      !excluded.has(ev.calendarId) &&
+      ev.status !== "cancelled" &&
+      !NON_ACCEPTED_SELF_STATUSES.has(ev.selfStatus),
   );
 
   // 5. Drop dismissed external_ids for the date.

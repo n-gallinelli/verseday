@@ -17,6 +17,7 @@ import {
 import {
   selectOrphanAndOverdueTasks,
   selectProjectsByStatus,
+  selectRunningSession,
   selectTaskIdsByDate,
   selectUnscheduledTasksByProject,
   useAppStore,
@@ -59,7 +60,10 @@ const MAX_ESTIMATE_MINUTES = 480;
 
 
 export default function DailyPlanner() {
-  const { selectedDate, setSelectedDate, startFocus, stopFocus, openProject, focus, setPage, pendingDetailTask, setPendingDetailTask } = useAppStore();
+  const { selectedDate, setSelectedDate, startFocus, stopFocus, openProject, focusView, setPage, pendingDetailTask, setPendingDetailTask } = useAppStore();
+  // Canonical "are we focusing?" read. selectRunningSession is the single
+  // source for "running"; focusView (above) carries the preview staging.
+  const runningSession = useAppStore(selectRunningSession);
   const selectedTaskDetailId = useAppStore((s) => s.selectedTaskDetailId);
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
   const primeTasks = useAppStore((s) => s.primeTasks);
@@ -87,9 +91,10 @@ export default function DailyPlanner() {
   // other card bails out via the custom React.memo comparator that ignores
   // function-prop identity and only checks data props.
   const focusElapsedMs = useFocusTick();
-  // The focused task's id (if any), surfaced cleanly so the renderRow
-  // closure can compare without indexing into focus.task each time.
-  const focusedTaskId = focus?.taskId ?? null;
+  // The focused task's id (if any) — the running session's, or the previewed
+  // one (preview-highlight). Surfaced cleanly so the renderRow closure can
+  // compare without indexing each time.
+  const focusedTaskId = runningSession?.taskId ?? focusView?.taskId ?? null;
   // M3.2.b.1 — derived from the canonical map. Memoized so its
   // reference is stable across renders that don't change the inputs
   // (taskIds is stable when the date's index entry is unchanged;
@@ -579,8 +584,8 @@ export default function DailyPlanner() {
       // focus cleared, the verseday:task-status-changed listener no longer
       // auto-advances focus on an inline row-complete (Option A, per Verse).
       if (!wasDone) {
-        const f = useAppStore.getState().focus;
-        if (f && f.mode === "active" && f.taskId === task.id) {
+        const s = useAppStore.getState().session;
+        if (s && s.taskId === task.id) {
           await stopFocusedSessionForTask(task.id);
         }
       }
@@ -646,57 +651,49 @@ export default function DailyPlanner() {
   }
 
   async function handleStartFocus(task: Task) {
-    const current = useAppStore.getState().focus;
-    // Clicking play on the already-focused task is a no-op.
-    if (current && current.taskId === task.id) return;
+    const st = useAppStore.getState();
+    const currentSession = st.session;
+    // Clicking play on the already-focused task (running OR previewed) is a no-op.
+    const focusedId = currentSession?.taskId ?? st.focusView?.taskId;
+    if (focusedId === task.id) return;
     try {
-      if (current && current.mode === "active") {
-        // Swap from one *active* focused task to another. Phase 1: close
-        // the old time entry in the DB and optimistically update
-        // workedMap so the old row's pill flips from live → static
-        // cleanly with no flash.
+      if (currentSession) {
+        // Swap from one running session to another. Phase 1: close the old time
+        // entry in the DB and optimistically update workedMap so the old row's
+        // pill flips from live → static cleanly with no flash.
         //
-        // S.5 — workedMs is the truth. Write it to worked_seconds
-        // before stopping. break_seconds = 0 (Daily Plan path doesn't
-        // track Pomodoro breaks; pre-existing limitation).
-        const oldTaskId = current.taskId;
-        const workedSeconds = Math.round(current.workedMs / 1000);
-        await updateTimeEntryWorkedSeconds(current.timeEntryId, workedSeconds);
-        await stopTimeEntry(current.timeEntryId, 0);
+        // S.5 — workedMs is the truth. Write it to worked_seconds before
+        // stopping. break_seconds = 0 (Daily Plan path doesn't track breaks).
+        const oldTaskId = currentSession.taskId;
+        const workedSeconds = Math.round(currentSession.workedMs / 1000);
+        await updateTimeEntryWorkedSeconds(currentSession.timeEntryId, workedSeconds);
+        await stopTimeEntry(currentSession.timeEntryId, 0);
         // Reconcile the old task's committed minutes from DB truth (entry was
         // just closed) so its row pill flips live → static with no flash.
         await loadWorkedMinutesAction([oldTaskId]);
       }
-      // Preview-mode current is just discarded by the startFocus call
-      // below — no time entry to close, no workedMap update needed.
+      // A preview (focusView) is just discarded by the startFocus call below —
+      // no time entry to close, no workedMap update needed.
 
       // Phase 2: start the new entry.
       const priorMinutes = await getWorkedMinutesForTask(task.id);
       const priorMs = priorMinutes * 60 * 1000;
       const entryId = await startTimeEntry(task.id, "tracked");
-      // Phase 3: replace focus state (overwrites any existing focus).
-      // Deliberately NOT calling setPage("focus") — DailyPlanner is the
-      // one call site that keeps focus inline.
+      // Phase 3: replace focus state (startFocus sets session, clears focusView).
+      // Deliberately NOT calling setPage("focus") — DailyPlanner keeps it inline.
       startFocus(task, entryId, "daily", priorMs);
-      if (current && current.mode === "active") {
-        // After a swap from active, refetch so the swapped-out task's
-        // pill picks up the authoritative worked total from time_entries
-        // instead of the optimistic value.
+      if (currentSession) {
+        // After a swap, refetch so the swapped-out task's pill picks up the
+        // authoritative worked total from time_entries.
         await loadData();
       }
     } catch (e) {
       setError(errorMessage(e, "Failed to start timer"));
-      // If we closed the old entry but blew up before replacing focus,
-      // the in-memory focus still points to a session whose time entry
-      // is closed in the DB. Clear it so the stale live counter stops.
-      const after = useAppStore.getState().focus;
-      if (
-        current &&
-        current.mode === "active" &&
-        after &&
-        after.mode === "active" &&
-        after.timeEntryId === current.timeEntryId
-      ) {
+      // If we closed the old entry but blew up before replacing the session,
+      // the in-memory session still points to a time entry that's closed in the
+      // DB. Clear it so the stale live counter stops.
+      const after = useAppStore.getState().session;
+      if (currentSession && after && after.timeEntryId === currentSession.timeEntryId) {
         stopFocus();
       }
     }
@@ -1004,18 +1001,18 @@ export default function DailyPlanner() {
           {/* Focus button — inline */}
           {(() => {
             // The pill must mean "a session is actually running," not "a focus
-            // object exists." Gate on active mode (a real session with an open
-            // time_entry) — a preview (task merely staged on the focus screen,
-            // nothing running) is NOT focusing and falls through to the
-            // "Start focusing" / null branch. Mirrors FocusMode's own
-            // active-only mount gate (App.tsx).
-            const isFocusing = focus?.mode === "active";
+            // object exists." Read the canonical running session (Stage 1
+            // selector) — a preview (task merely staged on the focus screen,
+            // nothing running) yields no session and falls through to the
+            // "Start focusing" / null branch. selectRunningSession is the
+            // single "are we focusing?" source consumers migrate to.
+            const isFocusing = !!runningSession;
             // M2.6 — pause symmetry. When the active session is paused,
             // the pill drops its accent-blue tint, the dot stops
             // pulsing, and the label flips from "Focusing…" to "Paused"
             // — matching the row pill's paused treatment in M2.3 and
             // the PiP's paused treatment.
-            const isPaused = focus?.mode === "active" && focus.paused;
+            const isPaused = !!runningSession?.paused;
             const nextTask = tasks.find((t) => t.status !== "done");
 
             if (isFocusing) {
@@ -1359,9 +1356,7 @@ export default function DailyPlanner() {
                         justAdded={addedIds.has(task.id)}
                         isFocused={focusedTaskId === task.id}
                         isPaused={
-                          focusedTaskId === task.id &&
-                          focus?.mode === "active" &&
-                          focus.paused
+                          focusedTaskId === task.id && !!runningSession?.paused
                         }
                         liveElapsedMs={
                           focusedTaskId === task.id && focusElapsedMs != null

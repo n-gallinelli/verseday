@@ -795,6 +795,18 @@ select {
   animation: taskAdded 260ms ease-out both;
 }
 
+/* Chart bars (Dashboard + Weekly shutdown) — a calm fade-up entrance on load /
+   week change, instead of the old height "fill" grow (which read as the bars
+   pumping up). Bars sit at their true height immediately and ease in. Per-column
+   stagger via inline animation-delay. */
+@keyframes chartBarRise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-chart-bar {
+  animation: chartBarRise 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
 /* A green ring that bursts outward from the checkbox the moment a daily task
    is marked done — a quick, positive "nice, done" beat. A restrained sibling
    of the focus-complete burst, sized for a list row. Pairs with the existing
@@ -839,6 +851,41 @@ select {
   animation: focusCompleteCore 1100ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
 
+/* PiP completion takeover (Option C — strike + hand-off). The finished
+   task's panel: quick entrance, brief hold, then slide out to the right +
+   fade as it hands off to the next task. Title strike + check-draw run on
+   their own timers within. Lifetime must match COMPLETE_MS in FocusPip.tsx. */
+@keyframes pipComplete {
+  0% { opacity: 0; transform: translateX(0) scale(0.98); }
+  14% { opacity: 1; transform: translateX(0) scale(1); }
+  70% { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(36px); }
+}
+.animate-pip-complete {
+  animation: pipComplete 850ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* The strikethrough line drawing left→right across the finished title.
+   Base width is 100% so reduced-motion (animation: none) shows a full,
+   static strike rather than no strike at all. */
+@keyframes pipStrike {
+  from { width: 0; }
+  to { width: 100%; }
+}
+.animate-pip-strike {
+  width: 100%;
+  animation: pipStrike 280ms cubic-bezier(0.65, 0, 0.35, 1) 120ms both;
+}
+
+/* The next task sliding in after the hand-off — a calm rise + fade. */
+@keyframes pipSlideIn {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-pip-slide-in {
+  animation: pipSlideIn 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in,
   .animate-scale-in,
@@ -848,9 +895,13 @@ select {
   .animate-check-draw,
   .animate-task-arrived,
   .animate-task-added,
+  .animate-chart-bar,
   .animate-completion-glow,
   .animate-focus-complete-burst,
-  .animate-focus-complete-core {
+  .animate-focus-complete-core,
+  .animate-pip-complete,
+  .animate-pip-strike,
+  .animate-pip-slide-in {
     animation: none;
   }
 }

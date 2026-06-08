@@ -1,7 +1,15 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
+import { WebviewWindow, getAllWebviewWindows, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
-import { useAppStore, selectFocusedTask, consumeFocusResume, clearFocusResume } from "../stores/appStore";
+import { emit, listen } from "@tauri-apps/api/event";
+import {
+  PIP_STATE_EVENT,
+  PIP_CMD_EVENT,
+  PIP_READY_EVENT,
+  PIP_SIZE,
+  type PipState,
+} from "../utils/pipEvents";
+import { useAppStore, selectFocusedTask, consumeFocusResume, clearFocusResume, type SessionState, type FocusView } from "../stores/appStore";
 import { clampWorkedDelta } from "../utils/workedTime";
 import {
   stopTimeEntry,
@@ -37,7 +45,31 @@ import type { Page } from "../types";
 // pip + main-window prompt from nagging indefinitely.
 const PROMPT_AUTO_DISMISS_MS = 30_000;
 
-const CHECKPOINT_INTERVAL_MS = 30_000;
+// Stage 2 of the focus single-source refactor: the DB open-row worked_seconds
+// checkpoint is the bounded-loss record. Tightened 30s → 15s; an immediate
+// flush also fires on pause / window-blur / tab-hide / stop / app-close, so
+// ~15s is only the WORST case on a hard crash with no clean exit signal.
+const CHECKPOINT_INTERVAL_MS = 15_000;
+
+// Stage 5 — the store split focus into session + focusView. FocusMode's internal
+// logic is unchanged by deriving a read-only view that reproduces the old union
+// shape exactly (session → active, else focusView → preview). Deterministic, so
+// a preview can never be read as running. The STORE no longer holds a union.
+//
+// DRIFT GUARD: this is a DERIVED READ-ONLY view-model — it relies on
+// session-precedence + the store's mutual exclusivity. NEVER store or persist it.
+// A "is a session running?" check goes through `session` / selectRunningSession,
+// NOT readFocus().mode === "active" (that's only for this component's display
+// logic). Don't reintroduce a stored union.
+type FocusCompat =
+  | ({ mode: "active" } & SessionState)
+  | ({ mode: "preview" } & FocusView)
+  | null;
+function readFocus(s: { session: SessionState | null; focusView: FocusView | null }): FocusCompat {
+  if (s.session) return { mode: "active", ...s.session };
+  if (s.focusView) return { mode: "preview", ...s.focusView };
+  return null;
+}
 
 // Defaults — overridden by settings loaded on mount
 const DEFAULT_WORK_MIN = 25;
@@ -69,8 +101,6 @@ function formatCountdown(ms: number): string {
   return `${pad(minutes)}:${pad(seconds)}`;
 }
 
-const PIP_STATE_KEY = "verseday_pip_state";
-const PIP_CMD_KEY = "verseday_pip_cmd";
 
 
 type BootStatus = "loading" | "empty" | "error";
@@ -83,7 +113,11 @@ interface FocusModeProps {
 }
 
 export default function FocusMode({ visible = true }: FocusModeProps) {
-  const { focus, stopFocus, setPage, previewFocus, activateFocus, updateFocusTask, currentPage } = useAppStore();
+  const { stopFocus, setPage, previewFocus, activateFocus, updateFocusTask, currentPage } = useAppStore();
+  const session = useAppStore((s) => s.session);
+  const focusView = useAppStore((s) => s.focusView);
+  // Read-only view reproducing the old union for this component's internals.
+  const focus = readFocus({ session, focusView });
   const togglePauseFocus = useAppStore((s) => s.togglePauseFocus);
   const adjustFocusElapsed = useAppStore((s) => s.adjustFocusElapsed);
   const tickFocus = useAppStore((s) => s.tickFocus);
@@ -154,12 +188,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
             }
           }
           if (cancelledValidate) return;
-          useAppStore.setState({ focus: null });
-          try {
-            localStorage.removeItem("verseday_focus");
-          } catch {
-            // private mode / quota — non-fatal
-          }
+          useAppStore.setState({ session: null, focusView: null });
         }
       })();
       return () => {
@@ -211,7 +240,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // activates the focus session. The play button calls this in preview
   // mode; in active mode it calls handlePause instead.
   const handleStartSession = useCallback(async () => {
-    const f = useAppStore.getState().focus;
+    const f = readFocus(useAppStore.getState());
     if (!f || f.mode !== "preview") return;
     try {
       const entryId = await startTimeEntry(f.taskId, "tracked");
@@ -402,8 +431,10 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         const pip = new WebviewWindow("focus-pip", {
           url: "/#focus-pip",
           title: "Focus",
-          width: 220,
-          height: 80,
+          // Shared with FocusPip's pinned size (pipEvents.PIP_SIZE) so the window
+          // and its content can't drift.
+          width: PIP_SIZE.width,
+          height: PIP_SIZE.height,
           resizable: false,
           alwaysOnTop: true,
           // macOS: join every Space so the pip rides along to whatever
@@ -587,7 +618,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     clearFocusResume();
 
     const interval = setInterval(() => {
-      const current = useAppStore.getState().focus;
+      const current = readFocus(useAppStore.getState());
       if (!current || current.mode !== "active" || current.paused) return;
 
       const now = Date.now();
@@ -609,7 +640,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       // Read latest workedMs after the tick — `current` was sampled
       // before tickFocus; for Pomodoro thresholds we want the
       // post-tick value.
-      const latest = useAppStore.getState().focus;
+      const latest = readFocus(useAppStore.getState());
       if (!latest || latest.mode !== "active") return;
       const raw = latest.workedMs;
       // Stamp the last active tick (for the break-continuity idle-gap test).
@@ -676,18 +707,58 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // and the live focus.workedMs is counted exactly once at the app layer.
   // On a force-quit the row keeps this checkpointed worked_seconds; the next
   // boot's closeOrphanedTimeEntries sets end_time and it re-enters the totals.
+  // Stage 2 — write the running session's CLAMPED workedMs to the open row's
+  // worked_seconds. Absolute SET (idempotent across repeated flushes), end_time
+  // untouched (stays NULL so the #15 aggregate guard keeps excluding it). Reads
+  // live state via getState() so it's safe to call from any handler. Writes
+  // regardless of paused — pause flushes the value AS-OF the pause.
+  const flushCheckpoint = useCallback(() => {
+    const f = readFocus(useAppStore.getState());
+    if (!f || f.mode !== "active") return;
+    updateTimeEntryWorkedSeconds(f.timeEntryId, Math.round(f.workedMs / 1000)).catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (focusMode !== "active") return;
     const checkpoint = setInterval(() => {
-      const f = useAppStore.getState().focus;
-      if (!f || f.mode !== "active" || f.paused) return;
-      updateTimeEntryWorkedSeconds(
-        f.timeEntryId,
-        Math.round(f.workedMs / 1000)
-      ).catch(() => {});
+      const f = readFocus(useAppStore.getState());
+      if (!f || f.mode !== "active" || f.paused) return; // no new time while paused
+      flushCheckpoint();
     }, CHECKPOINT_INTERVAL_MS);
     return () => clearInterval(checkpoint);
-  }, [focusTaskId, focusMode]);
+  }, [focusTaskId, focusMode, flushCheckpoint]);
+
+  // Immediate flush on the bounded-loss exit signals so worst-case loss is only
+  // ~15s on a HARD crash. pause / window-blur / tab-hide while running, plus the
+  // Tauri close-request (covers a clean quit, which may not fire blur first).
+  // Stop already persists via stopFocusedSessionForTask (closes the row).
+  useEffect(() => {
+    if (focusMode !== "active") return;
+    const onHidden = () => {
+      if (document.visibilityState === "hidden") flushCheckpoint();
+    };
+    window.addEventListener("blur", flushCheckpoint);
+    document.addEventListener("visibilitychange", onHidden);
+    let unlistenClose: (() => void) | undefined;
+    getCurrentWebviewWindow()
+      .onCloseRequested(() => {
+        flushCheckpoint();
+      })
+      .then((un) => {
+        unlistenClose = un;
+      })
+      .catch(() => {});
+    return () => {
+      window.removeEventListener("blur", flushCheckpoint);
+      document.removeEventListener("visibilitychange", onHidden);
+      unlistenClose?.();
+    };
+  }, [focusMode, flushCheckpoint]);
+
+  // Flush the instant a running session pauses (the value is final until resume).
+  useEffect(() => {
+    if (isPaused) flushCheckpoint();
+  }, [isPaused, flushCheckpoint]);
 
   // Broadcast state to PiP window — active sessions only. Preview has
   // no live state to mirror; the pip stays closed.
@@ -699,22 +770,24 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // Without this dep, the PiP would keep showing the stale title — the
   // exact regression the entity refactor exists to prevent.
   //
-  // S.3 — `elapsed` here is derived from focus.workedMs (the new
-  // tick-counter source of truth), not from wall-clock derivation.
-  // pausedAtMs / pausedAccumMs are still in the payload through the
-  // dual-write window (S.4) for any consumer that wants them; PiP
-  // doesn't currently use them, just renders the precomputed elapsed.
+  // `elapsed` is session.workedMs + priorMs (the precomputed display value);
+  // the PiP just renders it.
+  // Stage 4 — broadcast over a Tauri event (was the verseday_pip_state
+  // localStorage channel). pipStateRef holds the latest payload for the
+  // heartbeat + the pip's on-mount "ready" pull.
+  const pipStateRef = useRef<PipState | null>(null);
   useEffect(() => {
-    // P-fix2: mirror for preview too (only drop the key when focus is null), so
+    // P-fix2: mirror for preview too (only emit null when focus is null), so
     // the pip can render the queued task and offer a Start button. For preview,
     // `elapsed` is 0 → elapsed+priorMs = priorMs (the prior logged time); there
     // is no live session, so paused is false.
     if (!focus || !focusedTask) {
-      localStorage.removeItem(PIP_STATE_KEY);
+      pipStateRef.current = null;
+      void emit(PIP_STATE_EVENT, null);
       return;
     }
     const queued = focus.mode === "preview";
-    const state = {
+    const state: PipState = {
       elapsed: elapsed + priorMs,
       paused: focus.mode === "active" ? focus.paused : false,
       phase,
@@ -723,14 +796,41 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       estimatedMinutes: focusedTask.estimated_minutes ?? null,
       queued,
     };
-    localStorage.setItem(PIP_STATE_KEY, JSON.stringify(state));
+    pipStateRef.current = state;
+    void emit(PIP_STATE_EVENT, state);
   }, [focus, focusedTask, elapsed, phase, breakRemaining, priorMs]);
 
-  // Clean up PiP state on unmount
+  // Heartbeat — re-emit the current state every 1s while a session exists. While
+  // RUNNING the broadcast above already emits per tick; this matters while
+  // PAUSED (workedMs frozen → the broadcast effect is idle), so the pip keeps
+  // receiving liveness and doesn't self-close mid-pause. Gated on focusMode (not
+  // `focus`, which churns each tick) so it isn't torn down every second.
+  useEffect(() => {
+    if (!focusMode) return;
+    const hb = setInterval(() => {
+      void emit(PIP_STATE_EVENT, pipStateRef.current);
+    }, 1000);
+    return () => clearInterval(hb);
+  }, [focusMode]);
+
+  // The pip asks for state on mount (it only gets future emits) — push the
+  // current payload immediately so it's never blank for up to a heartbeat.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen(PIP_READY_EVENT, () => {
+      void emit(PIP_STATE_EVENT, pipStateRef.current);
+    })
+      .then((un) => {
+        unlisten = un;
+      })
+      .catch(() => {});
+    return () => unlisten?.();
+  }, []);
+
+  // Tell the pip there's no session on unmount (clean teardown → it self-closes).
   useEffect(() => {
     return () => {
-      localStorage.removeItem(PIP_STATE_KEY);
-      localStorage.removeItem(PIP_CMD_KEY);
+      void emit(PIP_STATE_EVENT, null);
     };
   }, []);
 
@@ -757,12 +857,13 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     return () => clearTimeout(t);
   }, [phase]);
 
-  // Listen for PiP commands
+  // Listen for PiP commands (Stage 4 — Tauri event, was the verseday_pip_cmd
+  // localStorage poll). All handlers go through *Ref.current so the listener is
+  // registered once. Event delivery has no per-tick drop window.
   useEffect(() => {
-    const interval = setInterval(() => {
-      const cmd = localStorage.getItem(PIP_CMD_KEY);
-      if (!cmd) return;
-      localStorage.removeItem(PIP_CMD_KEY);
+    let unlisten: (() => void) | undefined;
+    listen<string>(PIP_CMD_EVENT, (e) => {
+      const cmd = e.payload;
       if (cmd === "pause") handleTogglePauseRef.current();
       else if (cmd === "start") handleStartSessionRef.current();
       else if (cmd === "done") handleDoneRef.current();
@@ -777,12 +878,12 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         // early-returns so it isn't recreated until the user unhides.
         setPipHidden(true);
       }
-    }, 200);
-    return () => clearInterval(interval);
-    // #8 — `elapsed` was in the deps but is never read here (all handlers go
-    // through *Ref.current). It made this 200ms poller tear down and rebuild
-    // every second, opening a per-tick window where a PiP pause/stop click
-    // could be dropped. Deps are only the values actually read in the body.
+    })
+      .then((un) => {
+        unlisten = un;
+      })
+      .catch(() => {});
+    return () => unlisten?.();
   }, [SHORT_BREAK_MS]);
 
   // Listen for Space shortcut from App.tsx
@@ -808,7 +909,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   useEffect(() => {
     function onStatusChanged(e: Event) {
       const ce = e as CustomEvent<{ taskId: number; status: string }>;
-      const f = useAppStore.getState().focus;
+      const f = readFocus(useAppStore.getState());
       if (!f) return;
       if (ce.detail.taskId !== f.taskId) return;
       if (ce.detail.status !== "done") return;
@@ -862,7 +963,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         (el as HTMLElement).blur();
         return;
       }
-      const f = useAppStore.getState().focus;
+      const f = readFocus(useAppStore.getState());
       if (!f) return;
       e.preventDefault();
       setPage("daily");
@@ -890,7 +991,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       const isInput =
         el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
       if (isInput) return;
-      const f = useAppStore.getState().focus;
+      const f = readFocus(useAppStore.getState());
       // A RUNNING session (active & not paused) stays inert — a stray arrow
       // shouldn't kill a live timer. Preview / no-session / a PAUSED session
       // can switch; a paused session's open time_entry is committed first
@@ -902,7 +1003,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       if (token !== navToken || !tasks) return;
       const remaining = tasks.filter((t) => t.status !== "done");
       if (remaining.length === 0) return;
-      const curId = useAppStore.getState().focus?.taskId;
+      const curId = readFocus(useAppStore.getState())?.taskId;
       const idx = remaining.findIndex((t) => t.id === curId);
       const nextIdx =
         idx === -1
@@ -917,7 +1018,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       // Capture the return-to page BEFORE committing — endActiveFocusSession
       // nulls `focus`, so reading previousPage after would miss it.
       const prev: Page =
-        useAppStore.getState().focus?.previousPage ??
+        readFocus(useAppStore.getState())?.previousPage ??
         (useAppStore.getState().pageHistory.slice(-1)[0] as Page) ??
         "daily";
       // Commit a PAUSED active session before switching so its open time_entry
@@ -926,7 +1027,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       // focus right before the commit (it may have changed during the awaits),
       // and re-check the nav token after the await before the synchronous
       // previewFocus so a newer keypress wins.
-      const live = useAppStore.getState().focus;
+      const live = readFocus(useAppStore.getState());
       if (live && live.mode === "active") {
         await useAppStore.getState().endActiveFocusSession();
         if (token !== navToken) return;
@@ -946,11 +1047,9 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     togglePauseFocus();
   }
 
-  // S.6 — pause-start tracking for the Pomodoro break-phase adjustment.
-  // The store action no longer carries pausedAtMs (worked-seconds
-  // model retired wall-clock fields). Local ref records when the
-  // user paused; on resume during break phase, advance breakStartRef
-  // so the break countdown effectively pauses too.
+  // Pause-start tracking for the Pomodoro break-phase adjustment. Local ref
+  // records when the user paused; on resume during break phase, advance
+  // breakStartRef so the break countdown effectively pauses too.
   const pauseStartRef = useRef<number | null>(null);
   useEffect(() => {
     if (focus?.mode !== "active") {
@@ -977,7 +1076,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     // breakStartRef forward by the pause duration (opening the break above its
     // full time). With pauseStartRef null its resume-slide guard is false, so
     // the break starts at exactly `durationMs`.
-    const f = useAppStore.getState().focus;
+    const f = readFocus(useAppStore.getState());
     if (f && f.mode === "active" && f.paused) {
       pauseStartRef.current = null;
       togglePauseFocus();
@@ -1157,11 +1256,8 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     if (!focus || focus.mode !== "active") return;
     const newMs = Math.max(focus.priorElapsedMs, targetMs);
     const desiredElapsed = newMs - focus.priorElapsedMs;
-    // S.3 — adjustFocusElapsed is now a dual-write: sets workedMs
-    // directly (which the displayed counter reads) AND back-solves
-    // pausedAccumMs (which wall-clock-derived queries still need
-    // through S.4/S.5). No local elapsed state to update — the
-    // store action's set() triggers the re-render via focus.workedMs.
+    // adjustFocusElapsed sets session.workedMs directly; the store set()
+    // triggers the re-render. No local elapsed state to update.
     adjustFocusElapsed(desiredElapsed);
   }
 
@@ -1205,13 +1301,12 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   }
   if (!settingsLoaded) return null;
 
-  // From here on, focus is non-null. The discriminated union narrows
-  // timeEntryId / startedAt to the active branch automatically.
-  // M2.2 — task comes from selectFocusedTask (cache-backed) so a rename
-  // made elsewhere reflects here on the next render. previewFocus /
-  // startFocus / restoreFocus all prime the cache, so a null result
-  // here means a brief race during a focus task swap; render nothing
-  // for that frame rather than half-state, the next render resolves.
+  // From here on, focus (the readFocus view) is non-null.
+  // Task comes from selectFocusedTask (cache-backed) so a rename made elsewhere
+  // reflects here on the next render. previewFocus / startFocus /
+  // reconcileFocusOnBoot all prime the cache, so a null result here means a
+  // brief race during a focus task swap; render nothing for that frame rather
+  // than half-state, the next render resolves.
   const task = focusedTask;
   if (!task) return null;
   const isQueued = focus.mode === "preview";

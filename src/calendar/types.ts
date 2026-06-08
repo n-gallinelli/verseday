@@ -33,6 +33,13 @@ export interface CalendarEvent {
   url: string | null;
   attendees: Attendee[];
   organizerEmail: string | null;
+  /** The current user's relationship to this event (computed in Rust
+   *  from `EKParticipant.isCurrentUser`):
+   *  'accepted' | 'declined' | 'tentative' | 'pending' — your RSVP as
+   *  an invitee; 'organizer' — your own event; 'none' — no current-user
+   *  participant (solo block / unidentifiable); 'unknown' — matched but
+   *  unmapped status. Drives the accepted-only import filter in sync.ts. */
+  selfStatus: string;
 }
 
 /** Why a calendar task was dismissed. Soft-delete via column on

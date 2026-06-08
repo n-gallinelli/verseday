@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { Project } from "../types";
 import ProjectGlyph from "./ProjectGlyph";
 import { useCustomIcons } from "../hooks/useCustomIcons";
+import { useObjectiveNameTooltip } from "./useObjectiveNameTooltip";
 
 interface ProjectPickerProps {
   value: string; // project id as string, or "" for —
@@ -18,6 +19,16 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
 
   const selected = value ? projects.find((p) => String(p.id) === value) ?? null : null;
   const { byId: iconsById } = useCustomIcons();
+
+  // Hover tooltip — reveals the full objective name for a truncated row.
+  // Shared with the Quick-Add bar via useObjectiveNameTooltip.
+  const { showTip, hideTip, tooltip } = useObjectiveNameTooltip(iconsById);
+
+  // Tooltip lives only while the popover is open (rows that unmount on
+  // close won't fire onMouseLeave).
+  useEffect(() => {
+    if (!open) hideTip();
+  }, [open, hideTip]);
 
   const updatePosition = useCallback(() => {
     if (!triggerRef.current) return;
@@ -123,6 +134,8 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
                 key={p.id}
                 type="button"
                 onClick={() => pick(String(p.id))}
+                onMouseEnter={(e) => showTip(p, e.currentTarget)}
+                onMouseLeave={hideTip}
                 className={`w-full flex items-center gap-2 px-3 py-2 text-left cursor-pointer transition-colors text-[13px] font-normal ${
                   isSelected
                     ? "bg-accent-blue-soft text-accent-blue-soft-fg"
@@ -137,6 +150,8 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
         </div>,
         document.body
       )}
+
+      {tooltip}
     </div>
   );
 }

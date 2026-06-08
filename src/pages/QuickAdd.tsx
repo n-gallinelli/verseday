@@ -7,6 +7,7 @@ import { todayString } from "../utils/dates";
 import { parseTimeFromTitle } from "../utils/format";
 import { activeObjectiveOptions } from "../utils/objectiveOptions";
 import ProjectGlyph from "../components/ProjectGlyph";
+import { useObjectiveNameTooltip } from "../components/useObjectiveNameTooltip";
 import { useCustomIcons } from "../hooks/useCustomIcons";
 import type { Project } from "../types";
 
@@ -28,7 +29,20 @@ export default function QuickAdd() {
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const projectPickerRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Click-away dismiss: blur-dismiss is armed only after the user has had
+  // a beat with the window (a real interaction, or a short grace). macOS
+  // fires a stray blur the instant the global-shortcut chord is released
+  // (see the focus effect below); arming guards against that closing the
+  // window immediately on summon.
+  const blurArmedRef = useRef(false);
+  const armTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Full-objective-name hover tooltip — same behavior as the Objective
+  // dropdown on the Daily Plan task detail (shared hook).
+  const { byId: iconsById } = useCustomIcons();
+  const { showTip, hideTip, tooltip } = useObjectiveNameTooltip(iconsById);
 
   const resetFields = useCallback(() => {
     // Cancel a pending success-flash dismiss so a re-show (onFocusChanged)
@@ -37,15 +51,21 @@ export default function QuickAdd() {
       clearTimeout(flashTimerRef.current);
       flashTimerRef.current = null;
     }
+    // Disarm blur-dismiss for the fresh session (re-armed after grace on
+    // the next focus event) so a stale arm can't dismiss on summon.
+    blurArmedRef.current = false;
+    if (armTimerRef.current) {
+      clearTimeout(armTimerRef.current);
+      armTimerRef.current = null;
+    }
     setTitle("");
     setProjectId(null);
     setEstimateMinutes(null);
     setSubmitting(false);
     setSubmitted(false);
     setShowProjectPicker(false);
-  }, []);
-
-  const { byId: iconsById } = useCustomIcons();
+    hideTip();
+  }, [hideTip]);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -83,15 +103,26 @@ export default function QuickAdd() {
     });
   }, []);
 
-  // Reset + refocus the title input every time the window becomes
-  // visible. Blur-dismiss is intentionally NOT wired here — borderless
-  // transparent always-on-top windows on macOS get a stray blur event
-  // whenever the user releases the global-shortcut chord (the OS
-  // reconciles focus back to whichever app was frontmost). The old
-  // 250ms grace tried to absorb that but didn't always cover it; the
-  // result was the window appearing and then immediately dismissing
-  // when the user let go of Cmd+Shift+A. Esc and pressing the shortcut
-  // again already dismiss, so click-away dismiss isn't worth the bug.
+  const hideWindow = useCallback(() => {
+    invoke("dismiss_quick_add");
+    resetFields();
+  }, [resetFields]);
+
+  // Arm blur-dismiss immediately on a genuine interaction (a keystroke, a
+  // click inside the window). The grace timer in the focus effect also
+  // arms after a beat, but interaction-arming makes a type-then-click-away
+  // dismiss feel instant rather than waiting out the grace.
+  const armBlurDismiss = useCallback(() => {
+    blurArmedRef.current = true;
+  }, []);
+
+  // Reset + refocus the title input every time the window becomes visible,
+  // and dismiss on blur once armed. Borderless transparent always-on-top
+  // windows on macOS fire a stray blur the instant the user releases the
+  // global-shortcut chord (the OS reconciles focus to whatever app was
+  // frontmost). We absorb that by arming blur-dismiss only after a 450ms
+  // grace from focus (or an earlier real interaction) — past that window,
+  // a blur means the user genuinely clicked another app, so we dismiss.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     const appWindow = getCurrentWebviewWindow();
@@ -99,17 +130,26 @@ export default function QuickAdd() {
     (async () => {
       unlisten = await appWindow.onFocusChanged(({ payload: focused }) => {
         if (focused) {
-          resetFields();
+          resetFields(); // clears any prior arm
           loadProjects();
           focusTitle();
+          armTimerRef.current = setTimeout(() => {
+            blurArmedRef.current = true;
+          }, 450);
+        } else if (blurArmedRef.current) {
+          hideWindow();
         }
       });
     })();
 
     return () => {
       unlisten?.();
+      if (armTimerRef.current) {
+        clearTimeout(armTimerRef.current);
+        armTimerRef.current = null;
+      }
     };
-  }, [resetFields, loadProjects, focusTitle]);
+  }, [resetFields, loadProjects, focusTitle, hideWindow]);
 
   useEffect(() => {
     loadProjects();
@@ -137,11 +177,6 @@ export default function QuickAdd() {
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showProjectPicker]);
-
-  const hideWindow = useCallback(() => {
-    invoke("dismiss_quick_add");
-    resetFields();
-  }, [resetFields]);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = title.trim();
@@ -216,9 +251,24 @@ export default function QuickAdd() {
 
   return (
     // Full-viewport transparent wrapper — bar is pinned to the bottom so
-    // the project dropdown has room to open upward into the 360px window.
-    <div className="w-full h-screen flex items-end justify-center pb-3" style={{ background: "transparent" }}>
+    // the project dropdown has room to open upward into the window. A
+    // mousedown on the transparent area (anything NOT inside the card)
+    // dismisses, so clicking away from the bar closes it. Clicks landing
+    // outside the window entirely are handled by the blur-dismiss path.
+    <div
+      className="w-full h-screen flex items-end justify-center pb-3"
+      style={{ background: "transparent" }}
+      onMouseDownCapture={armBlurDismiss}
+      onMouseDown={(e) => {
+        if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+          // Staged like Esc: an open dropdown closes first, then the window.
+          if (showProjectPicker) setShowProjectPicker(false);
+          else hideWindow();
+        }
+      }}
+    >
       <div
+        ref={cardRef}
         className="flex flex-col w-full max-w-[720px] mx-2.5 rounded-xl border border-line-hairline overflow-visible"
         style={{
           background: "#ffffff",
@@ -322,7 +372,7 @@ export default function QuickAdd() {
           ref={titleRef}
           type="text"
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => { setTitle(e.target.value); armBlurDismiss(); }}
           placeholder="Add a task..."
           autoFocus
           className="flex-1 min-w-0 text-[15px] text-fg bg-transparent border-none outline-none placeholder:text-fg-faded"
@@ -354,7 +404,7 @@ export default function QuickAdd() {
         {/* Project picker */}
         <div ref={projectPickerRef} className="relative flex-shrink-0">
           <button
-            onClick={() => setShowProjectPicker(!showProjectPicker)}
+            onClick={() => { setShowProjectPicker((v) => !v); hideTip(); }}
             className={`flex items-center gap-1.5 text-[13px] px-3 py-1.5 rounded-lg border cursor-pointer transition-colors ${
               selectedProject
                 ? "border-line-soft bg-elevated/70 text-fg"
@@ -395,7 +445,7 @@ export default function QuickAdd() {
             >
               {/* No project */}
               <button
-                onClick={() => { setProjectId(null); setShowProjectPicker(false); }}
+                onClick={() => { setProjectId(null); setShowProjectPicker(false); hideTip(); }}
                 className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-[12px] text-left cursor-pointer transition-colors ${
                   projectId === null
                     ? "bg-accent-blue-soft font-medium text-fg-secondary"
@@ -409,7 +459,9 @@ export default function QuickAdd() {
               {objectiveOptions.map((p) => (
                 <button
                   key={p.id}
-                  onClick={() => { setProjectId(p.id); setShowProjectPicker(false); }}
+                  onClick={() => { setProjectId(p.id); setShowProjectPicker(false); hideTip(); }}
+                  onMouseEnter={(e) => showTip(p, e.currentTarget)}
+                  onMouseLeave={hideTip}
                   className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-[12px] text-left cursor-pointer transition-colors ${
                     projectId === p.id
                       ? "bg-accent-blue-soft font-medium text-fg"
@@ -426,6 +478,7 @@ export default function QuickAdd() {
         </div>
         )}
       </div>
+      {tooltip}
     </div>
   );
 }

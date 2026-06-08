@@ -16,19 +16,22 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  // Hover tooltip — reveals the full objective name for a truncated row.
-  // Same float-above-everything pattern as the popover (fixed coords +
-  // createPortal) and the same visual tokens as TaskCard's project
-  // tooltip: bg-elevated, 0.5px border-soft, var(--shadow-card).
+  // Hover tooltip — reveals the full objective name (rows truncate to one
+  // line via `truncate`). Same float-above-everything pattern as the
+  // popover (fixed coords + createPortal) and the same visual tokens as
+  // TaskCard's project tooltip: bg-elevated, 0.5px border-soft,
+  // var(--shadow-card).
   const tipRef = useRef<HTMLDivElement>(null);
   const [tip, setTip] = useState<{ project: Project; top: number; left: number } | null>(null);
 
-  // Anchor rect of the currently hovered row, kept so the tooltip can be
-  // re-measured once its real width is known (the first paint uses a
-  // fallback width).
-  const tipAnchorRef = useRef<DOMRect | null>(null);
+  // Live anchor element of the hovered row, kept (not a snapshotted rect)
+  // so reposition reads a fresh getBoundingClientRect — the popover list
+  // is internally scrollable (max-h-[440px] overflow-y-auto), so the row
+  // can move under the tooltip while it's open.
+  const tipAnchorRef = useRef<HTMLElement | null>(null);
 
-  const placeTip = useCallback((project: Project, rect: DOMRect) => {
+  const placeTip = useCallback((project: Project, rowEl: HTMLElement) => {
+    const rect = rowEl.getBoundingClientRect();
     const tipEl = tipRef.current;
     const tipWidth = tipEl?.offsetWidth ?? 280;
     const tipHeight = tipEl?.offsetHeight ?? 40;
@@ -46,19 +49,27 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
   }, []);
 
   const showTip = useCallback((project: Project, rowEl: HTMLElement) => {
-    const rect = rowEl.getBoundingClientRect();
-    tipAnchorRef.current = rect;
-    placeTip(project, rect);
+    tipAnchorRef.current = rowEl;
+    placeTip(project, rowEl);
   }, [placeTip]);
 
-  // Snap to the real tooltip width on the next frame, after the element
-  // has mounted (first paint uses the fallback width).
+  // Snap to the real tooltip width on the next frame (first paint uses the
+  // fallback width), and reposition on scroll/resize so the tooltip tracks
+  // its row when the inner list scrolls. Capture-phase scroll listener
+  // catches the popover's own scroller. Mirrors TaskCard's project tooltip.
   useEffect(() => {
-    if (!tip || !tipAnchorRef.current) return;
-    const raf = requestAnimationFrame(() => {
-      if (tipAnchorRef.current) placeTip(tip.project, tipAnchorRef.current);
-    });
-    return () => cancelAnimationFrame(raf);
+    if (!tip) return;
+    function reposition() {
+      if (tipAnchorRef.current) placeTip(tip!.project, tipAnchorRef.current);
+    }
+    const raf = requestAnimationFrame(reposition);
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
   }, [tip?.project, placeTip]);
 
   // Tooltip lives only while the popover is open.
@@ -190,7 +201,8 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
         document.body
       )}
 
-      {/* Full-name tooltip for a hovered (truncated) option. Splits a
+      {/* Full-name tooltip for the hovered option (rows render on one
+          truncated line). Splits a
           trailing " - " qualifier onto a smaller second line, matching
           TaskCard's project tooltip. Same tokens: bg-elevated, 0.5px
           border-soft, var(--shadow-card). */}

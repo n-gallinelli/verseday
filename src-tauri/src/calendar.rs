@@ -101,6 +101,19 @@ pub struct CalendarEvent {
     /// when present. Distinct from `attendees` because EventKit
     /// surfaces them separately.
     pub organizer_email: Option<String>,
+    /// The *current user's* relationship to this event, used by the sync
+    /// layer to import only events the user has accepted. One of:
+    ///   - `"accepted" | "declined" | "tentative" | "pending"` — the
+    ///     current user is an invitee with that RSVP (via the attendee
+    ///     flagged `isCurrentUser`).
+    ///   - `"organizer"` — the current user organized the event (their
+    ///     own event; nothing to accept).
+    ///   - `"none"` — no current-user participant could be identified
+    ///     (a solo personal block with no attendees, or an event where
+    ///     EventKit didn't flag us). Treated as importable.
+    ///   - `"unknown"` — current user matched but the status enum was
+    ///     unrecognized. Treated as importable.
+    pub self_status: String,
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -311,6 +324,8 @@ impl CalendarSource for EventKitSource {
             let organizer_email = unsafe { event.organizer() }
                 .and_then(|p| email_from_participant(&p));
 
+            let self_status = self_participation_status(&event);
+
             out.push(CalendarEvent {
                 external_id,
                 calendar_id,
@@ -325,6 +340,7 @@ impl CalendarSource for EventKitSource {
                 url,
                 attendees,
                 organizer_email,
+                self_status,
             });
         }
 
@@ -355,20 +371,48 @@ fn email_from_participant(p: &EKParticipant) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-fn participant_to_attendee(p: Retained<EKParticipant>) -> Attendee {
-    let name = unsafe { p.name() }
-        .map(|s| s.to_string())
-        .filter(|s| !s.is_empty());
-    let email = email_from_participant(&p);
-    let status = match unsafe { p.participantStatus() } {
+/// Map EKParticipantStatus → the lowercase string the JS layer expects.
+fn participant_status_str(status: EKParticipantStatus) -> &'static str {
+    match status {
         EKParticipantStatus::Accepted => "accepted",
         EKParticipantStatus::Declined => "declined",
         EKParticipantStatus::Tentative => "tentative",
         EKParticipantStatus::Pending => "pending",
         _ => "unknown",
     }
-    .to_string();
+}
+
+fn participant_to_attendee(p: Retained<EKParticipant>) -> Attendee {
+    let name = unsafe { p.name() }
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty());
+    let email = email_from_participant(&p);
+    let status = participant_status_str(unsafe { p.participantStatus() }).to_string();
     Attendee { name, email, status }
+}
+
+/// Resolve the current user's relationship to an event so the sync layer
+/// can import only accepted events. EventKit flags the current user on
+/// the relevant `EKParticipant` via `isCurrentUser`.
+///
+/// Precedence: organizer-is-me wins ("organizer" — your own event, no
+/// RSVP to make), then the current-user attendee's RSVP, then "none"
+/// (no current-user participant — a solo block, or EventKit couldn't
+/// identify us; importable by default). See the `self_status` field doc.
+fn self_participation_status(event: &EKEvent) -> String {
+    if let Some(org) = unsafe { event.organizer() } {
+        if unsafe { org.isCurrentUser() } {
+            return "organizer".to_string();
+        }
+    }
+    if let Some(attendees) = unsafe { event.attendees() } {
+        for p in attendees.iter() {
+            if unsafe { p.isCurrentUser() } {
+                return participant_status_str(unsafe { p.participantStatus() }).to_string();
+            }
+        }
+    }
+    "none".to_string()
 }
 
 // ───────────────────────────────────────────────────────────────────

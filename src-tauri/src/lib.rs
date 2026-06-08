@@ -785,6 +785,13 @@ pub fn run() {
             .resizable(false)
             .decorations(false)
             .transparent(true)
+            // No native window shadow: macOS draws its own shadow around the
+            // window's non-transparent pixels, which on this transparent
+            // window traces a faint gray halo at the edge of the card's CSS
+            // shadow (a doubled-shadow artifact). The card already carries
+            // its own box-shadow (var(--shadow-modal)) for the float effect,
+            // so the OS shadow only adds the stray outline. Drop it.
+            .shadow(false)
             .always_on_top(true)
             .skip_taskbar(true)
             .center()

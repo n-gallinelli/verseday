@@ -144,6 +144,10 @@ export default function QuickAdd() {
 
     return () => {
       unlisten?.();
+      if (armTimerRef.current) {
+        clearTimeout(armTimerRef.current);
+        armTimerRef.current = null;
+      }
     };
   }, [resetFields, loadProjects, focusTitle, hideWindow]);
 

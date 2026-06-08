@@ -16,6 +16,56 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
+  // Hover tooltip — reveals the full objective name for a truncated row.
+  // Same float-above-everything pattern as the popover (fixed coords +
+  // createPortal) and the same visual tokens as TaskCard's project
+  // tooltip: bg-elevated, 0.5px border-soft, var(--shadow-card).
+  const tipRef = useRef<HTMLDivElement>(null);
+  const [tip, setTip] = useState<{ project: Project; top: number; left: number } | null>(null);
+
+  // Anchor rect of the currently hovered row, kept so the tooltip can be
+  // re-measured once its real width is known (the first paint uses a
+  // fallback width).
+  const tipAnchorRef = useRef<DOMRect | null>(null);
+
+  const placeTip = useCallback((project: Project, rect: DOMRect) => {
+    const tipEl = tipRef.current;
+    const tipWidth = tipEl?.offsetWidth ?? 280;
+    const tipHeight = tipEl?.offsetHeight ?? 40;
+    // Prefer to the right of the row; flip left if it would overflow.
+    const gap = 8;
+    let left = rect.right + gap;
+    if (left + tipWidth > window.innerWidth - 8) {
+      left = Math.max(8, rect.left - gap - tipWidth);
+    }
+    const top = Math.min(
+      Math.max(rect.top + rect.height / 2 - tipHeight / 2, 8),
+      window.innerHeight - tipHeight - 8
+    );
+    setTip({ project, top, left });
+  }, []);
+
+  const showTip = useCallback((project: Project, rowEl: HTMLElement) => {
+    const rect = rowEl.getBoundingClientRect();
+    tipAnchorRef.current = rect;
+    placeTip(project, rect);
+  }, [placeTip]);
+
+  // Snap to the real tooltip width on the next frame, after the element
+  // has mounted (first paint uses the fallback width).
+  useEffect(() => {
+    if (!tip || !tipAnchorRef.current) return;
+    const raf = requestAnimationFrame(() => {
+      if (tipAnchorRef.current) placeTip(tip.project, tipAnchorRef.current);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [tip?.project, placeTip]);
+
+  // Tooltip lives only while the popover is open.
+  useEffect(() => {
+    if (!open) setTip(null);
+  }, [open]);
+
   const selected = value ? projects.find((p) => String(p.id) === value) ?? null : null;
   const { byId: iconsById } = useCustomIcons();
 
@@ -123,6 +173,8 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
                 key={p.id}
                 type="button"
                 onClick={() => pick(String(p.id))}
+                onMouseEnter={(e) => showTip(p, e.currentTarget)}
+                onMouseLeave={() => setTip(null)}
                 className={`w-full flex items-center gap-2 px-3 py-2 text-left cursor-pointer transition-colors text-[13px] font-normal ${
                   isSelected
                     ? "bg-accent-blue-soft text-accent-blue-soft-fg"
@@ -134,6 +186,47 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
               </button>
             );
           })}
+        </div>,
+        document.body
+      )}
+
+      {/* Full-name tooltip for a hovered (truncated) option. Splits a
+          trailing " - " qualifier onto a smaller second line, matching
+          TaskCard's project tooltip. Same tokens: bg-elevated, 0.5px
+          border-soft, var(--shadow-card). */}
+      {tip && createPortal(
+        <div
+          ref={tipRef}
+          className="fixed z-[70] bg-elevated rounded-lg px-3 py-2 max-w-[300px] pointer-events-none animate-scale-in"
+          style={{
+            top: tip.top,
+            left: tip.left,
+            border: "0.5px solid var(--border-soft)",
+            boxShadow: "var(--shadow-card)",
+          }}
+        >
+          {(() => {
+            const sep = tip.project.name.lastIndexOf(" - ");
+            const primary = sep > 0 ? tip.project.name.slice(0, sep) : tip.project.name;
+            const qualifier = sep > 0 ? tip.project.name.slice(sep + 3) : "";
+            return (
+              <div className="flex items-start gap-2">
+                <span className="mt-[2px] shrink-0">
+                  <ProjectGlyph project={tip.project} iconsById={iconsById} size={14} />
+                </span>
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium text-fg leading-[1.3] whitespace-normal break-words">
+                    {primary}
+                  </div>
+                  {qualifier && (
+                    <div className="text-[11px] text-fg-faded leading-[1.3] mt-0.5 whitespace-normal break-words">
+                      {qualifier}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </div>,
         document.body
       )}

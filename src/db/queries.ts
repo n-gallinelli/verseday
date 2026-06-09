@@ -841,8 +841,11 @@ export async function stopTimeEntry(
   breakSeconds = 0
 ): Promise<void> {
   const db = await getDb();
+  // Idempotent: only close a still-open row. A double stop — focus Done
+  // racing a stray re-fire, or a row already closed by a prior stop — is a
+  // no-op instead of re-stamping end_time / clobbering break_seconds.
   await db.execute(
-    "UPDATE time_entries SET end_time = $1, break_seconds = $2 WHERE id = $3",
+    "UPDATE time_entries SET end_time = $1, break_seconds = $2 WHERE id = $3 AND end_time IS NULL",
     [new Date().toISOString(), Math.round(breakSeconds), id]
   );
 }

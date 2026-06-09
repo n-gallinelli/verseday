@@ -63,7 +63,7 @@ export interface TimeEntry {
   task_id: number;
   start_time: string;
   end_time: string | null;
-  entry_type: "pomodoro" | "tracked";
+  entry_type: "pomodoro" | "tracked" | "estimate_backfill";
 }
 
 export interface DailyPlan {

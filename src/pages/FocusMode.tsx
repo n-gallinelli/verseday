@@ -113,7 +113,7 @@ interface FocusModeProps {
 }
 
 export default function FocusMode({ visible = true }: FocusModeProps) {
-  const { stopFocus, setPage, previewFocus, activateFocus, updateFocusTask, currentPage } = useAppStore();
+  const { stopFocus, setPage, previewFocus, activateFocus, primeTaskPatch, backfillEstimateForUntimedDone, currentPage } = useAppStore();
   const session = useAppStore((s) => s.session);
   const focusView = useAppStore((s) => s.focusView);
   // Read-only view reproducing the old union for this component's internals.
@@ -279,6 +279,17 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     if (focus && focusedTask) setNotes(focusedTask.notes ?? "");
   }, [focus?.taskId, focusedTask]);
 
+  // On task advance (Done → next), release the notes editor's
+  // contentEditable focus. The ↑/↓ task-switch handler ignores arrows while
+  // an editable is focused (so arrows move the cursor mid-edit); without
+  // this, completing while the editor still holds focus left ↑/↓ dead until
+  // the user clicked elsewhere. Keyed on taskId ONLY (not focusedTask) so it
+  // never blurs mid-edit on the same task.
+  useEffect(() => {
+    const el = document.activeElement as HTMLElement | null;
+    if (el && el.isContentEditable) el.blur();
+  }, [focus?.taskId]);
+
   // Reset session-relative state whenever the focus task changes
   // (e.g. Done → next-task transition). Without this the new task
   // would inherit the previous session's elapsed counter, Pomodoro
@@ -322,12 +333,13 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     if (notesTimerRef.current) clearTimeout(notesTimerRef.current);
     notesTimerRef.current = setTimeout(() => {
       updateTaskNotes(taskId, value || null).catch(() => {});
-      // Mirror into the store so the cache stays fresh — navigating
-      // away and coming back will seed the editor from this updated
-      // value instead of the original session-start snapshot. After
-      // M2.2 retires focus.task, updateFocusTask is a thin primeTasks
-      // wrapper (still works for callers).
-      updateFocusTask({ notes: value || null });
+      // Mirror into the store so the cache stays fresh — navigating away and
+      // coming back seeds the editor from this updated value. Scoped to the
+      // CAPTURED `taskId` (not "current focus"): this debounced save can fire
+      // after the user completed + advanced, and an unscoped write would
+      // stamp this task's notes onto the new focused task (the notes-bleed
+      // bug). primeTaskPatch lands the edit on the task it belongs to.
+      primeTaskPatch(taskId, { notes: value || null });
       // Broadcast so other surfaces displaying this task's notes
       // (TaskDetailOverlay) pick up the new value without a remount.
       window.dispatchEvent(
@@ -1133,39 +1145,57 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   async function handleDone() {
     if (!focus) return;
     const completedTaskId = focus.taskId;
-    try {
-      // Active session: close the time entry first so the worked
-      // minutes get baked in before the row flips to done. Preview
-      // mode has no time entry — just mark the task done and roll
-      // to the next one.
-      //
-      // S.5 — write worked_seconds before stopTimeEntry. The order
-      // matters: capture focus.workedMs from the closure before
-      // any stopFocus() can clear it.
-      if (focus.mode === "active") {
-        // P-fix4: single commit of the live session (worked_seconds truth +
-        // break audit). We deliberately do NOT clear focus or refresh
-        // workedByTaskId here — path (c): keep focus on the completed task
-        // through the next-task lookup (so its live worked-minutes stays
-        // correct, never double-counted), repoint focus directly to `next`,
-        // THEN refresh the completed task's committed minutes.
-        const workedSeconds = Math.round(focus.workedMs / 1000);
-        await updateTimeEntryWorkedSeconds(focus.timeEntryId, workedSeconds);
-        await stopTimeEntry(focus.timeEntryId, getBreakSeconds());
+    const breakSeconds = getBreakSeconds();
+
+    // 1) Time-entry commit (ACTIVE only) — isolated and NON-BLOCKING. A
+    //    failure here must never stop the task being marked done (separate
+    //    done-ness from the time-commit). stopTimeEntry is idempotent, so a
+    //    double-stop is a harmless no-op. Capture workedMs/timeEntryId from
+    //    the closure snapshot before any store mutation.
+    //    S.5 — write worked_seconds before stopTimeEntry.
+    if (focus.mode === "active") {
+      const workedSeconds = Math.round(focus.workedMs / 1000);
+      const timeEntryId = focus.timeEntryId;
+      try {
+        await updateTimeEntryWorkedSeconds(timeEntryId, workedSeconds);
+        await stopTimeEntry(timeEntryId, breakSeconds);
+      } catch (err) {
+        console.error("[focus] handleDone: time-entry commit failed (continuing to mark done)", err);
       }
-      // Raw status write (no broadcast → no self-listener re-entry), then a
-      // silent canonical reconcile so tasksById reflects done + completed_at +
-      // the future-date snap without re-firing the status listener.
-      await updateTaskStatus(completedTaskId, "done");
-      await useAppStore.getState().reconcileTaskFromDb(completedTaskId);
-    } catch {
-      // Best effort
     }
-    // Try to load the next remaining task so the user can keep
-    // flowing through their list. New session lands as preview —
-    // user explicitly hits Start (or the timer-box click) when
-    // they're ready. Replay the tunnel-in zoom so the transition
-    // feels like a fresh focus, not a soft remount.
+
+    // 2) Mark done — THE GATE. Only advance if this lands, so a failed write
+    //    never produces a phantom completion (UI rolls on while the task stays
+    //    open with no time, exactly the reported bug). Raw status write avoids
+    //    the status-changed broadcast re-entry; backfillEstimateForUntimedDone
+    //    is the SAME untimed-completion hook setTaskStatus uses, so completing
+    //    a previewed/untimed task records worked = estimate (no-ops for the
+    //    live session, which committed real time above).
+    let doneCommitted = false;
+    try {
+      await updateTaskStatus(completedTaskId, "done");
+      doneCommitted = true; // gate on the STATUS write alone
+    } catch (err) {
+      console.error("[focus] handleDone: mark-done failed — NOT advancing", err);
+    }
+    if (!doneCommitted) return;
+
+    // Post-gate, best-effort: the task IS done in the DB, so a reconcile or
+    // estimate-backfill hiccup must NOT block the advance — log and roll on.
+    // (reconcileTaskFromDb already self-handles; the backfill can throw.)
+    try {
+      await useAppStore.getState().reconcileTaskFromDb(completedTaskId);
+      await backfillEstimateForUntimedDone(completedTaskId);
+    } catch (err) {
+      console.error("[focus] handleDone: post-done reconcile/backfill failed (advancing anyway)", err);
+    }
+
+    // 3) Advance to the next remaining task (lands as preview — the user
+    //    hits Start when ready). Separate failure mode: the completion has
+    //    already persisted, so on error just clear focus. We keep focus on
+    //    the completed task through the next-task lookup (path (c)) so its
+    //    live worked-minutes never double-count, repoint to `next`, THEN
+    //    refresh the completed task's committed minutes.
     try {
       const tasks = await getTasksForDate(todayString());
       const remaining = tasks.filter(
@@ -1187,7 +1217,8 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       // Focus now points at `next`, so refreshing the completed task's
       // committed minutes can't double-count it.
       await useAppStore.getState().loadWorkedMinutes([completedTaskId]);
-    } catch {
+    } catch (err) {
+      console.error("[focus] handleDone: advance-to-next failed after completion", err);
       stopFocus();
     }
   }
@@ -1230,7 +1261,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     const id = focus?.taskId;
     if (id && trimmed && trimmed !== focusedTask?.title) {
       updateTaskTitle(id, trimmed).catch(() => {});
-      updateFocusTask({ title: trimmed });
+      primeTaskPatch(id, { title: trimmed });
     }
     setTitleDraft(null);
   }
@@ -1241,7 +1272,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     const id = focus?.taskId;
     if (id) {
       updateTaskEstimate(id, minutes).catch(() => {});
-      updateFocusTask({ estimated_minutes: minutes });
+      primeTaskPatch(id, { estimated_minutes: minutes });
     }
     setPlannedOpen(false);
   }

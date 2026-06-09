@@ -659,6 +659,20 @@ interface AppState {
    *  made on the focus screen (notes, title) survive navigating away and
    *  back without requiring a fresh DB fetch. */
   updateFocusTask: (patch: Partial<Task>) => void;
+  /** Patch a SPECIFIC task in the canonical cache by id (not "current
+   *  focus"). Used for writes that were initiated against a known task but
+   *  may resolve after focus has moved on — e.g. a debounced focus-screen
+   *  notes save firing after the user completed and advanced. Routing the
+   *  captured taskId through here keeps the prior task's edit landing on
+   *  the prior task instead of bleeding onto the new focus. */
+  primeTaskPatch: (taskId: number, patch: Partial<Task>) => void;
+  /** Estimate-backfill for an UNtimed completion, WITHOUT broadcasting a
+   *  status-changed event (so the focus screen's own Done path can reuse it
+   *  without re-entering its status-changed listener). Stamps a tagged
+   *  estimate_backfill time entry so the task's time-spent reflects its
+   *  estimate; no-ops when the task is the live session, has tracked time,
+   *  or has no estimate. */
+  backfillEstimateForUntimedDone: (taskId: number) => Promise<void>;
   /** Sync the focus session's prior-elapsed baseline when the user
    *  changes the task's worked-minutes elsewhere (e.g. TaskDetailOverlay).
    *  Only fires if the current focus is on the given task. */
@@ -1035,6 +1049,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!current) return;
     const nextTask = { ...current, ...patch };
     get().primeTasks([nextTask]);
+  },
+  primeTaskPatch: (taskId, patch) => {
+    const current = get().tasksById.get(taskId);
+    if (!current) return;
+    get().primeTasks([{ ...current, ...patch }]);
+  },
+  backfillEstimateForUntimedDone: async (taskId) => {
+    // Mirrors the estimate-backfill in setTaskStatus, minus the broadcast.
+    //  - skip the live focus task — its tracked time commits separately
+    //    (prevents the live→committed double-count);
+    //  - guard on RAW worked_seconds so 1–29s of real time doesn't read as
+    //    0 and stack an estimate on top;
+    //  - only when an estimate exists (incl. default estimates).
+    if (get().session?.taskId === taskId) return;
+    const fresh = get().tasksById.get(taskId) ?? (await getTaskById(taskId));
+    const est = fresh?.estimated_minutes ?? 0;
+    if (est <= 0) return;
+    const workedSec = await getWorkedSecondsForTask(taskId);
+    if (workedSec !== 0) return;
+    await dbSetManualWorkedMinutes(taskId, est, ESTIMATE_BACKFILL_ENTRY_TYPE);
+    await get().loadWorkedMinutes([taskId]);
   },
   setFocusPriorElapsedMs: (taskId, priorMs) => {
     // Patch whichever holds this task — the running session or the preview.
@@ -1513,14 +1548,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       //    (prevents the live→committed double-count);
       //  - fires on every untimed completion, incl. default estimates.
       if (status === "done") {
-        const est = fresh?.estimated_minutes ?? 0;
-        if (est > 0 && get().session?.taskId !== id) {
-          const workedSec = await getWorkedSecondsForTask(id);
-          if (workedSec === 0) {
-            await dbSetManualWorkedMinutes(id, est, ESTIMATE_BACKFILL_ENTRY_TYPE);
-            await get().loadWorkedMinutes([id]);
-          }
-        }
+        await get().backfillEstimateForUntimedDone(id);
       } else if (current?.status === "done") {
         // Reopen (done → not-done): strip the backfill so reopened work starts
         // clean. Blanket delete — at most one such entry per task.

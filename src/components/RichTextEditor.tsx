@@ -106,6 +106,16 @@ export default function RichTextEditor({
   useEffect(() => {
     if (!editor) return;
     if (value === lastEmittedRef.current) return;
+    // External value change (FocusMode task switch / cross-surface sync):
+    // DROP any pending local-edit emit first. That debounce belongs to the
+    // content we're about to replace; letting it fire after a task switch
+    // would run onChange under the NEW focus and save the OLD task's notes
+    // onto the new task (the residual notes-bleed Verse flagged). Cancelling
+    // costs at most the last <300ms of typing on a task you're leaving.
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
     editor.commands.setContent(normalizeContent(value), { emitUpdate: false });
     lastEmittedRef.current = value;
     setIsEmpty(editor.isEmpty);

@@ -1174,13 +1174,21 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     let doneCommitted = false;
     try {
       await updateTaskStatus(completedTaskId, "done");
-      await useAppStore.getState().reconcileTaskFromDb(completedTaskId);
-      await backfillEstimateForUntimedDone(completedTaskId);
-      doneCommitted = true;
+      doneCommitted = true; // gate on the STATUS write alone
     } catch (err) {
       console.error("[focus] handleDone: mark-done failed — NOT advancing", err);
     }
     if (!doneCommitted) return;
+
+    // Post-gate, best-effort: the task IS done in the DB, so a reconcile or
+    // estimate-backfill hiccup must NOT block the advance — log and roll on.
+    // (reconcileTaskFromDb already self-handles; the backfill can throw.)
+    try {
+      await useAppStore.getState().reconcileTaskFromDb(completedTaskId);
+      await backfillEstimateForUntimedDone(completedTaskId);
+    } catch (err) {
+      console.error("[focus] handleDone: post-done reconcile/backfill failed (advancing anyway)", err);
+    }
 
     // 3) Advance to the next remaining task (lands as preview — the user
     //    hits Start when ready). Separate failure mode: the completion has

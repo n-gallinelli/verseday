@@ -713,7 +713,7 @@ export default function FocusPip() {
           className="run-sweep-track absolute left-3 right-3 bottom-[3px] h-[2px]"
           style={{ background: "var(--focus-pip-border)" }}
         >
-          <div className="run-sweep-bar" style={{ background: "var(--accent-green-deep)" }} />
+          <div className="run-sweep-bar run-sweep-bar-wide" style={{ background: "#A8CFE5" }} />
         </div>
       )}
     </div>

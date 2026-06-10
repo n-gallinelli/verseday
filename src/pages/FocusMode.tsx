@@ -1542,11 +1542,8 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                     beyond the numerals ticking. Remove this block + the
                     index.css experiment block (and the pip block) to revert. */}
                 {!isQueued && focus?.mode === "active" && !paused && (
-                  <div
-                    className="run-sweep-track mt-2 w-16 h-[2px]"
-                    style={{ background: "var(--border-hairline)" }}
-                  >
-                    <div className="run-sweep-bar" style={{ background: "var(--accent-green-deep)" }} />
+                  <div className="run-sweep-track mt-2 w-16 h-[2px]">
+                    <div className="run-sweep-bar" style={{ background: "#A8CFE5" }} />
                   </div>
                 )}
 

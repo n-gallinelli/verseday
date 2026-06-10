@@ -978,10 +978,19 @@ select {
    AND the two JSX blocks tagged `RUNNING-INDICATOR EXPERIMENT` in
    src/components/FocusPip.tsx and src/pages/FocusMode.tsx.
    ═══════════════════════════════════════════════════════════════════════ */
+/* Bar bounces flush between the track's two edges (stays fully visible). */
 @keyframes runningSweep {
   0%   { left: 0%; transform: translateX(0%); }
   50%  { left: 100%; transform: translateX(-100%); }
   100% { left: 0%; transform: translateX(0%); }
+}
+/* Wide variant (pip): bar overshoots each edge so only ~20% of it stays
+   visible at the extremes — it dives mostly off the side (clipped by the
+   track's overflow:hidden) and slides back. */
+@keyframes runningSweepWide {
+  0%   { left: 0%; transform: translateX(-80%); }
+  50%  { left: 100%; transform: translateX(-20%); }
+  100% { left: 0%; transform: translateX(-80%); }
 }
 .run-sweep-track {
   position: relative;
@@ -994,7 +1003,10 @@ select {
   bottom: 0;
   width: 40%;
   border-radius: 999px;
-  animation: runningSweep 1.6s ease-in-out infinite;
+  animation: runningSweep 4.5s ease-in-out infinite;
+}
+.run-sweep-bar-wide {
+  animation-name: runningSweepWide;
 }
 @media (prefers-reduced-motion: reduce) {
   /* Static centered bar instead of motion. */

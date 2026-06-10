@@ -731,7 +731,7 @@ export default function TaskDetailOverlay({
             // the overlay (a pause toggle isn't a "leave" action).
             <button
               onClick={() => togglePauseFocus()}
-              className={`ml-3 rounded-full cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors flex-shrink-0 ${
+              className={`ml-3 rounded-full cursor-pointer flex items-center justify-center gap-2 px-4 py-1.5 min-w-[104px] transition-colors flex-shrink-0 ${
                 liveSession.paused
                   ? "border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft"
                   : "bg-accent-blue-soft text-accent-blue-soft-fg hover:opacity-90"

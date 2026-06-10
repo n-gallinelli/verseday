@@ -21,23 +21,22 @@
 //    deferred as too structural for this pass (see docs/stability-followups.md).
 //    If reliability must be guaranteed, move the scheduler to Rust.
 //
-// IMPORTANT — Action button: this build ships the doc §6.3 fallback
-// (no action button). The notification's body click brings VerseDay to
-// front via macOS-default behavior; the user stops the focus timer via
-// the existing in-app focus pill. The Tauri v2 plugin-notification
-// action-button surface needs platform-specific category registration
-// and entitlements we don't currently carry — that's an additive
-// follow-up, not a v1 requirement.
+// IMPORTANT — Click handling: delivery goes through the native
+// `send_meeting_notification` command (notify.rs), NOT the plugin, because
+// the plugin discards click results and its `onAction` is mobile-only. A
+// body click is observed by our NSUserNotificationCenter delegate, which
+// emits `verseday:notification-clicked` {externalId}; App.tsx turns that into
+// a jump to the task on the focus screen. The externalId rides the
+// notification's identifier. See notify.rs +
+// docs/2026-06-10-notification-click-rust-path-plan.md.
 //
 // IMPORTANT — Cleanup: `start()` returns a stop function that calls
 // clearInterval on the tick handle. Callers MUST invoke it on unmount
 // (in App.tsx the useEffect returns it directly). Without that, HMR
 // leaks intervals and prod re-mounts (theme switches, etc.) double-fire.
 
-import {
-  isPermissionGranted,
-  sendNotification,
-} from "@tauri-apps/plugin-notification";
+import { isPermissionGranted } from "@tauri-apps/plugin-notification";
+import { invoke } from "@tauri-apps/api/core";
 import { upcomingEvents, localStartToMs } from "./upcomingEvents";
 import {
   getEnabled,
@@ -137,9 +136,13 @@ export function startMeetingApproachNotifier(): () => void {
         // event. Await it and, on failure, leave it un-notified to retry next
         // tick. (await on a void return is harmless.)
         try {
-          await sendNotification({
+          // Native send (notify.rs) instead of the plugin: the plugin discards
+          // click results, so we own delivery to make the body click jump to
+          // this event's task (externalId rides the notification identifier).
+          await invoke("send_meeting_notification", {
             title: `Meeting in ${minutesAway} min`,
             body: ev.title,
+            externalId: ev.externalId,
           });
         } catch (sendErr) {
           console.error(

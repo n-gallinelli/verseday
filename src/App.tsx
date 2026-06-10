@@ -27,6 +27,7 @@ import {
   getTasksForDate,
   startTimeEntry,
   getWorkedMinutesForTask,
+  getTaskByExternalId,
 } from "./db/queries";
 import { startMeetingApproachNotifier } from "./calendar/meetingApproachNotifier";
 import type { Page, Task } from "./types";
@@ -424,6 +425,47 @@ function MainApp() {
   useEffect(() => {
     const stop = startMeetingApproachNotifier();
     return stop;
+  }, []);
+
+  // Meeting-notification click → jump to that event's task on the focus
+  // screen (preview). The native delegate (notify.rs) emits
+  // verseday:notification-clicked with the externalId; we resolve the task,
+  // bring the main window forward, and stage it on the focus screen. If a
+  // DIFFERENT session is running we commit it first (the proven switch path,
+  // never orphan its open time_entry); if THIS task is already the live
+  // session we just surface focus.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<string>("verseday:notification-clicked", async (e) => {
+      try {
+        const externalId = e.payload;
+        if (!externalId) return;
+        const task = await getTaskByExternalId(externalId);
+        if (!task) return;
+        const main = await WebviewWindow.getByLabel("main");
+        if (main) {
+          await main.show();
+          await main.setFocus();
+        }
+        const s = useAppStore.getState();
+        if (s.session?.taskId === task.id) {
+          s.setPage("focus");
+          return;
+        }
+        const prev: Page = s.currentPage === "focus" ? "daily" : s.currentPage;
+        if (s.session) await s.endActiveFocusSession();
+        const priorMs = (await getWorkedMinutesForTask(task.id)) * 60 * 1000;
+        s.previewFocus(task, prev, priorMs);
+        s.setPage("focus");
+      } catch (err) {
+        console.error("notification-clicked handler failed:", err);
+      }
+    })
+      .then((un) => {
+        unlisten = un;
+      })
+      .catch((err) => console.error("notification-clicked listen failed:", err));
+    return () => unlisten?.();
   }, []);
 
   // Resolve which page to show in the background

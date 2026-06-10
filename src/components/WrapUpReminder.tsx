@@ -90,12 +90,27 @@ export default function WrapUpReminder() {
 
   useEffect(() => {
     cleanupStaleKeys();
+    // setVisible(shouldShow()) drives BOTH directions: shouldShow() folds in
+    // completed/snooze/time, so every false-transition is a desired hide.
+    // The old `if (shouldShow()) setVisible(true)` only ever showed — so an
+    // evening reminder left up overnight (process survives a window close)
+    // lingered into the next morning. Re-checking on re-focus clears that
+    // stale toast on reopen rather than waiting up to 60s for the interval.
     function check() {
-      if (shouldShow()) setVisible(true);
+      setVisible(shouldShow());
     }
     check();
     const interval = setInterval(check, 60000);
-    return () => clearInterval(interval);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") check();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", check);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", check);
+    };
   }, []);
 
   function handleStartShutdown() {

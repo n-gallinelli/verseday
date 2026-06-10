@@ -22,7 +22,7 @@ import TaskDetailOverlayHost from "./components/TaskDetailOverlayHost";
 import SummaryOverlayHost from "./components/SummaryOverlayHost";
 import SunsetOverlayHost from "./components/SunsetOverlayHost";
 import { useAppStore, markFocusResume } from "./stores/appStore";
-import { todayString, logicalDayIso } from "./utils/dates";
+import { todayString, logicalDayIso, mondayOfWeek, nextSelected } from "./utils/dates";
 import {
   getTasksForDate,
   startTimeEntry,
@@ -179,32 +179,53 @@ function MainApp() {
   }, []);
 
   // Day-rollover reset. The app process survives a window close on macOS, so
-  // the in-memory store can hold yesterday's shutdown state (sunset overlay
-  // open over the daily-shutdown page) into the next day's reopen. On every
-  // re-focus, if the logical day (3am boundary) has advanced past the day the
-  // shutdown surface belongs to, dismiss the overlay and route back to today's
-  // Daily Plan. Re-focus-only by design: focus/visibilitychange can't fire
-  // mid-interaction, so this can't yank a view the user is actively using
-  // (Verse-confirmed — a timer could, hence no interval). State is read fresh
-  // via getState() at fire time, so the listeners never re-register.
+  // the in-memory store holds yesterday's day-scoped state — a stale shutdown
+  // surface AND a stale `selectedDate`/`selectedWeek` — into the next day's
+  // reopen. On every re-focus, if the logical day (3am boundary) has advanced:
+  //   - a stale shutdown surface → dismiss the overlay + route to today's plan;
+  //   - otherwise advance selectedDate/selectedWeek, but ONLY if the user was
+  //     sitting on the old "today"/"this week" (nextSelected preserves any
+  //     deliberately-navigated date/week — the "don't yank a view in use"
+  //     intent the effect was originally shutdown-surface-only to protect).
+  // Trigger is logicalDayIso (3am cutoff), so 00:00–03:00 keeps yesterday's
+  // plan (late-night work is still "today") and the advance fires at 3am.
+  // Snapshots of today/this-week are captured alongside lastLogicalDay so the
+  // guards compare against the value each surface had BEFORE the roll (a live
+  // todayString compare would misfire 00:00–03:00, where logical≠calendar).
+  // Re-focus-only by design (Verse-confirmed — a timer could yank mid-use).
   useEffect(() => {
     const lastLogicalDay = { current: logicalDayIso() };
+    const lastToday = { current: todayString() };
+    const lastWeek = { current: mondayOfWeek() };
 
     const check = () => {
       const today = logicalDayIso();
       if (today === lastLogicalDay.current) return;
+      const prevToday = lastToday.current;
+      const prevWeek = lastWeek.current;
       lastLogicalDay.current = today;
+      lastToday.current = todayString();
+      lastWeek.current = mondayOfWeek();
 
       const s = useAppStore.getState();
       const onShutdownSurface =
         s.sunsetOverlayOpen ||
         s.currentPage === "daily_shutdown" ||
         s.currentPage === "shutdown";
-      if (!onShutdownSurface) return;
+      if (onShutdownSurface) {
+        // Stale shutdown surface from a prior day → unconditional reset.
+        s.closeSunsetOverlay();
+        s.setSelectedDate(todayString());
+        s.setSelectedWeek(mondayOfWeek());
+        s.setPage("daily");
+        return;
+      }
 
-      s.closeSunsetOverlay();
-      s.setSelectedDate(todayString());
-      s.setPage("daily");
+      // Otherwise advance each surface independently, only if untouched.
+      const nextDate = nextSelected(prevToday, s.selectedDate, todayString());
+      if (nextDate) s.setSelectedDate(nextDate);
+      const nextWeek = nextSelected(prevWeek, s.selectedWeek, mondayOfWeek());
+      if (nextWeek) s.setSelectedWeek(nextWeek);
     };
 
     const onVisibility = () => {

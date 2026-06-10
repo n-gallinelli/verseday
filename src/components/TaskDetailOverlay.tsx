@@ -628,6 +628,56 @@ export default function TaskDetailOverlay({
     ? `+ ${formatDisplayMinutes(autoTrackedMinutes.toString())} tracked automatically`
     : undefined;
 
+  // The Objective control — shared by the in-app properties rail AND the
+  // calendar-task rail (via CalendarMetaRail's objectiveControl slot) so a
+  // calendar-imported task can be assigned to an objective too. Same
+  // ProjectPicker + setProjectId→debouncedSave path either way; project_id
+  // is preserved across calendar re-sync, so the assignment sticks.
+  const objectiveRow = (
+    <PropertyRow
+      label="Objective"
+      labelAction={
+        projectId ? (
+          <button
+            type="button"
+            onClick={() => {
+              // Close this task overlay before navigating so the
+              // project-detail modal doesn't stack on top of it.
+              onClose();
+              openProject(parseInt(projectId));
+            }}
+            className="flex items-center gap-0.5 text-[11px] font-medium text-accent-blue hover:text-accent-blue-hover transition-colors cursor-pointer"
+            title="Open objective details"
+          >
+            Open
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 12 12"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3.5 8.5L8.5 3.5" />
+              <path d="M5 3.5H8.5V7" />
+            </svg>
+          </button>
+        ) : undefined
+      }
+    >
+      <ProjectPicker
+        value={projectId}
+        projects={objectiveOptions}
+        onChange={(val) => {
+          setProjectId(val);
+          debouncedSave({ projectId: val });
+        }}
+      />
+    </PropertyRow>
+  );
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
@@ -731,7 +781,7 @@ export default function TaskDetailOverlay({
             // the overlay (a pause toggle isn't a "leave" action).
             <button
               onClick={() => togglePauseFocus()}
-              className={`ml-3 rounded-full cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors flex-shrink-0 ${
+              className={`ml-3 rounded-full cursor-pointer flex items-center justify-center gap-2 px-4 py-1.5 min-w-[104px] transition-colors flex-shrink-0 ${
                 liveSession.paused
                   ? "border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft"
                   : "bg-accent-blue-soft text-accent-blue-soft-fg hover:opacity-90"
@@ -815,6 +865,7 @@ export default function TaskDetailOverlay({
           {task.external_source === "calendar" ? (
             <CalendarMetaRail
               task={task}
+              objectiveControl={objectiveRow}
               timeControl={
                 <div data-time-pill>
                   <TimeFieldPill
@@ -851,48 +902,7 @@ export default function TaskDetailOverlay({
             />
           ) : (
           <div className="w-[320px] flex-shrink-0 border-l border-line-hairline bg-rail px-6 py-7 overflow-y-auto space-y-6">
-            <PropertyRow
-              label="Objective"
-              labelAction={
-                projectId ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // Close this task overlay before navigating so the
-                      // project-detail modal doesn't stack on top of it.
-                      onClose();
-                      openProject(parseInt(projectId));
-                    }}
-                    className="flex items-center gap-0.5 text-[11px] font-medium text-accent-blue hover:text-accent-blue-hover transition-colors cursor-pointer"
-                    title="Open objective details"
-                  >
-                    Open
-                    <svg
-                      width="11"
-                      height="11"
-                      viewBox="0 0 12 12"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M3.5 8.5L8.5 3.5" />
-                      <path d="M5 3.5H8.5V7" />
-                    </svg>
-                  </button>
-                ) : undefined
-              }
-            >
-              <ProjectPicker
-                value={projectId}
-                projects={objectiveOptions}
-                onChange={(val) => {
-                  setProjectId(val);
-                  debouncedSave({ projectId: val });
-                }}
-              />
-            </PropertyRow>
+            {objectiveRow}
 
             <div>
               <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-1.5">

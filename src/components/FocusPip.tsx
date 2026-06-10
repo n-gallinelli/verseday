@@ -703,6 +703,19 @@ export default function FocusPip() {
           </button>
         </div>
       </div>
+
+      {/* RUNNING-INDICATOR EXPERIMENT (revertible — see index.css block).
+          A line that sweeps back and forth along the pip's bottom edge while
+          the timer is actively counting (not paused, not a preview). Remove
+          this block + the index.css experiment block to revert. */}
+      {!state.paused && !state.queued && (
+        <div
+          className="run-sweep-track absolute left-3 right-3 bottom-[3px] h-[2px]"
+          style={{ background: "var(--focus-pip-border)" }}
+        >
+          <div className="run-sweep-bar run-sweep-bar-wide" style={{ background: "#A8CFE5" }} />
+        </div>
+      )}
     </div>
   );
 }

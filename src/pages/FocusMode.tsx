@@ -1536,6 +1536,17 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                   Actual
                 </span>
 
+                {/* RUNNING-INDICATOR EXPERIMENT (revertible — see index.css block).
+                    A line that sweeps back and forth under the Actual timer
+                    while the session is actively counting — a running cue
+                    beyond the numerals ticking. Remove this block + the
+                    index.css experiment block (and the pip block) to revert. */}
+                {!isQueued && focus?.mode === "active" && !paused && (
+                  <div className="run-sweep-track mt-2 w-16 h-[2px]">
+                    <div className="run-sweep-bar" style={{ background: "#A8CFE5" }} />
+                  </div>
+                )}
+
                 {actualOpen && focus?.mode === "active" && (
                   <TimePopover
                     title="Actual"

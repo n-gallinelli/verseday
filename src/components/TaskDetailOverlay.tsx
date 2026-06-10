@@ -356,8 +356,13 @@ export default function TaskDetailOverlay({
   // surface reading via selectFocusedTask) sees the new values
   // immediately. M2.2 — `updateFocusTask` is now a thin primeTasks
   // wrapper; signature unchanged for callers.
-  const { session, focusView, updateFocusTask, setFocusPriorElapsedMs, setTaskRecurrenceAction, openProject } = useAppStore();
+  const { session, focusView, updateFocusTask, setFocusPriorElapsedMs, setTaskRecurrenceAction, openProject, togglePauseFocus } = useAppStore();
   const isFocusedTask = (session?.taskId ?? focusView?.taskId) === task.id;
+  // The ACTIVE running session for THIS task (null if this task isn't the live
+  // session). Drives the header control: when this task is being focused the
+  // button must reflect that (Pause / Resume) — never "Start" — so the overlay
+  // agrees with the focus screen, pip, and the "Focusing…" header pill.
+  const liveSession = session && session.taskId === task.id ? session : null;
   // Live elapsed for the active session (null if none). Used to auto-populate
   // a calendar meeting's "time spent" while it's the running focus task — the
   // value ticks live but stays editable.
@@ -718,26 +723,60 @@ export default function TaskDetailOverlay({
                 : "text-fg"
             }`}
           />
-          {onStartFocus && localStatus !== "done" && (
+          {localStatus !== "done" && liveSession ? (
+            // This task IS the live focus session → Pause (running) / Resume
+            // (paused), mirroring TaskCard / PiP / focus screen via the same
+            // canonical togglePauseFocus. Never "Start" — that would read as
+            // not-running and contradict every other surface. Doesn't close
+            // the overlay (a pause toggle isn't a "leave" action).
             <button
-              onClick={() => {
-                flushSave();
-                onStartFocus(task);
-                onClose();
-              }}
-              // Outlined button: triangle + "Start" label. Same visual
-              // language as the daily plan header's "Start focusing"
-              // button, sized for the detail overlay's header. ml-3 adds
-              // a buffer beyond the row's gap so a long title doesn't
-              // wrap right against the button.
-              className="ml-3 rounded-full border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors flex-shrink-0"
-              title="Start focus"
+              onClick={() => togglePauseFocus()}
+              className={`ml-3 rounded-full cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors flex-shrink-0 ${
+                liveSession.paused
+                  ? "border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft"
+                  : "bg-accent-blue-soft text-accent-blue-soft-fg hover:opacity-90"
+              }`}
+              title={liveSession.paused ? "Resume focus" : "Pause focus"}
             >
-              <svg width="9" height="11" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
-                <path d="M0 0v10l8-5z" />
-              </svg>
-              <span className="text-[13px] font-medium">Start</span>
+              {liveSession.paused ? (
+                <>
+                  <svg width="9" height="11" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
+                    <path d="M0 0v10l8-5z" />
+                  </svg>
+                  <span className="text-[13px] font-medium">Resume</span>
+                </>
+              ) : (
+                <>
+                  <svg width="10" height="11" viewBox="0 0 10 11" fill="currentColor">
+                    <rect x="1" y="0.5" width="2.6" height="10" rx="0.8" />
+                    <rect x="6.4" y="0.5" width="2.6" height="10" rx="0.8" />
+                  </svg>
+                  <span className="text-[13px] font-medium">Pause</span>
+                </>
+              )}
             </button>
+          ) : (
+            onStartFocus && localStatus !== "done" && (
+              <button
+                onClick={() => {
+                  flushSave();
+                  onStartFocus(task);
+                  onClose();
+                }}
+                // Outlined button: triangle + "Start" label. Same visual
+                // language as the daily plan header's "Start focusing"
+                // button, sized for the detail overlay's header. ml-3 adds
+                // a buffer beyond the row's gap so a long title doesn't
+                // wrap right against the button.
+                className="ml-3 rounded-full border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors flex-shrink-0"
+                title="Start focus"
+              >
+                <svg width="9" height="11" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
+                  <path d="M0 0v10l8-5z" />
+                </svg>
+                <span className="text-[13px] font-medium">Start</span>
+              </button>
+            )
           )}
           {/* No close button — Esc and outside-click both dismiss the
               overlay, which is enough. */}

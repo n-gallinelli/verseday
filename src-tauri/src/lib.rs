@@ -4,6 +4,10 @@ mod commands;
 // beyond the four `#[tauri::command]` functions registered in `run()`.
 #[cfg(target_os = "macos")]
 pub mod calendar;
+// Native meeting-notification delivery + click→focus-jump delegate. macOS-only
+// (the plugin discards clicks; onAction is mobile-only). See notify.rs.
+#[cfg(target_os = "macos")]
+mod notify;
 
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -760,6 +764,8 @@ pub fn run() {
             calendar::calendar_get_calendar_list,
             #[cfg(target_os = "macos")]
             calendar::calendar_get_events_for_date,
+            #[cfg(target_os = "macos")]
+            notify::send_meeting_notification,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -821,6 +827,11 @@ pub fn run() {
             // focus tick drops the suspended span instead of inflating worked
             // time. setup() runs on the main thread (required by NSWorkspace).
             commands::start_system_resume_notifier(&app.handle());
+
+            // Install the NSUserNotification click delegate (macOS) so a
+            // meeting-notification body click emits verseday:notification-clicked.
+            #[cfg(target_os = "macos")]
+            notify::setup(&app.handle());
 
             Ok(())
         })

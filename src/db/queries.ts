@@ -373,6 +373,21 @@ export async function getTaskById(id: number): Promise<Task | null> {
   return rows[0] ?? null;
 }
 
+/** Resolve a calendar-imported task by its external_id — used by the
+ *  meeting-notification click handler to jump to the task on the focus
+ *  screen. Prefers a non-done instance; deterministic tiebreaker. */
+export async function getTaskByExternalId(externalId: string): Promise<Task | null> {
+  const db = await getDb();
+  const rows: Task[] = await db.select(
+    `SELECT * FROM tasks
+     WHERE external_source = 'calendar' AND external_id = $1
+     ORDER BY (status = 'done') ASC, created_at ASC, id ASC
+     LIMIT 1`,
+    [externalId]
+  );
+  return rows[0] ?? null;
+}
+
 export async function getTasksForDate(date: string): Promise<Task[]> {
   const db = await getDb();
   // recurrence IS NULL excludes recurring templates, which can leak into a

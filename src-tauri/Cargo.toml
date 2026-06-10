@@ -46,6 +46,13 @@ objc2-foundation = { version = "0.3", features = [
     # NSGeometry: NSPoint/NSSize/NSRect, used by the focus-pip global
     # mouse-moved monitor (commands::pip_hover) for cursor-vs-rect tests.
     "NSGeometry",
+    # NSUserNotification: deprecated NSUserNotification(+Center+Delegate),
+    # used by notify.rs to own meeting-notification delivery + a click
+    # delegate (the plugin discards clicks; onAction is mobile-only). Ceiling:
+    # a future macOS dropping it forces UNUserNotifications, which needs the
+    # code signing the ad-hoc app lacks. See
+    # docs/2026-06-10-notification-click-rust-path-plan.md.
+    "NSUserNotification",
 ] }
 objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSRunningApplication"] }
 # G3 (plan v3): pinned to ~0.3 minor line; bump intentionally and

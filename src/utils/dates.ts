@@ -103,3 +103,28 @@ export function weekdayDates(mondayIso: string): string[] {
   }
   return out;
 }
+
+/**
+ * Decide what a date/week selection should become when the logical day
+ * rolls over while the app was left open across the boundary. Pure so it's
+ * unit-testable (wall-clock-on-reopen behavior is painful to exercise
+ * end-to-end).
+ *
+ *  - `prevSnapshot` — what "today" / "this week" was just BEFORE the roll.
+ *  - `current`      — the user's current selection.
+ *  - `nowValue`     — the new "today" / "this week".
+ *
+ * Returns the value to select, or `null` to leave the selection alone.
+ * Advances ONLY when the user was sitting on the old "today"/"this week"
+ * (`current === prevSnapshot`); a deliberately-navigated past/future
+ * selection is preserved. Returns null when nothing actually changed.
+ */
+export function nextSelected(
+  prevSnapshot: string,
+  current: string,
+  nowValue: string,
+): string | null {
+  if (current !== prevSnapshot) return null; // deliberate navigation — keep it
+  if (nowValue === current) return null; // no real change
+  return nowValue; // was on the old "today" — advance
+}

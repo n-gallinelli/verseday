@@ -971,3 +971,37 @@ select {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   RUNNING-INDICATOR EXPERIMENT (revertible — added 2026-06-10, "just testing")
+   A small line that sweeps back and forth, used as a "session is running"
+   cue on the pip and the focus screen. To REVERT: delete this whole block
+   AND the two JSX blocks tagged `RUNNING-INDICATOR EXPERIMENT` in
+   src/components/FocusPip.tsx and src/pages/FocusMode.tsx.
+   ═══════════════════════════════════════════════════════════════════════ */
+@keyframes runningSweep {
+  0%   { left: 0%; transform: translateX(0%); }
+  50%  { left: 100%; transform: translateX(-100%); }
+  100% { left: 0%; transform: translateX(0%); }
+}
+.run-sweep-track {
+  position: relative;
+  overflow: hidden;
+  border-radius: 999px;
+}
+.run-sweep-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  border-radius: 999px;
+  animation: runningSweep 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Static centered bar instead of motion. */
+  .run-sweep-bar {
+    animation: none;
+    left: 30%;
+  }
+}
+/* ════════════════════ END RUNNING-INDICATOR EXPERIMENT ════════════════════ */
+

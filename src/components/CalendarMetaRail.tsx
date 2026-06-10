@@ -38,10 +38,17 @@ function renderSegments(segments: NoteSegment[]): React.ReactNode[] {
 
 interface Props {
   task: Task;
-  /** Editable "time spent" control for the meeting. Rendered at the top of the
-   *  rail. Supplied by TaskDetailOverlay (which owns the worked-minutes state +
-   *  handlers) so this panel stays a dumb presenter. Calendar events are
-   *  otherwise read-only, but logging time against a meeting is a real edit. */
+  /** Objective picker for the meeting. Rendered at the TOP of the rail
+   *  (mirrors the in-app rail's order) so a calendar-imported task can be
+   *  assigned to an objective. Supplied by TaskDetailOverlay (which owns the
+   *  picker state + save) — this panel stays a dumb presenter; it carries its
+   *  own "Objective" label + Open shortcut. */
+  objectiveControl?: React.ReactNode;
+  /** Editable "time spent" control for the meeting. Rendered near the top of
+   *  the rail. Supplied by TaskDetailOverlay (which owns the worked-minutes
+   *  state + handlers) so this panel stays a dumb presenter. Calendar events
+   *  are otherwise read-only, but logging time against a meeting is a real
+   *  edit. */
   timeControl?: React.ReactNode;
 }
 
@@ -137,7 +144,7 @@ const ATTENDEE_STATUS_LABEL: Record<string, string> = {
   unknown: "·",
 };
 
-export default function CalendarMetaRail({ task, timeControl }: Props) {
+export default function CalendarMetaRail({ task, objectiveControl, timeControl }: Props) {
   const attendees = parseAttendees(task.external_attendees);
   const timeLabel = formatEventTime(task.external_start_local, task.external_end_local);
   const location = task.external_location?.trim() || null;
@@ -155,6 +162,10 @@ export default function CalendarMetaRail({ task, timeControl }: Props) {
 
   return (
     <div className="w-[320px] flex-shrink-0 border-l border-line-hairline bg-rail px-6 py-7 overflow-y-auto space-y-6">
+      {/* Objective picker carries its own "Objective" label + Open shortcut
+          (it's the in-app PropertyRow), so render the slot directly — no
+          Section wrapper (that would double the label). */}
+      {objectiveControl}
       {timeControl && <Section label="Time spent">{timeControl}</Section>}
 
       <Section label="From calendar">

@@ -256,8 +256,8 @@ function TaskCardImpl({
       // Inner buttons (checkbox, play, trash) all stopPropagation, so this
       // outer click handler only fires for clicks on the row's empty space
       // — verified in TaskCard.tsx during the polish batch.
-      className={`relative px-4 py-4 rounded-lg border transition-colors duration-150 ease-out group/row touch-none cursor-pointer ${
-        isDragging ? "cursor-grabbing" : ""
+      className={`relative px-4 py-4 rounded-lg border transition-colors duration-150 ease-out group/row touch-none ${
+        isDragging ? "cursor-grabbing" : "cursor-default"
       } ${
         task.status === "done"
           ? "bg-[var(--accent-green-muted-bg)] border-accent-green/15 hover:bg-[var(--accent-green-muted-bg)]"

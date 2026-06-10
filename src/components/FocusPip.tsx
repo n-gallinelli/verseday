@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef } from "react";
 import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { currentMonitor } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
-import { LogicalSize } from "@tauri-apps/api/dpi";
+import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import VerseDayLogo from "./VerseDayLogo";
 import { playBreakChime as playCalm } from "../utils/sounds";
+import { clampToFrame } from "../utils/pipClamp";
 import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_SIZE, type PipState } from "../utils/pipEvents";
 
 // ONE fixed pip size for every phase — the pip window never resizes (a constant
@@ -146,6 +148,16 @@ const BTN_SECONDARY = "px-2.5 py-1 rounded-[6px] text-[11px] bg-overlay-hover te
 // 1s heartbeat cadence so a paused session (heartbeat-only) never trips it.
 const LIVENESS_TIMEOUT_MS = 2500;
 
+// Menu-bar height (logical px) reserved as a TOP inset when clamping the pip
+// on-screen. The pip is alwaysOnTop, so it floats over the dock + side edges
+// and stays grabbable there — the menu bar is the one true occluder (and
+// exactly where a dragged-off pip died: parked at y=-68, above it).
+const MENU_BAR_LOGICAL = 25;
+// Wait for drag to settle before clamping — do NOT setPosition per onMoved
+// frame during a startDragging loop (fights the OS drag). Clamp once movement
+// stops; a transient off-edge mid-drag is fine, the pip is never LEFT off.
+const PIP_CLAMP_SETTLE_MS = 110;
+
 export default function FocusPip() {
   const [state, setState] = useState<PipState | null>(null);
   // CSS-driven hover (cursor over the right-edge hover wrapper while
@@ -232,6 +244,62 @@ export default function FocusPip() {
     getCurrentWebviewWindow()
       .setSize(new LogicalSize(PIP_SIZE.width, PIP_SIZE.height))
       .catch(() => {});
+  }, []);
+
+  // Keep the pip on-screen: clamp its position once a move SETTLES, so it can
+  // never be dragged fully off an edge and lost (it died at y=-68 once). We do
+  // NOT setPosition per onMoved frame — that fights the startDragging loop — so
+  // the drag runs free and we rubber-band back only after it stops. All math in
+  // physical px. setPosition only when the clamped target differs by >1px, so
+  // the resulting onMoved can't loop. If currentMonitor() is null we no-op
+  // rather than clamp to a guessed frame (could fling the pip off the screen
+  // it's actually on). Boundary NOT covered: a pip orphaned by a MONITOR
+  // DISCONNECT fires no onMoved, so this won't auto-rescue that — different
+  // failure class, out of scope.
+  useEffect(() => {
+    const win = getCurrentWebviewWindow();
+    let unlisten: (() => void) | undefined;
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
+
+    async function clampNow() {
+      try {
+        const monitor = await currentMonitor();
+        if (!monitor) return; // fail-safe: never clamp to a guessed frame
+        const pos = await win.outerPosition();
+        const size = await win.outerSize();
+        const scale = monitor.scaleFactor;
+        const target = clampToFrame(
+          { x: pos.x, y: pos.y },
+          { width: size.width, height: size.height },
+          {
+            x: monitor.position.x,
+            y: monitor.position.y,
+            width: monitor.size.width,
+            height: monitor.size.height,
+          },
+          { top: Math.round(MENU_BAR_LOGICAL * scale), right: 0, bottom: 0, left: 0 },
+        );
+        if (Math.abs(target.x - pos.x) > 1 || Math.abs(target.y - pos.y) > 1) {
+          await win.setPosition(new PhysicalPosition(target.x, target.y));
+        }
+      } catch {
+        // best-effort — a clamp miss just leaves the pip where it is
+      }
+    }
+
+    (async () => {
+      unlisten = await win.onMoved(() => {
+        if (settleTimer) clearTimeout(settleTimer);
+        settleTimer = setTimeout(() => {
+          void clampNow();
+        }, PIP_CLAMP_SETTLE_MS);
+      });
+    })();
+
+    return () => {
+      unlisten?.();
+      if (settleTimer) clearTimeout(settleTimer);
+    };
   }, []);
 
   // Stage 4 — receive state over a Tauri event (was the verseday_pip_state

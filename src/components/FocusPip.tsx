@@ -440,7 +440,6 @@ export default function FocusPip() {
           onClick={() => sendCommand("takeBreak")}
           className="px-3.5 py-1 rounded-full text-[13px] font-medium text-white bg-[#A85E1E] hover:bg-[#94511A] cursor-pointer transition-colors"
           title="Start a 5 min break"
-          aria-label="Start a 5 minute break"
         >
           Start break
         </button>
@@ -449,7 +448,6 @@ export default function FocusPip() {
             onClick={() => flashAck("5 more minutes", "snooze5")}
             className="text-fg-secondary hover:text-fg cursor-pointer transition-colors"
             title="Remind me in 5 min"
-            aria-label="Remind me in 5 minutes"
           >
             5 more minutes
           </button>
@@ -457,7 +455,6 @@ export default function FocusPip() {
             onClick={() => flashAck("Break skipped", "noBreak")}
             className="text-fg-faded hover:text-fg-secondary cursor-pointer transition-colors"
             title="No — keep working"
-            aria-label="Decline break"
           >
             Skip
           </button>

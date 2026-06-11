@@ -113,7 +113,7 @@ interface FocusModeProps {
 }
 
 export default function FocusMode({ visible = true }: FocusModeProps) {
-  const { stopFocus, setPage, previewFocus, activateFocus, primeTaskPatch, backfillEstimateForUntimedDone, currentPage } = useAppStore();
+  const { stopFocus, setPage, previewFocus, activateFocus, primeTaskPatch, backfillEstimateForUntimedDone, setTaskWorkedMinutesAction, currentPage } = useAppStore();
   const session = useAppStore((s) => s.session);
   const focusView = useAppStore((s) => s.focusView);
   // Read-only view reproducing the old union for this component's internals.
@@ -1284,12 +1284,22 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // destructive rewrite of historical time_entries — that lives in a
   // separate, future affordance, not in this popover.
   function applyActualMs(targetMs: number) {
-    if (!focus || focus.mode !== "active") return;
-    const newMs = Math.max(focus.priorElapsedMs, targetMs);
-    const desiredElapsed = newMs - focus.priorElapsedMs;
-    // adjustFocusElapsed sets session.workedMs directly; the store set()
-    // triggers the re-render. No local elapsed state to update.
-    adjustFocusElapsed(desiredElapsed);
+    if (!focus) return;
+    if (focus.mode === "active") {
+      const newMs = Math.max(focus.priorElapsedMs, targetMs);
+      const desiredElapsed = newMs - focus.priorElapsedMs;
+      // adjustFocusElapsed sets session.workedMs directly; the store set()
+      // triggers the re-render. No local elapsed state to update.
+      adjustFocusElapsed(desiredElapsed);
+      return;
+    }
+    // Preview mode: no live session to write workedMs into. Persist the
+    // worked time directly through the canonical action — it writes the DB
+    // (setManualWorkedMinutes), reconciles workedByTaskId, and patches
+    // focusView.priorElapsedMs, which is the value preview's Actual renders.
+    // setTaskWorkedMinutesAction takes MINUTES; targetMs is milliseconds.
+    const minutes = Math.round(Math.max(0, targetMs) / 60000);
+    setTaskWorkedMinutesAction(focus.taskId, minutes).catch(() => {});
   }
 
   // Parsing for the popover inputs.
@@ -1345,6 +1355,12 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 
   const isOnBreak = !isQueued && phase === "break";
   const isPrompting = !isQueued && phase === "prompt";
+
+  // Actual is editable in both preview (no session yet — writes worked
+  // minutes to the DB) and active (running OR paused — writes session
+  // workedMs). The only blocks are the break/prompt sub-states, which are
+  // active-only and where the numeral shows a countdown, not worked time.
+  const canEditActual = !isOnBreak && !isPrompting;
 
   // Total work time on this task (prior sessions + current, minus breaks).
   // Preview mode: just the prior logged time — nothing's incrementing.
@@ -1515,12 +1531,12 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
               <div className="flex flex-col items-center relative">
                 <button
                   onClick={() => {
-                    if (isQueued || focus?.mode !== "active") return;
+                    if (!canEditActual) return;
                     setActualOpen((v) => !v);
                   }}
-                  disabled={isQueued || focus?.mode !== "active"}
+                  disabled={!canEditActual}
                   className={`text-[26px] font-medium tabular-nums leading-none bg-transparent border-0 p-0 ${
-                    !isQueued && focus?.mode === "active"
+                    canEditActual
                       ? "cursor-pointer hover:opacity-80"
                       : "cursor-default"
                   } transition-opacity`}
@@ -1528,7 +1544,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                     letterSpacing: "-1px",
                     color: isQueued || paused ? "var(--text-faded)" : "var(--focus-glow-base)",
                   }}
-                  title={!isQueued && focus?.mode === "active" ? "Click to adjust" : undefined}
+                  title={canEditActual ? "Click to adjust" : undefined}
                 >
                   {formatTime(totalWorkedMs)}
                 </button>
@@ -1547,12 +1563,15 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                   </div>
                 )}
 
-                {actualOpen && focus?.mode === "active" && (
+                {actualOpen && canEditActual && (
                   <TimePopover
                     title="Actual"
                     initialInput={formatTime(totalWorkedMs)}
                     currentMinutes={Math.round(totalWorkedMs / 60000)}
-                    minMinutes={Math.ceil(focus.priorElapsedMs / 60000)}
+                    // Active floors at earlier sessions' logged time (can't
+                    // reduce below prior via this popover). Preview's
+                    // priorElapsedMs IS the whole editable total, so 0.
+                    minMinutes={isQueued ? 0 : Math.ceil(focus.priorElapsedMs / 60000)}
                     onCommitInput={(raw) => {
                       const ms = parseActualInput(raw);
                       if (ms !== null) applyActualMs(ms);
@@ -1562,15 +1581,21 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                       applyActualMs(min * 60 * 1000);
                       setActualOpen(false);
                     }}
-                    onClear={() => {
-                      // "Clear actual" floors at the DB-known prior
-                      // total — discards only the *current session's*
-                      // contribution. Reducing below prior would
-                      // require rewriting time_entries (separate
-                      // future affordance).
-                      applyActualMs(focus.priorElapsedMs);
-                      setActualOpen(false);
-                    }}
+                    // "Clear actual" in active mode floors at the DB-known
+                    // prior total — discards only the *current session's*
+                    // contribution. In preview, clearing would zero the
+                    // task's historical logged time; that destructive
+                    // rewrite is deliberately not a one-tap default here, so
+                    // Clear is hidden in preview (typing a lower value is
+                    // still an explicit, intentional path).
+                    onClear={
+                      isQueued
+                        ? undefined
+                        : () => {
+                            applyActualMs(focus.priorElapsedMs);
+                            setActualOpen(false);
+                          }
+                    }
                     onClose={() => setActualOpen(false)}
                   />
                 )}
@@ -1864,7 +1889,9 @@ function TimePopover({
   minMinutes?: number;
   onCommitInput: (raw: string) => void;
   onSelectPreset: (minutes: number) => void;
-  onClear: () => void;
+  /** Omit to hide the Clear footer (e.g. preview Actual, where clearing
+   *  would destructively zero the task's logged time). */
+  onClear?: () => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -1949,14 +1976,16 @@ function TimePopover({
           );
         })}
       </div>
-      <div className="border-t border-line-hairline">
-        <button
-          onClick={onClear}
-          className="w-full px-4 py-2.5 text-[14px] text-accent-blue text-left cursor-pointer hover:bg-overlay-hover transition-colors"
-        >
-          Clear {title.toLowerCase()}
-        </button>
-      </div>
+      {onClear && (
+        <div className="border-t border-line-hairline">
+          <button
+            onClick={onClear}
+            className="w-full px-4 py-2.5 text-[14px] text-accent-blue text-left cursor-pointer hover:bg-overlay-hover transition-colors"
+          >
+            Clear {title.toLowerCase()}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

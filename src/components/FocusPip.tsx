@@ -48,65 +48,6 @@ function sendCommand(cmd: string) {
   void emit(PIP_CMD_EVENT, cmd);
 }
 
-// Icon set for the break-prompt buttons. All three render at 16px,
-// inherit currentColor from their parent button so theme + filled-vs-
-// outlined treatments work without per-icon overrides.
-function ThumbsUpIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M7 11v9H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3z" />
-      <path d="M7 11l4-7a2 2 0 0 1 2 0c.7.4 1 1.2 1 2v3h4.5a2 2 0 0 1 2 2.3l-1.2 6a2 2 0 0 1-2 1.7H7" />
-    </svg>
-  );
-}
-
-function ClockIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 2" />
-    </svg>
-  );
-}
-
-function CloseIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M6 6l12 12M18 6L6 18" />
-    </svg>
-  );
-}
-
 async function focusMainWindow() {
   try {
     const main = await WebviewWindow.getByLabel("main");
@@ -473,19 +414,20 @@ export default function FocusPip() {
     );
   }
 
-  // ── BREAK PROMPT — two compact rows, tightened to fit the 220×58 pip ──
-  // Header row: centered "Ready for a break?" anchor at small weight.
-  // Action row: three icon buttons (thumbs up / clock / x) — icon-only
-  // keeps the pip uncluttered at this width; tooltips carry the
-  // labels for accessibility. Filled green primary, outlined
-  // secondary, outlined-faint tertiary mirror the full-screen
-  // celebration's button hierarchy. FocusMode owns the 30s
+  // ── BREAK PROMPT — labeled warm CTA + two text links, fit to 220×58 ──
+  // Action-over-state hierarchy: the expected action (start the break)
+  // dominates as a filled, labeled deep-orange primary; snooze and skip
+  // demote to plain text links beneath it. No header — the labeled CTA
+  // carries the meaning. The orange fill is PINNED (bg-[#A85E1E]/
+  // hover:bg-[#94511A], white text ≈ 4.9:1 in both themes) rather than
+  // the --accent-orange token, which swaps to a lighter #d68647 in dark
+  // that fails WCAG 1.4.3 behind a text label. FocusMode owns the 30s
   // auto-dismiss; the user is never trapped.
   if (state.phase === "prompt") {
     return (
       <div
         data-tauri-drag-region
-        className="select-none flex flex-col justify-center w-full h-screen px-2.5 py-1.5"
+        className="select-none flex flex-col items-center justify-center gap-1.5 w-full h-screen px-2.5 py-1.5"
         style={{
           background: PIP_BG,
           borderRadius: 18,
@@ -494,33 +436,30 @@ export default function FocusPip() {
         }}
         onMouseDown={handlePipMouseDown}
       >
-        <p className="text-[13px] font-medium text-fg text-center mb-1 leading-tight">
-          Ready for a break?
-        </p>
-        <div className="flex items-center justify-center gap-2.5 flex-1">
-          <button
-            onClick={() => sendCommand("takeBreak")}
-            className="w-6 h-6 rounded-full flex items-center justify-center text-white bg-accent-green-deep hover:opacity-90 cursor-pointer transition-opacity"
-            title="Yes — take a 5 min break"
-            aria-label="Take a 5 minute break"
-          >
-            <ThumbsUpIcon />
-          </button>
+        <button
+          onClick={() => sendCommand("takeBreak")}
+          className="px-3.5 py-1 rounded-full text-[13px] font-medium text-white bg-[#A85E1E] hover:bg-[#94511A] cursor-pointer transition-colors"
+          title="Start a 5 min break"
+          aria-label="Start a 5 minute break"
+        >
+          Start break
+        </button>
+        <div className="flex items-center justify-center gap-3 text-[11px] leading-none">
           <button
             onClick={() => flashAck("5 more minutes", "snooze5")}
-            className="w-6 h-6 rounded-full flex items-center justify-center text-fg-secondary border border-line-soft hover:border-line-strong hover:bg-overlay-hover cursor-pointer transition-colors"
+            className="text-fg-secondary hover:text-fg cursor-pointer transition-colors"
             title="Remind me in 5 min"
             aria-label="Remind me in 5 minutes"
           >
-            <ClockIcon />
+            5 more minutes
           </button>
           <button
             onClick={() => flashAck("Break skipped", "noBreak")}
-            className="w-6 h-6 rounded-full flex items-center justify-center text-fg-faded border border-line-hairline hover:text-fg-secondary hover:border-line-soft hover:bg-overlay-hover cursor-pointer transition-colors"
+            className="text-fg-faded hover:text-fg-secondary cursor-pointer transition-colors"
             title="No — keep working"
             aria-label="Decline break"
           >
-            <CloseIcon />
+            Skip
           </button>
         </div>
       </div>

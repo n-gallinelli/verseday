@@ -141,6 +141,15 @@ export default function FocusPip() {
     if (completeTimerRef.current) clearTimeout(completeTimerRef.current);
     completeTimerRef.current = setTimeout(() => {
       setCompleting(false);
+      // Reset BOTH hover flags as part of the hand-off. The `completing`
+      // takeover is a separate subtree with no hover region, so the
+      // onMouseLeave that normally clears these never fired while it was
+      // up — and Rust's global monitor is dormant while the pip is
+      // frontmost, so it can't deliver the over=false edge either. Without
+      // this, the next task paints with the icon strip fanned out. Batched
+      // with setCompleting(false) so it lands collapsed in one frame.
+      setCssHovered(false);
+      setExternallyHovered(false);
       // By now the main window has pushed the next task into `state` (emitted on
       // "done"); slide it in. Cleared after the entrance so heartbeat-driven
       // state updates don't replay the slide.
@@ -365,14 +374,19 @@ export default function FocusPip() {
       >
         <div className="flex flex-col justify-center h-full px-4">
           <div className="flex items-center gap-2">
-            <span className="relative flex-1 min-w-0 text-[14px] font-medium text-fg-faded truncate leading-snug">
+            <span className="flex-1 min-w-0 text-[14px] font-medium text-fg-faded truncate leading-snug">
               {completingTitle}
+            </span>
+            {/* Green check + radiating ring burst — the app's shared "done"
+                beat (daily rows + focus screen), replacing the pip-only
+                strikethrough. The ring reuses .animate-task-done-burst (also
+                in the reduced-motion list, so it no-ops there). Base 18px →
+                ~1.75 scale clears the overflow-hidden rounded pill. */}
+            <span className="relative flex-shrink-0 w-[18px] h-[18px] rounded-full bg-accent-green flex items-center justify-center animate-task-done">
               <span
                 aria-hidden
-                className="absolute left-0 top-1/2 h-px bg-fg-faded animate-pip-strike pointer-events-none"
+                className="absolute inset-0 rounded-full border-2 border-accent-green animate-task-done-burst pointer-events-none"
               />
-            </span>
-            <span className="flex-shrink-0 w-[18px] h-[18px] rounded-full bg-accent-green flex items-center justify-center">
               <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 8.5l3.5 3.5 6.5-7" className="animate-check-draw" />
               </svg>

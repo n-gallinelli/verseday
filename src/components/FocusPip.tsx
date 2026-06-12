@@ -457,15 +457,17 @@ export default function FocusPip() {
     );
   }
 
-  // ── BREAK PROMPT — labeled warm CTA + two text links, fit to 220×58 ──
+  // ── BREAK PROMPT — on-brand green CTA + two readable links, fit to 220×58 ──
   // Action-over-state hierarchy: the expected action (start the break)
-  // dominates as a filled, labeled deep-orange primary; snooze and skip
-  // demote to plain text links beneath it. No header — the labeled CTA
-  // carries the meaning. The orange fill is PINNED (bg-[#A85E1E]/
-  // hover:bg-[#94511A], white text ≈ 4.9:1 in both themes) rather than
-  // the --accent-orange token, which swaps to a lighter #d68647 in dark
-  // that fails WCAG 1.4.3 behind a text label. FocusMode owns the 30s
-  // auto-dismiss; the user is never trapped.
+  // dominates as a filled, icon-labeled primary; snooze and skip demote to
+  // plain text links beneath it. No header — the cup icon + label carry the
+  // meaning. The fill is PINNED deep-green (bg-[#0F6E56]/hover:bg-[#0B5A46],
+  // white text ≈ 6.2:1 in both themes) — the SAME green as the break
+  // countdown, so the prompt and the running break read as one moment.
+  // Pinned rather than the --accent-green token, which swaps to a lighter
+  // #6fa088 in dark that fails WCAG 1.4.3 behind white text. Both links are
+  // text-fg-secondary at 12px (was an 11px faded/secondary split that read as
+  // invisible). FocusMode owns the 30s auto-dismiss; the user is never trapped.
   if (state.phase === "prompt") {
     return (
       <div
@@ -481,22 +483,37 @@ export default function FocusPip() {
       >
         <button
           onClick={() => sendCommand("takeBreak")}
-          className="px-3.5 py-1 rounded-full text-[13px] font-medium text-white bg-[#A85E1E] hover:bg-[#94511A] cursor-pointer transition-colors"
+          className="flex items-center gap-1.5 px-3.5 py-1 rounded-full text-[13px] font-medium text-white bg-[#0F6E56] hover:bg-[#0B5A46] cursor-pointer transition-colors"
           title="Start a 5 min break"
         >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M3 6.5h7.5v3.25A2.75 2.75 0 0 1 7.75 12.5h-2A2.75 2.75 0 0 1 3 9.75V6.5Z" />
+            <path d="M10.5 7.25H12a1.5 1.5 0 0 1 0 3h-1.5" />
+          </svg>
           Start break
         </button>
-        <div className="flex items-center justify-center gap-3 text-[11px] leading-none">
+        <div className="flex items-center justify-center gap-2 text-[12px] leading-none">
           <button
             onClick={() => flashAck("5 more minutes", "snooze5")}
             className="text-fg-secondary hover:text-fg cursor-pointer transition-colors"
             title="Remind me in 5 min"
           >
-            5 more minutes
+            +5 min
           </button>
+          <span className="text-fg-muted select-none" aria-hidden="true">·</span>
           <button
             onClick={() => flashAck("Break skipped", "noBreak")}
-            className="text-fg-faded hover:text-fg-secondary cursor-pointer transition-colors"
+            className="text-fg-secondary hover:text-fg cursor-pointer transition-colors"
             title="No — keep working"
           >
             Skip

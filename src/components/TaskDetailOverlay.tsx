@@ -187,7 +187,7 @@ function TimeFieldPill({
           className={`flex-1 min-w-0 cursor-pointer text-left ${
             hideLabel ? "flex items-center" : "flex flex-col items-start gap-[3px]"
           }`}
-          style={{ padding: hideLabel ? "4px 4px 4px 12px" : "4px 4px 4px 10px" }}
+          style={{ padding: hideLabel ? "10px 4px 10px 12px" : "4px 4px 4px 10px" }}
         >
           {!hideLabel && (
             <span className="text-[9px] uppercase tracking-[0.07em] text-fg-faded leading-none">

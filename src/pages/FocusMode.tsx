@@ -7,7 +7,9 @@ import {
   PIP_CMD_EVENT,
   PIP_READY_EVENT,
   PIP_SIZE,
+  PIP_COMPLETE_FLOURISH_MS,
   type PipState,
+  type PipCompleteBehavior,
 } from "../utils/pipEvents";
 import { useAppStore, selectFocusedTask, consumeFocusResume, clearFocusResume, type SessionState, type FocusView } from "../stores/appStore";
 import { clampWorkedDelta } from "../utils/workedTime";
@@ -33,6 +35,8 @@ import {
   getBreakContinuity,
   shouldContinueBreakCycle,
   BREAK_CONTINUITY_GAP_MS,
+  getPipCompleteBehavior,
+  PIP_COMPLETE_BEHAVIOR_CHANGED_EVENT,
   type BreakContinuity,
 } from "../utils/focusSettings";
 import { getEmptyDayMessage } from "../utils/format";
@@ -563,6 +567,14 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const [breakContinuity, setBreakContinuity] = useState<BreakContinuity>("reset");
   const breakContinuityRef = useRef(breakContinuity);
   breakContinuityRef.current = breakContinuity;
+  // PiP "on complete" behavior. Held in a ref (read in handleDone + the PipState
+  // builder, both non-React-state paths). Loaded on mount and refreshed live on
+  // the Settings toggle event, since FocusMode is a single persistent mount and
+  // never remounts to re-read it.
+  const pipCompleteBehaviorRef = useRef<PipCompleteBehavior>("advance");
+  // Pending delayed focus-teardown for "close" mode (let the pip beat play
+  // before we null focus). Tracked so it can be cleared on unmount.
+  const pipCloseTeardownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // breakCarryRef — ms of prior-session work carried into the current cycle
   // (added to `we`). lastWorkElapsedRef — last computed `we`. lastActiveTickAtRef
   // — Date.now() of the last active tick, for the idle-gap test.
@@ -601,6 +613,24 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   useEffect(() => {
     getBreakContinuity().then(setBreakContinuity).catch(() => {});
   }, [focusTaskId]);
+
+  // PiP complete-behavior: load once on mount, then track Settings toggles live
+  // (same-window CustomEvent) so a change applies to the next completion without
+  // a restart. Clear any pending close-teardown timer on unmount.
+  useEffect(() => {
+    getPipCompleteBehavior()
+      .then((v) => { pipCompleteBehaviorRef.current = v; })
+      .catch(() => {});
+    const onChange = (e: Event) => {
+      const v = (e as CustomEvent<PipCompleteBehavior>).detail;
+      pipCompleteBehaviorRef.current = v === "close" ? "close" : "advance";
+    };
+    window.addEventListener(PIP_COMPLETE_BEHAVIOR_CHANGED_EVENT, onChange);
+    return () => {
+      window.removeEventListener(PIP_COMPLETE_BEHAVIOR_CHANGED_EVENT, onChange);
+      if (pipCloseTeardownRef.current) clearTimeout(pipCloseTeardownRef.current);
+    };
+  }, []);
 
   // Resume-from-pause gap reset (continue mode only): if the session was
   // paused/idle for >= the threshold, restart the work cycle from the current
@@ -807,6 +837,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       taskTitle: focusedTask.title,
       estimatedMinutes: focusedTask.estimated_minutes ?? null,
       queued,
+      completeBehavior: pipCompleteBehaviorRef.current,
     };
     pipStateRef.current = state;
     void emit(PIP_STATE_EVENT, state);
@@ -1188,6 +1219,28 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       await backfillEstimateForUntimedDone(completedTaskId);
     } catch (err) {
       console.error("[focus] handleDone: post-done reconcile/backfill failed (advancing anyway)", err);
+    }
+
+    // 2.5) "Close" mode — finish here instead of advancing. The pip plays its
+    //      own completion beat and SELF-closes at the end (it knows the
+    //      behavior from PipState); we only clear the in-memory focus/session
+    //      state. Delay the teardown past the beat so nulling focus (which also
+    //      closes the pip window) can't cut the animation, and guard it so we
+    //      never tear down a session the user may have started on a DIFFERENT
+    //      task in the gap. loadWorkedMinutes runs AFTER stopFocus (matches the
+    //      no-remaining path) so the completed task's live + committed minutes
+    //      can't double-count on Today.
+    if (pipCompleteBehaviorRef.current === "close") {
+      if (pipCloseTeardownRef.current) clearTimeout(pipCloseTeardownRef.current);
+      pipCloseTeardownRef.current = setTimeout(() => {
+        pipCloseTeardownRef.current = null;
+        const s = useAppStore.getState();
+        const liveTaskId = s.session?.taskId ?? s.focusView?.taskId;
+        if (liveTaskId !== completedTaskId) return;
+        stopFocus();
+        void s.loadWorkedMinutes([completedTaskId]);
+      }, PIP_COMPLETE_FLOURISH_MS + 200);
+      return;
     }
 
     // 3) Advance to the next remaining task (lands as preview — the user

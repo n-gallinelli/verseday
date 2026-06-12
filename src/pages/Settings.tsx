@@ -11,8 +11,12 @@ import RepeatingTasksSettings from "../components/settings/RepeatingTasksSetting
 import {
   getBreakContinuity,
   setBreakContinuity as persistBreakContinuity,
+  getPipCompleteBehavior,
+  setPipCompleteBehavior as persistPipCompleteBehavior,
+  PIP_COMPLETE_BEHAVIOR_CHANGED_EVENT,
   type BreakContinuity,
 } from "../utils/focusSettings";
+import type { PipCompleteBehavior } from "../utils/pipEvents";
 
 const FOCUS_DEFAULTS = {
   focus_work_min: 25,
@@ -57,6 +61,8 @@ export default function Settings() {
     DEFAULT_TASK_ESTIMATE_FALLBACK_MIN
   );
   const [breakContinuity, setBreakContinuity] = useState<BreakContinuity>("reset");
+  const [pipCompleteBehavior, setPipCompleteBehavior] =
+    useState<PipCompleteBehavior>("advance");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const taskDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Manual DB export (P4) — null = idle, otherwise the last result message.
@@ -117,6 +123,7 @@ export default function Settings() {
       );
 
       setBreakContinuity(await getBreakContinuity());
+      setPipCompleteBehavior(await getPipCompleteBehavior());
     }
     load();
   }, []);
@@ -124,6 +131,16 @@ export default function Settings() {
   function handleBreakContinuityChange(mode: BreakContinuity) {
     setBreakContinuity(mode);
     persistBreakContinuity(mode);
+  }
+
+  function handlePipCompleteChange(mode: PipCompleteBehavior) {
+    setPipCompleteBehavior(mode);
+    persistPipCompleteBehavior(mode);
+    // Notify the persistent FocusMode mount (same window) so the change takes
+    // effect on the next completion without an app restart.
+    window.dispatchEvent(
+      new CustomEvent(PIP_COMPLETE_BEHAVIOR_CHANGED_EVENT, { detail: mode })
+    );
   }
 
   function handleTaskEstimateChange(value: number) {
@@ -263,6 +280,36 @@ export default function Settings() {
                       }`}
                     >
                       {mode === "reset" ? "Each task" : "Continue"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Mini timer: what happens when you finish a task from it */}
+              <div className="flex items-center justify-between pt-1">
+                <div>
+                  <div className="text-[13px] text-fg">When you finish a task in the mini timer</div>
+                  <div className="text-[11px] text-fg-faded">
+                    {pipCompleteBehavior === "close"
+                      ? "Plays a quick ‘done’ beat, then closes the mini timer"
+                      : "Advances to your next task and keeps the mini timer open"}
+                  </div>
+                </div>
+                <div
+                  className="flex items-center bg-elevated rounded-lg overflow-hidden flex-shrink-0 w-[168px]"
+                  style={{ border: "1px solid var(--border-medium)" }}
+                >
+                  {(["advance", "close"] as PipCompleteBehavior[]).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => handlePipCompleteChange(mode)}
+                      className={`flex-1 h-8 flex items-center justify-center text-[12px] cursor-pointer transition-colors ${
+                        pipCompleteBehavior === mode
+                          ? "bg-accent-blue-soft text-accent-blue-soft-fg font-medium"
+                          : "text-fg-muted hover:text-fg"
+                      }`}
+                    >
+                      {mode === "advance" ? "Next task" : "Close"}
                     </button>
                   ))}
                 </div>

@@ -6,7 +6,7 @@ import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import VerseDayLogo from "./VerseDayLogo";
 import { playBreakChime as playCalm } from "../utils/sounds";
 import { clampToFrame } from "../utils/pipClamp";
-import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_SIZE, type PipState } from "../utils/pipEvents";
+import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_SIZE, PIP_COMPLETE_FLOURISH_MS, type PipState } from "../utils/pipEvents";
 
 // ONE fixed pip size for every phase — the pip window never resizes (a constant
 // size means declining a break can't shrink it, and there's no setSize docking
@@ -128,18 +128,38 @@ export default function FocusPip() {
   // background (we send "done" immediately, so the data write isn't delayed by
   // the animation). COMPLETE_MS must match the pipComplete keyframe duration.
   const [completing, setCompleting] = useState(false);
+  // Ref mirror — the PIP_STATE_EVENT listener binds ONCE on mount, so it can't
+  // read the live `completing` state; it reads this instead.
+  const completingRef = useRef(false);
+  completingRef.current = completing;
+  // Set when a `null` teardown arrives mid-beat (advance mode with no next
+  // task) — the beat's end timer closes the window rather than the listener
+  // cutting the animation.
+  const pendingCloseRef = useRef(false);
   const [completingTitle, setCompletingTitle] = useState("");
   const [slideInNext, setSlideInNext] = useState(false);
   const completeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const slideInTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const COMPLETE_MS = 850;
+  const COMPLETE_MS = PIP_COMPLETE_FLOURISH_MS;
   function completeWithFlourish() {
     if (completing) return; // guard double-fire
+    // Snapshot the behavior at CLICK time so a mid-beat setting/heartbeat change
+    // can't flip which action the end timer takes.
+    const behavior = state?.completeBehavior ?? "advance";
+    pendingCloseRef.current = false;
     setCompletingTitle(state?.taskTitle ?? "");
     setCompleting(true);
     sendCommand("done");
     if (completeTimerRef.current) clearTimeout(completeTimerRef.current);
     completeTimerRef.current = setTimeout(() => {
+      // "close" mode (or a teardown that arrived mid-beat): the full COMPLETE_MS
+      // beat has now played — even under reduced motion the panel rendered for
+      // its duration — so this is never an instant vanish. Self-close; the main
+      // window clears focus shortly after.
+      if (behavior === "close" || pendingCloseRef.current) {
+        getCurrentWebviewWindow().close().catch(() => {});
+        return;
+      }
       setCompleting(false);
       // Reset BOTH hover flags as part of the hand-off. The `completing`
       // takeover is a separate subtree with no hover region, so the
@@ -264,6 +284,15 @@ export default function FocusPip() {
       lastSeenRef.current = Date.now();
       const next = e.payload;
       if (!next) {
+        // Mid completion beat: the main window may null focus (close mode, or
+        // advance with no next task) before our beat finishes. Don't close from
+        // here — defer to the beat's end timer so the green-burst isn't cut.
+        // completingRef (not `completing`) because this callback bound once on
+        // mount and would otherwise read a permanently-stale value.
+        if (completingRef.current) {
+          pendingCloseRef.current = true;
+          return;
+        }
         setState(null);
         getCurrentWebviewWindow().close().catch(() => {});
         return;

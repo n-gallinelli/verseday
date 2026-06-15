@@ -23,6 +23,7 @@ import SummaryOverlayHost from "./components/SummaryOverlayHost";
 import SunsetOverlayHost from "./components/SunsetOverlayHost";
 import { useAppStore, markFocusResume } from "./stores/appStore";
 import { todayString, logicalDayIso, mondayOfWeek, nextSelected } from "./utils/dates";
+import { syncTodayIfReady } from "./calendar/sync";
 import {
   getTasksForDate,
   startTimeEntry,
@@ -207,6 +208,20 @@ function MainApp() {
       lastLogicalDay.current = today;
       lastToday.current = todayString();
       lastWeek.current = mondayOfWeek();
+
+      // Morning calendar sync: on each logical-day advance, pull today's
+      // calendar into today's plan — app-level, so it fires regardless of the
+      // current page or viewed date (the planner's own useCalendarAutoSync only
+      // covers the date it's showing). Placed before the onShutdownSurface
+      // branch so it fires once per advance on either exit. syncTodayIfReady is
+      // store-agnostic + self-gating (enabled + permission) and never rejects;
+      // we own the reconcile here per the standing consumer-reconciles rule.
+      void (async () => {
+        const res = await syncTodayIfReady();
+        if (res.created > 0) {
+          void useAppStore.getState().loadTasksForDate(todayString());
+        }
+      })();
 
       const s = useAppStore.getState();
       const onShutdownSurface =

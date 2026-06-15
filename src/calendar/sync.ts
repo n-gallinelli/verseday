@@ -17,6 +17,8 @@ import {
   setSetting,
 } from "../db/queries";
 import { getEnabled, getExcludedCalendarIds } from "./settings";
+import { checkPermission } from "./permissions";
+import { todayString } from "../utils/dates";
 import type { CalendarEvent } from "./types";
 
 // ───────────────────────────────────────────────────────────────────
@@ -184,4 +186,30 @@ export async function syncCalendarEventsForDate(
   await setSetting(SETTING_LAST_SYNCED_AT, new Date().toISOString());
 
   return { created, skipped };
+}
+
+/** Morning auto-sync primitive: pull TODAY's calendar into today's plan, but
+ *  only when calendar import is enabled AND EventKit permission is granted.
+ *  Self-gating no-op otherwise.
+ *
+ *  Store-agnostic by design: returns a SyncResult and never touches the app
+ *  store. The caller (App.tsx's day-rollover detector) owns reconcile-on-
+ *  success — on `created > 0` it reloads today's bucket via loadTasksForDate.
+ *
+ *  Never rejects. The rollover caller fire-and-forgets this (`void`), so a
+ *  failure must be swallowed + logged rather than surface as an unhandled
+ *  rejection (mirrors hooks.ts background-sync error handling).
+ *
+ *  force:false → the per-date TTL dedupes against the Daily Plan's own
+ *  useCalendarAutoSync, so opening the app in the morning doesn't double-fetch
+ *  today. See docs/2026-06-15-calendar-morning-autosync.md. */
+export async function syncTodayIfReady(): Promise<SyncResult> {
+  try {
+    if (!(await getEnabled())) return { created: 0, skipped: 0 };
+    if ((await checkPermission()) !== "granted") return { created: 0, skipped: 0 };
+    return await syncCalendarEventsForDate(todayString(), { force: false });
+  } catch (err) {
+    console.error("calendar morning sync: syncTodayIfReady failed:", err);
+    return { created: 0, skipped: 0 };
+  }
 }

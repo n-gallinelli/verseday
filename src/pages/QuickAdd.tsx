@@ -475,9 +475,11 @@ export default function QuickAdd() {
           <button
             onClick={() => { setShowProjectPicker((v) => !v); hideTip(); }}
             className={`flex items-center gap-1.5 text-[13px] px-3 py-1.5 rounded-lg border cursor-pointer transition-colors ${
-              selectedProject
-                ? "border-line-soft bg-elevated/70 text-fg"
-                : "border-line-hairline bg-elevated/40 text-fg-secondary hover:text-fg"
+              showProjectPicker
+                ? "border-accent-blue/40 bg-accent-blue-soft text-accent-blue-soft-fg"
+                : selectedProject
+                  ? "border-line-soft bg-elevated/70 text-fg"
+                  : "border-line-hairline bg-elevated/40 text-fg-secondary hover:text-fg"
             }`}
             style={{ maxWidth: 150 }}
           >

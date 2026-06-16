@@ -1005,6 +1005,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPage: (page) => {
     const prev = get().currentPage;
     if (prev === page) return;
+    // A task-detail modal is scoped to the screen it was opened from; any page
+    // navigation dismisses it. Otherwise it floats over the new page — e.g. the
+    // F hotkey jumping to Focus left the overlay mounted ON TOP of the focus
+    // screen (the overlay's own Focus button already calls closeTaskDetail; the
+    // hotkey path bypassed it). Set unconditionally — null→null is a no-op for
+    // subscribers.
+    const closeDetail = { selectedTaskDetailId: null, taskDetailAutoFocusTitle: false };
     // Preview staging is scoped to the focus-screen visit. Leaving focus
     // discards the preview so a fresh "next task" loads on next entry —
     // otherwise a queued task could go stale across navigation. (A running
@@ -1014,12 +1021,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         focusView: null,
         currentPage: page,
         pageHistory: [...s.pageHistory.slice(-19), prev],
+        ...closeDetail,
       }));
       return;
     }
     set((s) => ({
       currentPage: page,
       pageHistory: [...s.pageHistory.slice(-19), prev],
+      ...closeDetail,
     }));
   },
   goBack: () => {

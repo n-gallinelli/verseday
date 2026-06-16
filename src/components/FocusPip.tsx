@@ -404,13 +404,17 @@ export default function FocusPip() {
   }, []);
 
   // Every phase renders through one shell: a window-filling, centered wrapper
-  // holding a fixed BASE-sized (220×58) box. In high-vis mode the box scales
-  // uniformly (PIP_HIGH_VIS_SCALE) — so all phase layouts magnify together and
-  // the break-prompt height math stays valid in scaled units — and a breathing
-  // glow layer sits behind the card in the transparent halo margin. In normal
-  // mode the box equals the window, so the shell is a no-op pass-through. The
-  // `card` must size to the box (w-full h-full) and keeps its own drag region,
-  // bg, border, and rounding.
+  // holding a fixed BASE-sized (220×58) box. In high-vis mode the box magnifies
+  // uniformly (PIP_HIGH_VIS_SCALE) via `zoom` — so all phase layouts grow
+  // together and the break-prompt height math stays valid in scaled units —
+  // and a breathing glow layer sits behind the card in the transparent halo
+  // margin. We use `zoom`, NOT `transform: scale()`: scale stretches the
+  // already-rasterized 220×58 bitmap, which blurs the text and smears the
+  // 0.5px border into a fuzzy ring. `zoom` re-lays-out and re-rasterizes at the
+  // final size (WKWebView honors it), so glyphs, border, and glow stay crisp.
+  // In normal mode the box equals the window, so the shell is a no-op
+  // pass-through. The `card` must size to the box (w-full h-full) and keeps its
+  // own drag region, bg, border, and rounding.
   function pipShell(card: React.ReactNode, withGlow: boolean) {
     return (
       <div className="w-full h-screen flex items-center justify-center overflow-hidden">
@@ -419,8 +423,7 @@ export default function FocusPip() {
           style={{
             width: PIP_SIZE.width,
             height: PIP_SIZE.height,
-            transform: highVis ? `scale(${PIP_HIGH_VIS_SCALE})` : undefined,
-            transformOrigin: "center",
+            zoom: highVis ? PIP_HIGH_VIS_SCALE : undefined,
           }}
         >
           {highVis && withGlow && (

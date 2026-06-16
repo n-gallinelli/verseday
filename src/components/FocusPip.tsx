@@ -6,7 +6,7 @@ import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import VerseDayLogo from "./VerseDayLogo";
 import { playBreakChime as playCalm } from "../utils/sounds";
 import { clampToFrame } from "../utils/pipClamp";
-import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_SIZE, PIP_COMPLETE_FLOURISH_MS, type PipState } from "../utils/pipEvents";
+import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_SIZE, PIP_HIGH_VIS_SCALE, pipSizeFor, PIP_COMPLETE_FLOURISH_MS, type PipState } from "../utils/pipEvents";
 
 // ONE fixed pip size for every phase — the pip window never resizes (a constant
 // size means declining a break can't shrink it, and there's no setSize docking
@@ -111,6 +111,12 @@ export default function FocusPip() {
   // ISN'T key and DOM hover dispatch is suppressed by macOS.
   const [externallyHovered, setExternallyHovered] = useState(false);
   const expanded = cssHovered || externallyHovered;
+  // High-visibility (larger + glowing) pip. The flag rides on PipState from the
+  // main window — never read from the sql settings layer here (pipEvents forbids
+  // pulling the db into the pip bundle). Drives the window-size pin, the content
+  // scale, and the glow layer.
+  const highVis = state?.highVisibility ?? false;
+  const hasState = state != null;
   const lastSeenRef = useRef<number>(Date.now());
   // Transient acknowledgment text — shown for ~1.2s after the user
   // clicks Snooze ("5 more minutes") or No ("Continue working") on
@@ -207,14 +213,20 @@ export default function FocusPip() {
     document.body.style.margin = "0";
   }, []);
 
-  // Pin the window to one size, ONCE on mount — never per phase. (The window is
-  // also created at this size in FocusMode; this is a belt-and-suspenders set in
-  // case anything reset it.) No phase dependency → no resize on phase change.
+  // Pin the window size to the high-visibility flag — but only ONCE state (and
+  // thus the flag) has arrived. Pinning on bare mount would stomp FocusMode's
+  // create-size with the default before the flag is known and flicker
+  // shrink-then-grow on every high-vis open. FocusMode owns the create-size;
+  // this is the belt-and-suspenders pin AND the live-toggle path — when the flag
+  // flips (Settings toggle re-broadcasts state) this re-pins, and the resize
+  // drives the onResized clamp below so a grown window can't spill off-screen.
   useEffect(() => {
+    if (!hasState) return;
+    const size = pipSizeFor(highVis);
     getCurrentWebviewWindow()
-      .setSize(new LogicalSize(PIP_SIZE.width, PIP_SIZE.height))
+      .setSize(new LogicalSize(size.width, size.height))
       .catch(() => {});
-  }, []);
+  }, [hasState, highVis]);
 
   // Keep the pip on-screen: clamp its position once a move SETTLES, so it can
   // never be dragged fully off an edge and lost (it died at y=-68 once). We do
@@ -257,17 +269,25 @@ export default function FocusPip() {
       }
     }
 
+    function scheduleClamp() {
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        void clampNow();
+      }, PIP_CLAMP_SETTLE_MS);
+    }
+
+    let unlistenResized: (() => void) | undefined;
     (async () => {
-      unlisten = await win.onMoved(() => {
-        if (settleTimer) clearTimeout(settleTimer);
-        settleTimer = setTimeout(() => {
-          void clampNow();
-        }, PIP_CLAMP_SETTLE_MS);
-      });
+      // A drag (onMoved) OR a high-visibility resize (onResized) can leave the
+      // window off-screen; growing anchored at the top-left can spill off the
+      // bottom/right edge. Both settle, then clamp once.
+      unlisten = await win.onMoved(scheduleClamp);
+      unlistenResized = await win.onResized(scheduleClamp);
     })();
 
     return () => {
       unlisten?.();
+      unlistenResized?.();
       if (settleTimer) clearTimeout(settleTimer);
     };
   }, []);
@@ -383,16 +403,49 @@ export default function FocusPip() {
     };
   }, []);
 
+  // Every phase renders through one shell: a window-filling, centered wrapper
+  // holding a fixed BASE-sized (220×58) box. In high-vis mode the box scales
+  // uniformly (PIP_HIGH_VIS_SCALE) — so all phase layouts magnify together and
+  // the break-prompt height math stays valid in scaled units — and a breathing
+  // glow layer sits behind the card in the transparent halo margin. In normal
+  // mode the box equals the window, so the shell is a no-op pass-through. The
+  // `card` must size to the box (w-full h-full) and keeps its own drag region,
+  // bg, border, and rounding.
+  function pipShell(card: React.ReactNode, withGlow: boolean) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center overflow-hidden">
+        <div
+          className="relative"
+          style={{
+            width: PIP_SIZE.width,
+            height: PIP_SIZE.height,
+            transform: highVis ? `scale(${PIP_HIGH_VIS_SCALE})` : undefined,
+            transformOrigin: "center",
+          }}
+        >
+          {highVis && withGlow && (
+            <div
+              aria-hidden
+              className="pip-glow-layer animate-pip-glow absolute inset-0 pointer-events-none"
+              style={{ borderRadius: 18, boxShadow: "0 0 11px 1px var(--pip-glow)" }}
+            />
+          )}
+          {card}
+        </div>
+      </div>
+    );
+  }
+
   // ── COMPLETION TAKEOVER — full-pip "officially done" hand-off ─────────
   // Takes precedence over every phase: renders the SNAPSHOT of the task we
   // just finished (title struck through + green check), then slides out. Sits
   // before the null check so completing the last task still plays even if the
   // main window has already torn `state` down.
   if (completing) {
-    return (
+    return pipShell(
       <div
         data-tauri-drag-region
-        className="select-none w-full h-screen overflow-hidden animate-pip-complete"
+        className="select-none w-full h-full overflow-hidden animate-pip-complete"
         style={{
           background: PIP_BG,
           borderRadius: 18,
@@ -425,7 +478,8 @@ export default function FocusPip() {
             Done
           </div>
         </div>
-      </div>
+      </div>,
+      false,
     );
   }
 
@@ -438,10 +492,10 @@ export default function FocusPip() {
   // confirming the choice before the underlying state.phase flips to
   // "work" and the regular task readout returns.
   if (pendingAck) {
-    return (
+    return pipShell(
       <div
         data-tauri-drag-region
-        className="select-none flex items-center justify-center w-full h-screen"
+        className="select-none flex items-center justify-center w-full h-full"
         style={{
           background: PIP_BG,
           borderRadius: 18,
@@ -453,7 +507,8 @@ export default function FocusPip() {
         <span className="text-[13px] font-medium text-fg leading-tight">
           {pendingAck}
         </span>
-      </div>
+      </div>,
+      true,
     );
   }
 
@@ -469,10 +524,10 @@ export default function FocusPip() {
   // text-fg-secondary at 12px (was an 11px faded/secondary split that read as
   // invisible). FocusMode owns the 30s auto-dismiss; the user is never trapped.
   if (state.phase === "prompt") {
-    return (
+    return pipShell(
       <div
         data-tauri-drag-region
-        className="select-none flex flex-col items-center justify-center gap-1.5 w-full h-screen px-2.5 py-1.5"
+        className="select-none flex flex-col items-center justify-center gap-1.5 w-full h-full px-2.5 py-1.5"
         style={{
           background: PIP_BG,
           borderRadius: 18,
@@ -519,14 +574,15 @@ export default function FocusPip() {
             Skip
           </button>
         </div>
-      </div>
+      </div>,
+      true,
     );
   }
 
   // ── BREAK COUNTDOWN ────────────────────────────────────────────────
   if (state.phase === "break") {
-    return (
-      <div data-tauri-drag-region className="px-3.5 h-screen flex items-center select-none overflow-hidden" style={{ background: PIP_BG, borderRadius: 18 }} onMouseDown={handlePipMouseDown}>
+    return pipShell(
+      <div data-tauri-drag-region className="px-3.5 w-full h-full flex items-center select-none overflow-hidden" style={{ background: PIP_BG, borderRadius: 18 }} onMouseDown={handlePipMouseDown}>
         <div className="flex items-center gap-2.5 w-full">
           <div className="flex-1 min-w-0">
             <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-0.5">Break</div>
@@ -538,7 +594,8 @@ export default function FocusPip() {
             End early
           </button>
         </div>
-      </div>
+      </div>,
+      true,
     );
   }
 
@@ -549,10 +606,10 @@ export default function FocusPip() {
   // only the explicit VerseDay logo button (in the icon strip)
   // focuses the main window. The hover zone widens when expanded so
   // a mouse moving leftward across the icons stays inside it.
-  return (
+  return pipShell(
     <div
       data-tauri-drag-region
-      className="select-none overflow-hidden relative h-screen"
+      className="select-none overflow-hidden relative w-full h-full"
       style={{ background: PIP_BG, borderRadius: 18, border: "0.5px solid var(--focus-pip-border)" }}
       onMouseDown={handlePipMouseDown}
     >
@@ -712,6 +769,7 @@ export default function FocusPip() {
           <div className="run-sweep-bar run-sweep-bar-wide" style={{ background: "#A8CFE5" }} />
         </div>
       )}
-    </div>
+    </div>,
+    true,
   );
 }

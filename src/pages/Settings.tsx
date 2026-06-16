@@ -14,6 +14,9 @@ import {
   getPipCompleteBehavior,
   setPipCompleteBehavior as persistPipCompleteBehavior,
   PIP_COMPLETE_BEHAVIOR_CHANGED_EVENT,
+  getPipHighVisibility,
+  setPipHighVisibility as persistPipHighVisibility,
+  PIP_HIGH_VIS_CHANGED_EVENT,
   type BreakContinuity,
 } from "../utils/focusSettings";
 import type { PipCompleteBehavior } from "../utils/pipEvents";
@@ -63,6 +66,7 @@ export default function Settings() {
   const [breakContinuity, setBreakContinuity] = useState<BreakContinuity>("reset");
   const [pipCompleteBehavior, setPipCompleteBehavior] =
     useState<PipCompleteBehavior>("advance");
+  const [pipHighVis, setPipHighVis] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const taskDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Manual DB export (P4) — null = idle, otherwise the last result message.
@@ -124,6 +128,7 @@ export default function Settings() {
 
       setBreakContinuity(await getBreakContinuity());
       setPipCompleteBehavior(await getPipCompleteBehavior());
+      setPipHighVis(await getPipHighVisibility());
     }
     load();
   }, []);
@@ -141,6 +146,14 @@ export default function Settings() {
     window.dispatchEvent(
       new CustomEvent(PIP_COMPLETE_BEHAVIOR_CHANGED_EVENT, { detail: mode })
     );
+  }
+
+  function handlePipHighVisChange(v: boolean) {
+    setPipHighVis(v);
+    persistPipHighVisibility(v);
+    // Notify the persistent FocusMode mount (same window) so the live pip
+    // resizes + glows immediately, no restart.
+    window.dispatchEvent(new CustomEvent(PIP_HIGH_VIS_CHANGED_EVENT, { detail: v }));
   }
 
   function handleTaskEstimateChange(value: number) {
@@ -310,6 +323,36 @@ export default function Settings() {
                       }`}
                     >
                       {mode === "advance" ? "Next task" : "Close"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Mini timer: high-visibility (larger + glowing) reminder */}
+              <div className="flex items-center justify-between pt-1">
+                <div>
+                  <div className="text-[13px] text-fg">High-visibility focus timer</div>
+                  <div className="text-[11px] text-fg-faded">
+                    {pipHighVis
+                      ? "Larger mini timer with a gentle glow, so it's easy to notice and stay on task"
+                      : "Standard compact mini timer"}
+                  </div>
+                </div>
+                <div
+                  className="flex items-center bg-elevated rounded-lg overflow-hidden flex-shrink-0 w-[168px]"
+                  style={{ border: "1px solid var(--border-medium)" }}
+                >
+                  {([false, true] as boolean[]).map((on) => (
+                    <button
+                      key={String(on)}
+                      onClick={() => handlePipHighVisChange(on)}
+                      className={`flex-1 h-8 flex items-center justify-center text-[12px] cursor-pointer transition-colors ${
+                        pipHighVis === on
+                          ? "bg-accent-blue-soft text-accent-blue-soft-fg font-medium"
+                          : "text-fg-muted hover:text-fg"
+                      }`}
+                    >
+                      {on ? "On" : "Off"}
                     </button>
                   ))}
                 </div>

@@ -27,6 +27,20 @@ export const PIP_COMPLETE_FLOURISH_MS = 850;
 // paused view is shorter and centers in the remaining space.
 export const PIP_SIZE = { width: 220, height: 58 };
 
+// High-visibility mode: the SAME card content scaled uniformly by
+// PIP_HIGH_VIS_SCALE inside a larger window whose extra margin is transparent
+// halo room for the breathing glow (a glow can't render outside the window, so
+// the card is inset). 220×58 × 1.3 ≈ 286×75; +20px halo each side → 326×116.
+// Both the window-creation size (FocusMode) and the content pin (FocusPip) read
+// these so the two sides can't drift — same discipline as PIP_SIZE.
+export const PIP_HIGH_VIS_SCALE = 1.3;
+export const PIP_SIZE_LARGE = { width: 326, height: 116 };
+
+/** The pip window size for a given high-visibility flag. */
+export function pipSizeFor(highVisibility: boolean): { width: number; height: number } {
+  return highVisibility ? PIP_SIZE_LARGE : PIP_SIZE;
+}
+
 export interface PipState {
   elapsed: number;
   paused: boolean;
@@ -42,4 +56,9 @@ export interface PipState {
   // (slide-in-next vs self-close) deterministically, without racing on IPC
   // arrival timing.
   completeBehavior: PipCompleteBehavior;
+  // High-visibility mode: render the larger, gently-glowing pip. Rides on
+  // PipState (not read from the sql layer in the pip bundle, which pipEvents
+  // forbids) so the main window stays the single source of truth and a live
+  // Settings toggle reaches the pip on the next broadcast.
+  highVisibility: boolean;
 }

@@ -1372,8 +1372,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   function commitTitle() {
     if (titleDraft === null) return;
     const trimmed = titleDraft.trim();
-    const id = focus?.taskId;
-    if (id && trimmed && trimmed !== focusedTask?.title) {
+    // Bind to the VIEWED task: the h1 is editable while browsing another task
+    // mid-session, so the edit must target what's on screen, not the running
+    // session (id === focus?.taskId when not browsing → non-browse path intact).
+    const id = viewedTask?.id;
+    if (id && trimmed && trimmed !== viewedTask?.title) {
       updateTaskTitle(id, trimmed).catch(() => {});
       primeTaskPatch(id, { title: trimmed });
     }
@@ -1383,7 +1386,9 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // Set the task's planned (estimated) duration. minutes === null
   // clears the planned value. Writes to DB + store, closes popover.
   function setPlannedMinutes(minutes: number | null) {
-    const id = focus?.taskId;
+    // Bind to the VIEWED task — the Planned button has no browse gating, so an
+    // edit while browsing must write the on-screen task, not the running one.
+    const id = viewedTask?.id;
     if (id) {
       updateTaskEstimate(id, minutes).catch(() => {});
       primeTaskPatch(id, { estimated_minutes: minutes });
@@ -1611,8 +1616,13 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
             <div className="flex-1 min-w-0 max-w-[540px] flex items-start gap-3">
               <button
                 onClick={handleDone}
-                className="mt-[5px] w-7 h-7 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors group cursor-pointer border-fg-faded hover:border-accent-green-deep hover:bg-accent-green-deep"
-                title="Mark done"
+                disabled={browsingOther}
+                className={`mt-[5px] w-7 h-7 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors group border-fg-faded ${
+                  browsingOther
+                    ? "opacity-40 cursor-not-allowed"
+                    : "cursor-pointer hover:border-accent-green-deep hover:bg-accent-green-deep"
+                }`}
+                title={browsingOther ? "Return to the running task to complete it" : "Mark done"}
               >
                 <svg
                   width="14" height="14" viewBox="0 0 16 16"

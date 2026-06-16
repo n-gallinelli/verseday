@@ -1158,9 +1158,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     // screen — inline pauses (DailyPlanner row, etc.) must not whisk the user
     // back to wherever the timer was originally started.
     if (state.currentPage === "focus") {
-      set({ session: null, focusView: null, currentPage: prev });
+      set({ session: null, focusView: null, browsedTaskId: null, currentPage: prev });
     } else {
-      set({ session: null, focusView: null });
+      set({ session: null, focusView: null, browsedTaskId: null });
     }
     return prev;
   },
@@ -1179,8 +1179,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     if (openRows.length === 0) {
-      // No live session.
-      set({ session: null, focusView: null });
+      // No live session. (browsedTaskId is already null at boot — never
+      // persisted — but cleared here too so the "session null ⟹ browse null"
+      // invariant holds uniformly, not by accident.)
+      set({ session: null, focusView: null, browsedTaskId: null });
       return;
     }
 

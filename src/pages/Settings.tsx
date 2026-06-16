@@ -334,7 +334,7 @@ export default function Settings() {
                   <div className="text-[13px] text-fg">High-visibility focus timer</div>
                   <div className="text-[11px] text-fg-faded">
                     {pipHighVis
-                      ? "Larger mini timer with a gentle glow, so it's easy to notice and stay on task"
+                      ? "Larger mini timer that's easier to notice"
                       : "Standard compact mini timer"}
                   </div>
                 </div>

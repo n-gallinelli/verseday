@@ -34,7 +34,11 @@ Opt-in via a **Settings toggle** (default off). Feel = **calm breathing**: a slo
 
 - **Boolean setting, default OFF.** Existing usage unchanged unless toggled.
 - **Calm breathing glow:** opacity pulse 0.55↔1 over ~2.5s ease-in-out.
-- **Glow color tracks phase:** brand green during work, the break color during breaks.
+- **Single green glow token for every phase** (revised from an earlier
+  "color-tracks-phase" idea — deliberately collapsed). One `--pip-glow` (brand
+  green, themed light/dark) covers work, break, and prompt. VerseDay's break UI
+  is already deep-green, so a separate break color would add surface area for no
+  perceptible gain; the completion takeover renders no glow (it slides/fades out).
 - **~1.3× larger,** content scaled **uniformly** (transform: scale) so all three
   phase layouts — running/paused, break countdown, completion takeover — magnify
   together and the break-prompt height math stays valid in scaled units.
@@ -84,14 +88,15 @@ Opt-in via a **Settings toggle** (default off). Feel = **calm breathing**: a slo
   - Wrap the existing per-phase render in a base-sized inner element scaled
     `transform: scale(1.3)` (uniform) so layouts magnify without re-tuning.
   - A glow layer behind the card (absolutely-positioned, card-shaped, blurred
-    accent shadow) with the breathing animation; color by phase via CSS vars.
+    `var(--pip-glow)` shadow) with the breathing animation. One green token for
+    all phases; the completion takeover renders no glow.
 - Normal mode is unchanged (current 220×58, no glow).
 
 ### 6. CSS — `src/index.css`
 - `@keyframes pipGlowBreathe` (opacity 0.55→1→0.55, 2.5s ease-in-out infinite) +
   `.animate-pip-glow`.
 - `@media (prefers-reduced-motion: reduce)` → animation none, fixed opacity.
-- Glow color from existing accent-green / break-phase vars.
+- A single `--pip-glow` token (green), defined in both light and dark themes.
 
 ## Risk / review focus
 - **Two size sources** (FocusMode create + FocusPip pin) both branch on the flag via

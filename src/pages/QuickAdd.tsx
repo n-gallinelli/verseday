@@ -29,6 +29,12 @@ export default function QuickAdd() {
   const [showProjectPicker, setShowProjectPicker] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const projectPickerRef = useRef<HTMLDivElement>(null);
+  // The scrollable options list inside the picker (not the toggle, which
+  // projectPickerRef wraps) — keyboard nav queries its <button> options.
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  // Set when the picker is opened via Tab so the open effect focuses the
+  // first option; stays false on mouse-open so a click doesn't steal focus.
+  const focusFirstOptionRef = useRef(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Click-away dismiss: blur-dismiss is armed only after the user has had
@@ -101,6 +107,20 @@ export default function QuickAdd() {
       setTimeout(tryFocus, 120);
       setTimeout(tryFocus, 280);
     });
+  }, []);
+
+  // Return focus to the title input after a project pick (or closing the
+  // picker by keyboard) with the caret AT END — not focusTitle()'s
+  // select-all, which would risk overtyping the title the user just typed.
+  // The input is already mounted, so this is a synchronous intra-webview
+  // DOM focus move; it doesn't fire the window's onFocusChanged, so no
+  // blur-dismiss interaction.
+  const focusTitleAtEnd = useCallback(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    el.focus();
+    const end = el.value.length;
+    el.setSelectionRange(end, end);
   }, []);
 
   const hideWindow = useCallback(() => {
@@ -178,6 +198,16 @@ export default function QuickAdd() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showProjectPicker]);
 
+  // When the picker opens via Tab, drop focus onto its first option so the
+  // user can arrow through and Enter to select. Guarded by the ref so a
+  // mouse-open (toggle click) leaves focus alone.
+  useEffect(() => {
+    if (showProjectPicker && focusFirstOptionRef.current) {
+      focusFirstOptionRef.current = false;
+      dropdownRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    }
+  }, [showProjectPicker]);
+
   const handleSubmit = useCallback(async () => {
     const trimmed = title.trim();
     if (!trimmed || submitting) return;
@@ -235,9 +265,48 @@ export default function QuickAdd() {
       } else if (e.key === "Enter") {
         e.preventDefault();
         handleSubmit();
+      } else if (e.key === "Tab" && !e.shiftKey && !showProjectPicker) {
+        // From the title input, Tab opens the project picker and drops focus
+        // onto its first option (handled by the open effect below).
+        e.preventDefault();
+        focusFirstOptionRef.current = true;
+        setShowProjectPicker(true);
       }
     },
     [hideWindow, handleSubmit, showProjectPicker],
+  );
+
+  // Keyboard nav inside the open picker. The dropdown is nested in the
+  // input-bar div that owns handleKeyDown, so every handled key must
+  // stopPropagation or it would also reach the parent (e.g. Enter would
+  // submit the task on top of selecting the option).
+  const handlePickerKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        e.stopPropagation();
+        const items = Array.from(
+          dropdownRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+        );
+        if (!items.length) return;
+        const idx = items.findIndex((el) => el === document.activeElement);
+        const delta = e.key === "ArrowDown" ? 1 : -1;
+        const next = idx < 0 ? 0 : Math.min(Math.max(idx + delta, 0), items.length - 1);
+        items[next]?.focus();
+      } else if (e.key === "Escape" || e.key === "Tab") {
+        // Either Tab direction or Esc closes the picker and returns to the
+        // input; selection is via Enter on a focused option.
+        e.preventDefault();
+        e.stopPropagation();
+        setShowProjectPicker(false);
+        focusTitleAtEnd();
+      } else if (e.key === "Enter") {
+        // Let the focused option's native click fire; just keep the parent
+        // input-bar handler from also submitting the task.
+        e.stopPropagation();
+      }
+    },
+    [focusTitleAtEnd],
   );
 
   // Canonical active-objective list, with the current selection always
@@ -438,6 +507,8 @@ export default function QuickAdd() {
           {/* Project dropdown — opens upward */}
           {showProjectPicker && (
             <div
+              ref={dropdownRef}
+              onKeyDown={handlePickerKeyDown}
               className="absolute bottom-full right-0 mb-1.5 min-w-[200px] max-w-[260px] max-h-[260px] overflow-y-auto bg-elevated rounded-xl border border-line-soft p-1 z-10"
               style={{
                 boxShadow: "var(--shadow-modal)",
@@ -445,7 +516,7 @@ export default function QuickAdd() {
             >
               {/* No project */}
               <button
-                onClick={() => { setProjectId(null); setShowProjectPicker(false); hideTip(); }}
+                onClick={() => { setProjectId(null); setShowProjectPicker(false); hideTip(); focusTitleAtEnd(); }}
                 className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-[12px] text-left cursor-pointer transition-colors ${
                   projectId === null
                     ? "bg-accent-blue-soft font-medium text-fg-secondary"
@@ -459,9 +530,11 @@ export default function QuickAdd() {
               {objectiveOptions.map((p) => (
                 <button
                   key={p.id}
-                  onClick={() => { setProjectId(p.id); setShowProjectPicker(false); hideTip(); }}
+                  onClick={() => { setProjectId(p.id); setShowProjectPicker(false); hideTip(); focusTitleAtEnd(); }}
                   onMouseEnter={(e) => showTip(p, e.currentTarget)}
                   onMouseLeave={hideTip}
+                  onFocus={(e) => showTip(p, e.currentTarget)}
+                  onBlur={hideTip}
                   className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-[12px] text-left cursor-pointer transition-colors ${
                     projectId === p.id
                       ? "bg-accent-blue-soft font-medium text-fg"

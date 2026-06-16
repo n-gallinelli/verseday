@@ -8,9 +8,11 @@ import ProjectGlyph from "./ProjectGlyph";
 // TaskDetailOverlay (via ProjectPicker) and the global Quick-Add bar, so
 // the two surfaces stay identical. Floats above everything via a portal
 // to document.body (each Tauri webview has its own body, so the Quick-Add
-// window portals into its own document — correct in both). Visual tokens
-// mirror TaskCard's project tooltip: bg-elevated, 0.5px border-soft,
-// var(--shadow-card).
+// window portals into its own document — correct in both). Visual tokens:
+// opaque bg-elevated, 1px border-strong, var(--shadow-modal) — stronger
+// separation than a plain card so the panel stays legible when it floats
+// over the busy main app showing through the transparent Quick-Add webview
+// (backdrop-blur is a no-op there — it only blurs same-document content).
 //
 // Usage: wire `showTip`/`hideTip` to each row's onMouseEnter/onMouseLeave,
 // render `tooltip` once anywhere in the tree, and call `hideTip()` when the
@@ -79,8 +81,8 @@ export function useObjectiveNameTooltip(iconsById: Map<number, string>) {
           style={{
             top: tip.top,
             left: tip.left,
-            border: "0.5px solid var(--border-soft)",
-            boxShadow: "var(--shadow-card)",
+            border: "1px solid var(--border-strong)",
+            boxShadow: "var(--shadow-modal)",
           }}
         >
           {(() => {

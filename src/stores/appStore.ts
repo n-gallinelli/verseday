@@ -367,6 +367,13 @@ interface AppState {
   /** Focus-screen preview staging (task staged, not running), or null.
    *  Mutually exclusive with `session`; never persisted. */
   focusView: FocusView | null;
+  /** Transient focus-screen BROWSE pointer: the task the screen is looking at
+   *  while a session runs on a DIFFERENT task (↑/↓ during an active session).
+   *  Orthogonal to session/focusView — it never opens/closes a time_entry and
+   *  never violates the session-XOR-focusView invariant. null = the screen
+   *  shows the running/preview task (no browsing). Always null when session is
+   *  null. Never persisted. */
+  browsedTaskId: number | null;
   pendingDetailTask: Task | null;
   /** ID of the task whose detail overlay is currently open. `null` = closed.
    *  Read by the singleton TaskDetailOverlayHost mounted at the App shell.
@@ -652,6 +659,13 @@ interface AppState {
   openProject: (id: number) => void;
   /** Stage a task on the focus screen without starting a time entry. */
   previewFocus: (task: Task, previousPage: Page, priorElapsedMs?: number) => void;
+  /** Point the focus-screen browse pointer at `task` (↑/↓ while a session runs).
+   *  Sets browsedTaskId; clears it if `task` IS the running session's task so
+   *  the screen drops back to live controls with no banner. Never touches
+   *  session/focusView. */
+  browseTask: (task: Task) => void;
+  /** Drop the browse pointer — return the view to the running/preview task. */
+  clearBrowse: () => void;
   /** Promote a preview session to active. Caller has already created the
    *  time entry — pass the resulting id. */
   activateFocus: (timeEntryId: number) => void;
@@ -745,6 +759,17 @@ export function selectTaskDetailTask(state: AppState): Task | null {
 export function selectFocusedTask(state: AppState): Task | null {
   // The focused task is the running session's, or the previewed one.
   const taskId = state.session?.taskId ?? state.focusView?.taskId ?? null;
+  if (taskId === null) return null;
+  return state.tasksById.get(taskId) ?? null;
+}
+
+/** The task the focus SCREEN should render: the browse pointer if set (browsing
+ *  a different task during a session), else the running/preview task. The PiP
+ *  and the live counter stay on selectFocusedTask (the session) — only the
+ *  screen reads this. */
+export function selectViewedTask(state: AppState): Task | null {
+  const taskId =
+    state.browsedTaskId ?? state.session?.taskId ?? state.focusView?.taskId ?? null;
   if (taskId === null) return null;
   return state.tasksById.get(taskId) ?? null;
 }
@@ -960,6 +985,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedProjectId: null,
   session: null,
   focusView: null,
+  browsedTaskId: null,
   pendingDetailTask: null,
   selectedTaskDetailId: null,
   taskDetailAutoFocusTitle: false,
@@ -1019,9 +1045,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     // selectFocusedTask resolves synchronously.
     get().primeTasks([task]);
     // Preview staging only → focusView (never a session, never persisted).
-    // session cleared so "running ⟺ session !== null" holds.
-    set({ focusView: { taskId: task.id, previousPage, priorElapsedMs }, session: null });
+    // session cleared so "running ⟺ session !== null" holds. browse pointer
+    // dropped — a preview is never "browsing".
+    set({ focusView: { taskId: task.id, previousPage, priorElapsedMs }, session: null, browsedTaskId: null });
   },
+  browseTask: (task) => {
+    get().primeTasks([task]);
+    // Browsing back onto the running task drops the pointer (live controls, no
+    // banner). Never touches session/focusView — pure view move.
+    const runningId = get().session?.taskId ?? null;
+    set({ browsedTaskId: task.id === runningId ? null : task.id });
+  },
+  clearBrowse: () => set({ browsedTaskId: null }),
   activateFocus: (timeEntryId) => {
     const v = get().focusView;
     if (!v) return;
@@ -1036,6 +1071,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         workedMs: 0,
       },
       focusView: null,
+      browsedTaskId: null,
     });
   },
   updateFocusTask: (patch) => {
@@ -1108,6 +1144,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         workedMs: 0,
       },
       focusView: null,
+      browsedTaskId: null,
     });
   },
   stopFocus: () => {
@@ -1121,9 +1158,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     // screen — inline pauses (DailyPlanner row, etc.) must not whisk the user
     // back to wherever the timer was originally started.
     if (state.currentPage === "focus") {
-      set({ session: null, focusView: null, currentPage: prev });
+      set({ session: null, focusView: null, browsedTaskId: null, currentPage: prev });
     } else {
-      set({ session: null, focusView: null });
+      set({ session: null, focusView: null, browsedTaskId: null });
     }
     return prev;
   },
@@ -1142,8 +1179,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     if (openRows.length === 0) {
-      // No live session.
-      set({ session: null, focusView: null });
+      // No live session. (browsedTaskId is already null at boot — never
+      // persisted — but cleared here too so the "session null ⟹ browse null"
+      // invariant holds uniformly, not by accident.)
+      set({ session: null, focusView: null, browsedTaskId: null });
       return;
     }
 
@@ -1726,7 +1765,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => {
       const next = new Map(s.workedByTaskId);
       next.set(taskId, committed);
-      return { workedByTaskId: next, session: null, focusView: null };
+      // Invariant: a cleared session clears the browse pointer too, so the
+      // screen can never be left pointing at a browsed task with no session
+      // (which would render with a null `focus`). The caller re-stages a
+      // preview if it wants the screen to stay put (Start-switch path).
+      return { workedByTaskId: next, session: null, focusView: null, browsedTaskId: null };
     });
   },
   endActiveFocusSession: async () => {

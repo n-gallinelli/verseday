@@ -11,7 +11,7 @@ import {
   type PipState,
   type PipCompleteBehavior,
 } from "../utils/pipEvents";
-import { useAppStore, selectFocusedTask, consumeFocusResume, clearFocusResume, type SessionState, type FocusView } from "../stores/appStore";
+import { useAppStore, selectFocusedTask, selectViewedTask, consumeFocusResume, clearFocusResume, type SessionState, type FocusView } from "../stores/appStore";
 import { clampWorkedDelta } from "../utils/workedTime";
 import {
   stopTimeEntry,
@@ -127,7 +127,20 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const togglePauseFocus = useAppStore((s) => s.togglePauseFocus);
   const adjustFocusElapsed = useAppStore((s) => s.adjustFocusElapsed);
   const tickFocus = useAppStore((s) => s.tickFocus);
+  // focusedTask = the running/preview task — drives the PiP broadcast + the live
+  // counter (stays session-bound). viewedTask = what the SCREEN renders, which
+  // is the browse pointer when ↑/↓ has scrolled to a different task during a
+  // session. They diverge only while browsing-other.
   const focusedTask = useAppStore(selectFocusedTask);
+  const viewedTask = useAppStore(selectViewedTask);
+  const browsedTaskId = useAppStore((s) => s.browsedTaskId);
+  const workedByTaskId = useAppStore((s) => s.workedByTaskId);
+  const browseTask = useAppStore((s) => s.browseTask);
+  const clearBrowse = useAppStore((s) => s.clearBrowse);
+  const endActiveFocusSession = useAppStore((s) => s.endActiveFocusSession);
+  const loadWorkedMinutes = useAppStore((s) => s.loadWorkedMinutes);
+  // Browsing a different task than the one the timer runs on.
+  const browsingOther = session != null && browsedTaskId != null;
   // M2.2 — derived pause flags. focus.paused only exists on the active
   // branch; `paused` reads here are widely-used legacy locals. Keeping
   // the same name minimizes the diff at every render-site.
@@ -257,6 +270,27 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     }
   }, [activateFocus]);
 
+  // Start the BROWSED task while a session runs on another: commit + save the
+  // running session, stage the browsed task as a preview, then start it.
+  // handleStartSession is preview-gated, so the previewFocus step is REQUIRED
+  // before it (per Verse). endActiveFocusSession clears the browse pointer; the
+  // synchronous previewFocus that follows wins the boot effect's cancel race.
+  const handleStartBrowsed = useCallback(async () => {
+    const st = useAppStore.getState();
+    const bId = st.browsedTaskId;
+    if (bId == null) return;
+    const viewed = st.tasksById.get(bId);
+    if (!viewed) return;
+    const prev: Page =
+      st.session?.previousPage ??
+      (st.pageHistory.slice(-1)[0] as Page) ??
+      "daily";
+    const priorMs = (st.workedByTaskId.get(bId) ?? 0) * 60 * 1000;
+    await endActiveFocusSession();        // commit running, clears session + browse
+    previewFocus(viewed, prev, priorMs);  // stage browsed as preview
+    await handleStartSession();           // create entry → activate → session = browsed
+  }, [endActiveFocusSession, previewFocus, handleStartSession]);
+
   // Notes state + debounced auto-save (the editor flushes pending saves on
   // its own unmount, so navigating away from focus mode is also covered).
   // Synced from selectFocusedTask whenever the task identity changes, so
@@ -264,7 +298,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // the preview → active transition. Reading from the selector (cache-
   // backed) instead of the focus snapshot means a notes change made
   // elsewhere (TaskDetailOverlay) reflects here on the next render.
-  const [notes, setNotes] = useState(focusedTask?.notes ?? "");
+  const [notes, setNotes] = useState(viewedTask?.notes ?? "");
   const notesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Inline title edit. titleDraft === null means the h1 renders;
@@ -282,8 +316,8 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const [zoomKey, setZoomKey] = useState(0);
 
   useEffect(() => {
-    if (focus && focusedTask) setNotes(focusedTask.notes ?? "");
-  }, [focus?.taskId, focusedTask]);
+    if (viewedTask) setNotes(viewedTask.notes ?? "");
+  }, [viewedTask?.id, viewedTask]);
 
   // On task advance (Done → next), release the notes editor's
   // contentEditable focus. The ↑/↓ task-switch handler ignores arrows while
@@ -294,7 +328,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   useEffect(() => {
     const el = document.activeElement as HTMLElement | null;
     if (el && el.isContentEditable) el.blur();
-  }, [focus?.taskId]);
+  }, [viewedTask?.id]);
 
   // Reset session-relative state whenever the focus task changes
   // (e.g. Done → next-task transition). Without this the new task
@@ -334,7 +368,9 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   }, [focus?.taskId]);
 
   function saveNotes(value: string) {
-    const taskId = focus?.taskId;
+    // Save against the VIEWED task so editing while browsing-other writes to the
+    // task you're looking at, not the running one.
+    const taskId = viewedTask?.id;
     if (!taskId) return;
     if (notesTimerRef.current) clearTimeout(notesTimerRef.current);
     notesTimerRef.current = setTimeout(() => {
@@ -1043,15 +1079,15 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [setPage, currentPage]);
 
-  // ── ↑/↓ scroll through today's tasks while not in a live session ───────────
-  // Scroll iff there's no active session: focus is null or `mode === "preview"`.
-  // A running OR paused active session is INERT — switching tasks mid-session
-  // goes through Done/Stop, so an arrow key never closes a time_entry as a side
-  // effect (no fragmented sessions, no focus:null flash, no commit guard).
-  // List source mirrors boot + complete-advance: getTasksForDate(today),
-  // non-done, ordered by sort_order — NOT the store index, which isn't
-  // guaranteed populated when you arrive via the F hotkey. previewFocus primes
-  // tasksById for the target, so selectFocusedTask resolves on the next render.
+  // ── ↑/↓ scroll through today's tasks on the focus screen ───────────────────
+  // No session: arrows move the PREVIEW (previewFocus), as before.
+  // Active session (running OR paused): arrows move a BROWSE pointer
+  // (browseTask → browsedTaskId) so you can look at other tasks while the timer
+  // keeps accumulating on its task — never committing/closing the time_entry and
+  // never violating the session-XOR-focusView invariant. Landing back on the
+  // running task drops the pointer. List source mirrors boot + complete-advance:
+  // getTasksForDate(today), non-done, sort_order — NOT the store index, which
+  // isn't guaranteed populated when you arrive via the F hotkey.
   useEffect(() => {
     if (currentPage !== "focus") return;
     let navToken = 0;
@@ -1062,52 +1098,49 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       const isInput =
         el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable);
       if (isInput) return;
-      const f = readFocus(useAppStore.getState());
-      // A RUNNING session (active & not paused) stays inert — a stray arrow
-      // shouldn't kill a live timer. Preview / no-session / a PAUSED session
-      // can switch; a paused session's open time_entry is committed first
-      // (below) so switching never orphans it.
-      if (f && f.mode === "active" && !f.paused) return;
       e.preventDefault();
       const token = ++navToken; // ignore stale async results from older presses
       const tasks = await getTasksForDate(todayString()).catch(() => null);
       if (token !== navToken || !tasks) return;
       const remaining = tasks.filter((t) => t.status !== "done");
       if (remaining.length === 0) return;
-      const curId = readFocus(useAppStore.getState())?.taskId;
-      const idx = remaining.findIndex((t) => t.id === curId);
+      // Move the pointer FROM the browse pointer (or the running task) when a
+      // session is active, else from the previewed task.
+      const sess = useAppStore.getState().session;
+      const fromId = sess
+        ? useAppStore.getState().browsedTaskId ?? sess.taskId
+        : readFocus(useAppStore.getState())?.taskId;
+      const idx = remaining.findIndex((t) => t.id === fromId);
       const nextIdx =
         idx === -1
           ? e.key === "ArrowDown" ? 0 : remaining.length - 1
           : e.key === "ArrowDown" ? idx + 1 : idx - 1;
       if (nextIdx < 0 || nextIdx >= remaining.length) return; // clamp, no wrap
       const target = remaining[nextIdx];
-      if (target.id === curId) return;
-      // workedByTaskId/getWorkedMinutesForTask are MINUTES; priorElapsedMs is MS.
-      const priorMs = (await getWorkedMinutesForTask(target.id).catch(() => 0)) * 60 * 1000;
+      if (target.id === fromId) return;
+      // Load the target's committed worked minutes so the screen can show its
+      // static worked time (browse) or seed the preview baseline (no session).
+      await loadWorkedMinutes([target.id]).catch(() => {});
       if (token !== navToken) return;
-      // Capture the return-to page BEFORE committing — endActiveFocusSession
-      // nulls `focus`, so reading previousPage after would miss it.
+      if (useAppStore.getState().session) {
+        // ACTIVE session: BROWSE only — the timer keeps running on its task.
+        // Never previewFocus here (would break the session-XOR-focusView
+        // invariant) and never commit. browseTask drops the pointer if `target`
+        // IS the running task (→ live controls, no banner).
+        browseTask(target);
+        return;
+      }
+      // PREVIEW / no session: stage the target as a preview (existing behavior).
+      const priorMs = (useAppStore.getState().workedByTaskId.get(target.id) ?? 0) * 60 * 1000;
       const prev: Page =
         readFocus(useAppStore.getState())?.previousPage ??
         (useAppStore.getState().pageHistory.slice(-1)[0] as Page) ??
         "daily";
-      // Commit a PAUSED active session before switching so its open time_entry
-      // is closed, not orphaned — routes into the proven Done/Stop commit path
-      // (stopFocusedSessionForTask), which guards + leaves focus null. Re-read
-      // focus right before the commit (it may have changed during the awaits),
-      // and re-check the nav token after the await before the synchronous
-      // previewFocus so a newer keypress wins.
-      const live = readFocus(useAppStore.getState());
-      if (live && live.mode === "active") {
-        await useAppStore.getState().endActiveFocusSession();
-        if (token !== navToken) return;
-      }
       previewFocus(target, prev, priorMs);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [currentPage, previewFocus]);
+  }, [currentPage, previewFocus, browseTask, loadWorkedMinutes]);
 
   // Thin wrapper around togglePauseFocus. Pomodoro break-phase
   // adjustment (so a paused break doesn't "catch up" to wall-clock
@@ -1366,6 +1399,14 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // separate, future affordance, not in this popover.
   function applyActualMs(targetMs: number) {
     if (!focus) return;
+    // Browsing a different task during a session: the Actual numeral shows the
+    // VIEWED task's committed worked time, so an edit must write THAT task's DB
+    // worked minutes (never the running session's workedMs).
+    if (browsingOther && browsedTaskId != null) {
+      const minutes = Math.round(Math.max(0, targetMs) / 60000);
+      setTaskWorkedMinutesAction(browsedTaskId, minutes).catch(() => {});
+      return;
+    }
     if (focus.mode === "active") {
       const newMs = Math.max(focus.priorElapsedMs, targetMs);
       const desiredElapsed = newMs - focus.priorElapsedMs;
@@ -1429,13 +1470,16 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // reconcileFocusOnBoot all prime the cache, so a null result here means a
   // brief race during a focus task swap; render nothing for that frame rather
   // than half-state, the next render resolves.
-  const task = focusedTask;
+  const task = viewedTask;
   if (!task) return null;
   const isQueued = focus.mode === "preview";
   const baselineMs = focus.priorElapsedMs;
 
-  const isOnBreak = !isQueued && phase === "break";
-  const isPrompting = !isQueued && phase === "prompt";
+  // Browsing a different task during a session reads like a preview OF THAT
+  // TASK: static worked, a Start (switch) button, no live counter, and never
+  // the running session's break/prompt sub-states.
+  const isOnBreak = !browsingOther && !isQueued && phase === "break";
+  const isPrompting = !browsingOther && !isQueued && phase === "prompt";
 
   // Actual is editable in both preview (no session yet — writes worked
   // minutes to the DB) and active (running OR paused — writes session
@@ -1446,7 +1490,13 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // Total work time on this task (prior sessions + current, minus breaks).
   // Preview mode: just the prior logged time — nothing's incrementing.
   const workElapsed = elapsed - totalBreakTimeRef.current;
-  const totalWorkedMs = isQueued ? baselineMs : workElapsed + baselineMs;
+  // Browsing-other shows the VIEWED task's committed worked time (static, no
+  // live counter — the session's clock belongs to the running task). elapsed
+  // stays session-bound for the PiP + the running task's own display.
+  const browsedWorkedMs = (workedByTaskId.get(task.id) ?? 0) * 60 * 1000;
+  const totalWorkedMs = browsingOther
+    ? browsedWorkedMs
+    : isQueued ? baselineMs : workElapsed + baselineMs;
   const estimatedMs = (task.estimated_minutes ?? 0) * 60 * 1000;
 
   // Hidden mount: effects above continue to run (pip lifecycle, state
@@ -1458,6 +1508,22 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       className={`fixed inset-0 flex flex-col items-center z-50 overflow-hidden${isOnBreak ? " focus-break-bg" : ""}`}
       style={isOnBreak ? undefined : { background: "var(--focus-bg)" }}
     >
+      {/* "Still timing X" banner — shown while browsing a task the timer ISN'T
+          running on. Clicking returns the view to the running task. */}
+      {browsingOther && focusedTask && (
+        <button
+          onClick={clearBrowse}
+          title="Return to the task the timer is running on"
+          className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 max-w-[90vw] px-4 py-2 rounded-full bg-elevated border border-line-soft text-[12px] text-fg-secondary cursor-pointer hover:text-fg transition-colors"
+          style={{ boxShadow: "var(--shadow-card)" }}
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-accent-green-bright flex-shrink-0 animate-pulse" />
+          <span className="truncate">
+            Still timing <span className="font-medium text-fg">{focusedTask.title}</span>
+          </span>
+          <span className="text-accent-blue font-medium flex-shrink-0">Return</span>
+        </button>
+      )}
       {/* P-fix3: re-show the mini timer (pip) after it's been hidden. Setting
           pipHidden false re-runs the creation effect, which recreates the pip. */}
       {pipHidden && (
@@ -1723,19 +1789,19 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                   (Break has its own full-screen surface now, so no Skip
                   variant here.) */}
               <button
-                  onClick={isQueued ? handleStartSession : handleTogglePause}
+                  onClick={browsingOther ? handleStartBrowsed : isQueued ? handleStartSession : handleTogglePause}
                   className={`inline-flex items-center justify-center gap-2 px-5 min-w-[120px] h-11 rounded-full text-[13px] font-medium uppercase tracking-[0.1em] cursor-pointer transition-colors ${
-                    isQueued || paused
+                    isQueued || browsingOther || paused
                       ? "bg-accent-green-bright text-white hover:opacity-90"
                       : "bg-overlay-hover text-fg-secondary hover:bg-overlay-pressed"
                   }`}
                 >
-                  {isQueued || paused ? (
+                  {isQueued || browsingOther || paused ? (
                     <>
                       <svg width="11" height="11" viewBox="0 0 14 14" fill="currentColor">
                         <path d="M3 1v12l10-6z" />
                       </svg>
-                      {isQueued ? "Start" : "Resume"}
+                      {isQueued || browsingOther ? "Start" : "Resume"}
                     </>
                   ) : (
                     <>

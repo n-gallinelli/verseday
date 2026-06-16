@@ -1524,9 +1524,18 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         >
           <span className="w-1.5 h-1.5 rounded-full bg-accent-green-bright flex-shrink-0 animate-pulse" />
           <span className="truncate">
-            Still timing <span className="font-medium text-fg">{focusedTask.title}</span>
+            Still timing<span className="font-medium text-fg ml-2.5">{focusedTask.title}</span>
           </span>
-          <span className="text-accent-blue font-medium flex-shrink-0">Return</span>
+          {/* Curved return arrow → click clears the browse pointer back to the running task. */}
+          <svg
+            width="15" height="15" viewBox="0 0 24 24" fill="none"
+            className="text-accent-blue flex-shrink-0"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M9 14L4 9l5-5" />
+            <path d="M4 9h11a5 5 0 0 1 5 5v0a5 5 0 0 1-5 5h-4" />
+          </svg>
         </button>
       )}
       {/* P-fix3: re-show the mini timer (pip) after it's been hidden. Setting

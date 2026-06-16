@@ -407,15 +407,15 @@ export default function FocusPip() {
   // holding a fixed BASE-sized (220×58) box. In high-vis mode the box magnifies
   // uniformly (PIP_HIGH_VIS_SCALE) via `zoom` — so all phase layouts grow
   // together and the break-prompt height math stays valid in scaled units —
-  // and a breathing glow layer sits behind the card in the transparent halo
-  // margin. We use `zoom`, NOT `transform: scale()`: scale stretches the
+  // and a breathing blue accent ring hugs the card in the small transparent
+  // halo margin. We use `zoom`, NOT `transform: scale()`: scale stretches the
   // already-rasterized 220×58 bitmap, which blurs the text and smears the
   // 0.5px border into a fuzzy ring. `zoom` re-lays-out and re-rasterizes at the
   // final size (WKWebView honors it), so glyphs, border, and glow stay crisp.
   // In normal mode the box equals the window, so the shell is a no-op
   // pass-through. The `card` must size to the box (w-full h-full) and keeps its
   // own drag region, bg, border, and rounding.
-  function pipShell(card: React.ReactNode, withGlow: boolean) {
+  function pipShell(card: React.ReactNode, withRing: boolean) {
     return (
       <div className="w-full h-screen flex items-center justify-center overflow-hidden">
         <div
@@ -426,17 +426,18 @@ export default function FocusPip() {
             zoom: highVis ? PIP_HIGH_VIS_SCALE : undefined,
           }}
         >
-          {highVis && withGlow && (
+          {highVis && withRing && (
             <div
               aria-hidden
-              className="pip-glow-layer animate-pip-glow absolute inset-0 pointer-events-none"
+              className="pip-ring-layer animate-pip-ring absolute inset-0 pointer-events-none"
               style={{
                 borderRadius: 18,
-                // Two stacked shadows (these px ×1.3 under the box's zoom): a
-                // tighter bright core + a wide soft bloom. The layering is what
-                // makes it read as a glow rather than a single flat outline.
-                boxShadow:
-                  "0 0 9px 1px var(--pip-glow), 0 0 22px 6px var(--pip-glow-soft)",
+                // Crisp accent ring: 0 blur, 2px spread (×1.3 under the box's
+                // zoom ≈ 2.6px) → a sharp blue outline hugging the pill, no
+                // fuzz. Opacity breathes via .animate-pip-ring for a subtle
+                // "alive" pulse. The small window halo (PIP_SIZE_LARGE) is just
+                // enough for the ring to render outside the card un-clipped.
+                boxShadow: "0 0 0 2px var(--pip-ring)",
               }}
             />
           )}

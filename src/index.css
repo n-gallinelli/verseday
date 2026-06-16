@@ -71,11 +71,11 @@
   --accent-green-bright-hover: #4ab893;
   --accent-green-deep: #0F6E56;
   --accent-green-glow: rgba(106, 158, 127, 0.22);
-  /* High-visibility pip halo — saturated green; softened by the box-shadow blur.
-     -glow is the bright core, -soft the wide outer bloom (lower alpha so the
-     falloff reads as a halo, not a hard band). */
-  --pip-glow: rgba(63, 128, 96, 0.75);
-  --pip-glow-soft: rgba(63, 128, 96, 0.45);
+  /* High-visibility pip ring — a crisp blue accent outline hugging the pill
+     (box-shadow with 0 blur). Blue is the "active/interactive" accent (same as
+     the play button), kept distinct from the green running-timer + done states.
+     Resolves to the themed --accent-blue, so dark mode follows automatically. */
+  --pip-ring: var(--accent-blue);
   --accent-green-soft-bg: #F0F9F5;
   /* Muted green-tint for "done" task cards — same lightness as
      accent-green-soft-bg, lower saturation so it reads as quietly
@@ -246,8 +246,7 @@
     --accent-green-bright-hover: #4ba089;
     --accent-green-deep: #3aa386;
     --accent-green-glow: rgba(111, 160, 136, 0.28);
-    --pip-glow: rgba(111, 160, 136, 0.72);
-    --pip-glow-soft: rgba(111, 160, 136, 0.42);
+    /* --pip-ring follows the dark --accent-blue above via var() — no override. */
     --accent-green-soft-bg: rgba(111, 160, 136, 0.14);
     --accent-green-muted-bg: rgba(132, 144, 138, 0.10);
 
@@ -881,20 +880,21 @@ select {
   animation: pipSlideIn 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-/* High-visibility pip: a calm breathing halo behind the card. Only the layer's
-   OPACITY animates (cheap on an always-on-top window) — the glow itself is a
-   static box-shadow. Base opacity 0.85 is what shows when the animation is off
-   (reduced-motion), so the glow degrades to a steady halo rather than vanishing. */
-@keyframes pipGlowBreathe {
-  0%, 100% { opacity: 0.5; }
+/* High-visibility pip: a crisp blue accent ring that gently breathes. Only the
+   layer's OPACITY animates (cheap on an always-on-top window) — the ring itself
+   is a static 0-blur box-shadow. Base opacity 0.9 is what shows when the
+   animation is off (reduced-motion), so the ring stays a steady outline rather
+   than vanishing. */
+@keyframes pipRingBreathe {
+  0%, 100% { opacity: 0.6; }
   50% { opacity: 1; }
 }
-.pip-glow-layer {
-  opacity: 0.85;
+.pip-ring-layer {
+  opacity: 0.9;
   will-change: opacity;
 }
-.animate-pip-glow {
-  animation: pipGlowBreathe 2.6s ease-in-out infinite;
+.animate-pip-ring {
+  animation: pipRingBreathe 2.6s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -912,7 +912,7 @@ select {
   .animate-focus-complete-core,
   .animate-pip-complete,
   .animate-pip-slide-in,
-  .animate-pip-glow {
+  .animate-pip-ring {
     animation: none;
   }
 }

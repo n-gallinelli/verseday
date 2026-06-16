@@ -28,15 +28,14 @@ export const PIP_COMPLETE_FLOURISH_MS = 850;
 export const PIP_SIZE = { width: 220, height: 58 };
 
 // High-visibility mode: the SAME card content scaled uniformly by
-// PIP_HIGH_VIS_SCALE inside a larger window whose extra margin is transparent
-// halo room for the breathing glow (a glow can't render outside the window —
-// it clips at the window bounds — so the card is inset). 220×58 × 1.3 ≈ 286×75;
-// +~39px halo each side → 364×152, which is what lets the layered glow read as
-// a real halo instead of a tight clipped outline. Both the window-creation size
-// (FocusMode) and the content pin (FocusPip) read these so the two sides can't
-// drift — same discipline as PIP_SIZE.
+// PIP_HIGH_VIS_SCALE inside a slightly larger window. The crisp accent ring is
+// a box-shadow drawn OUTSIDE the card, so it clips at the window bounds — the
+// window just needs a few px of transparent margin for the ring (+ breathe) to
+// render un-clipped. 220×58 × 1.3 ≈ 286×75; +~7px halo each side → 300×88. Both
+// the window-creation size (FocusMode) and the content pin (FocusPip) read
+// these so the two sides can't drift — same discipline as PIP_SIZE.
 export const PIP_HIGH_VIS_SCALE = 1.3;
-export const PIP_SIZE_LARGE = { width: 364, height: 152 };
+export const PIP_SIZE_LARGE = { width: 300, height: 88 };
 
 /** The pip window size for a given high-visibility flag. */
 export function pipSizeFor(highVisibility: boolean): { width: number; height: number } {

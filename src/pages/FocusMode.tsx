@@ -6,7 +6,7 @@ import {
   PIP_STATE_EVENT,
   PIP_CMD_EVENT,
   PIP_READY_EVENT,
-  PIP_SIZE,
+  pipSizeFor,
   PIP_COMPLETE_FLOURISH_MS,
   type PipState,
   type PipCompleteBehavior,
@@ -37,6 +37,8 @@ import {
   BREAK_CONTINUITY_GAP_MS,
   getPipCompleteBehavior,
   PIP_COMPLETE_BEHAVIOR_CHANGED_EVENT,
+  getPipHighVisibility,
+  PIP_HIGH_VIS_CHANGED_EVENT,
   type BreakContinuity,
 } from "../utils/focusSettings";
 import { getEmptyDayMessage } from "../utils/format";
@@ -447,10 +449,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         const pip = new WebviewWindow("focus-pip", {
           url: "/#focus-pip",
           title: "Focus",
-          // Shared with FocusPip's pinned size (pipEvents.PIP_SIZE) so the window
-          // and its content can't drift.
-          width: PIP_SIZE.width,
-          height: PIP_SIZE.height,
+          // Shared with FocusPip's pinned size (pipSizeFor) so the window and its
+          // content can't drift. High-visibility mode creates a larger window;
+          // the content reads the same flag off PipState to scale + glow to fit.
+          width: pipSizeFor(pipHighVisRef.current).width,
+          height: pipSizeFor(pipHighVisRef.current).height,
           resizable: false,
           alwaysOnTop: true,
           // macOS: join every Space so the pip rides along to whatever
@@ -572,6 +575,10 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // the Settings toggle event, since FocusMode is a single persistent mount and
   // never remounts to re-read it.
   const pipCompleteBehaviorRef = useRef<PipCompleteBehavior>("advance");
+  // PiP high-visibility (larger + glowing). Held in a ref because both the
+  // window-creation effect and the PipState builder are non-React-state paths.
+  // Loaded on mount, refreshed live on the Settings toggle event.
+  const pipHighVisRef = useRef(false);
   // Pending delayed focus-teardown for "close" mode (let the pip beat play
   // before we null focus). Tracked so it can be cleared on unmount.
   const pipCloseTeardownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -838,10 +845,31 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       estimatedMinutes: focusedTask.estimated_minutes ?? null,
       queued,
       completeBehavior: pipCompleteBehaviorRef.current,
+      highVisibility: pipHighVisRef.current,
     };
     pipStateRef.current = state;
     void emit(PIP_STATE_EVENT, state);
   }, [focus, focusedTask, elapsed, phase, breakRemaining, priorMs]);
+
+  // PiP high-visibility: load once on mount, then track Settings toggles live
+  // (same-window CustomEvent). On toggle, patch the cached state and push it
+  // immediately so the live pip resizes + glows without waiting for the next
+  // heartbeat — the pip's onResized clamp then keeps the grown window on-screen.
+  useEffect(() => {
+    getPipHighVisibility()
+      .then((v) => { pipHighVisRef.current = v; })
+      .catch(() => {});
+    const onChange = (e: Event) => {
+      const v = !!(e as CustomEvent<boolean>).detail;
+      pipHighVisRef.current = v;
+      if (pipStateRef.current) {
+        pipStateRef.current = { ...pipStateRef.current, highVisibility: v };
+        void emit(PIP_STATE_EVENT, pipStateRef.current);
+      }
+    };
+    window.addEventListener(PIP_HIGH_VIS_CHANGED_EVENT, onChange);
+    return () => window.removeEventListener(PIP_HIGH_VIS_CHANGED_EVENT, onChange);
+  }, []);
 
   // Heartbeat — re-emit the current state every 1s while a session exists. While
   // RUNNING the broadcast above already emits per tick; this matters while

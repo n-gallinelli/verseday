@@ -61,3 +61,20 @@ export async function setPipCompleteBehavior(
 ): Promise<void> {
   await setSetting(KEY_PIP_COMPLETE, v);
 }
+
+// ── PiP high-visibility (larger + glowing) ──────────────────────────────────
+const KEY_PIP_HIGH_VIS = "pip.high_visibility";
+
+/** Same-window signal (Settings page → the persistent FocusMode mount) so the
+ *  toggle takes effect on the live pip without an app restart. Dispatched as a
+ *  window CustomEvent with `detail: boolean`. */
+export const PIP_HIGH_VIS_CHANGED_EVENT = "verseday:pip-high-vis-changed";
+
+/** Default OFF — the historical compact pip; high-visibility is opt-in. */
+export async function getPipHighVisibility(): Promise<boolean> {
+  return (await getSetting(KEY_PIP_HIGH_VIS)) === "1";
+}
+
+export async function setPipHighVisibility(v: boolean): Promise<void> {
+  await setSetting(KEY_PIP_HIGH_VIS, v ? "1" : "0");
+}

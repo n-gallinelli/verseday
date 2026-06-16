@@ -585,7 +585,7 @@ export default function FocusPip() {
   // ── BREAK COUNTDOWN ────────────────────────────────────────────────
   if (state.phase === "break") {
     return pipShell(
-      <div data-tauri-drag-region className="px-3.5 w-full h-full flex items-center select-none overflow-hidden" style={{ background: PIP_BG, borderRadius: 18 }} onMouseDown={handlePipMouseDown}>
+      <div data-tauri-drag-region className="px-3.5 w-full h-full flex items-center select-none overflow-hidden" style={{ background: PIP_BG, borderRadius: 18, boxShadow: "var(--shadow-card)" }} onMouseDown={handlePipMouseDown}>
         <div className="flex items-center gap-2.5 w-full">
           <div className="flex-1 min-w-0">
             <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-0.5">Break</div>
@@ -613,7 +613,7 @@ export default function FocusPip() {
     <div
       data-tauri-drag-region
       className="select-none overflow-hidden relative w-full h-full"
-      style={{ background: PIP_BG, borderRadius: 18, border: "0.5px solid var(--focus-pip-border)" }}
+      style={{ background: PIP_BG, borderRadius: 18, border: "0.5px solid var(--focus-pip-border)", boxShadow: "var(--shadow-card)" }}
       onMouseDown={handlePipMouseDown}
     >
       <div className={`flex items-center gap-2 pl-4 pr-2 py-2 w-full h-full ${slideInNext ? "animate-pip-slide-in" : ""}`}>

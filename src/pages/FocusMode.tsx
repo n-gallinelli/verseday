@@ -505,6 +505,12 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           visibleOnAllWorkspaces: true,
           decorations: false,
           transparent: true,
+          // No native window shadow. macOS derives it from the window's
+          // semi-opaque pixels, so in high-vis mode it wraps the CSS glow's
+          // silhouette and shows as a gray ring OUTSIDE the green halo. Each
+          // pip card carries its own CSS var(--shadow-card) instead, so depth
+          // is identical in normal mode and the glow stays clean.
+          shadow: false,
           skipTaskbar: true,
           // Spawn without grabbing focus — the main VerseDay window
           // should keep keyboard/mouse focus when a session starts.

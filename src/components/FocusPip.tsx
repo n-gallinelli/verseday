@@ -430,7 +430,14 @@ export default function FocusPip() {
             <div
               aria-hidden
               className="pip-glow-layer animate-pip-glow absolute inset-0 pointer-events-none"
-              style={{ borderRadius: 18, boxShadow: "0 0 11px 1px var(--pip-glow)" }}
+              style={{
+                borderRadius: 18,
+                // Two stacked shadows (these px ×1.3 under the box's zoom): a
+                // tighter bright core + a wide soft bloom. The layering is what
+                // makes it read as a glow rather than a single flat outline.
+                boxShadow:
+                  "0 0 9px 1px var(--pip-glow), 0 0 22px 6px var(--pip-glow-soft)",
+              }}
             />
           )}
           {card}

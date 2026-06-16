@@ -71,8 +71,11 @@
   --accent-green-bright-hover: #4ab893;
   --accent-green-deep: #0F6E56;
   --accent-green-glow: rgba(106, 158, 127, 0.22);
-  /* High-visibility pip halo — saturated green; softened by the box-shadow blur. */
-  --pip-glow: rgba(63, 128, 96, 0.6);
+  /* High-visibility pip halo — saturated green; softened by the box-shadow blur.
+     -glow is the bright core, -soft the wide outer bloom (lower alpha so the
+     falloff reads as a halo, not a hard band). */
+  --pip-glow: rgba(63, 128, 96, 0.75);
+  --pip-glow-soft: rgba(63, 128, 96, 0.45);
   --accent-green-soft-bg: #F0F9F5;
   /* Muted green-tint for "done" task cards — same lightness as
      accent-green-soft-bg, lower saturation so it reads as quietly
@@ -243,7 +246,8 @@
     --accent-green-bright-hover: #4ba089;
     --accent-green-deep: #3aa386;
     --accent-green-glow: rgba(111, 160, 136, 0.28);
-    --pip-glow: rgba(111, 160, 136, 0.55);
+    --pip-glow: rgba(111, 160, 136, 0.72);
+    --pip-glow-soft: rgba(111, 160, 136, 0.42);
     --accent-green-soft-bg: rgba(111, 160, 136, 0.14);
     --accent-green-muted-bg: rgba(132, 144, 138, 0.10);
 

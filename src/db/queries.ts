@@ -1,7 +1,7 @@
 import { getDb } from "./database";
 import { desktopDir, join } from "@tauri-apps/api/path";
 import {
-  SQL_TOTAL_WORKED_MINUTES_FOR_DATE,
+  SQL_WORKED_ENTRIES_IN_WINDOW,
   SQL_CLOSE_ORPHANED_TIME_ENTRIES,
 } from "./workedSecondsSql";
 import { SQL_UPSERT_WEEKLY_SHUTDOWN } from "./shutdownSql";
@@ -13,7 +13,7 @@ import {
 } from "./rolloverSql";
 import { createTaskSortSubquery } from "./createTaskSortSql";
 import { assertReschedulable } from "./rescheduleGuard";
-import { todayString, localDateIso, localDayStartUtc, localDayEndUtc, weekdayDates } from "../utils/dates";
+import { todayString, localDateIso, localDayStartUtc, localDayEndUtc, weekdayDates, addDaysIso } from "../utils/dates";
 import { emitIconsChanged } from "../utils/iconEvents";
 import type { Project, Task, DailyPlan, WeeklyShutdown, Link, CustomIcon } from "../types";
 import type { DismissalReason } from "../calendar/types";
@@ -802,27 +802,40 @@ export async function getCompletedShutdowns(
   limit?: number
 ): Promise<CompletedShutdown[]> {
   const db = await getDb();
-  const rows: { date: string; mood: string | null; reflection: string | null; tasks_done: number; worked_seconds: number | null }[] = await db.select(
+  const rows: { date: string; mood: string | null; reflection: string | null; tasks_done: number }[] = await db.select(
     `SELECT
        dp.date,
        dp.mood,
        dp.reflection,
-       (SELECT COUNT(*) FROM tasks t WHERE t.date_scheduled = dp.date AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL AND t.status = 'done') AS tasks_done,
-       (SELECT COALESCE(SUM(te.worked_seconds), 0)
-        FROM time_entries te
-        JOIN tasks t ON te.task_id = t.id
-        WHERE t.date_scheduled = dp.date AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL AND te.end_time IS NOT NULL) AS worked_seconds
+       (SELECT COUNT(*) FROM tasks t WHERE t.date_scheduled = dp.date AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL AND t.status = 'done') AS tasks_done
      FROM daily_plans dp
      WHERE dp.mood IS NOT NULL OR (dp.reflection IS NOT NULL AND dp.reflection != '')
      ORDER BY dp.date DESC
      ${limit != null ? "LIMIT " + Math.max(1, Math.floor(limit)) : ""}`
   );
+  // Worked minutes are attributed by the LOCAL day each session was worked
+  // (localDateIso(start_time)), NOT by t.date_scheduled — the same fix as the
+  // dashboard/weekly charts, so reflection history agrees with them rather than
+  // dumping a multi-day task's whole total onto its scheduled date. One windowed
+  // fetch over the span of returned dates, bucketed in JS. (tasks_done stays a
+  // date_scheduled count — out of scope per the worked-time plan.)
+  const workedByDay = new Map<string, number>();
+  if (rows.length > 0) {
+    const sortedDates = rows.map((r) => r.date).sort();
+    const entries = await fetchWorkedEntriesForLocalRange(
+      sortedDates[0],
+      sortedDates[sortedDates.length - 1]
+    );
+    for (const { date, minutes } of bucketWorkedByLocalDay(entries)) {
+      workedByDay.set(date, minutes);
+    }
+  }
   return rows.map(r => ({
     date: r.date,
     mood: r.mood,
     reflection: r.reflection,
     tasksDone: Number(r.tasks_done) || 0,
-    workedMinutes: Math.round((Number(r.worked_seconds) || 0) / 60),
+    workedMinutes: workedByDay.get(r.date) ?? 0,
   }));
 }
 
@@ -943,18 +956,16 @@ export async function getTotalPlannedMinutes(date: string): Promise<number> {
   return rows[0]?.total ?? 0;
 }
 
-// #15 — daily worked-minutes total. The `te.end_time IS NOT NULL` guard (in
-// SQL_TOTAL_WORKED_MINUTES_FOR_DATE) excludes the open in-progress session so
-// its checkpointed worked_seconds isn't double-counted against the live
-// focus.workedMs added at the app layer. SQL lives in ./workedSecondsSql so the
-// integrity test runs the identical text.
+// Daily worked-minutes total — attributed to the day each session was actually
+// worked (localDateIso(start_time)), NOT the task's date_scheduled, so a
+// multi-day task's time lands on the right day. #15 still holds: the
+// `te.end_time IS NOT NULL` guard in SQL_WORKED_ENTRIES_IN_WINDOW excludes the
+// open in-progress session so its checkpointed worked_seconds isn't
+// double-counted against the live focus.workedMs added at the app layer. SQL
+// lives in ./workedSecondsSql so the integrity test runs the identical text.
 export async function getTotalWorkedMinutes(date: string): Promise<number> {
-  const db = await getDb();
-  const rows: { total: number }[] = await db.select(
-    SQL_TOTAL_WORKED_MINUTES_FOR_DATE,
-    [date]
-  );
-  return rows[0]?.total ?? 0;
+  const rows = await fetchWorkedEntriesForLocalRange(date, date);
+  return bucketWorkedByLocalDay(rows).find((b) => b.date === date)?.minutes ?? 0;
 }
 
 export async function getTasksForWeek(
@@ -985,22 +996,19 @@ export async function getUnscheduledTasks(
   );
 }
 
+// Worked minutes per day for the dashboard week chart — bucketed by the LOCAL
+// day each session was worked (start_time), not t.date_scheduled, so a multi-day
+// task's time is split across the days it was actually worked. The final
+// [startDate,endDate] filter is on the bucketed LOCAL date (the window is
+// over-padded; out-of-range days are dropped here).
 export async function getWorkedMinutesForWeek(
   startDate: string,
   endDate: string
 ): Promise<Map<string, number>> {
-  const db = await getDb();
-  const rows: { date_scheduled: string; total: number }[] = await db.select(
-    `SELECT t.date_scheduled, COALESCE(SUM(te.worked_seconds), 0) / 60.0 as total
-    FROM time_entries te
-    JOIN tasks t ON te.task_id = t.id
-    WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL AND te.end_time IS NOT NULL
-    GROUP BY t.date_scheduled`,
-    [startDate, endDate]
-  );
+  const rows = await fetchWorkedEntriesForLocalRange(startDate, endDate);
   const map = new Map<string, number>();
-  for (const row of rows) {
-    map.set(row.date_scheduled, row.total);
+  for (const { date, minutes } of bucketWorkedByLocalDay(rows)) {
+    if (date >= startDate && date <= endDate) map.set(date, minutes);
   }
   return map;
 }
@@ -1008,30 +1016,17 @@ export async function getWorkedMinutesForWeek(
 // Per-day, per-project worked minutes for a week. Used by the weekly
 // shutdown bar chart to show "where effort went" each day, segmented
 // by objective. Tasks without a project are bucketed under projectId
-// = -1 ("Unassigned"). Same date_scheduled grouping convention as
-// getWorkedMinutesForWeek above.
+// = -1 ("Unassigned"). Bucketed by the LOCAL work day of each session
+// (start_time), not t.date_scheduled — consistent with getWorkedMinutesForWeek.
 export async function getWorkedMinutesPerProjectPerDay(
   startDate: string,
   endDate: string
 ): Promise<Map<string, Map<number, number>>> {
-  const db = await getDb();
-  const rows: { date_scheduled: string; project_id: number | null; total: number }[] =
-    await db.select(
-      `SELECT t.date_scheduled, t.project_id, COALESCE(SUM(te.worked_seconds), 0) / 60.0 as total
-      FROM time_entries te
-      JOIN tasks t ON te.task_id = t.id
-      WHERE t.date_scheduled >= $1 AND t.date_scheduled <= $2 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL AND te.end_time IS NOT NULL
-      GROUP BY t.date_scheduled, t.project_id`,
-      [startDate, endDate]
-    );
+  const rows = await fetchWorkedEntriesForLocalRange(startDate, endDate);
+  const all = bucketWorkedByLocalDayAndProject(rows);
   const out = new Map<string, Map<number, number>>();
-  for (const row of rows) {
-    let inner = out.get(row.date_scheduled);
-    if (!inner) {
-      inner = new Map();
-      out.set(row.date_scheduled, inner);
-    }
-    inner.set(row.project_id ?? -1, row.total);
+  for (const [date, inner] of all) {
+    if (date >= startDate && date <= endDate) out.set(date, inner);
   }
   return out;
 }
@@ -1441,6 +1436,46 @@ export function bucketWorkedByLocalDay(
     .map(([date, secs]) => ({ date, minutes: Math.round(secs / 60) }))
     .filter((r) => r.minutes > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Like bucketWorkedByLocalDay but ALSO grouped by project, for the weekly
+ *  per-day/per-project chart. NULL project_id buckets under -1 ("Unassigned"),
+ *  matching the prior convention. Rounds seconds→minutes per (day, project) and
+ *  drops empties. Pure + exported for the integrity test. */
+export function bucketWorkedByLocalDayAndProject(
+  rows: { start_time: string; worked_seconds: number; project_id: number | null }[]
+): Map<string, Map<number, number>> {
+  const secsByDayProj = new Map<string, Map<number, number>>();
+  for (const r of rows) {
+    const day = localDateIso(new Date(r.start_time));
+    let inner = secsByDayProj.get(day);
+    if (!inner) { inner = new Map(); secsByDayProj.set(day, inner); }
+    const proj = r.project_id ?? -1;
+    inner.set(proj, (inner.get(proj) ?? 0) + r.worked_seconds);
+  }
+  const out = new Map<string, Map<number, number>>();
+  for (const [day, inner] of secsByDayProj) {
+    const mins = new Map<number, number>();
+    for (const [proj, secs] of inner) {
+      const m = Math.round(secs / 60);
+      if (m > 0) mins.set(proj, m);
+    }
+    if (mins.size > 0) out.set(day, mins);
+  }
+  return out;
+}
+
+/** Fetch raw closed time entries whose start_time falls in the PADDED window
+ *  around the [start,end] LOCAL day range (start−1d … end+2d, to cover the
+ *  range across any UTC offset), for JS local-day bucketing. Shared by the daily
+ *  total, the dashboard week chart, the weekly per-project chart, and reflection
+ *  history so every surface attributes worked time to the day it was worked. */
+async function fetchWorkedEntriesForLocalRange(
+  start: string,
+  end: string
+): Promise<{ start_time: string; worked_seconds: number; project_id: number | null }[]> {
+  const db = await getDb();
+  return db.select(SQL_WORKED_ENTRIES_IN_WINDOW, [addDaysIso(start, -1), addDaysIso(end, 2)]);
 }
 
 export async function getWorkedMinutesByDate(

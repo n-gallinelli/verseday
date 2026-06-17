@@ -37,6 +37,16 @@ import ErrorBanner from "../../components/ErrorBanner";
 import { errorMessage } from "../../utils/errors";
 import { parseTimeFromTitle } from "../../utils/format";
 
+// Title for an auto-created day-cell "General task" — "Spend time addressing
+// <first few words of the project>". Keeps the row self-explanatory (which
+// project it's chipping away at) while staying short; the user can rename it.
+// Falls back to a generic label if the project name is missing.
+function generalTaskTitle(projectName: string | undefined): string {
+  const words = (projectName ?? "").trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "Spend time on this objective";
+  return `Spend time addressing ${words.slice(0, 4).join(" ")}`;
+}
+
 // Plan tab orchestrator — owns the data + selection state. Children
 // (rail / panel / summary) are presentational. Week navigation
 // (arrows + "this week" pill) lives in WeeklyPlanner above this tab,
@@ -287,7 +297,9 @@ export default function PlanTab() {
         // General task carrying the added minutes.
         if (delta <= 0) return;
         const newId = await createTaskAction({
-          title: "General task",
+          title: generalTaskTitle(
+            projects.find((p) => p.id === projectId)?.name
+          ),
           projectId,
           dateScheduled: dateIso,
           estimatedMinutes: delta,

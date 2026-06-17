@@ -16,6 +16,7 @@ import {
   getWorkedMinutesForTaskIds,
   getRecurringTemplates,
   rolloverUnfinishedTasks as dbRolloverUnfinishedTasks,
+  isWeeklyPlanGeneralTask,
   setTaskRecurrence as dbSetTaskRecurrence,
   setManualWorkedMinutes as dbSetManualWorkedMinutes,
   getWorkedSecondsForTask,
@@ -1099,6 +1100,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     //    0 and stack an estimate on top;
     //  - only when an estimate exists (incl. default estimates).
     if (get().session?.taskId === taskId) return;
+    // Weekly-Plan "General task" placeholders are excluded: completing one
+    // unworked must record worked = 0, not its planned estimate (that would
+    // inject PLANNED minutes as WORKED time). Identified by its marker link.
+    if (await isWeeklyPlanGeneralTask(taskId)) return;
     const fresh = get().tasksById.get(taskId) ?? (await getTaskById(taskId));
     const est = fresh?.estimated_minutes ?? 0;
     if (est <= 0) return;

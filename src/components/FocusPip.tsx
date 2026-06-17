@@ -4,7 +4,7 @@ import { currentMonitor } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import VerseDayLogo from "./VerseDayLogo";
-import { playBreakChime as playCalm } from "../utils/sounds";
+import { playBreakChime as playCalm, playBreakEndChime } from "../utils/sounds";
 import { clampToFrame } from "../utils/pipClamp";
 import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_SIZE, PIP_HIGH_VIS_SCALE, pipSizeFor, PIP_COMPLETE_FLOURISH_MS, type PipState } from "../utils/pipEvents";
 
@@ -57,13 +57,42 @@ async function focusMainWindow() {
   }
 }
 
+// Raise VerseDay onto the Focus screen of the task the pip is timing: tell the
+// main window to route (clearBrowse + setPage("focus")) and bring it forward.
+function openFocusScreen() {
+  sendCommand("openFocus");
+  void focusMainWindow();
+}
+
+// Screen-space pointer-down position, captured on mousedown so the body
+// click-to-focus can distinguish a real click from the tail of a window drag.
+// MUST be screen coords, NOT client: during a Tauri window drag the window
+// follows the cursor, so client x/y barely move — only screen x/y reveals the
+// drag.
+let pipDownScreenX = 0;
+let pipDownScreenY = 0;
+
 // Drag handler: hold + drag anywhere on the pip (except buttons/inputs) to
 // reposition the window. Tauri's startDragging only kicks in on mouse motion,
-// so a pure click still triggers child onClick handlers like focusMainWindow.
+// so a pure click still triggers child onClick handlers like openFocusScreen.
 function handlePipMouseDown(e: React.MouseEvent) {
   const target = e.target as HTMLElement;
   if (target.closest("button, a, input, select, textarea")) return;
+  pipDownScreenX = e.screenX;
+  pipDownScreenY = e.screenY;
   getCurrentWebviewWindow().startDragging().catch(() => {});
+}
+
+// Body click → Focus screen. 185d928 deliberately removed the original
+// pip-body onClick (it had no drag guard); this re-adds it WITH one, per Nick's
+// "whole pip body navigates" choice. Do not re-remove without that context:
+// buttons stopPropagation so they never reach here, and a click that moved the
+// window > a few screen px (a drag) is ignored.
+function handlePipBodyClick(e: React.MouseEvent) {
+  const target = e.target as HTMLElement;
+  if (target.closest("button, a, input, select, textarea")) return;
+  if (Math.abs(e.screenX - pipDownScreenX) > 5 || Math.abs(e.screenY - pipDownScreenY) > 5) return;
+  openFocusScreen();
 }
 
 const ICON_BTN = "w-8 h-8 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg hover:bg-input-hover transition-colors flex-shrink-0";
@@ -124,6 +153,10 @@ export default function FocusPip() {
   // flips back to its work view.
   const [pendingAck, setPendingAck] = useState<string | null>(null);
   const ackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Mirrors the last-seen phase so the state listener (bound once on mount)
+  // can detect phase transitions without reading a stale `state` closure and
+  // without running side effects inside the setState updater.
+  const prevPhaseRef = useRef<PipState["phase"] | null>(null);
 
   // ── Completion sequence (Option C — strike + hand-off) ──────────────
   // Clicking the checkmark plays a full-pip "officially done" takeover: the
@@ -193,6 +226,18 @@ export default function FocusPip() {
       setPendingAck(null);
       ackTimerRef.current = null;
     }, 1200);
+  }
+
+  // Like flashAck but with NO command dispatch — for system-driven transient
+  // text (e.g. "End of break" on the break→work transition). Reuses the same
+  // pendingAck overlay + auto-clear.
+  function flashMessage(message: string, ms: number) {
+    if (ackTimerRef.current) clearTimeout(ackTimerRef.current);
+    setPendingAck(message);
+    ackTimerRef.current = setTimeout(() => {
+      setPendingAck(null);
+      ackTimerRef.current = null;
+    }, ms);
   }
 
   useEffect(() => {
@@ -313,18 +358,25 @@ export default function FocusPip() {
           pendingCloseRef.current = true;
           return;
         }
+        prevPhaseRef.current = null;
         setState(null);
         getCurrentWebviewWindow().close().catch(() => {});
         return;
       }
-      setState((prev) => {
-        if (prev && prev.phase !== next.phase) {
-          if (next.phase === "prompt" || (prev.phase === "break" && next.phase === "work")) {
-            playCalm();
-          }
+      // Phase-transition cues, computed off the live phase mirror (not the
+      // setState updater) so the chime/message side effects don't run inside
+      // a render. Start and end of a break get DISTINCT chimes.
+      const prevPhase = prevPhaseRef.current;
+      if (prevPhase && prevPhase !== next.phase) {
+        if (next.phase === "prompt") {
+          playCalm(); // descending — break offered
+        } else if (prevPhase === "break" && next.phase === "work") {
+          playBreakEndChime();                // ascending — break OVER (#1)
+          flashMessage("End of break", 2000);  // transient pip text (#2)
         }
-        return next;
-      });
+      }
+      prevPhaseRef.current = next.phase;
+      setState(next);
     })
       .then((un) => {
         unlisten = un;
@@ -623,6 +675,7 @@ export default function FocusPip() {
       className="select-none overflow-hidden relative w-full h-full"
       style={{ background: PIP_BG, borderRadius: 18, border: "0.5px solid var(--focus-pip-border)", boxShadow: "var(--shadow-card)" }}
       onMouseDown={handlePipMouseDown}
+      onClick={handlePipBodyClick}
     >
       <div className={`flex items-center gap-2 pl-4 pr-2 py-2 w-full h-full ${slideInNext ? "animate-pip-slide-in" : ""}`}>
         {/* Title + timer — purely informational. Fades on hover so the
@@ -684,7 +737,7 @@ export default function FocusPip() {
             }}
           >
             <button
-              onClick={(e) => { e.stopPropagation(); focusMainWindow(); }}
+              onClick={(e) => { e.stopPropagation(); openFocusScreen(); }}
               className={ICON_BTN}
               title="Open VerseDay"
               style={fanOut(4, expanded)}

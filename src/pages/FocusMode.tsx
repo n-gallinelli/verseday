@@ -1919,6 +1919,14 @@ function BreakScreen({
       <div className="mb-8 break-logo-pulse">
         <VerseDayLogo size={72} />
       </div>
+      {/* Quiet "BREAK" whisper above the timer — same small-caps muted
+          treatment as the pip's break label (shared --focus-break-label). */}
+      <div
+        className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] mb-2"
+        style={{ color: "var(--focus-break-label)" }}
+      >
+        Break
+      </div>
       <div
         className="text-[72px] font-semibold leading-none tabular-nums tracking-tight font-display"
         style={{ letterSpacing: "-2px", color: "var(--accent-green-deep)" }}

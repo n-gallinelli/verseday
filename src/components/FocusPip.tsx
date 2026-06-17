@@ -5,6 +5,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import VerseDayLogo from "./VerseDayLogo";
 import { playBreakChime as playCalm, playBreakEndChime } from "../utils/sounds";
+import { breakEndClock } from "../utils/breakClock";
 import { clampToFrame } from "../utils/pipClamp";
 import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_SIZE, PIP_HIGH_VIS_SCALE, pipSizeFor, PIP_COMPLETE_FLOURISH_MS, type PipState } from "../utils/pipEvents";
 
@@ -645,11 +646,37 @@ export default function FocusPip() {
   // ── BREAK COUNTDOWN ────────────────────────────────────────────────
   if (state.phase === "break") {
     return pipShell(
-      <div data-tauri-drag-region className="px-3.5 w-full h-full flex items-center select-none overflow-hidden" style={{ background: PIP_BG, borderRadius: 18, boxShadow: "var(--shadow-card)" }} onMouseDown={handlePipMouseDown}>
+      <div
+        data-tauri-drag-region
+        className="px-3.5 w-full h-full flex items-center select-none overflow-hidden"
+        style={{ background: PIP_BG, borderRadius: 18, boxShadow: "var(--shadow-card)" }}
+        onMouseDown={handlePipMouseDown}
+        onMouseEnter={() => setCssHovered(true)}
+        // Clear cssHovered only — the Rust monitor owns externallyHovered
+        // (mirrors active-phase hover semantics, no tug-of-war).
+        onMouseLeave={() => setCssHovered(false)}
+      >
         <div className="flex items-center gap-2.5 w-full">
           <div className="flex-1 min-w-0">
-            <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-0.5">Break</div>
-            <div className="text-[20px] font-medium tabular-nums text-accent-green-deep leading-none" style={{ letterSpacing: "-0.5px" }}>
+            {/* "BREAK" crossfades to the end time on hover. Two stacked spans
+                in a relative box: "Break" stays in flow (defines height, no
+                layout shift) and "ends H:MM" overlays it absolutely. */}
+            <div className="relative mb-0.5 leading-none">
+              <span
+                className="block uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] transition-opacity duration-[180ms]"
+                style={{ color: "var(--focus-break-label)", opacity: expanded ? 0 : 1 }}
+              >
+                Break
+              </span>
+              <span
+                aria-hidden={!expanded}
+                className="absolute inset-0 uppercase whitespace-nowrap [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] transition-opacity duration-[180ms]"
+                style={{ color: "var(--focus-break-label)", opacity: expanded ? 1 : 0 }}
+              >
+                ends {breakEndClock(Date.now(), state.breakRemaining)}
+              </span>
+            </div>
+            <div className="text-[20px] font-semibold tabular-nums text-accent-green-deep leading-none font-display" style={{ letterSpacing: "-0.55px" }}>
               {formatCountdown(state.breakRemaining)}
             </div>
           </div>

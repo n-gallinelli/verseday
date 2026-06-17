@@ -293,7 +293,7 @@ function SortableTaskRow({
       style={style}
       {...attributes}
       {...listeners}
-      className="flex flex-row items-start gap-3 p-4 bg-elevated border border-line-soft rounded-lg mb-4 hover:border-line-medium group cursor-grab active:cursor-grabbing"
+      className="relative flex flex-row items-start gap-3 p-4 bg-elevated border border-line-soft rounded-lg mb-4 hover:border-line-medium group cursor-grab active:cursor-grabbing"
     >
       {/* Checkbox */}
       <button
@@ -326,9 +326,9 @@ function SortableTaskRow({
 
       {/* Content wrapper — flex:1, min-width:0 prevents text overflow */}
       <div className="flex-1 min-w-0">
-        {/* Title row — actions sit here (right-aligned via ml-auto) so
-            they always live at the title's vertical level, never
-            overlapping the metadata pills row below. */}
+        {/* Title row — the title takes the full content width (flex-1).
+            Actions are absolutely positioned in the card's top-right (below)
+            so they overlay on hover instead of reserving title width. */}
         <div className="flex items-start gap-3">
           <button
             onMouseDown={(e) => e.stopPropagation()}
@@ -343,9 +343,10 @@ function SortableTaskRow({
             {task.title}
           </button>
 
-          {/* Actions — visible on row hover. Anchored to title row, not
-              spanning full row height. */}
-          <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+          {/* Actions — visible on row hover. Absolutely anchored top-right
+              with a solid bg-elevated mask + left pad so the now-full-width
+              title never bleeds through the buttons on hover. */}
+          <div className="absolute top-3 right-3 flex items-center gap-1.5 pl-3 rounded-md bg-elevated opacity-0 group-hover:opacity-100 transition-opacity">
             {task.status !== "done" && (
               <button
                 onMouseDown={(e) => e.stopPropagation()}
@@ -379,7 +380,7 @@ function SortableTaskRow({
             stands alone, worked+estimated cluster as a pair (they're
             naturally a pair), with a wider gap separating the two
             categories. */}
-        <div className="flex items-center gap-3 mt-2">
+        <div className="flex flex-wrap items-center gap-3 gap-y-2 mt-2">
           <div
             className="w-[110px] flex-shrink-0"
             onMouseDown={(e) => e.stopPropagation()}

@@ -75,6 +75,36 @@ export function formatMonthDay(iso: string | null | undefined): string {
   });
 }
 
+/**
+ * Header date for single-day screens: full weekday, abbreviated month, no
+ * year — e.g. "Wednesday, Jun 17". Parses with `T00:00:00` for local-day
+ * correctness. The one canonical day-header formatter (Daily Plan + Daily
+ * Shutdown + Weekly Shutdown per-day headings).
+ */
+export function formatDayHeader(iso: string): string {
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/**
+ * Header range for week screens (Mon–Fri), abbreviated month, no year, with
+ * the repeated month collapsed: "Jun 15 – 19". Across a month boundary it
+ * keeps both: "Jun 29 – Jul 3". En-dash with surrounding spaces.
+ */
+export function formatWeekRange(mondayIso: string): string {
+  const start = new Date(mondayIso + "T00:00:00");
+  const end = new Date(start);
+  end.setDate(start.getDate() + 4);
+  const startMonth = start.toLocaleDateString("en-US", { month: "short" });
+  const endMonth = end.toLocaleDateString("en-US", { month: "short" });
+  return startMonth === endMonth
+    ? `${startMonth} ${start.getDate()} – ${end.getDate()}`
+    : `${startMonth} ${start.getDate()} – ${endMonth} ${end.getDate()}`;
+}
+
 /** Shift a YYYY-MM-DD ISO string by N days, staying in local tz. */
 export function addDaysIso(iso: string, days: number): string {
   const d = new Date(iso + "T00:00:00");

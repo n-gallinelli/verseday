@@ -404,12 +404,12 @@ export default function FocusPip() {
   }, []);
 
   // Every phase renders through one shell: a window-filling, centered wrapper
-  // holding a fixed BASE-sized (220×58) box. In high-vis mode the box magnifies
+  // holding a fixed BASE-sized (220×66) box. In high-vis mode the box magnifies
   // uniformly (PIP_HIGH_VIS_SCALE) via `zoom` — so all phase layouts grow
   // together and the break-prompt height math stays valid in scaled units —
   // and a breathing blue accent ring hugs the card in the small transparent
   // halo margin. We use `zoom`, NOT `transform: scale()`: scale stretches the
-  // already-rasterized 220×58 bitmap, which blurs the text and smears the
+  // already-rasterized 220×66 bitmap, which blurs the text and smears the
   // 0.5px border into a fuzzy ring. `zoom` re-lays-out and re-rasterizes at the
   // final size (WKWebView honors it), so glyphs, border, and glow stay crisp.
   // In normal mode the box equals the window, so the shell is a no-op
@@ -523,7 +523,7 @@ export default function FocusPip() {
     );
   }
 
-  // ── BREAK PROMPT — on-brand green CTA + two readable links, fit to 220×58 ──
+  // ── BREAK PROMPT — on-brand green CTA + two readable links, fit to 220×66 ──
   // Action-over-state hierarchy: the expected action (start the break)
   // dominates as a filled, icon-labeled primary; snooze and skip demote to
   // plain text links beneath it. No header — the cup icon + label carry the
@@ -538,7 +538,7 @@ export default function FocusPip() {
     return pipShell(
       <div
         data-tauri-drag-region
-        className="select-none flex flex-col items-center justify-center gap-1.5 w-full h-full px-2.5 py-1.5"
+        className="select-none flex flex-col items-center justify-center gap-2 w-full h-full px-2.5 py-1.5"
         style={{
           background: PIP_BG,
           borderRadius: 18,
@@ -549,7 +549,7 @@ export default function FocusPip() {
       >
         <button
           onClick={() => sendCommand("takeBreak")}
-          className="flex items-center gap-1.5 px-3.5 py-1 rounded-full text-[13px] font-medium text-white bg-[#0F6E56] hover:bg-[#0B5A46] cursor-pointer transition-colors"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[13px] font-medium text-white bg-[#0F6E56] hover:bg-[#0B5A46] cursor-pointer transition-colors"
           title="Start a 5 min break"
         >
           <svg

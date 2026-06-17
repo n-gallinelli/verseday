@@ -13,7 +13,7 @@ import {
 } from "./rolloverSql";
 import { createTaskSortSubquery } from "./createTaskSortSql";
 import { assertReschedulable } from "./rescheduleGuard";
-import { todayString, localDateIso, localDayStartUtc, localDayEndUtc } from "../utils/dates";
+import { todayString, localDateIso, localDayStartUtc, localDayEndUtc, weekdayDates } from "../utils/dates";
 import { emitIconsChanged } from "../utils/iconEvents";
 import type { Project, Task, DailyPlan, WeeklyShutdown, Link, CustomIcon } from "../types";
 import type { DismissalReason } from "../calendar/types";
@@ -1623,45 +1623,171 @@ function validatePlanStatus(status: string): void {
   }
 }
 
+/**
+ * Day-cell minutes per (project, day_offset) for a week — DERIVED from tasks
+ * (Approach A, task-as-truth): the SUM of `estimated_minutes` of non-done tasks
+ * scheduled to each weekday. This is the authoritative planned number read by the
+ * day strip AND PlanWeekSummary, so neither can drift onto a stale aggregate after
+ * a task-side reschedule/estimate edit. (The `weekly_plan_commitments` table no
+ * longer stores this — its rows are now markers; see getWeeklyPlanCommitmentMarkers.)
+ * Excludes done tasks (matches the strip's non-done chips), recurrence templates,
+ * and dismissed external rows — mirroring the daily-plan task filter.
+ */
 export async function getWeeklyPlanCommitments(
   weekStartDate: string
 ): Promise<Map<number, Map<number, number>>> {
   validateWeekDate(weekStartDate);
   const db = await getDb();
-  const rows: { project_id: number; day_offset: number; minutes: number }[] =
+  const week = weekdayDates(weekStartDate);
+  const rows: { project_id: number; date_scheduled: string; minutes: number }[] =
     await db.select(
-      "SELECT project_id, day_offset, minutes FROM weekly_plan_commitments WHERE week_start_date = $1",
-      [weekStartDate]
+      `SELECT project_id, date_scheduled, COALESCE(SUM(estimated_minutes), 0) AS minutes
+         FROM tasks
+        WHERE date_scheduled IN ($1, $2, $3, $4, $5)
+          AND project_id IS NOT NULL
+          AND status != 'done'
+          AND recurrence IS NULL
+          AND external_dismissal_reason IS NULL
+        GROUP BY project_id, date_scheduled`,
+      week
     );
+  const dayByIso = new Map(week.map((iso, i) => [iso, i]));
   const out = new Map<number, Map<number, number>>();
   for (const row of rows) {
+    const day = dayByIso.get(row.date_scheduled);
+    if (day === undefined) continue;
+    const mins = Number(row.minutes) || 0;
+    if (mins <= 0) continue;
     let inner = out.get(row.project_id);
     if (!inner) {
       inner = new Map<number, number>();
       out.set(row.project_id, inner);
     }
-    inner.set(row.day_offset, row.minutes);
+    inner.set(day, mins);
   }
   return out;
 }
 
+export interface CommitmentMarkerRow {
+  project_id: number;
+  day_offset: number;
+  task_id: number | null;
+}
+export interface MarkerTaskFacts {
+  project_id: number | null;
+  date_scheduled: string | null;
+}
+
+/**
+ * Pure marker resolution (extracted for unit testing). A marker row is VALID only
+ * if its linked task still sits at exactly that (project, day); otherwise it's
+ * `stale` and the caller prunes it (write-on-read). So a General task rescheduled
+ * elsewhere simply unbinds (becomes a normal task); the derived cell sum stays
+ * correct regardless. PK(week, project, day) ⇒ one marker per slot — no collisions.
+ */
+export function resolveCommitmentMarkers(
+  rows: CommitmentMarkerRow[],
+  taskFactsById: Map<number, MarkerTaskFacts>,
+  weekDays: string[]
+): {
+  markers: Map<number, Map<number, number>>;
+  stale: { project_id: number; day_offset: number }[];
+} {
+  const dayByIso = new Map(weekDays.map((iso, i) => [iso, i]));
+  const markers = new Map<number, Map<number, number>>();
+  const stale: { project_id: number; day_offset: number }[] = [];
+  for (const row of rows) {
+    if (row.task_id == null) {
+      stale.push({ project_id: row.project_id, day_offset: row.day_offset });
+      continue;
+    }
+    const t = taskFactsById.get(row.task_id);
+    const day = t && t.date_scheduled ? dayByIso.get(t.date_scheduled) : undefined;
+    if (!t || t.project_id !== row.project_id || day !== row.day_offset) {
+      stale.push({ project_id: row.project_id, day_offset: row.day_offset });
+      continue;
+    }
+    let inner = markers.get(row.project_id);
+    if (!inner) {
+      inner = new Map<number, number>();
+      markers.set(row.project_id, inner);
+    }
+    inner.set(row.day_offset, row.task_id);
+  }
+  return { markers, stale };
+}
+
+/**
+ * Which backing "General task" owns each (project, day_offset) slot — for the day
+ * strip's ± / clear to target. Validates each marker against its task's CURRENT
+ * position (task-as-truth) and prunes stale rows. See resolveCommitmentMarkers.
+ */
+export async function getWeeklyPlanCommitmentMarkers(
+  weekStartDate: string
+): Promise<Map<number, Map<number, number>>> {
+  validateWeekDate(weekStartDate);
+  const db = await getDb();
+  const week = weekdayDates(weekStartDate);
+  const rows: CommitmentMarkerRow[] = await db.select(
+    "SELECT project_id, day_offset, task_id FROM weekly_plan_commitments WHERE week_start_date = $1",
+    [weekStartDate]
+  );
+  const taskFactsById = new Map<number, MarkerTaskFacts>();
+  for (const row of rows) {
+    if (row.task_id == null) continue;
+    const task = await getTaskById(row.task_id);
+    if (task) {
+      taskFactsById.set(row.task_id, {
+        project_id: task.project_id,
+        date_scheduled: task.date_scheduled,
+      });
+    }
+  }
+  const { markers: out, stale } = resolveCommitmentMarkers(rows, taskFactsById, week);
+  // Best-effort prune (write-on-read; ignore failures — the map is already
+  // task-derived, so a failed delete just lingers a harmless row).
+  for (const d of stale) {
+    try {
+      await db.execute(
+        "DELETE FROM weekly_plan_commitments WHERE week_start_date = $1 AND project_id = $2 AND day_offset = $3",
+        [weekStartDate, d.project_id, d.day_offset]
+      );
+    } catch {
+      /* refetch-on-failure: markers already reflect task truth */
+    }
+  }
+  return out;
+}
+
+/** True if `taskId` is a live backing "General task" (referenced by a marker row).
+ *  Used to EXCLUDE General tasks from estimate-backfill — a planning placeholder
+ *  completed unworked must record worked = 0, not its planned estimate. */
+export async function isWeeklyPlanGeneralTask(taskId: number): Promise<boolean> {
+  const db = await getDb();
+  const rows: { n: number }[] = await db.select(
+    "SELECT COUNT(*) AS n FROM weekly_plan_commitments WHERE task_id = $1",
+    [taskId]
+  );
+  return (rows[0]?.n ?? 0) > 0;
+}
+
+/** Upsert the marker row binding a General task to a (project, day) slot. The
+ *  `minutes` column is vestigial under Approach A (cell minutes derive from
+ *  tasks) — written 0 and non-authoritative. */
 export async function setWeeklyPlanCommitment(
   weekStartDate: string,
   projectId: number,
   dayOffset: number,
-  minutes: number
+  taskId: number
 ): Promise<void> {
   validateWeekDate(weekStartDate);
   validateDayOffset(dayOffset);
-  if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) {
-    throw new Error(`Invalid minutes: ${minutes} (must be 0..1440)`);
-  }
   const db = await getDb();
   await db.execute(
-    `INSERT INTO weekly_plan_commitments (week_start_date, project_id, day_offset, minutes)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT(week_start_date, project_id, day_offset) DO UPDATE SET minutes = $4`,
-    [weekStartDate, projectId, dayOffset, minutes]
+    `INSERT INTO weekly_plan_commitments (week_start_date, project_id, day_offset, minutes, task_id)
+     VALUES ($1, $2, $3, 0, $4)
+     ON CONFLICT(week_start_date, project_id, day_offset) DO UPDATE SET task_id = $4, minutes = 0`,
+    [weekStartDate, projectId, dayOffset, taskId]
   );
 }
 

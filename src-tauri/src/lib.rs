@@ -720,6 +720,12 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 26,
+            description: "weekly_plan_commitments.task_id: link a backing 'General task' to each day commitment; ON DELETE SET NULL auto-reconciles a deleted task",
+            sql: "ALTER TABLE weekly_plan_commitments ADD COLUMN task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

@@ -544,7 +544,7 @@ export default function DailyShutdown() {
                     })}
                   </div>
                 ) : (
-                  <p className="text-[12px] text-fg-disabled px-2.5">No tasks completed</p>
+                  <p className="text-[12px] text-fg-disabled px-2.5">Nothing marked done today.</p>
                 )}
               </section>
 

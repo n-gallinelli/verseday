@@ -42,7 +42,7 @@ import {
   type BreakContinuity,
 } from "../utils/focusSettings";
 import { getEmptyDayMessage } from "../utils/format";
-import { playBreakChime as playChime } from "../utils/sounds";
+import { playBreakChime as playChime, playBreakEndChime } from "../utils/sounds";
 import { workElapsedMs } from "../utils/pomodoro";
 import type { Page } from "../types";
 
@@ -133,6 +133,13 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // session. They diverge only while browsing-other.
   const focusedTask = useAppStore(selectFocusedTask);
   const viewedTask = useAppStore(selectViewedTask);
+  // Calendar meetings (external_source === "calendar") never get a break
+  // prompt — you can't take a break mid-meeting. Mirrored to a ref so the
+  // per-second work-cycle interval reads it without a stale closure.
+  const isMeetingRef = useRef(false);
+  useEffect(() => {
+    isMeetingRef.current = focusedTask?.external_source === "calendar";
+  }, [focusedTask]);
   const browsedTaskId = useAppStore((s) => s.browsedTaskId);
   const workedByTaskId = useAppStore((s) => s.workedByTaskId);
   const browseTask = useAppStore((s) => s.browseTask);
@@ -750,19 +757,35 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         if (threshold !== null && we >= threshold) {
           // Snoozed prompt is due
           snoozeThresholdRef.current = null;
-          const cycleNum = completedPomodoros + 1;
-          const isLong = cycleNum % CYCLES_BEFORE_LONG_BREAK === 0;
-          setPrompt({ isLongBreak: isLong });
-          setPhase("prompt");
-          playChime();
+          if (isMeetingRef.current) {
+            // Meeting: never prompt. Re-arm the cycle and roll on. (A meeting
+            // can't actually reach here — a snooze threshold only exists after
+            // a prompt, which meetings never get — but guard defensively.)
+            workCycleStartRef.current = we;
+          } else {
+            const cycleNum = completedPomodoros + 1;
+            const isLong = cycleNum % CYCLES_BEFORE_LONG_BREAK === 0;
+            setPrompt({ isLongBreak: isLong });
+            setPhase("prompt");
+            playChime();
+          }
         } else if (threshold === null && currentCycleElapsed >= WORK_DURATION_MS) {
           // Normal pomodoro completed
-          const newCount = completedPomodoros + 1;
-          setCompletedPomodoros(newCount);
-          const isLong = newCount % CYCLES_BEFORE_LONG_BREAK === 0;
-          setPrompt({ isLongBreak: isLong });
-          setPhase("prompt");
-          playChime();
+          if (isMeetingRef.current) {
+            // Meeting: skip the break prompt entirely. Keep pomodoro
+            // bookkeeping consistent (count the cycle for long-break cadence)
+            // and re-arm workCycleStart so this doesn't re-fire every tick —
+            // but stay in "work", no prompt, no chime.
+            setCompletedPomodoros(completedPomodoros + 1);
+            workCycleStartRef.current = we;
+          } else {
+            const newCount = completedPomodoros + 1;
+            setCompletedPomodoros(newCount);
+            const isLong = newCount % CYCLES_BEFORE_LONG_BREAK === 0;
+            setPrompt({ isLongBreak: isLong });
+            setPhase("prompt");
+            playChime();
+          }
         }
       } else if (phase === "break") {
         const breakElapsed = now - breakStartRef.current;
@@ -777,7 +800,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           workCycleStartRef.current = workElapsedMs(raw, totalBreakTimeRef.current, breakCarryRef.current);
           setPhase("work");
           setBreakRemaining(0);
-          playChime();
+          playBreakEndChime(); // distinct ascending chime: break OVER (vs descending start)
         }
       }
     }, 1000);

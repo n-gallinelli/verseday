@@ -63,3 +63,43 @@ export function playBreakChime() {
     // restrictions on a fresh window before any user gesture).
   }
 }
+
+/** Break-END chime — ascending G-major arpeggio (G4 → D5 → G5), the
+ *  timbral inverse of playBreakChime's descending shape. Rising shape
+ *  signals "back to work / lift" so the end of a break is unmistakably
+ *  distinct from its start. Same low-gain anti-stack design (both windows
+ *  fire it in parallel) and octave overtones. ~2.7s total. */
+export function playBreakEndChime() {
+  try {
+    const ctx = new AudioContext();
+    const now = ctx.currentTime;
+
+    const notes: { freq: number; offset: number }[] = [
+      { freq: 391.99, offset: 0.0 },   // G4
+      { freq: 587.33, offset: 0.35 },  // D5
+      { freq: 783.99, offset: 0.7 },   // G5
+    ];
+
+    for (const n of notes) {
+      // Fundamental — see playBreakChime: peak gain kept low because
+      // FocusMode + FocusPip fire this in parallel (separate contexts).
+      addTone(ctx, now, {
+        freq: n.freq,
+        startOffset: n.offset,
+        peakGain: 0.08,
+        decaySec: 2.0,
+      });
+      // Octave-up overtone — soft bell ring.
+      addTone(ctx, now, {
+        freq: n.freq * 2,
+        startOffset: n.offset,
+        peakGain: 0.022,
+        decaySec: 1.6,
+      });
+    }
+
+    setTimeout(() => ctx.close(), 3500);
+  } catch {
+    // Silent fallback — see playBreakChime.
+  }
+}

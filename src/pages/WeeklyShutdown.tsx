@@ -14,7 +14,7 @@ import { errorMessage } from "../utils/errors";
 import { localDateIso, mondayOfWeek as getMondayOfWeek, weekdayDates as getWeekdayDates, addDaysIso, formatDayHeader, formatWeekRange } from "../utils/dates";
 import { formatHoursMinutes } from "../utils/format";
 import {
-  PRIMARY_ACTION_CLASS,
+  PRIMARY_ACTION_CLASS_PINK,
   NEUTRAL_ACTION_CLASS,
   SHUTDOWN_BUTTON_CLASS,
 } from "../utils/actionStyles";
@@ -825,7 +825,7 @@ export default function WeeklyShutdown() {
         <div className="max-w-[900px] mx-auto">
           <button
             onClick={handleCompleteShutdown}
-            className={`w-full ${SHUTDOWN_BUTTON_CLASS} ${PRIMARY_ACTION_CLASS}`}
+            className={`w-full ${SHUTDOWN_BUTTON_CLASS} ${PRIMARY_ACTION_CLASS_PINK}`}
           >
             <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M1.5 4 Q7 9 12.5 4" />

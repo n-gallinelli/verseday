@@ -3,13 +3,19 @@
 // source, so a revert is a single-file change (plus the per-screen commits).
 
 /**
- * Primary-action treatment — a soft tinted fill in the app's coral/pink family.
- * Color only; each call site keeps its own size/shape (padding, radius, width,
- * gap). Gentle peach/coral fill with deeper-coral text/icon — NOT a saturated
- * solid. Rest carries the fill, so hover deepens the border (a hover:bg to the
- * same soft token would be a no-op). The single accent ACTION per screen.
+ * Primary-action treatment — a soft tinted fill, color only (each call site
+ * keeps its own size/shape). The DEFAULT primary uses the app's blue accent:
+ * inviting and consistent with the app identity. Rest carries the fill, so
+ * hover deepens the border. The single accent ACTION per screen.
+ *
+ * Hue follows the screen's accent: blue everywhere EXCEPT Weekly Shutdown,
+ * which is pink-themed — use PRIMARY_ACTION_CLASS_PINK there only.
  */
 export const PRIMARY_ACTION_CLASS =
+  "bg-accent-blue-soft text-accent-blue-soft-fg border border-accent-blue/40 hover:border-accent-blue transition-colors";
+
+/** Pink variant of the primary fill — Weekly Shutdown ONLY (its themed color). */
+export const PRIMARY_ACTION_CLASS_PINK =
   "bg-accent-pink-soft text-accent-pink-deep border border-accent-pink-bright/40 hover:border-accent-pink transition-colors";
 
 /**

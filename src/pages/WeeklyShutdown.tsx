@@ -607,7 +607,7 @@ export default function WeeklyShutdown() {
               <div className="text-[12px] text-fg-faded">worked</div>
               {completedThisWeek.length > 0 && (
                 <div className="mt-4 pt-4 w-full" style={{ borderTop: "0.5px solid var(--border-hairline)" }}>
-                  <div className="text-[20px] font-medium text-fg tabular-nums leading-none mb-1">
+                  <div className="text-[20px] font-medium text-accent-pink-bright tabular-nums leading-none mb-1">
                     {completedThisWeek.length}
                   </div>
                   <div className="text-[11px] text-fg-faded">

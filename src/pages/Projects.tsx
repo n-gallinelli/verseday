@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import ProjectGlyph from "../components/ProjectGlyph";
 import { useCustomIcons } from "../hooks/useCustomIcons";
+import { PRIMARY_ACTION_CLASS } from "../utils/actionStyles";
 import {
   DndContext,
   closestCenter,
@@ -804,7 +805,7 @@ export default function Projects() {
             {inlineCreateName.trim() && (
               <button
                 onClick={handleInlineCreate}
-                className="text-[11px] text-accent-blue-soft-fg hover:text-accent-blue cursor-pointer flex-shrink-0"
+                className={`text-[11px] px-2.5 py-1 rounded-md cursor-pointer flex-shrink-0 ${PRIMARY_ACTION_CLASS}`}
               >
                 Create
               </button>

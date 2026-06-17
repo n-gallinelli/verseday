@@ -658,7 +658,7 @@ export default function WeeklyShutdown() {
                   )}
                   <button
                     onClick={handleCopySummary}
-                    className="w-full px-3 py-1.5 rounded-md text-[12px] border border-accent-pink-bright/60 text-accent-pink-bright hover:bg-accent-pink-soft cursor-pointer transition-colors"
+                    className={`w-full px-3 py-1.5 rounded-md text-[12px] cursor-pointer ${NEUTRAL_ACTION_CLASS}`}
                   >
                     {summaryCopied ? "Copied!" : "Copy for Claude"}
                   </button>

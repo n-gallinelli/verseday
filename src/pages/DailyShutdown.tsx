@@ -461,7 +461,7 @@ export default function DailyShutdown() {
                     </div>
                     <button
                       onClick={handleCopyRundown}
-                      className="w-full px-3 py-1.5 rounded-md text-[12px] border border-accent-blue/50 text-accent-blue-soft-fg hover:bg-accent-blue-soft cursor-pointer transition-colors"
+                      className={`w-full px-3 py-1.5 rounded-md text-[12px] cursor-pointer ${NEUTRAL_ACTION_CLASS}`}
                     >
                       {summaryCopied ? "Copied!" : "Copy for Claude"}
                     </button>

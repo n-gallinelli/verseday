@@ -396,8 +396,23 @@ export async function getTasksForDate(date: string): Promise<Task[]> {
   // for that day still appears via recurrence_source_id; the template stays
   // hidden from daily lists. Same filter applies across every "tasks for
   // this date" surface — see migration v15 doc for the full set.
+  //
+  // Multi-day range tasks (due_date set): a task spans every day in
+  // [date_scheduled, due_date] in the daily view. Arm A (date_scheduled = $1)
+  // is the start day (any status — a done range task still shows on its start
+  // day, exactly like a single-day done task). Arm B is the CONTINUATION days
+  // (after the start, through due_date) and only while NOT done — so completing
+  // the task drops it from later days. Single-day tasks (due_date NULL) match
+  // arm A only, byte-identical to before. The OR is parenthesised so the
+  // recurrence / dismissal filters apply to both arms.
   return db.select(
-    "SELECT * FROM tasks WHERE date_scheduled = $1 AND recurrence IS NULL AND external_dismissal_reason IS NULL ORDER BY sort_order LIMIT 500",
+    `SELECT * FROM tasks
+     WHERE recurrence IS NULL AND external_dismissal_reason IS NULL
+       AND (
+         date_scheduled = $1
+         OR (due_date IS NOT NULL AND date_scheduled < $1 AND due_date >= $1 AND status != 'done')
+       )
+     ORDER BY sort_order LIMIT 500`,
     [date]
   );
 }

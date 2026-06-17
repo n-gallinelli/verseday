@@ -252,6 +252,37 @@ export function withTaskMutated(s: AppState, before: Task, after: Task): Partial
   };
 }
 
+/** Date-index patch for MULTI-DAY range tasks: add or remove `task.id` from its
+ *  CONTINUATION-day buckets — every loaded day strictly after `date_scheduled`
+ *  through `due_date` inclusive. `withTaskMutated` only maintains the start-day
+ *  bucket; continuation days are filled lazily by `loadTasksForDate`, so on
+ *  completion a done range task would otherwise linger on later days, and a
+ *  reopened one would be missing from them. `present` = should the task be
+ *  visible on continuation days (false on done → evict, true on reopen → re-add).
+ *  Only touches buckets already in the index (loaded days); never creates one.
+ *  No-op for single-day tasks (due_date null). ISO YYYY-MM-DD compares lexically.
+ *  FOLLOW-UP (Verse): a due_date EDIT (extend/shrink the range) is NOT
+ *  reconciled here — affected days just reload on navigation; tracked separately. */
+export function reconcileRangeContinuationDays(
+  s: AppState,
+  task: Task,
+  present: boolean,
+): Map<string, number[]> {
+  if (task.due_date == null || task.date_scheduled == null) return s.taskIdsByDate;
+  const start = task.date_scheduled;
+  const end = task.due_date;
+  let idx = s.taskIdsByDate;
+  const keyOf = sortKeyOf(s.tasksById);
+  for (const day of s.taskIdsByDate.keys()) {
+    if (day > start && day <= end) {
+      idx = present
+        ? indexInsertOrdered(idx, day, task.id, keyOf)
+        : indexRemove(idx, day, task.id);
+    }
+  }
+  return idx;
+}
+
 // ── Project canonical-map transitions (P3) ────────────────────────────────
 // No secondary index for projects (small set; active/archived/completed are
 // derived in selectors — Verse-approved). So these are plain set/delete on
@@ -1590,6 +1621,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (fresh) {
         if (before) set((s) => withTaskMutated(s, before, fresh));
         else set((s) => withTaskInserted(s, fresh));
+        // Multi-day: keep continuation-day buckets consistent. withTaskMutated
+        // only touches the start-day bucket; a completed range task must leave
+        // every loaded continuation day, and a reopened one must return. No-op
+        // for single-day tasks (due_date null).
+        if (fresh.due_date) {
+          set((s) => ({
+            taskIdsByDate: reconcileRangeContinuationDays(s, fresh, fresh.status !== "done"),
+          }));
+        }
       }
 
       // Estimate backfill (Verse Option 1). Completing an UNtimed task that

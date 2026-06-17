@@ -391,11 +391,7 @@ export default function DailyShutdown() {
           Daily shutdown
         </span>
         <h2 className="text-[14px] font-medium text-fg">
-          {new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", {
-            weekday: "long",
-            month: "long",
-            day: "numeric",
-          })}
+          {formatDayHeader(selectedDate)}
         </h2>
       </div>
 

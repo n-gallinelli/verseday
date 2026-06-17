@@ -43,23 +43,6 @@ function getNextMondayIso(mondayIso: string): string {
   return localDateIso(d);
 }
 
-function formatWeekHeader(mondayIso: string): string {
-  const d = new Date(mondayIso + "T00:00:00");
-  return `Week of ${d.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  })}`;
-}
-
-function formatDayHeading(iso: string): string {
-  return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
-}
-
 // ─── Stacked bar chart ──────────────────────────────────────────────────────
 // One column per day Mon–Fri. Each column is a stacked bar: project
 // segments scaled to time spent. Y-axis is auto-scaled to the busiest
@@ -562,7 +545,7 @@ export default function WeeklyShutdown() {
           Weekly shutdown
         </span>
         <h2 className="text-[14px] font-medium text-fg">
-          {formatWeekHeader(selectedWeek)}
+          {formatWeekRange(selectedWeek)}
         </h2>
       </div>
 
@@ -755,7 +738,7 @@ export default function WeeklyShutdown() {
                 return (
                   <div key={date}>
                     <h4 className="text-[12px] font-medium text-fg-secondary mb-2">
-                      {DAY_NAMES_SHORT[idx]} — {formatDayHeading(date)}
+                      {DAY_NAMES_SHORT[idx]} — {formatDayHeader(date)}
                     </h4>
                     <div className="space-y-1">
                       {dayTasks.map((task) => {

@@ -32,7 +32,7 @@ import {
   getWorkedMinutesForTask,
   generateRecurringInstances,
 } from "../db/queries";
-import { todayString, localDateIso } from "../utils/dates";
+import { todayString, localDateIso, formatDayHeader } from "../utils/dates";
 import ErrorBanner from "../components/ErrorBanner";
 import TaskCard from "../components/TaskCard";
 import DatePicker from "../components/DatePicker";
@@ -962,11 +962,7 @@ export default function DailyPlanner() {
             </svg>
           </button>
           <h2 className="text-[16px] font-medium text-fg">
-            {new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-            })}
+            {formatDayHeader(selectedDate)}
           </h2>
           <button
             onClick={() => changeDate(1)}

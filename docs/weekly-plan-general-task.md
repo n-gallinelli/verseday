@@ -90,6 +90,31 @@ General task that is actually worked records real time as normal.
    commitment link)?
 4. Final literal DDL bytes of migration #26 (above) — OK to apply (rebuild)?
 
+## Verse R2 — REQUIRED wiring rules (pinned before code)
+
+**Rule 1 — clear must never destroy worked time.** `time_entries.task_id` is
+`ON DELETE CASCADE`, so "clear → delete task" would silently destroy logged
+time_entries (worked seconds = truth) if the task was worked. So:
+- **clear hard-deletes ONLY a pristine task** (worked_seconds = 0 AND not
+  completed). Otherwise **unlink** (null `task_id`) + drop the cache row, and
+  **leave the task** intact. Never cascade-delete a worked/completed task from a
+  cell clear.
+
+**Rule 2 — reconcile collision (one cache slot, possibly two tasks).** Cache PK is
+(week, project, day_offset); task-as-truth lets a reschedule put two of a project's
+tasks on the same day. Rule: **link-one, lowest `task.id` owns the cell** (deterministic);
+the cell's minutes = the owner's estimate. Any other task on that project+day is a
+normal free task (still visible in Open Tasks / Daily Plan), simply not bound to the
+cell. No INSERT collision, no dropped/summed planned time, no loss.
+
+**Fold-in A — reconcile lives INSIDE `getWeeklyPlanCommitments` (queries.ts:1626)**,
+not the component, so `schedulePlannedMinutes` + week summary never read a stale
+cache after a task-side reschedule.
+
+**Fold-in B — write-on-read reconcile is idempotent**; on a cache-write failure,
+fall back to the in-memory task-derived value (refetch-on-failure) and never render
+stale.
+
 ## Build order (after Verse round-2 approval)
 
 1. Apply migration #26 (rebuild). 2. `getWeeklyPlanCommitments` returns task_id;

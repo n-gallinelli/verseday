@@ -1014,6 +1014,15 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         // early-returns so it isn't recreated until the user unhides.
         setPipHidden(true);
       }
+      else if (cmd === "openFocus") {
+        // Click on the pip body/logo → show the Focus screen for the task the
+        // pip is timing. Clear any browse pointer so selectViewedTask falls back
+        // to the session/preview task (not a stale browsed one). The pip raises
+        // the main window itself (focusMainWindow).
+        const s = useAppStore.getState();
+        s.clearBrowse();
+        s.setPage("focus");
+      }
     })
       .then((un) => {
         unlisten = un;

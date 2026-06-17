@@ -280,6 +280,28 @@ function TimeFieldPill({
                 onChange(total.toString());
               }
             }}
+            onKeyDown={(e) => {
+              // Enter commits the typed minutes and closes the popover.
+              // Stop propagation so the parent modal's key handler doesn't
+              // also act on it. Escape just closes without committing.
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.stopPropagation();
+                const raw = e.currentTarget.value.trim();
+                if (raw) {
+                  let total = parseTimeInput(raw);
+                  if (total === 0) total = parseInt(raw, 10);
+                  if (!isNaN(total) && total > 0 && total <= MAX_ESTIMATE_MINUTES) {
+                    onChange(total.toString());
+                  }
+                }
+                onToggle();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                e.stopPropagation();
+                onToggle();
+              }
+            }}
             placeholder="e.g. 10 or 1h 30m"
             className="w-full bg-input border border-line-hairline rounded-md px-2.5 py-1.5 text-[12px] text-fg-secondary placeholder:text-fg-disabled outline-none focus:border-accent-blue"
           />

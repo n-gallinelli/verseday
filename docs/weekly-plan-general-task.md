@@ -115,9 +115,39 @@ cache after a task-side reschedule.
 fall back to the in-memory task-derived value (refetch-on-failure) and never render
 stale.
 
-## Build order (after Verse round-2 approval)
+## BLOCKER found during wiring (2026-06-17) → approach change
 
-1. Apply migration #26 (rebuild). 2. `getWeeklyPlanCommitments` returns task_id;
-load-time reconcile from tasks. 3. set/±/clear create/update/delete the backing
-task. 4. drag-move syncs `date_scheduled`. 5. estimate-backfill exclusion. tsc/build
-+ eyes-on via `tauri build --debug`.
+Approach B (link column + 1:1 backing task, cell derives from the task) is
+**incompatible** with the existing commitment model: the day cell is an
+**aggregate**, not 1:1 with a task.
+- Drag-drop adds a dragged task's estimate to the cell (`PlanTab.tsx:411`,
+  `setCommitment(target, current + estimate)`).
+- `PlanWeekSummary` (`:44`) and `schedulePlannedMinutes` tally those cell totals.
+
+So B would double-count (drag creates a task AND the cell spawns a General task) or,
+if the cell derives from one task, drop dragged-task minutes from the summary.
+
+### Recommended fix — Approach A (cell = summed task estimates)
+
+Make the cell a **derived view of tasks**, retiring the stored aggregate:
+- Cell minutes (project, day) = SUM of `estimated_minutes` of tasks scheduled there.
+- Click day → create "General task" (30m) → cell sum reflects it.
+- Drag task onto day → reschedule the task (already shows as a day chip) → cell sum
+  includes it automatically; **remove** the manual `setCommitment` writes from the
+  drag handler.
+- ± → edits the slot's General task (create if none); other tasks untouched.
+- clear → delete the General task (pristine rule 1); other tasks remain.
+- Week summary / `schedulePlannedMinutes` → derive from task estimates.
+- Rollover/reschedule/estimate-edit → cell re-derives for free (task-as-truth).
+
+Migration #26's `task_id` still identifies the per-slot General task (for ± / clear
+targeting). The `weekly_plan_commitments` row becomes a marker, not a stored minutes
+aggregate. Bigger than B (changes planned-time totals to derive from tasks + edits
+the drag handler + summary). **Needs Verse + Nick sign-off before building.**
+
+## Build order (after sign-off on Approach A)
+
+1. Apply migration #26 (rebuild). 2. Derive cell minutes + summary from task
+estimates. 3. click/± → create/update the slot's General task; clear → pristine
+delete. 4. Strip aggregate writes from the drag handler (task reschedule is enough).
+5. estimate-backfill exclusion. tsc/build + eyes-on.

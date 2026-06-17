@@ -8,12 +8,15 @@
 //! shared NSUserNotificationCenter so a body click emits a Tauri event the JS
 //! side turns into a focus-screen jump.
 //!
-//! Framework choice: NSUserNotification is deprecated, but it's the only path
-//! that works on this ad-hoc-signed app — UNUserNotifications requires proper
-//! code signing (Apple Developer Program, declined: "budget is zero"). It
-//! still delivers on this macOS today. The JS listens for a mechanism-agnostic
-//! `verseday:notification-clicked`, so a future swap to UN never touches JS.
-//! See docs/2026-06-10-notification-click-rust-path-plan.md.
+//! Framework choice: NSUserNotification is deprecated but it works, and we keep
+//! it for now. (Historical note: it was originally chosen because the app was
+//! ad-hoc-signed and UNUserNotifications needs a real code-signing identity —
+//! that "budget is zero, declined" rationale is now stale: as of
+//! fix/calendar-tcc-signing the app signs with the existing Apple Development
+//! cert, so a UN swap is unblocked whenever we want it. No behavior change here
+//! — just keeping the deprecated path that already delivers.) The JS listens
+//! for a mechanism-agnostic `verseday:notification-clicked`, so a future swap
+//! to UN never touches JS. See docs/2026-06-10-notification-click-rust-path-plan.md.
 
 #![cfg(target_os = "macos")]
 #![allow(deprecated)] // NSUserNotification* — see module doc.

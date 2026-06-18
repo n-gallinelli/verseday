@@ -15,6 +15,7 @@ import {
   selectProjectsByStatus,
   selectTaskIdsByWeek,
   useAppStore,
+  useStrikethroughClass,
 } from "../../stores/appStore";
 import {
   getAllTasksForProjectIds,
@@ -64,6 +65,7 @@ function DraggableTaskRow({
     data: { task },
   });
 
+  const strike = useStrikethroughClass();
   const prevStatusRef = useRef(task.status);
   const justCompleted = task.status === "done" && prevStatusRef.current !== "done";
   useEffect(() => { prevStatusRef.current = task.status; }, [task.status]);
@@ -114,7 +116,7 @@ function DraggableTaskRow({
       <span
         className={`text-[12px] flex-1 truncate ${
           task.status === "done"
-            ? "text-fg-faded line-through"
+            ? `text-fg-faded ${strike}`
             : "text-fg"
         }`}
       >
@@ -236,6 +238,7 @@ function CalendarTaskPill({
     id: `cal-task-${task.id}`,
     data: { task },
   });
+  const strike = useStrikethroughClass();
 
   const isDone = task.status === "done";
 
@@ -254,7 +257,7 @@ function CalendarTaskPill({
       />
       <span
         className={`text-[10.5px] leading-tight flex-1 line-clamp-3 break-words ${
-          isDone ? "text-fg-faded line-through" : "text-fg-secondary"
+          isDone ? `text-fg-faded ${strike}` : "text-fg-secondary"
         }`}
       >
         {task.title}
@@ -336,6 +339,7 @@ function DayTasksModal({
   onToggle: (task: Task) => void;
   onOpenDetail: (task: Task) => void;
 }) {
+  const strike = useStrikethroughClass();
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -434,7 +438,7 @@ function DayTasksModal({
                     )}
                     <span
                       className={`flex-1 text-[13px] truncate ${
-                        isDone ? "text-fg-faded line-through" : "text-fg"
+                        isDone ? `text-fg-faded ${strike}` : "text-fg"
                       }`}
                     >
                       {task.title}

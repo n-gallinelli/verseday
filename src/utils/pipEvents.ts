@@ -5,6 +5,16 @@
 export const PIP_STATE_EVENT = "verseday:pip-state"; // main → pip: PipState | null
 export const PIP_CMD_EVENT = "verseday:pip-cmd"; // pip → main: command string
 export const PIP_READY_EVENT = "verseday:pip-ready"; // pip → main: push state now
+// pip → main: the settled, clamped physical window position {x, y} after a drag
+// or resize. The main window owns persistence (the pip webview's sql capability
+// isn't guaranteed), so the pip just reports and FocusMode writes pip.position.
+export const PIP_MOVED_EVENT = "verseday:pip-moved";
+export interface PipMovedPayload { x: number; y: number; }
+// main → pip: play a phase chime ("start" = descending break-offer, "end" =
+// ascending break-over). FocusMode is the SINGLE decider; it fires this only
+// when it elects the pip as the one speaker, so there's never a dual play.
+export const PIP_CHIME_EVENT = "verseday:pip-chime";
+export type PipChimeKind = "start" | "end";
 
 // What the pip does after a task is completed from it. "advance" = roll to the
 // next remaining task and keep the pip open (historical default); "close" =

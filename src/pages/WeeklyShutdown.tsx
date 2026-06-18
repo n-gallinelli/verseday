@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef, useLayoutEffect } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { selectAllProjects, useAppStore } from "../stores/appStore";
+import { selectAllProjects, useAppStore, useStrikethroughClass } from "../stores/appStore";
 import {
   upsertWeeklyShutdown,
   getTasksCompletedInWeek,
@@ -295,6 +295,7 @@ function PlanNextWeekPrompt({
 
 export default function WeeklyShutdown() {
   const { selectedWeek, setSelectedWeek, setPage } = useAppStore();
+  const strike = useStrikethroughClass();
   const openSunsetOverlay = useAppStore((s) => s.openSunsetOverlay);
   const primeTasks = useAppStore((s) => s.primeTasks);
   const tasksById = useAppStore((s) => s.tasksById);
@@ -783,8 +784,8 @@ export default function WeeklyShutdown() {
                             <span
                               className={`flex-1 text-[12px] truncate ${
                                 isHighlight
-                                  ? "text-fg font-medium line-through decoration-fg-faded/50"
-                                  : "text-fg-faded line-through"
+                                  ? `text-fg font-medium ${strike} decoration-fg-faded/50`
+                                  : `text-fg-faded ${strike}`
                               }`}
                             >
                               {task.title}

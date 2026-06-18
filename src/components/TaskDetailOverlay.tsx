@@ -370,6 +370,7 @@ export default function TaskDetailOverlay({
   // immediately. M2.2 — `updateFocusTask` is now a thin primeTasks
   // wrapper; signature unchanged for callers.
   const { session, focusView, updateFocusTask, setFocusPriorElapsedMs, setTaskRecurrenceAction, openProject, togglePauseFocus } = useAppStore();
+  const strikethroughCompleted = useAppStore((s) => s.strikethroughCompleted);
   const isFocusedTask = (session?.taskId ?? focusView?.taskId) === task.id;
   // The ACTIVE running session for THIS task (null if this task isn't the live
   // session). Drives the header control: when this task is being focused the
@@ -446,6 +447,10 @@ export default function TaskDetailOverlay({
 
   const saveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedFlashRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // After completing a task from the overlay we let the check-draw + glow
+  // play, then auto-dismiss back to the daily screen. Tracked so it's
+  // cleared on unmount and never fires after the user re-opens/un-checks.
+  const autoCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Footer label state — reflects what's actually happening with saves
   // instead of a perpetual "Auto-saved" lie. 'pending' while a debounced
   // save is queued, 'saved' for ~1.5s after a save fires, 'idle' at
@@ -607,6 +612,7 @@ export default function TaskDetailOverlay({
     return () => {
       if (saveRef.current) clearTimeout(saveRef.current);
       if (savedFlashRef.current) clearTimeout(savedFlashRef.current);
+      if (autoCloseRef.current) clearTimeout(autoCloseRef.current);
     };
   }, []);
 
@@ -725,9 +731,21 @@ export default function TaskDetailOverlay({
           {onToggle && (
             <button
               onClick={() => {
+                const nextDone = localStatus !== "done";
                 // Optimistic: flip locally so the UI updates without closing.
-                setLocalStatus((prev) => (prev === "done" ? "todo" : "done"));
+                setLocalStatus(nextDone ? "done" : "todo");
                 onToggle(task);
+                // Completing from the daily screen: let the check-draw + glow
+                // register, then dismiss back to the daily list. Un-checking
+                // keeps the overlay open. Clear any prior timer first so a
+                // rapid toggle never double-fires a close.
+                if (autoCloseRef.current) clearTimeout(autoCloseRef.current);
+                if (nextDone) {
+                  autoCloseRef.current = setTimeout(() => {
+                    autoCloseRef.current = null;
+                    handleClose();
+                  }, 850);
+                }
               }}
               title={localStatus === "done" ? "Mark as not done" : "Mark complete"}
               className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
@@ -782,7 +800,9 @@ export default function TaskDetailOverlay({
             placeholder="Untitled task"
             className={`flex-1 min-w-0 text-[24px] font-medium bg-transparent border-none outline-none leading-tight placeholder:text-fg-disabled resize-none overflow-hidden transition-colors duration-150 ease-out ${
               localStatus === "done"
-                ? "text-fg-faded line-through"
+                ? strikethroughCompleted
+                  ? "text-fg-faded line-through"
+                  : "text-fg-faded"
                 : "text-fg"
             }`}
           />

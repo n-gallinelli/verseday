@@ -2,6 +2,10 @@ import { create } from "zustand";
 import type { Page, Task, Project } from "../types";
 import { todayString, mondayOfWeek } from "../utils/dates";
 import {
+  getStrikethroughCompleted,
+  setStrikethroughCompleted as persistStrikethroughCompleted,
+} from "../utils/uiSettings";
+import {
   createTask as dbCreateTask,
   deleteTask as dbDeleteTask,
   getSidebarPoolTasks,
@@ -669,6 +673,15 @@ interface AppState {
   openSunsetOverlay: () => void;
   /** Close the singleton SunsetOverlay. */
   closeSunsetOverlay: () => void;
+  /** Whether completed tasks are drawn with a line through the title. Persisted
+   *  to the settings table (ui.strikethrough_completed); default true. Held in
+   *  the store so TaskCard + TaskDetailOverlay re-render reactively when toggled
+   *  in Settings. */
+  strikethroughCompleted: boolean;
+  /** Hydrate strikethroughCompleted from the settings table (boot). */
+  loadStrikethroughCompleted: () => Promise<void>;
+  /** Set + persist the strikethrough preference. */
+  setStrikethroughCompleted: (v: boolean) => void;
   /** Persisted user preference for collapsed sidebar (non-focus pages). */
   sidebarCollapsed: boolean;
   /** Ephemeral expand override on focus screens — resets on remount. */
@@ -1029,6 +1042,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   taskIdsByWeek: new Map(),
   summaryOverlay: null,
   sunsetOverlayOpen: false,
+  strikethroughCompleted: true,
   sidebarCollapsed: loadPersistedSidebarCollapsed(),
   sidebarFocusExpanded: false,
   weeklyPlannerTab: "plan",
@@ -1869,6 +1883,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.error("[appStore] setTaskWorkedMinutes failed", { id, minutes, err });
     }
   },
+  loadStrikethroughCompleted: async () => {
+    try {
+      set({ strikethroughCompleted: await getStrikethroughCompleted() });
+    } catch (err) {
+      console.error("[appStore] loadStrikethroughCompleted failed", err);
+    }
+  },
+  setStrikethroughCompleted: (v) => {
+    set({ strikethroughCompleted: v });
+    void persistStrikethroughCompleted(v);
+  },
   // ── Projects (P3) — every mutation reconciles to DB truth ──────────────
   loadProjects: async () => {
     try {
@@ -2145,3 +2170,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 }));
+
+/** The Tailwind class for the completed-task title line, gated on the
+ *  "Cross out completed tasks" preference: `"line-through"` when on, `""` when
+ *  off. Reactive (re-renders subscribers on toggle). Interpolate into the
+ *  done-branch className so the faded/muted color stays and only the line
+ *  drops. Shared so every task surface gates on the same store value. */
+export const useStrikethroughClass = (): string =>
+  useAppStore((s) => s.strikethroughCompleted) ? "line-through" : "";

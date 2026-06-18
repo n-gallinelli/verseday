@@ -647,6 +647,20 @@ export async function updateTaskStatus(
   // so the weekly shutdown's wins-by-day groups by the day the user checked
   // the box (independent of date_scheduled).
   if (status === "done") {
+    const today = todayString();
+    // Capture the instance's pre-snap scheduling BEFORE the UPDATE below snaps a
+    // future date to today — otherwise the cycle's original date is lost and the
+    // early-completion suppression below can't record it.
+    const before: {
+      date_scheduled: string | null;
+      recurrence_source_id: number | null;
+    }[] = await db.select(
+      "SELECT date_scheduled, recurrence_source_id FROM tasks WHERE id = $1",
+      [id]
+    );
+    const wasScheduled = before[0]?.date_scheduled ?? null;
+    const sourceId = before[0]?.recurrence_source_id ?? null;
+
     // Future-scheduled tasks marked done get snapped to today —
     // completing it today should make it appear under today's column,
     // not stay floating in the future. Past/today dates are left alone
@@ -664,8 +678,42 @@ export async function updateTaskStatus(
              ELSE date_scheduled
            END
        WHERE id = $2`,
-      [status, id, todayString()]
+      [status, id, today]
     );
+
+    // Early-completion suppression. Completing a WEEKLY recurring instance BEFORE
+    // its scheduled day satisfies that cycle, so record a skip for its original
+    // date — otherwise the next generateRecurringInstances recreates the instance
+    // on the day it was "due" and the task double-shows (the bug Nick hit: a
+    // Thursday task done Wednesday correctly snapped to Wednesday, but Thursday
+    // regenerated). Mirrors the skip-on-move insert in updateTaskDateScheduled
+    // (~:1201) and deleteTask (~:763); the completion-snap above is the one
+    // move-like op that bypassed that path. daily/weekdays are excluded — the
+    // next day has its own instance, so suppression is meaningless there.
+    // Runs AFTER the UPDATE (no transaction API in this file): a mid-failure
+    // degrades to today's regenerating-cycle behavior, never a
+    // suppressed-but-incomplete task. NOTE: reopening this task does NOT restore
+    // the suppressed cycle (the snap dropped the original date from the row);
+    // accepted as v1, same as the move path which also isn't auto-reversed.
+    if (sourceId != null && wasScheduled != null && wasScheduled > today) {
+      const tmpl: { recurrence: string | null }[] = await db.select(
+        "SELECT recurrence FROM tasks WHERE id = $1",
+        [sourceId]
+      );
+      if (
+        shouldSuppressEarlyCompletion(
+          sourceId,
+          wasScheduled,
+          tmpl[0]?.recurrence ?? null,
+          today
+        )
+      ) {
+        await db.execute(
+          "INSERT INTO recurring_instance_skips (recurrence_source_id, date_scheduled) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+          [sourceId, wasScheduled]
+        );
+      }
+    }
   } else {
     await db.execute(
       "UPDATE tasks SET status = $1, completed_at = NULL WHERE id = $2",
@@ -1956,6 +2004,36 @@ export function parseRecurrence(json: string | null): RecurrenceRule | null {
 
 export function serializeRecurrence(rule: RecurrenceRule): string {
   return JSON.stringify(rule);
+}
+
+/**
+ * Decide whether completing a recurring instance EARLY should suppress that
+ * cycle's scheduled occurrence (so generateRecurringInstances doesn't recreate
+ * it on its "due" day and double-show the task). Pure so it's unit-testable
+ * without the DB; used by updateTaskStatus.
+ *
+ * True only when:
+ *  - it's a recurring instance (`recurrenceSourceId` set),
+ *  - its original `scheduledDate` is still in the FUTURE vs `today` (i.e. it was
+ *    finished ahead of its day; on/after its day is a normal completion),
+ *  - and the template repeats `weekly` — the only non-daily frequency. `daily`
+ *    and `weekdays` never suppress (the next day has its own instance, so
+ *    suppression would be meaningless). All YYYY-MM-DD strings compare
+ *    lexicographically, matching the SQL `date_scheduled > today` snap check.
+ *
+ * No day-count window: a weekly cycle has one occurrence, so finishing it 3 days
+ * early satisfies it as fully as 1 day early (a cap would just relocate the
+ * double-show). Mirrors the unconditional skip-on-move semantics.
+ */
+export function shouldSuppressEarlyCompletion(
+  recurrenceSourceId: number | null,
+  scheduledDate: string | null,
+  templateRecurrence: string | null,
+  today: string,
+): boolean {
+  if (recurrenceSourceId == null || scheduledDate == null) return false;
+  if (scheduledDate <= today) return false;
+  return parseRecurrence(templateRecurrence)?.freq === "weekly";
 }
 
 /** All recurring task templates (recurrence set). Instances point at these via

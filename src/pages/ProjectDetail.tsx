@@ -25,6 +25,7 @@ import {
   selectProjectById,
   selectProjectsByStatus,
   useAppStore,
+  useStrikethroughClass,
 } from "../stores/appStore";
 import {
   startTimeEntry,
@@ -234,6 +235,7 @@ function SortableTaskRow({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: task.id });
 
+  const strike = useStrikethroughClass();
   const [workedInput, setWorkedInput] = useState(
     workedMinutes > 0 ? formatMinutes(workedMinutes) : ""
   );
@@ -336,7 +338,7 @@ function SortableTaskRow({
             onClick={() => onOpenDetail(task)}
             className={`text-[13px] font-normal text-left cursor-pointer hover:underline flex-1 min-w-0 leading-[1.5] line-clamp-2 ${
               task.status === "done"
-                ? "text-fg-faded line-through"
+                ? `text-fg-faded ${strike}`
                 : "text-fg"
             }`}
           >
@@ -1567,6 +1569,7 @@ function PdDayTaskChip({
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `${PD_DAY_TASK_PREFIX}${task.id}`,
   });
+  const strike = useStrikethroughClass();
 
   return (
     <div
@@ -1580,7 +1583,7 @@ function PdDayTaskChip({
       title={task.title}
       className={`block w-full text-left text-[11px] hover:text-fg cursor-grab active:cursor-grabbing truncate leading-snug touch-none ${
         task.status === "done"
-          ? "text-fg-faded line-through"
+          ? `text-fg-faded ${strike}`
           : "text-fg-secondary"
       } ${isDragging ? "opacity-30" : ""}`}
     >

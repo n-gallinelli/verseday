@@ -2170,3 +2170,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 }));
+
+/** The Tailwind class for the completed-task title line, gated on the
+ *  "Cross out completed tasks" preference: `"line-through"` when on, `""` when
+ *  off. Reactive (re-renders subscribers on toggle). Interpolate into the
+ *  done-branch className so the faded/muted color stays and only the line
+ *  drops. Shared so every task surface gates on the same store value. */
+export const useStrikethroughClass = (): string =>
+  useAppStore((s) => s.strikethroughCompleted) ? "line-through" : "";

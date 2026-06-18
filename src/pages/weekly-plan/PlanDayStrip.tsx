@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useDroppable, useDraggable } from "@dnd-kit/core";
 import type { Task } from "../../types";
 import { formatHoursMinutes } from "../../utils/format";
+import { useStrikethroughClass } from "../../stores/appStore";
 import { PLAN_TASK_DRAG_PREFIX } from "./PlanTaskList";
 
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
@@ -349,6 +350,7 @@ function ScheduledTaskChip({
     id: `${PLAN_TASK_DRAG_PREFIX}${task.id}`,
     data: { taskId: task.id, taskTitle: task.title },
   });
+  const strike = useStrikethroughClass();
 
   return (
     <div
@@ -377,7 +379,7 @@ function ScheduledTaskChip({
         <div
           className={`text-[12px] leading-snug line-clamp-2 break-words ${
             task.status === "done"
-              ? "text-fg-faded line-through"
+              ? `text-fg-faded ${strike}`
               : "text-fg-secondary"
           }`}
         >

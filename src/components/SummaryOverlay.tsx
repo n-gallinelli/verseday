@@ -9,6 +9,7 @@ import {
   selectTaskIdsByDate,
   selectTaskIdsByWeek,
   useAppStore,
+  useStrikethroughClass,
 } from "../stores/appStore";
 import type { Task, Project } from "../types";
 
@@ -99,6 +100,7 @@ function groupByProject(tasks: Task[], projects: Project[]): ProjectGroup[] {
 }
 
 function DailySection({ groups, iconsById }: { groups: ProjectGroup[]; iconsById: Map<number, string> }) {
+  const strike = useStrikethroughClass();
   return (
     <div>
       <div className="flex items-center gap-2 mb-4">
@@ -145,7 +147,7 @@ function DailySection({ groups, iconsById }: { groups: ProjectGroup[]; iconsById
                       <span
                         className={
                           done
-                            ? "text-fg-muted line-through font-normal"
+                            ? `text-fg-muted ${strike} font-normal`
                             : "text-fg font-normal"
                         }
                       >

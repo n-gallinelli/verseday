@@ -18,7 +18,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { selectProjectsByStatus, useAppStore } from "../stores/appStore";
+import { selectProjectsByStatus, useAppStore, useStrikethroughClass } from "../stores/appStore";
 import {
   getProjectStats,
   searchTasksByTitle,
@@ -74,6 +74,7 @@ function formatDate(iso: string): string {
 
 export default function Projects() {
   const { openProject } = useAppStore();
+  const strike = useStrikethroughClass();
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
   const primeTasks = useAppStore((s) => s.primeTasks);
   const createProjectAction = useAppStore((s) => s.createProjectAction);
@@ -687,7 +688,7 @@ export default function Projects() {
                                         <path d="M3 8.5l3.5 3.5 6.5-7" />
                                       </svg>
                                     )}
-                                    <span className={`text-[12px] flex-1 truncate ${task.status === "done" ? "text-fg-faded line-through" : "text-fg"}`}>{task.title}</span>
+                                    <span className={`text-[12px] flex-1 truncate ${task.status === "done" ? `text-fg-faded ${strike}` : "text-fg"}`}>{task.title}</span>
                                     {task.estimated_minutes != null && task.estimated_minutes > 0 && (
                                       <span className="text-[10px] text-fg-disabled">{formatHoursMinutes(task.estimated_minutes)}</span>
                                     )}
@@ -747,7 +748,7 @@ export default function Projects() {
                                 title={taskProject.name}
                               />
                             )}
-                            <span className={`flex-1 truncate text-[13px] ${isDone ? "text-fg-faded line-through" : "text-fg"}`}>
+                            <span className={`flex-1 truncate text-[13px] ${isDone ? `text-fg-faded ${strike}` : "text-fg"}`}>
                               {task.title}
                             </span>
                             {taskProject && (

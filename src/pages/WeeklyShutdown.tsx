@@ -11,8 +11,13 @@ import {
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
-import { localDateIso, mondayOfWeek as getMondayOfWeek, weekdayDates as getWeekdayDates, addDaysIso } from "../utils/dates";
+import { localDateIso, mondayOfWeek as getMondayOfWeek, weekdayDates as getWeekdayDates, addDaysIso, formatDayHeader, formatWeekRange } from "../utils/dates";
 import { formatHoursMinutes } from "../utils/format";
+import {
+  PRIMARY_ACTION_CLASS_PINK,
+  NEUTRAL_ACTION_CLASS,
+  SHUTDOWN_BUTTON_CLASS,
+} from "../utils/actionStyles";
 import {
   buildSummaryDigest,
   buildSummaryPrompt,
@@ -36,23 +41,6 @@ function getNextMondayIso(mondayIso: string): string {
   const d = new Date(mondayIso + "T00:00:00");
   d.setDate(d.getDate() + 7);
   return localDateIso(d);
-}
-
-function formatWeekHeader(mondayIso: string): string {
-  const d = new Date(mondayIso + "T00:00:00");
-  return `Week of ${d.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  })}`;
-}
-
-function formatDayHeading(iso: string): string {
-  return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
 }
 
 // ─── Stacked bar chart ──────────────────────────────────────────────────────
@@ -557,7 +545,7 @@ export default function WeeklyShutdown() {
           Weekly shutdown
         </span>
         <h2 className="text-[14px] font-medium text-fg">
-          {formatWeekHeader(selectedWeek)}
+          {formatWeekRange(selectedWeek)}
         </h2>
       </div>
 
@@ -602,7 +590,7 @@ export default function WeeklyShutdown() {
               <div className="text-[12px] text-fg-faded">worked</div>
               {completedThisWeek.length > 0 && (
                 <div className="mt-4 pt-4 w-full" style={{ borderTop: "0.5px solid var(--border-hairline)" }}>
-                  <div className="text-[20px] font-medium text-fg tabular-nums leading-none mb-1">
+                  <div className="text-[20px] font-medium text-accent-pink-bright tabular-nums leading-none mb-1">
                     {completedThisWeek.length}
                   </div>
                   <div className="text-[11px] text-fg-faded">
@@ -670,7 +658,7 @@ export default function WeeklyShutdown() {
                   )}
                   <button
                     onClick={handleCopySummary}
-                    className="w-full px-3 py-1.5 rounded-md text-[12px] border border-accent-pink-bright/60 text-accent-pink-bright hover:bg-accent-pink-soft cursor-pointer transition-colors"
+                    className={`w-full px-3 py-1.5 rounded-md text-[12px] cursor-pointer ${NEUTRAL_ACTION_CLASS}`}
                   >
                     {summaryCopied ? "Copied!" : "Copy for Claude"}
                   </button>
@@ -750,7 +738,7 @@ export default function WeeklyShutdown() {
                 return (
                   <div key={date}>
                     <h4 className="text-[12px] font-medium text-fg-secondary mb-2">
-                      {DAY_NAMES_SHORT[idx]} — {formatDayHeading(date)}
+                      {DAY_NAMES_SHORT[idx]} — {formatDayHeader(date)}
                     </h4>
                     <div className="space-y-1">
                       {dayTasks.map((task) => {
@@ -837,7 +825,7 @@ export default function WeeklyShutdown() {
         <div className="max-w-[900px] mx-auto">
           <button
             onClick={handleCompleteShutdown}
-            className="w-full py-3 rounded-lg border border-accent-pink-bright/60 text-accent-pink-bright text-[14px] font-medium cursor-pointer hover:border-accent-pink hover:bg-accent-pink-soft transition-colors flex items-center justify-center gap-2"
+            className={`w-full ${SHUTDOWN_BUTTON_CLASS} ${PRIMARY_ACTION_CLASS_PINK}`}
           >
             <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M1.5 4 Q7 9 12.5 4" />

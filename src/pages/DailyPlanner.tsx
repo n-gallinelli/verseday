@@ -32,7 +32,8 @@ import {
   getWorkedMinutesForTask,
   generateRecurringInstances,
 } from "../db/queries";
-import { todayString, localDateIso } from "../utils/dates";
+import { todayString, localDateIso, formatDayHeader } from "../utils/dates";
+import { PRIMARY_ACTION_CLASS, NEUTRAL_ACTION_CLASS } from "../utils/actionStyles";
 import ErrorBanner from "../components/ErrorBanner";
 import TaskCard from "../components/TaskCard";
 import DatePicker from "../components/DatePicker";
@@ -962,11 +963,7 @@ export default function DailyPlanner() {
             </svg>
           </button>
           <h2 className="text-[16px] font-medium text-fg">
-            {new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-            })}
+            {formatDayHeader(selectedDate)}
           </h2>
           <button
             onClick={() => changeDate(1)}
@@ -1069,7 +1066,7 @@ export default function DailyPlanner() {
                   // alternative for staying on Daily Plan.
                   setPage("focus");
                 }}
-                className="rounded-lg border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors"
+                className={`rounded-lg px-4 py-1.5 cursor-pointer flex items-center gap-2 ${PRIMARY_ACTION_CLASS}`}
                 title={`Start focus: ${nextTask.title}`}
               >
                 <svg width="8" height="10" viewBox="0 0 8 10" fill="currentColor" className="ml-[1px]">
@@ -1153,7 +1150,7 @@ export default function DailyPlanner() {
                 />
                 <button
                   type="submit"
-                  className="border border-accent-blue/50 text-accent-blue-soft-fg rounded-lg px-4 py-1.5 text-[13px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors whitespace-nowrap"
+                  className={`rounded-lg px-4 py-1.5 text-[13px] font-medium cursor-pointer whitespace-nowrap ${NEUTRAL_ACTION_CLASS}`}
                 >
                   Add
                 </button>

@@ -60,31 +60,35 @@ describe("rolloverUnfinishedTasks contract (#10)", () => {
       id INTEGER PRIMARY KEY, date_scheduled TEXT, status TEXT,
       rollover_count INTEGER DEFAULT 0, original_date TEXT,
       recurrence_source_id INTEGER, recurrence TEXT,
-      external_source TEXT, sort_order INTEGER
+      external_source TEXT, sort_order INTEGER, due_date TEXT
     );`);
     // Columns: id, date_scheduled, status, rollover_count, original_date,
-    //          recurrence_source_id, recurrence, external_source, sort_order
+    //          recurrence_source_id, recurrence, external_source, sort_order,
+    //          due_date. The existing rows are all single-day (due_date NULL),
+    //          so the multi-day guard `(due_date IS NULL OR due_date < $1)` is a
+    //          no-op for them and every assertion below is unchanged. Range
+    //          behaviour gets its own fixture/describe further down.
     // A: overdue count0 -> moves (count1)
-    db.exec(`INSERT INTO tasks VALUES (1,'2026-05-30','todo',0,NULL,NULL,NULL,NULL,5)`);
+    db.exec(`INSERT INTO tasks VALUES (1,'2026-05-30','todo',0,NULL,NULL,NULL,NULL,5,NULL)`);
     // B: overdue count3 -> moves (count4), NOT expired this run (expire at 4, not 3)
-    db.exec(`INSERT INTO tasks VALUES (2,'2026-05-29','todo',3,NULL,NULL,NULL,NULL,2)`);
+    db.exec(`INSERT INTO tasks VALUES (2,'2026-05-29','todo',3,NULL,NULL,NULL,NULL,2,NULL)`);
     // C: overdue count4 -> expired (date NULL)
-    db.exec(`INSERT INTO tasks VALUES (3,'2026-05-28','todo',4,NULL,NULL,NULL,NULL,9)`);
+    db.exec(`INSERT INTO tasks VALUES (3,'2026-05-28','todo',4,NULL,NULL,NULL,NULL,9,NULL)`);
     // D: done -> untouched
-    db.exec(`INSERT INTO tasks VALUES (4,'2026-05-30','done',0,NULL,NULL,NULL,NULL,1)`);
+    db.exec(`INSERT INTO tasks VALUES (4,'2026-05-30','done',0,NULL,NULL,NULL,NULL,1,NULL)`);
     // E: recurrence instance (recurrence_source_id set) -> skipped
-    db.exec(`INSERT INTO tasks VALUES (5,'2026-05-30','todo',0,NULL,10,NULL,NULL,1)`);
+    db.exec(`INSERT INTO tasks VALUES (5,'2026-05-30','todo',0,NULL,10,NULL,NULL,1,NULL)`);
     // F: calendar import -> skipped
-    db.exec(`INSERT INTO tasks VALUES (6,'2026-05-30','todo',0,NULL,NULL,NULL,'calendar',1)`);
+    db.exec(`INSERT INTO tasks VALUES (6,'2026-05-30','todo',0,NULL,NULL,NULL,'calendar',1,NULL)`);
     // G: already on today -> existing, keeps sort_order 1
-    db.exec(`INSERT INTO tasks VALUES (7,'${TODAY}','todo',0,NULL,NULL,NULL,NULL,1)`);
+    db.exec(`INSERT INTO tasks VALUES (7,'${TODAY}','todo',0,NULL,NULL,NULL,NULL,1,NULL)`);
     // H: recurring TEMPLATE (recurrence set, no source_id) carrying a stale
     //    date, count0 -> must NOT move. The recurrence_source_id guard alone
     //    would miss this; the recurrence guard catches it.
-    db.exec(`INSERT INTO tasks VALUES (8,'2026-05-30','todo',0,NULL,NULL,'{"freq":"weekdays"}',NULL,7)`);
+    db.exec(`INSERT INTO tasks VALUES (8,'2026-05-30','todo',0,NULL,NULL,'{"freq":"weekdays"}',NULL,7,NULL)`);
     // I: recurring TEMPLATE at count4 -> must NOT expire AND must NOT appear in
     //    the expire-capture (else a phantom RolloverMove drifts store from DB).
-    db.exec(`INSERT INTO tasks VALUES (9,'2026-05-28','todo',4,NULL,NULL,'{"freq":"weekdays"}',NULL,8)`);
+    db.exec(`INSERT INTO tasks VALUES (9,'2026-05-28','todo',4,NULL,NULL,'{"freq":"weekdays"}',NULL,8,NULL)`);
     return db;
   }
 
@@ -111,8 +115,8 @@ describe("rolloverUnfinishedTasks contract (#10)", () => {
   }
 
   const get = (db: DatabaseSync, id: number) =>
-    db.prepare("SELECT date_scheduled, rollover_count, sort_order FROM tasks WHERE id = ?").get(id) as
-      { date_scheduled: string | null; rollover_count: number; sort_order: number };
+    db.prepare("SELECT date_scheduled, rollover_count, sort_order, due_date FROM tasks WHERE id = ?").get(id) as
+      { date_scheduled: string | null; rollover_count: number; sort_order: number; due_date: string | null };
 
   it("captures to-roll tasks oldest-first (deterministic order)", () => {
     const db = makeDb();
@@ -167,5 +171,46 @@ describe("rolloverUnfinishedTasks contract (#10)", () => {
     ).all() as { id: number }[];
     expect(order.map((r) => r.id)).toEqual([7, 2, 1]);
     db.close();
+  });
+
+  // Multi-day range guard `(due_date IS NULL OR due_date < $1)` — separate
+  // fixture so the shared-fixture assertions above stay pinned to single-day.
+  describe("never rolls a task still inside its date range (multi-day)", () => {
+    function makeRangeDb(): DatabaseSync {
+      const db = new DatabaseSync(":memory:");
+      db.exec(`CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY, date_scheduled TEXT, status TEXT,
+        rollover_count INTEGER DEFAULT 0, original_date TEXT,
+        recurrence_source_id INTEGER, recurrence TEXT,
+        external_source TEXT, sort_order INTEGER, due_date TEXT
+      );`);
+      // R1: live range — start in the past, due_date today-or-later. Must NOT
+      //     roll/expire even at count 4; keeps its real start + due_date.
+      db.exec(`INSERT INTO tasks VALUES (1,'2026-05-30','todo',0,NULL,NULL,NULL,NULL,1,'2026-06-05')`);
+      // R2: live range at count 4 — the guard must keep EXPIRE off it too.
+      db.exec(`INSERT INTO tasks VALUES (2,'2026-05-28','todo',4,NULL,NULL,NULL,NULL,2,'2026-06-10')`);
+      // R3: fully-past range (due_date < today) count0 — DOES roll to today,
+      //     and its now-expired due_date is cleared (collapses to single-day).
+      db.exec(`INSERT INTO tasks VALUES (3,'2026-05-28','todo',0,NULL,NULL,NULL,NULL,3,'2026-05-30')`);
+      // R4: plain single-day overdue control — rolls as before.
+      db.exec(`INSERT INTO tasks VALUES (4,'2026-05-29','todo',0,NULL,NULL,NULL,NULL,4,NULL)`);
+      return db;
+    }
+
+    it("keeps an in-range task put; rolls fully-past ranges and nulls their due_date", () => {
+      const db = makeRangeDb();
+      const { rolled, expired } = rollover(db);
+      // R1 + R2 (still in range) untouched, due_date preserved, not rolled/expired.
+      expect(get(db, 1)).toMatchObject({ date_scheduled: "2026-05-30", due_date: "2026-06-05" });
+      expect(get(db, 2)).toMatchObject({ date_scheduled: "2026-05-28", due_date: "2026-06-10" });
+      expect(rolled).not.toContain(1);
+      expect(rolled).not.toContain(2);
+      expect(expired).not.toContain(2);
+      // R3 fully-past range moved to today, due_date cleared.
+      expect(get(db, 3)).toMatchObject({ date_scheduled: TODAY, rollover_count: 1, due_date: null });
+      // R4 single-day control still rolls.
+      expect(get(db, 4)).toMatchObject({ date_scheduled: TODAY, rollover_count: 1 });
+      db.close();
+    });
   });
 });

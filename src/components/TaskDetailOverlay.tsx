@@ -115,6 +115,20 @@ function TimeFieldPill({
   const displayValue = formatDisplayMinutes(value);
   const hasValue = displayValue !== "—";
 
+  // Parse a raw field string and commit it via onChange. Tries the
+  // structured parser first (e.g. "1h 45m" → 105); if that returns 0
+  // (no h/m suffix), falls back to a bare minute count so "10" commits
+  // as 10m. No-ops on empty/invalid/out-of-range input.
+  const commitRaw = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    let total = parseTimeInput(trimmed);
+    if (total === 0) total = parseInt(trimmed, 10);
+    if (!isNaN(total) && total > 0 && total <= MAX_ESTIMATE_MINUTES) {
+      onChange(total.toString());
+    }
+  };
+
   // Seed the custom-input field from the current value ONLY when the popover
   // opens. Previously this also depended on `value`, so every keystroke (which
   // updates `value` via onChange) re-seeded `rawInput` and re-appended the "m"
@@ -261,23 +275,22 @@ function TimeFieldPill({
                 onChange("");
                 return;
               }
-              // Try the structured parser first (e.g., "1h 45m" → 105).
-              // If that returns 0 (no h/m suffix found), treat the input
-              // as a bare number of minutes — so "10" commits as 10
-              // minutes without forcing the user to type "10m".
-              let total = parseTimeInput(raw);
-              if (total === 0) total = parseInt(raw, 10);
-              if (!isNaN(total) && total > 0 && total <= MAX_ESTIMATE_MINUTES) {
-                onChange(total.toString());
-              }
+              commitRaw(raw);
             }}
-            onBlur={(e) => {
-              const raw = e.target.value.trim();
-              if (!raw) return;
-              let total = parseTimeInput(raw);
-              if (total === 0) total = parseInt(raw, 10);
-              if (!isNaN(total) && total > 0 && total <= MAX_ESTIMATE_MINUTES) {
-                onChange(total.toString());
+            onBlur={(e) => commitRaw(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter commits the typed minutes and closes the popover.
+              // Stop propagation so the parent modal's key handler doesn't
+              // also act on it. Escape just closes without committing.
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.stopPropagation();
+                commitRaw(e.currentTarget.value);
+                onToggle();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                e.stopPropagation();
+                onToggle();
               }
             }}
             placeholder="e.g. 10 or 1h 30m"

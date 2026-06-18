@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { localDateIso, formatMonthDay, addDaysIso, addMonthsIso } from "../utils/dates";
 
@@ -62,8 +62,13 @@ export default function DateRangeField({
   const updatePosition = useCallback(() => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
-    const calHeight = 360;
-    const calWidth = 300;
+    // Measure the popover's ACTUAL rendered size once it exists (the footer's
+    // push-back rows + "Add end date" make it ~420px, well over the old 360px
+    // guess — which under-clamped and pushed "Add end date" off-screen). Fall
+    // back to the estimate on the first (pre-render) pass; a layout effect
+    // re-runs this with the real height before paint.
+    const calHeight = popoverRef.current?.offsetHeight || 360;
+    const calWidth = popoverRef.current?.offsetWidth || 300;
     const spaceBelow = window.innerHeight - rect.bottom;
     let top = spaceBelow < calHeight ? rect.top - calHeight - 4 : rect.bottom + 4;
     top = Math.max(8, Math.min(top, window.innerHeight - calHeight - 8));
@@ -71,6 +76,13 @@ export default function DateRangeField({
     left = Math.max(8, left);
     setPos({ top, left });
   }, []);
+
+  // Re-measure + reposition after the popover mounts (offsetHeight is only real
+  // post-render). useLayoutEffect so the correction lands before paint — no
+  // visible jump from the pre-render estimate.
+  useLayoutEffect(() => {
+    if (open) updatePosition();
+  }, [open, updatePosition]);
 
   // Open: position, sync the view to the value, and resolve the start mode.
   function openPicker() {
@@ -249,6 +261,12 @@ export default function DateRangeField({
             width: 300,
             top: pos.top,
             left: pos.left,
+            // Safety net: never taller than the viewport; scroll internally if
+            // a short window can't fit the whole calendar. With the measured
+            // clamp above this rarely engages, but guarantees no row is ever
+            // clipped off-screen.
+            maxHeight: "calc(100vh - 16px)",
+            overflowY: "auto",
           }}
         >
           {/* Header */}

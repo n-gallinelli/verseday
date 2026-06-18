@@ -23,8 +23,10 @@ import {
   setWeeklyPlanProjectStatus,
   clearWeeklyPlanProjectStatus,
   getWeeklyPlanCommitments,
+  getWeeklyPlanCommitmentMarkers,
   setWeeklyPlanCommitment,
   clearWeeklyPlanCommitment,
+  getWorkedSecondsForTask,
   getDefaultTaskEstimateMin,
   type WeeklyPlanProjectStatus,
 } from "../../db/queries";
@@ -34,6 +36,16 @@ import PlanProjectPanel from "./PlanProjectPanel";
 import ErrorBanner from "../../components/ErrorBanner";
 import { errorMessage } from "../../utils/errors";
 import { parseTimeFromTitle } from "../../utils/format";
+
+// Title for an auto-created day-cell "General task" — "Spend time on <first
+// few words of the project>". Keeps the row self-explanatory (which
+// project it's chipping away at) while staying short; the user can rename it.
+// Falls back to a generic label if the project name is missing.
+function generalTaskTitle(projectName: string | undefined): string {
+  const words = (projectName ?? "").trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "Spend time on this objective";
+  return `Spend time on ${words.slice(0, 4).join(" ")}`;
+}
 
 // Plan tab orchestrator — owns the data + selection state. Children
 // (rail / panel / summary) are presentational. Week navigation
@@ -59,6 +71,12 @@ export default function PlanTab() {
   const [commitments, setCommitments] = useState<
     Map<number, Map<number, number>>
   >(new Map());
+  // Which backing "General task" owns each (project, day) slot — drives the
+  // day strip's ± / clear (Approach A). The `commitments` minutes above are
+  // DERIVED from task estimates; these markers say which task ± edits.
+  const [markers, setMarkers] = useState<Map<number, Map<number, number>>>(
+    new Map()
+  );
   const [selectedId, setSelectedId] = useState<number | null>(null);
   // M3.2.b.3 — tasks for the currently-selected project flow through
   // the canonical store. Render filter excludes done tasks (PlanTab
@@ -99,12 +117,14 @@ export default function PlanTab() {
 
   const loadData = useCallback(async () => {
     try {
-      const [statusMap, commitMap] = await Promise.all([
+      const [statusMap, commitMap, markerMap] = await Promise.all([
         getWeeklyPlanProjectStatuses(selectedWeek),
         getWeeklyPlanCommitments(selectedWeek),
+        getWeeklyPlanCommitmentMarkers(selectedWeek),
       ]);
       setStatuses(statusMap);
       setCommitments(commitMap);
+      setMarkers(markerMap);
       setError(null);
     } catch (e) {
       setError(errorMessage(e, "Failed to load weekly plan"));
@@ -253,42 +273,80 @@ export default function PlanTab() {
     }
   }
 
+  // Approach A: the day cell shows a DERIVED sum of task estimates; manual
+  // ± / type sets the desired new cell TOTAL. The delta from the current sum is
+  // absorbed by the slot's backing "General task" — created if none, its estimate
+  // edited, or pristine-cleared if driven to 0. Dragged/other scheduled tasks are
+  // never touched.
   async function setCommitment(
     projectId: number,
     dayOffset: number,
     minutes: number
   ) {
     try {
-      await setWeeklyPlanCommitment(selectedWeek, projectId, dayOffset, minutes);
-      // Functional update so back-to-back commitment writes (e.g. move
-      // task = decrement source + increment target) don't stomp on each
-      // other via stale-closure baselines.
-      setCommitments((prev) => {
-        const next = new Map(prev);
-        const projMap = new Map(next.get(projectId) ?? new Map());
-        projMap.set(dayOffset, minutes);
-        next.set(projectId, projMap);
-        return next;
-      });
+      const dateIso = weekDates[dayOffset];
+      if (!dateIso) return;
+      const currentSum = commitments.get(projectId)?.get(dayOffset) ?? 0;
+      const delta = minutes - currentSum;
+      if (delta === 0) return;
+      const markerTaskId = markers.get(projectId)?.get(dayOffset) ?? null;
+
+      if (markerTaskId == null) {
+        // No General task yet. A decrease has nothing to reduce (the shown sum
+        // comes from other scheduled tasks) — ignore. An increase spawns a
+        // General task carrying the added minutes.
+        if (delta <= 0) return;
+        const newId = await createTaskAction({
+          title: generalTaskTitle(
+            projects.find((p) => p.id === projectId)?.name
+          ),
+          projectId,
+          dateScheduled: dateIso,
+          estimatedMinutes: delta,
+        });
+        await setWeeklyPlanCommitment(selectedWeek, projectId, dayOffset, newId);
+      } else {
+        const task = tasksById.get(markerTaskId);
+        const currentEst = task?.estimated_minutes ?? 0;
+        const nextEst = Math.max(0, Math.min(1440, currentEst + delta));
+        if (nextEst <= 0) {
+          await clearCommitment(projectId, dayOffset);
+          return;
+        }
+        if (task) {
+          await updateTaskAction({
+            id: task.id,
+            title: task.title,
+            projectId: task.project_id,
+            estimatedMinutes: nextEst,
+            priority: task.priority,
+            notes: task.notes,
+            dateScheduled: task.date_scheduled,
+            dueDate: task.due_date,
+          });
+        }
+      }
+      await loadData();
     } catch (e) {
       setError(errorMessage(e, "Failed to save commitment"));
     }
   }
 
+  // Clear the slot's General task. Rule 1: hard-delete ONLY if it's pristine
+  // (no worked time, not completed); otherwise keep the task (it holds real
+  // logged time) and just drop the marker. Other tasks on the day are untouched.
   async function clearCommitment(projectId: number, dayOffset: number) {
     try {
-      await clearWeeklyPlanCommitment(selectedWeek, projectId, dayOffset);
-      setCommitments((prev) => {
-        const next = new Map(prev);
-        const projMap = new Map(next.get(projectId) ?? new Map());
-        projMap.delete(dayOffset);
-        if (projMap.size === 0) {
-          next.delete(projectId);
-        } else {
-          next.set(projectId, projMap);
+      const markerTaskId = markers.get(projectId)?.get(dayOffset) ?? null;
+      if (markerTaskId != null) {
+        const worked = await getWorkedSecondsForTask(markerTaskId);
+        const task = tasksById.get(markerTaskId);
+        if (worked === 0 && task?.status !== "done") {
+          await deleteTaskAction(markerTaskId);
         }
-        return next;
-      });
+      }
+      await clearWeeklyPlanCommitment(selectedWeek, projectId, dayOffset);
+      await loadData();
     } catch (e) {
       setError(errorMessage(e, "Failed to clear commitment"));
     }
@@ -389,27 +447,10 @@ export default function PlanTab() {
         dueDate: task.due_date,
       });
 
-      // Commitment delta — transfer the task's estimate. Dropping a
-      // 45-min task on Tuesday adds 45 to Tuesday's commitment;
-      // dragging it from Tuesday to Wednesday transfers those 45
-      // minutes (Tue -= 45, Wed += 45). Source decrement only fires
-      // when the source day was a tracked day in this week.
-      if (estimate != null && estimate > 0) {
-        if (fromOffset !== -1) {
-          const projMap = commitments.get(selectedId);
-          const sourceCurrent = projMap?.get(fromOffset) ?? 0;
-          const sourceNext = Math.max(0, sourceCurrent - estimate);
-          if (sourceNext === 0) {
-            await clearCommitment(selectedId, fromOffset);
-          } else {
-            await setCommitment(selectedId, fromOffset, sourceNext);
-          }
-        }
-        const projMap = commitments.get(selectedId);
-        const targetCurrent = projMap?.get(targetOffset) ?? 0;
-        const targetNext = Math.min(1440, targetCurrent + estimate);
-        await setCommitment(selectedId, targetOffset, targetNext);
-      }
+      // Approach A: no commitment aggregate to maintain — rescheduling the task
+      // is the whole story. The day cells are DERIVED from task estimates, so
+      // refresh them (and markers) from truth after the move.
+      await loadData();
     } catch (e) {
       setError(errorMessage(e, "Failed to schedule task"));
     }

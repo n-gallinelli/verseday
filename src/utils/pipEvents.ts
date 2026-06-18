@@ -22,19 +22,22 @@ export const PIP_COMPLETE_FLOURISH_MS = 850;
 // ONE pip window size for every phase — the pip never resizes (declining a break
 // can't shrink it; no setSize churn). Shared so the window-creation size
 // (FocusMode) and the content's pinned size (FocusPip) can't drift. Height is set
-// by the break prompt — its tallest phase: header (~16px) + mb-1 (4px) + 24px
-// button row + py-1.5 (12px) ≈ 56px floor; 58 leaves ~2px slack. The running/
-// paused view is shorter and centers in the remaining space.
-export const PIP_SIZE = { width: 220, height: 58 };
+// by the break prompt — its tallest phase (no header): py-1.5 container (12px) +
+// Start-break button row (~28px) + gap-2 (8px) + "+5 min · Skip" sub-row (~12px)
+// ≈ 60px floor; 66 leaves ~6px slack so the cluster isn't jammed to the borders.
+// The running/paused view is shorter and centers in the remaining space.
+export const PIP_SIZE = { width: 220, height: 66 };
 
 // High-visibility mode: the SAME card content scaled uniformly by
-// PIP_HIGH_VIS_SCALE inside a larger window whose extra margin is transparent
-// halo room for the breathing glow (a glow can't render outside the window, so
-// the card is inset). 220×58 × 1.3 ≈ 286×75; +20px halo each side → 326×116.
-// Both the window-creation size (FocusMode) and the content pin (FocusPip) read
-// these so the two sides can't drift — same discipline as PIP_SIZE.
+// PIP_HIGH_VIS_SCALE inside a slightly larger window. The crisp accent ring is
+// a box-shadow drawn OUTSIDE the card, so it clips at the window bounds — the
+// window just needs a few px of transparent margin for the ring (+ breathe) to
+// render un-clipped. 220×66 × 1.3 ≈ 286×85.8; +~7.1px halo each side → 300×100
+// (ring spread is 2px × 1.3 ≈ 2.6px, so 7.1px clears it). Both the window-creation
+// size (FocusMode) and the content pin (FocusPip) read these so the two sides can't
+// drift — same discipline as PIP_SIZE.
 export const PIP_HIGH_VIS_SCALE = 1.3;
-export const PIP_SIZE_LARGE = { width: 326, height: 116 };
+export const PIP_SIZE_LARGE = { width: 300, height: 100 };
 
 /** The pip window size for a given high-visibility flag. */
 export function pipSizeFor(highVisibility: boolean): { width: number; height: number } {

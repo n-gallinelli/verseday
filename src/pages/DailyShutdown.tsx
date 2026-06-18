@@ -14,8 +14,13 @@ import {
 } from "../db/queries";
 import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
-import { todayString, localDateIso } from "../utils/dates";
+import { todayString, localDateIso, formatDayHeader } from "../utils/dates";
 import { formatHoursMinutes } from "../utils/format";
+import {
+  PRIMARY_ACTION_CLASS,
+  NEUTRAL_ACTION_CLASS,
+  SHUTDOWN_BUTTON_CLASS,
+} from "../utils/actionStyles";
 import {
   buildSummaryDigest,
   buildSummaryPrompt,
@@ -386,11 +391,7 @@ export default function DailyShutdown() {
           Daily shutdown
         </span>
         <h2 className="text-[14px] font-medium text-fg">
-          {new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", {
-            weekday: "long",
-            month: "long",
-            day: "numeric",
-          })}
+          {formatDayHeader(selectedDate)}
         </h2>
       </div>
 
@@ -460,7 +461,7 @@ export default function DailyShutdown() {
                     </div>
                     <button
                       onClick={handleCopyRundown}
-                      className="w-full px-3 py-1.5 rounded-md text-[12px] border border-accent-blue/50 text-accent-blue-soft-fg hover:bg-accent-blue-soft cursor-pointer transition-colors"
+                      className={`w-full px-3 py-1.5 rounded-md text-[12px] cursor-pointer ${NEUTRAL_ACTION_CLASS}`}
                     >
                       {summaryCopied ? "Copied!" : "Copy for Claude"}
                     </button>
@@ -539,7 +540,7 @@ export default function DailyShutdown() {
                     })}
                   </div>
                 ) : (
-                  <p className="text-[12px] text-fg-disabled px-2.5">No tasks completed</p>
+                  <p className="text-[12px] text-fg-disabled px-2.5">Nothing marked done today.</p>
                 )}
               </section>
 
@@ -703,7 +704,7 @@ export default function DailyShutdown() {
           {step === 1 ? (
             <button
               onClick={() => setStep(2)}
-              className="flex-1 py-2.5 rounded-lg border border-accent-blue/50 text-accent-blue-soft-fg text-[13px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors flex items-center justify-center gap-1.5"
+              className={`flex-1 ${SHUTDOWN_BUTTON_CLASS} ${PRIMARY_ACTION_CLASS}`}
             >
               <svg width="14" height="12" viewBox="0 0 14 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 {/* Heart — reflection/gratitude */}
@@ -715,7 +716,7 @@ export default function DailyShutdown() {
             <>
               <button
                 onClick={completeShutdown}
-                className="flex-1 py-2.5 rounded-lg border border-accent-blue/50 text-accent-blue-soft-fg text-[13px] font-medium cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft transition-colors flex items-center justify-center gap-1.5"
+                className={`flex-1 ${SHUTDOWN_BUTTON_CLASS} ${PRIMARY_ACTION_CLASS}`}
               >
                 <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   {/* Closed eye — eyelid arc + lashes */}

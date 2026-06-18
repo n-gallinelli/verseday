@@ -3,6 +3,7 @@ import type { WeeklyPlanProjectStatus } from "../../db/queries";
 import PlanDayStrip from "./PlanDayStrip";
 import PlanTaskList from "./PlanTaskList";
 import PlanWeekSummary from "./PlanWeekSummary";
+import { PRIMARY_ACTION_CLASS } from "../../utils/actionStyles";
 
 interface Props {
   project: Project | null;
@@ -221,7 +222,7 @@ export default function PlanProjectPanel({
               }
               className={`px-4 py-1.5 rounded-lg border text-[13px] font-medium transition-colors ${
                 canMarkDone
-                  ? "border-accent-blue/50 text-accent-blue-soft-fg cursor-pointer hover:border-accent-blue hover:bg-accent-blue-soft"
+                  ? `cursor-pointer ${PRIMARY_ACTION_CLASS}`
                   : "border-line-soft text-fg-disabled cursor-not-allowed"
               }`}
             >

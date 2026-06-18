@@ -16,6 +16,7 @@ import {
   getWorkedMinutesForTaskIds,
   getRecurringTemplates,
   rolloverUnfinishedTasks as dbRolloverUnfinishedTasks,
+  isWeeklyPlanGeneralTask,
   setTaskRecurrence as dbSetTaskRecurrence,
   setManualWorkedMinutes as dbSetManualWorkedMinutes,
   getWorkedSecondsForTask,
@@ -249,6 +250,37 @@ export function withTaskMutated(s: AppState, before: Task, after: Task): Partial
     taskIdsByWeek: nextWeekIdx,
     taskIdsByProject: nextProjIdx,
   };
+}
+
+/** Date-index patch for MULTI-DAY range tasks: add or remove `task.id` from its
+ *  CONTINUATION-day buckets — every loaded day strictly after `date_scheduled`
+ *  through `due_date` inclusive. `withTaskMutated` only maintains the start-day
+ *  bucket; continuation days are filled lazily by `loadTasksForDate`, so on
+ *  completion a done range task would otherwise linger on later days, and a
+ *  reopened one would be missing from them. `present` = should the task be
+ *  visible on continuation days (false on done → evict, true on reopen → re-add).
+ *  Only touches buckets already in the index (loaded days); never creates one.
+ *  No-op for single-day tasks (due_date null). ISO YYYY-MM-DD compares lexically.
+ *  FOLLOW-UP (Verse): a due_date EDIT (extend/shrink the range) is NOT
+ *  reconciled here — affected days just reload on navigation; tracked separately. */
+export function reconcileRangeContinuationDays(
+  s: AppState,
+  task: Task,
+  present: boolean,
+): Map<string, number[]> {
+  if (task.due_date == null || task.date_scheduled == null) return s.taskIdsByDate;
+  const start = task.date_scheduled;
+  const end = task.due_date;
+  let idx = s.taskIdsByDate;
+  const keyOf = sortKeyOf(s.tasksById);
+  for (const day of s.taskIdsByDate.keys()) {
+    if (day > start && day <= end) {
+      idx = present
+        ? indexInsertOrdered(idx, day, task.id, keyOf)
+        : indexRemove(idx, day, task.id);
+    }
+  }
+  return idx;
 }
 
 // ── Project canonical-map transitions (P3) ────────────────────────────────
@@ -1005,6 +1037,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   setPage: (page) => {
     const prev = get().currentPage;
     if (prev === page) return;
+    // A task-detail modal is scoped to the screen it was opened from; any page
+    // navigation dismisses it. Otherwise it floats over the new page — e.g. the
+    // F hotkey jumping to Focus left the overlay mounted ON TOP of the focus
+    // screen (the overlay's own Focus button already calls closeTaskDetail; the
+    // hotkey path bypassed it). Set unconditionally — null→null is a no-op for
+    // subscribers.
+    const closeDetail = { selectedTaskDetailId: null, taskDetailAutoFocusTitle: false };
     // Preview staging is scoped to the focus-screen visit. Leaving focus
     // discards the preview so a fresh "next task" loads on next entry —
     // otherwise a queued task could go stale across navigation. (A running
@@ -1014,12 +1053,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         focusView: null,
         currentPage: page,
         pageHistory: [...s.pageHistory.slice(-19), prev],
+        ...closeDetail,
       }));
       return;
     }
     set((s) => ({
       currentPage: page,
       pageHistory: [...s.pageHistory.slice(-19), prev],
+      ...closeDetail,
     }));
   },
   goBack: () => {
@@ -1099,6 +1140,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     //    0 and stack an estimate on top;
     //  - only when an estimate exists (incl. default estimates).
     if (get().session?.taskId === taskId) return;
+    // Weekly-Plan "General task" placeholders are excluded: completing one
+    // unworked must record worked = 0, not its planned estimate (that would
+    // inject PLANNED minutes as WORKED time). Identified by its marker link.
+    if (await isWeeklyPlanGeneralTask(taskId)) return;
     const fresh = get().tasksById.get(taskId) ?? (await getTaskById(taskId));
     const est = fresh?.estimated_minutes ?? 0;
     if (est <= 0) return;
@@ -1576,6 +1621,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (fresh) {
         if (before) set((s) => withTaskMutated(s, before, fresh));
         else set((s) => withTaskInserted(s, fresh));
+        // Multi-day: keep continuation-day buckets consistent. withTaskMutated
+        // only touches the start-day bucket; a completed range task must leave
+        // every loaded continuation day, and a reopened one must return. No-op
+        // for single-day tasks (due_date null).
+        if (fresh.due_date) {
+          set((s) => ({
+            taskIdsByDate: reconcileRangeContinuationDays(s, fresh, fresh.status !== "done"),
+          }));
+        }
       }
 
       // Estimate backfill (Verse Option 1). Completing an UNtimed task that

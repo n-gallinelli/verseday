@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useDraggable } from "@dnd-kit/core";
+import { ADD_TASK_FIELD_CLASS } from "../../utils/actionStyles";
 import type { Task } from "../../types";
 
 // id format used by the Plan tab's DndContext to identify a draggable
@@ -194,7 +195,7 @@ function NewTaskRow({ onCreate }: { onCreate: (title: string) => Promise<void> }
   }
 
   return (
-    <div className="flex items-center gap-2 px-2 py-1.5 border border-dashed border-line-hairline rounded-md">
+    <div className={ADD_TASK_FIELD_CLASS}>
       <span className="w-1.5 h-1.5 rounded-full bg-fg-disabled flex-shrink-0" />
       <input
         ref={inputRef}

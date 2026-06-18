@@ -78,7 +78,7 @@ export default function App() {
 }
 
 function MainApp() {
-  const { currentPage, session, reconcileFocusOnBoot, setPage, startFocus, pageHistory, goBack } = useAppStore();
+  const { currentPage, session, focusView, reconcileFocusOnBoot, setPage, startFocus, pageHistory, goBack } = useAppStore();
   const startupDone = useRef(false);
   const [pageKey, setPageKey] = useState(0);
   const prevPageRef = useRef(currentPage);
@@ -554,11 +554,16 @@ function MainApp() {
       {/* FocusMode — single persistent mount across both cases (visible
           on the focus page, hidden engine elsewhere). Toggling `visible`
           instead of swapping mounts keeps the pip window + IPC channel
-          alive across navigation without a flicker. Mount lifetime
-          spans "focus page open OR active session running"; unmount
-          fires only when both are false, which is when the pip should
-          actually close. */}
-      {(currentPage === "focus" || !!session) && (
+          alive across navigation without a flicker. Mount lifetime spans
+          "focus page open OR active session OR pending preview". The
+          preview (focusView) clause matters for advance-mode completion
+          FROM the pip off the focus page: previewFocus stages the next
+          task and clears `session`, so without it the engine would
+          unmount, emit PIP_STATE null, and wrongly close the pip mid-beat.
+          stopFocus clears BOTH session and focusView, so the genuine
+          close cases (close mode, advance-with-no-next-task) still unmount
+          and close the pip as intended. */}
+      {(currentPage === "focus" || !!session || !!focusView) && (
         <FocusMode visible={currentPage === "focus"} />
       )}
 

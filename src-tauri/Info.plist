@@ -4,7 +4,12 @@
 <dict>
     <!-- User-facing copy for the macOS Calendars permission prompt.
          Apple shows this verbatim, so be plain about what we do and
-         where the data goes. Plan v3 / Verse-approved wording. -->
+         where the data goes. Plan v3 / Verse-approved wording.
+         Two keys: NSCalendarsFullAccessUsageDescription is the macOS 14+
+         key that requestFullAccessToEventsWithCompletion reads; the legacy
+         NSCalendarsUsageDescription is kept for back-compat. Identical copy. -->
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>VerseDay reads your Calendar.app events to surface them as tasks for the day. Data stays local to this device and is never sent anywhere.</string>
     <key>NSCalendarsUsageDescription</key>
     <string>VerseDay reads your Calendar.app events to surface them as tasks for the day. Data stays local to this device and is never sent anywhere.</string>
 </dict>

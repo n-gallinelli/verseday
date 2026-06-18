@@ -2,18 +2,9 @@ import ScheduleTab from "./weekly-plan/ScheduleTab";
 import PlanTab from "./weekly-plan/PlanTab";
 import PlanFridayBanner from "./weekly-plan/PlanFridayBanner";
 import { useAppStore } from "../stores/appStore";
-import { localDateIso, mondayOfWeek } from "../utils/dates";
+import { localDateIso, mondayOfWeek, formatWeekRange } from "../utils/dates";
 
 type Tab = "schedule" | "plan";
-
-function formatWeekLabel(mondayIso: string): string {
-  const d = new Date(mondayIso + "T00:00:00");
-  const friday = new Date(d);
-  friday.setDate(d.getDate() + 4);
-  const monthDay = (date: Date) =>
-    date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  return `${monthDay(d)} – ${monthDay(friday)}`;
-}
 
 // Host for the Weekly Plan screen. Two tabs: Plan (the Friday-anchored
 // planning view, default) and Schedule (the existing calendar/week
@@ -55,7 +46,7 @@ export default function WeeklyPlanner() {
           </svg>
         </button>
         <span className="text-[13px] font-medium text-fg">
-          {formatWeekLabel(selectedWeek)}
+          {formatWeekRange(selectedWeek)}
         </span>
         <button
           onClick={() => changeWeek(1)}

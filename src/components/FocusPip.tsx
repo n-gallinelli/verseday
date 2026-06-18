@@ -4,7 +4,8 @@ import { currentMonitor } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import VerseDayLogo from "./VerseDayLogo";
-import { playBreakChime as playCalm } from "../utils/sounds";
+import { playBreakChime as playCalm, playBreakEndChime } from "../utils/sounds";
+import { breakEndClock } from "../utils/breakClock";
 import { clampToFrame } from "../utils/pipClamp";
 import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_SIZE, PIP_HIGH_VIS_SCALE, pipSizeFor, PIP_COMPLETE_FLOURISH_MS, type PipState } from "../utils/pipEvents";
 
@@ -57,13 +58,42 @@ async function focusMainWindow() {
   }
 }
 
+// Raise VerseDay onto the Focus screen of the task the pip is timing: tell the
+// main window to route (clearBrowse + setPage("focus")) and bring it forward.
+function openFocusScreen() {
+  sendCommand("openFocus");
+  void focusMainWindow();
+}
+
+// Screen-space pointer-down position, captured on mousedown so the body
+// click-to-focus can distinguish a real click from the tail of a window drag.
+// MUST be screen coords, NOT client: during a Tauri window drag the window
+// follows the cursor, so client x/y barely move — only screen x/y reveals the
+// drag.
+let pipDownScreenX = 0;
+let pipDownScreenY = 0;
+
 // Drag handler: hold + drag anywhere on the pip (except buttons/inputs) to
 // reposition the window. Tauri's startDragging only kicks in on mouse motion,
-// so a pure click still triggers child onClick handlers like focusMainWindow.
+// so a pure click still triggers child onClick handlers like openFocusScreen.
 function handlePipMouseDown(e: React.MouseEvent) {
   const target = e.target as HTMLElement;
   if (target.closest("button, a, input, select, textarea")) return;
+  pipDownScreenX = e.screenX;
+  pipDownScreenY = e.screenY;
   getCurrentWebviewWindow().startDragging().catch(() => {});
+}
+
+// Body click → Focus screen. 185d928 deliberately removed the original
+// pip-body onClick (it had no drag guard); this re-adds it WITH one, per Nick's
+// "whole pip body navigates" choice. Do not re-remove without that context:
+// buttons stopPropagation so they never reach here, and a click that moved the
+// window > a few screen px (a drag) is ignored.
+function handlePipBodyClick(e: React.MouseEvent) {
+  const target = e.target as HTMLElement;
+  if (target.closest("button, a, input, select, textarea")) return;
+  if (Math.abs(e.screenX - pipDownScreenX) > 5 || Math.abs(e.screenY - pipDownScreenY) > 5) return;
+  openFocusScreen();
 }
 
 const ICON_BTN = "w-8 h-8 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg hover:bg-input-hover transition-colors flex-shrink-0";
@@ -124,6 +154,10 @@ export default function FocusPip() {
   // flips back to its work view.
   const [pendingAck, setPendingAck] = useState<string | null>(null);
   const ackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Mirrors the last-seen phase so the state listener (bound once on mount)
+  // can detect phase transitions without reading a stale `state` closure and
+  // without running side effects inside the setState updater.
+  const prevPhaseRef = useRef<PipState["phase"] | null>(null);
 
   // ── Completion sequence (Option C — strike + hand-off) ──────────────
   // Clicking the checkmark plays a full-pip "officially done" takeover: the
@@ -193,6 +227,18 @@ export default function FocusPip() {
       setPendingAck(null);
       ackTimerRef.current = null;
     }, 1200);
+  }
+
+  // Like flashAck but with NO command dispatch — for system-driven transient
+  // text (e.g. "End of break" on the break→work transition). Reuses the same
+  // pendingAck overlay + auto-clear.
+  function flashMessage(message: string, ms: number) {
+    if (ackTimerRef.current) clearTimeout(ackTimerRef.current);
+    setPendingAck(message);
+    ackTimerRef.current = setTimeout(() => {
+      setPendingAck(null);
+      ackTimerRef.current = null;
+    }, ms);
   }
 
   useEffect(() => {
@@ -313,18 +359,25 @@ export default function FocusPip() {
           pendingCloseRef.current = true;
           return;
         }
+        prevPhaseRef.current = null;
         setState(null);
         getCurrentWebviewWindow().close().catch(() => {});
         return;
       }
-      setState((prev) => {
-        if (prev && prev.phase !== next.phase) {
-          if (next.phase === "prompt" || (prev.phase === "break" && next.phase === "work")) {
-            playCalm();
-          }
+      // Phase-transition cues, computed off the live phase mirror (not the
+      // setState updater) so the chime/message side effects don't run inside
+      // a render. Start and end of a break get DISTINCT chimes.
+      const prevPhase = prevPhaseRef.current;
+      if (prevPhase && prevPhase !== next.phase) {
+        if (next.phase === "prompt") {
+          playCalm(); // descending — break offered
+        } else if (prevPhase === "break" && next.phase === "work") {
+          playBreakEndChime();                // ascending — break OVER (#1)
+          flashMessage("End of break", 2000);  // transient pip text (#2)
         }
-        return next;
-      });
+      }
+      prevPhaseRef.current = next.phase;
+      setState(next);
     })
       .then((un) => {
         unlisten = un;
@@ -404,14 +457,18 @@ export default function FocusPip() {
   }, []);
 
   // Every phase renders through one shell: a window-filling, centered wrapper
-  // holding a fixed BASE-sized (220×58) box. In high-vis mode the box scales
-  // uniformly (PIP_HIGH_VIS_SCALE) — so all phase layouts magnify together and
-  // the break-prompt height math stays valid in scaled units — and a breathing
-  // glow layer sits behind the card in the transparent halo margin. In normal
-  // mode the box equals the window, so the shell is a no-op pass-through. The
-  // `card` must size to the box (w-full h-full) and keeps its own drag region,
-  // bg, border, and rounding.
-  function pipShell(card: React.ReactNode, withGlow: boolean) {
+  // holding a fixed BASE-sized (220×66) box. In high-vis mode the box magnifies
+  // uniformly (PIP_HIGH_VIS_SCALE) via `zoom` — so all phase layouts grow
+  // together and the break-prompt height math stays valid in scaled units —
+  // and a breathing blue accent ring hugs the card in the small transparent
+  // halo margin. We use `zoom`, NOT `transform: scale()`: scale stretches the
+  // already-rasterized 220×66 bitmap, which blurs the text and smears the
+  // 0.5px border into a fuzzy ring. `zoom` re-lays-out and re-rasterizes at the
+  // final size (WKWebView honors it), so glyphs, border, and glow stay crisp.
+  // In normal mode the box equals the window, so the shell is a no-op
+  // pass-through. The `card` must size to the box (w-full h-full) and keeps its
+  // own drag region, bg, border, and rounding.
+  function pipShell(card: React.ReactNode, withRing: boolean) {
     return (
       <div className="w-full h-screen flex items-center justify-center overflow-hidden">
         <div
@@ -419,15 +476,22 @@ export default function FocusPip() {
           style={{
             width: PIP_SIZE.width,
             height: PIP_SIZE.height,
-            transform: highVis ? `scale(${PIP_HIGH_VIS_SCALE})` : undefined,
-            transformOrigin: "center",
+            zoom: highVis ? PIP_HIGH_VIS_SCALE : undefined,
           }}
         >
-          {highVis && withGlow && (
+          {highVis && withRing && (
             <div
               aria-hidden
-              className="pip-glow-layer animate-pip-glow absolute inset-0 pointer-events-none"
-              style={{ borderRadius: 18, boxShadow: "0 0 11px 1px var(--pip-glow)" }}
+              className="pip-ring-layer animate-pip-ring absolute inset-0 pointer-events-none"
+              style={{
+                borderRadius: 18,
+                // Crisp accent ring: 0 blur, 2px spread (×1.3 under the box's
+                // zoom ≈ 2.6px) → a sharp blue outline hugging the pill, no
+                // fuzz. Opacity breathes via .animate-pip-ring for a subtle
+                // "alive" pulse. The small window halo (PIP_SIZE_LARGE) is just
+                // enough for the ring to render outside the card un-clipped.
+                boxShadow: "0 0 0 2px var(--pip-ring)",
+              }}
             />
           )}
           {card}
@@ -512,7 +576,7 @@ export default function FocusPip() {
     );
   }
 
-  // ── BREAK PROMPT — on-brand green CTA + two readable links, fit to 220×58 ──
+  // ── BREAK PROMPT — on-brand green CTA + two readable links, fit to 220×66 ──
   // Action-over-state hierarchy: the expected action (start the break)
   // dominates as a filled, icon-labeled primary; snooze and skip demote to
   // plain text links beneath it. No header — the cup icon + label carry the
@@ -527,7 +591,7 @@ export default function FocusPip() {
     return pipShell(
       <div
         data-tauri-drag-region
-        className="select-none flex flex-col items-center justify-center gap-1.5 w-full h-full px-2.5 py-1.5"
+        className="select-none flex flex-col items-center justify-center gap-2 w-full h-full px-2.5 py-1.5"
         style={{
           background: PIP_BG,
           borderRadius: 18,
@@ -538,7 +602,7 @@ export default function FocusPip() {
       >
         <button
           onClick={() => sendCommand("takeBreak")}
-          className="flex items-center gap-1.5 px-3.5 py-1 rounded-full text-[13px] font-medium text-white bg-[#0F6E56] hover:bg-[#0B5A46] cursor-pointer transition-colors"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[13px] font-medium text-white bg-[#0F6E56] hover:bg-[#0B5A46] cursor-pointer transition-colors"
           title="Start a 5 min break"
         >
           <svg
@@ -582,11 +646,37 @@ export default function FocusPip() {
   // ── BREAK COUNTDOWN ────────────────────────────────────────────────
   if (state.phase === "break") {
     return pipShell(
-      <div data-tauri-drag-region className="px-3.5 w-full h-full flex items-center select-none overflow-hidden" style={{ background: PIP_BG, borderRadius: 18 }} onMouseDown={handlePipMouseDown}>
+      <div
+        data-tauri-drag-region
+        className="px-3.5 w-full h-full flex items-center select-none overflow-hidden"
+        style={{ background: PIP_BG, borderRadius: 18, boxShadow: "var(--shadow-card)" }}
+        onMouseDown={handlePipMouseDown}
+        onMouseEnter={() => setCssHovered(true)}
+        // Clear cssHovered only — the Rust monitor owns externallyHovered
+        // (mirrors active-phase hover semantics, no tug-of-war).
+        onMouseLeave={() => setCssHovered(false)}
+      >
         <div className="flex items-center gap-2.5 w-full">
           <div className="flex-1 min-w-0">
-            <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-0.5">Break</div>
-            <div className="text-[20px] font-medium tabular-nums text-accent-green-deep leading-none" style={{ letterSpacing: "-0.5px" }}>
+            {/* "BREAK" crossfades to the end time on hover. Two stacked spans
+                in a relative box: "Break" stays in flow (defines height, no
+                layout shift) and "ends H:MM" overlays it absolutely. */}
+            <div className="relative mb-0.5 leading-none">
+              <span
+                className="block uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] transition-opacity duration-[180ms]"
+                style={{ color: "var(--focus-break-label)", opacity: expanded ? 0 : 1 }}
+              >
+                Break
+              </span>
+              <span
+                aria-hidden={!expanded}
+                className="absolute inset-0 uppercase whitespace-nowrap [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] transition-opacity duration-[180ms]"
+                style={{ color: "var(--focus-break-label)", opacity: expanded ? 1 : 0 }}
+              >
+                ends {breakEndClock(Date.now(), state.breakRemaining)}
+              </span>
+            </div>
+            <div className="text-[20px] font-semibold tabular-nums text-accent-green-deep leading-none font-display" style={{ letterSpacing: "-0.55px" }}>
               {formatCountdown(state.breakRemaining)}
             </div>
           </div>
@@ -610,8 +700,9 @@ export default function FocusPip() {
     <div
       data-tauri-drag-region
       className="select-none overflow-hidden relative w-full h-full"
-      style={{ background: PIP_BG, borderRadius: 18, border: "0.5px solid var(--focus-pip-border)" }}
+      style={{ background: PIP_BG, borderRadius: 18, border: "0.5px solid var(--focus-pip-border)", boxShadow: "var(--shadow-card)" }}
       onMouseDown={handlePipMouseDown}
+      onClick={handlePipBodyClick}
     >
       <div className={`flex items-center gap-2 pl-4 pr-2 py-2 w-full h-full ${slideInNext ? "animate-pip-slide-in" : ""}`}>
         {/* Title + timer — purely informational. Fades on hover so the
@@ -673,7 +764,7 @@ export default function FocusPip() {
             }}
           >
             <button
-              onClick={(e) => { e.stopPropagation(); focusMainWindow(); }}
+              onClick={(e) => { e.stopPropagation(); openFocusScreen(); }}
               className={ICON_BTN}
               title="Open VerseDay"
               style={fanOut(4, expanded)}

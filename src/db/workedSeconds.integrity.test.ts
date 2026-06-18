@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import {
-  SQL_TOTAL_WORKED_MINUTES_FOR_DATE,
+  SQL_WORKED_ENTRIES_IN_WINDOW,
   SQL_CLOSE_ORPHANED_TIME_ENTRIES,
 } from "./workedSecondsSql";
+import { bucketWorkedByLocalDay } from "./queries";
+import { addDaysIso } from "../utils/dates";
 import { selectWorkedMinutesWithLive } from "../stores/appStore";
 
 type SelState = Parameters<typeof selectWorkedMinutesWithLive>[0];
@@ -78,6 +80,7 @@ function makeDb(): DatabaseSync {
     CREATE TABLE tasks (
       id INTEGER PRIMARY KEY,
       date_scheduled TEXT,
+      project_id INTEGER,
       recurrence TEXT,
       external_dismissal_reason TEXT
     );
@@ -94,22 +97,41 @@ function makeDb(): DatabaseSync {
   return db;
 }
 
-function totalMinutes(db: DatabaseSync): number {
-  const sql = SQL_TOTAL_WORKED_MINUTES_FOR_DATE.replace(/\$1/g, `'${DATE}'`);
-  const row = db.prepare(sql).get() as { total: number };
-  return row.total;
+// start_time built from LOCAL wall-clock so localDateIso(start_time) round-trips
+// to the intended day regardless of the test runner's timezone (same trick as
+// workedByLocalDay.test.ts — a fixed UTC string would split west/east of UTC).
+function localIso(day: string, hour: number, min: number): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d, hour, min, 0).toISOString();
 }
 
+// Mirrors getTotalWorkedMinutes: run the EXACT windowed SQL, then bucket by
+// local day and read `date`'s minutes — the new attribution path. The open
+// session is still excluded (#15) because the SQL keeps `end_time IS NOT NULL`.
+function totalMinutes(db: DatabaseSync, date = DATE): number {
+  const sql = SQL_WORKED_ENTRIES_IN_WINDOW
+    .replace(/\$1/g, `'${addDaysIso(date, -1)}'`)
+    .replace(/\$2/g, `'${addDaysIso(date, 2)}'`);
+  const rows = db.prepare(sql).all() as {
+    start_time: string;
+    worked_seconds: number;
+    project_id: number | null;
+  }[];
+  return bucketWorkedByLocalDay(rows).find((b) => b.date === date)?.minutes ?? 0;
+}
+
+// closed=false → open row (end_time NULL). `day` is the LOCAL work day.
 function insertEntry(
   db: DatabaseSync,
   id: number,
-  endTime: string | null,
-  workedSeconds: number
+  closed: boolean,
+  workedSeconds: number,
+  day: string = DATE
 ): void {
-  const end = endTime === null ? "NULL" : `'${endTime}'`;
+  const end = closed ? `'${localIso(day, 9, 40)}'` : "NULL";
   db.exec(
     `INSERT INTO time_entries (id, task_id, start_time, end_time, worked_seconds)
-     VALUES (${id}, 1, '${DATE}T09:00:00Z', ${end}, ${workedSeconds});`
+     VALUES (${id}, 1, '${localIso(day, 9, 0)}', ${end}, ${workedSeconds});`
   );
 }
 
@@ -117,7 +139,7 @@ describe("worked-seconds crash integrity (#2 + #15)", () => {
   it("#15: an OPEN row (end_time NULL) contributes 0 to the DB total", () => {
     const db = makeDb();
     // Live session: 40 min checkpointed onto the still-open row (#2 behavior).
-    insertEntry(db, 1, null, 2400);
+    insertEntry(db, 1, false, 2400);
     // DB contributes 0; the live session is counted once via focus.workedMs
     // at the app layer — so it is never double-counted.
     expect(totalMinutes(db)).toBe(0);
@@ -126,7 +148,7 @@ describe("worked-seconds crash integrity (#2 + #15)", () => {
 
   it("#15: a CLOSED row is counted exactly once", () => {
     const db = makeDb();
-    insertEntry(db, 1, `${DATE}T09:40:00Z`, 2400);
+    insertEntry(db, 1, true, 2400);
     expect(totalMinutes(db)).toBe(40);
     db.close();
   });
@@ -134,7 +156,7 @@ describe("worked-seconds crash integrity (#2 + #15)", () => {
   it("#2: a force-quit orphan recovers its checkpointed worked time (no silent hole)", () => {
     const db = makeDb();
     // Crash mid-session: open row, 40 min checkpointed, never stopped.
-    insertEntry(db, 1, null, 2400);
+    insertEntry(db, 1, false, 2400);
     expect(totalMinutes(db)).toBe(0); // excluded while open
 
     // Next boot closes orphans (exclude none): the identical prod UPDATE.
@@ -157,21 +179,21 @@ describe("worked-seconds crash integrity (#2 + #15)", () => {
     const db = makeDb();
     // While running: open row checkpointed at 2400s; app layer shows the live
     // focus.workedMs (40 min). DB shows 0 → user sees 40, counted ONCE.
-    insertEntry(db, 1, null, 2400);
+    insertEntry(db, 1, false, 2400);
     const liveFocusMinutes = 40;
     expect(totalMinutes(db) + liveFocusMinutes).toBe(40);
 
     // On stop: end_time set, worked_seconds final; app layer drops the live
     // value. Still 40, now sourced from the DB — never 80.
-    db.exec(`UPDATE time_entries SET end_time = '${DATE}T09:40:00Z' WHERE id = 1;`);
+    db.exec(`UPDATE time_entries SET end_time = '${localIso(DATE, 9, 40)}' WHERE id = 1;`);
     expect(totalMinutes(db)).toBe(40);
     db.close();
   });
 
   it("the orphan close preserves a real backfilled value and doesn't reopen closed rows", () => {
     const db = makeDb();
-    insertEntry(db, 1, null, 600); // open, checkpointed 10m
-    insertEntry(db, 2, `${DATE}T08:00:00Z`, 1800); // already closed, 30m
+    insertEntry(db, 1, false, 600); // open, checkpointed 10m
+    insertEntry(db, 2, true, 1800); // already closed, 30m
     const closeSql = SQL_CLOSE_ORPHANED_TIME_ENTRIES.replace(/\$1/g, "4").replace(
       /\$2/g,
       "NULL"
@@ -185,6 +207,35 @@ describe("worked-seconds crash integrity (#2 + #15)", () => {
       { id: 2, worked_seconds: 1800 },
     ]);
     expect(totalMinutes(db)).toBe(40); // 10 + 30, both closed, each once
+    db.close();
+  });
+});
+
+describe("worked time attributes to the work day, not date_scheduled (multi-day)", () => {
+  it("a task scheduled day 1 but worked across 3 days reports 40/50/180 on those days", () => {
+    const db = makeDb(); // task 1 is scheduled on DATE (2026-06-01)
+    insertEntry(db, 1, true, 2400, "2026-06-01"); //  40m on day 1
+    insertEntry(db, 2, true, 3000, "2026-06-02"); //  50m on day 2
+    insertEntry(db, 3, true, 10800, "2026-06-03"); // 180m on day 3
+    // Each day's total lands on the day it was WORKED — not 270m all on day 1
+    // (the old GROUP BY date_scheduled bug).
+    expect(totalMinutes(db, "2026-06-01")).toBe(40);
+    expect(totalMinutes(db, "2026-06-02")).toBe(50);
+    expect(totalMinutes(db, "2026-06-03")).toBe(180);
+    // Week bucketing mirrors getWorkedMinutesForWeek: same windowed SQL + bucket,
+    // filtered to [start,end] local days.
+    const weekSql = SQL_WORKED_ENTRIES_IN_WINDOW
+      .replace(/\$1/g, `'${addDaysIso("2026-06-01", -1)}'`)
+      .replace(/\$2/g, `'${addDaysIso("2026-06-03", 2)}'`);
+    const rows = db.prepare(weekSql).all() as {
+      start_time: string;
+      worked_seconds: number;
+      project_id: number | null;
+    }[];
+    const byDay = new Map(bucketWorkedByLocalDay(rows).map((b) => [b.date, b.minutes]));
+    expect(byDay.get("2026-06-01")).toBe(40);
+    expect(byDay.get("2026-06-02")).toBe(50);
+    expect(byDay.get("2026-06-03")).toBe(180);
     db.close();
   });
 });

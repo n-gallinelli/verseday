@@ -6,16 +6,30 @@
 // Context: #2 + #15 (docs/2026-06-01-stability-hardening-plan.md, Branch B).
 
 /**
- * #15 — daily worked-minutes total. `te.end_time IS NOT NULL` excludes the
- * in-progress (open) session: under #2 an open row carries a non-zero,
- * checkpointed worked_seconds, so without this guard it would be summed here
- * AND added again as the live focus.workedMs at the app layer (double-count).
- * Param: $1 = date (YYYY-MM-DD).
+ * Raw closed time entries in a start_time WINDOW, for per-LOCAL-day worked-time
+ * aggregation. Worked time is bucketed in JS (bucketWorkedByLocalDay) by
+ * localDateIso(start_time), NOT by a SQL date group — SQLite date(start_time)
+ * is UTC and would split an evening session onto the next day east of UTC, and
+ * grouping by t.date_scheduled mis-attributes a multi-day task's whole total to
+ * its scheduled date (the bug this replaces). Returns project_id too so the
+ * per-project variant can group without a second query.
+ *
+ * `te.end_time IS NOT NULL` still excludes the open in-progress session (#15):
+ * its checkpointed worked_seconds is counted exactly once as the live
+ * focus.workedMs at the app layer, so it must not also be summed here.
+ *
+ * Params: $1 = window start (inclusive 'YYYY-MM-DD'), $2 = window end
+ * (exclusive). Callers PAD the window (start−1d … end+2d) so it covers the local
+ * range across any UTC offset, then filter to the exact local days AFTER
+ * bucketing — the final day filter is on the bucketed LOCAL date, never on the
+ * raw UTC start_time.
  */
-export const SQL_TOTAL_WORKED_MINUTES_FOR_DATE = `SELECT COALESCE(SUM(te.worked_seconds), 0) / 60.0 as total
+export const SQL_WORKED_ENTRIES_IN_WINDOW = `SELECT te.start_time, te.worked_seconds, t.project_id
     FROM time_entries te
     JOIN tasks t ON te.task_id = t.id
-    WHERE t.date_scheduled = $1 AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL AND te.end_time IS NOT NULL`;
+    WHERE te.start_time >= $1 AND te.start_time < $2
+      AND t.recurrence IS NULL AND t.external_dismissal_reason IS NULL
+      AND te.end_time IS NOT NULL AND te.worked_seconds > 0`;
 
 /**
  * #2 — close orphaned (open) time entries left by a force-quit/crash. Sets ONLY

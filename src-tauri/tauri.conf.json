@@ -35,7 +35,9 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "14.0"
+      "minimumSystemVersion": "14.0",
+      "signingIdentity": "Apple Development: Nicholas Gallinelli (JB9CWAK77D)",
+      "entitlements": "Entitlements.plist"
     }
   },
   "plugins": {}

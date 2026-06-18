@@ -7,7 +7,7 @@ import VerseDayLogo from "./VerseDayLogo";
 import { playBreakChime as playCalm, playBreakEndChime } from "../utils/sounds";
 import { breakEndClock } from "../utils/breakClock";
 import { clampToFrame } from "../utils/pipClamp";
-import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_SIZE, PIP_HIGH_VIS_SCALE, pipSizeFor, PIP_COMPLETE_FLOURISH_MS, type PipState } from "../utils/pipEvents";
+import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_CHIME_EVENT, PIP_SIZE, PIP_HIGH_VIS_SCALE, pipSizeFor, PIP_COMPLETE_FLOURISH_MS, type PipState, type PipChimeKind } from "../utils/pipEvents";
 
 // ONE fixed pip size for every phase — the pip window never resizes (a constant
 // size means declining a break can't shrink it, and there's no setSize docking
@@ -65,38 +65,11 @@ function openFocusScreen() {
   void focusMainWindow();
 }
 
-// Screen-space pointer-down position, captured on mousedown so the body
-// click-to-focus can distinguish a real click from the tail of a window drag.
-// MUST be screen coords, NOT client: during a Tauri window drag the window
-// follows the cursor, so client x/y barely move — only screen x/y reveals the
-// drag.
-let pipDownScreenX = 0;
-let pipDownScreenY = 0;
+// handlePipMouseDown / handlePipBodyClick + the screen-space pointer-down
+// position live INSIDE the component now (a useRef, not module globals) so a
+// future second pip surface can't clobber a shared mutable. See pipDownRef.
 
-// Drag handler: hold + drag anywhere on the pip (except buttons/inputs) to
-// reposition the window. Tauri's startDragging only kicks in on mouse motion,
-// so a pure click still triggers child onClick handlers like openFocusScreen.
-function handlePipMouseDown(e: React.MouseEvent) {
-  const target = e.target as HTMLElement;
-  if (target.closest("button, a, input, select, textarea")) return;
-  pipDownScreenX = e.screenX;
-  pipDownScreenY = e.screenY;
-  getCurrentWebviewWindow().startDragging().catch(() => {});
-}
-
-// Body click → Focus screen. 185d928 deliberately removed the original
-// pip-body onClick (it had no drag guard); this re-adds it WITH one, per Nick's
-// "whole pip body navigates" choice. Do not re-remove without that context:
-// buttons stopPropagation so they never reach here, and a click that moved the
-// window > a few screen px (a drag) is ignored.
-function handlePipBodyClick(e: React.MouseEvent) {
-  const target = e.target as HTMLElement;
-  if (target.closest("button, a, input, select, textarea")) return;
-  if (Math.abs(e.screenX - pipDownScreenX) > 5 || Math.abs(e.screenY - pipDownScreenY) > 5) return;
-  openFocusScreen();
-}
-
-const ICON_BTN = "w-8 h-8 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg hover:bg-input-hover transition-colors flex-shrink-0";
+const ICON_BTN ="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg hover:bg-input-hover transition-colors flex-shrink-0";
 
 /** Per-icon transform for the hover-reveal fan-out. `slot` is the
  *  distance from the pause button (0 = closest, 3 = farthest). When
@@ -241,6 +214,35 @@ export default function FocusPip() {
     }, ms);
   }
 
+  // Screen-space pointer-down position, captured on mousedown so the body
+  // click-to-focus can tell a real click from the tail of a window drag. MUST be
+  // screen coords, NOT client: during a Tauri window drag the window follows the
+  // cursor, so client x/y barely move — only screen x/y reveals the drag. A
+  // per-instance ref (not a module global) so a second pip surface can't clobber it.
+  const pipDownRef = useRef({ x: 0, y: 0 });
+
+  // Drag handler: hold + drag anywhere on the pip (except buttons/inputs) to
+  // reposition the window. Tauri's startDragging only kicks in on mouse motion,
+  // so a pure click still triggers child onClick handlers like openFocusScreen.
+  function handlePipMouseDown(e: React.MouseEvent) {
+    const target = e.target as HTMLElement;
+    if (target.closest("button, a, input, select, textarea")) return;
+    pipDownRef.current = { x: e.screenX, y: e.screenY };
+    getCurrentWebviewWindow().startDragging().catch(() => {});
+  }
+
+  // Body click → Focus screen. 185d928 deliberately removed the original
+  // pip-body onClick (it had no drag guard); this re-adds it WITH one, per Nick's
+  // "whole pip body navigates" choice. Do not re-remove without that context:
+  // buttons stopPropagation so they never reach here, and a click that moved the
+  // window > a few screen px (a drag) is ignored.
+  function handlePipBodyClick(e: React.MouseEvent) {
+    const target = e.target as HTMLElement;
+    if (target.closest("button, a, input, select, textarea")) return;
+    if (Math.abs(e.screenX - pipDownRef.current.x) > 5 || Math.abs(e.screenY - pipDownRef.current.y) > 5) return;
+    openFocusScreen();
+  }
+
   useEffect(() => {
     return () => {
       if (ackTimerRef.current) clearTimeout(ackTimerRef.current);
@@ -364,17 +366,15 @@ export default function FocusPip() {
         getCurrentWebviewWindow().close().catch(() => {});
         return;
       }
-      // Phase-transition cues, computed off the live phase mirror (not the
-      // setState updater) so the chime/message side effects don't run inside
-      // a render. Start and end of a break get DISTINCT chimes.
+      // Phase-transition VISUALS only. The chime is now fired by FocusMode (the
+      // single decider) over PIP_CHIME_EVENT when it elects the pip as speaker —
+      // so there's exactly one play, no dual-AudioContext flam, and no risk of a
+      // broadcast-coalesced phase change dropping a cue here. The pip still owns
+      // the "End of break" flash, driven off the live phase mirror (not the
+      // setState updater) so it doesn't run inside a render.
       const prevPhase = prevPhaseRef.current;
-      if (prevPhase && prevPhase !== next.phase) {
-        if (next.phase === "prompt") {
-          playCalm(); // descending — break offered
-        } else if (prevPhase === "break" && next.phase === "work") {
-          playBreakEndChime();                // ascending — break OVER (#1)
-          flashMessage("End of break", 2000);  // transient pip text (#2)
-        }
+      if (prevPhase && prevPhase === "break" && next.phase === "work") {
+        flashMessage("End of break", 2000);
       }
       prevPhaseRef.current = next.phase;
       setState(next);
@@ -400,6 +400,21 @@ export default function FocusPip() {
       unlisten?.();
       clearInterval(liveness);
     };
+  }, []);
+
+  // Play a chime when FocusMode (the single decider) elects the pip as speaker.
+  // playCalm = descending break-offer, playBreakEndChime = ascending break-over;
+  // both call ctx.resume() defensively. FocusMode guarantees exactly one play, so
+  // the pip never double-fires against an engine-local play.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<PipChimeKind>(PIP_CHIME_EVENT, (e) => {
+      if (e.payload === "start") playCalm();
+      else if (e.payload === "end") playBreakEndChime();
+    })
+      .then((un) => { unlisten = un; })
+      .catch(() => {});
+    return () => unlisten?.();
   }, []);
 
   // Listen for the Rust-side hover monitor. Edge-triggered events

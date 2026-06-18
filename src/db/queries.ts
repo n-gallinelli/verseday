@@ -831,20 +831,15 @@ export async function getCompletedShutdowns(
   // Worked minutes are attributed by the LOCAL day each session was worked
   // (localDateIso(start_time)), NOT by t.date_scheduled — the same fix as the
   // dashboard/weekly charts, so reflection history agrees with them rather than
-  // dumping a multi-day task's whole total onto its scheduled date. One windowed
-  // fetch over the span of returned dates, bucketed in JS. (tasks_done stays a
-  // date_scheduled count — out of scope per the worked-time plan.)
-  const workedByDay = new Map<string, number>();
-  if (rows.length > 0) {
-    const sortedDates = rows.map((r) => r.date).sort();
-    const entries = await fetchWorkedEntriesForLocalRange(
-      sortedDates[0],
-      sortedDates[sortedDates.length - 1]
-    );
-    for (const { date, minutes } of bucketWorkedByLocalDay(entries)) {
-      workedByDay.set(date, minutes);
-    }
-  }
+  // dumping a multi-day task's whole total onto its scheduled date. Fetch ONLY
+  // the specific shutdown dates (via getTotalWorkedMinutes, the already-tested
+  // windowed-fetch + local-day bucket path) — NOT the whole oldest→newest span,
+  // which scaled with calendar gap instead of screen content (PastShutdowns is
+  // unbounded). (tasks_done stays a date_scheduled count — out of scope.)
+  const workedPerDate = await Promise.all(
+    rows.map(async (r) => [r.date, await getTotalWorkedMinutes(r.date)] as const)
+  );
+  const workedByDay = new Map<string, number>(workedPerDate);
   return rows.map(r => ({
     date: r.date,
     mood: r.mood,

@@ -29,6 +29,10 @@ function addTone(ctx: AudioContext, baseTime: number, opts: ToneOpts) {
 export function playBreakChime() {
   try {
     const ctx = new AudioContext();
+    // Defensive: a context can come up suspended (autoplay policy / backgrounded
+    // webview) and then fail SILENTLY. resume() before scheduling. Harmless when
+    // already running. Applies wherever the chime plays (engine or pip).
+    void ctx.resume();
     const now = ctx.currentTime;
 
     const notes: { freq: number; offset: number }[] = [
@@ -72,6 +76,10 @@ export function playBreakChime() {
 export function playBreakEndChime() {
   try {
     const ctx = new AudioContext();
+    // Defensive: a context can come up suspended (autoplay policy / backgrounded
+    // webview) and then fail SILENTLY. resume() before scheduling. Harmless when
+    // already running. Applies wherever the chime plays (engine or pip).
+    void ctx.resume();
     const now = ctx.currentTime;
 
     const notes: { freq: number; offset: number }[] = [

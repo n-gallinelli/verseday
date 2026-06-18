@@ -6,9 +6,11 @@ import {
   PIP_STATE_EVENT,
   PIP_CMD_EVENT,
   PIP_READY_EVENT,
+  PIP_CHIME_EVENT,
   pipSizeFor,
   PIP_COMPLETE_FLOURISH_MS,
   type PipState,
+  type PipChimeKind,
   type PipCompleteBehavior,
 } from "../utils/pipEvents";
 import { useAppStore, selectFocusedTask, selectViewedTask, consumeFocusResume, clearFocusResume, type SessionState, type FocusView } from "../stores/appStore";
@@ -463,6 +465,30 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     }
   }, [focus]);
 
+  // ── Phase chime: SINGLE decider, exactly one speaker ────────────────────────
+  // FocusMode owns the phase machine, so it alone decides every transition and
+  // elects ONE surface to play the chime once — killing the old dual-AudioContext
+  // flam (both windows used to fire) and the pip's broadcast-dropped-cue risk.
+  // Default: the pip speaks when it's shown (always-on-top, reliably audible
+  // during a break); otherwise FocusMode plays locally (hidePip / focus-screen
+  // foreground = no audible pip). A `__chimeFirer` localStorage flag
+  // ('engine' | 'pip') forces the surface for one-keystroke tuning without a
+  // rebuild. The sound fns call ctx.resume() either way (silent-suspension trap).
+  const pipShownRef = useRef(false);
+  useEffect(() => {
+    pipShownRef.current = hasBeenActive && !pipHidden;
+  }, [hasBeenActive, pipHidden]);
+  function fireChime(kind: PipChimeKind) {
+    const flag = localStorage.getItem("__chimeFirer");
+    const forceEngine = flag === "engine";
+    const pipSpeaks = !forceEngine && pipShownRef.current; // 'pip'/default + shown
+    if (pipSpeaks) {
+      void emit(PIP_CHIME_EVENT, kind); // pip plays exactly once
+    } else {
+      (kind === "start" ? playChime : playBreakEndChime)(); // engine-local fallback
+    }
+  }
+
   useEffect(() => {
     // P-fix2: keep the pip alive for the whole session once it's been active —
     // so it survives the roll-to-next-task (active→preview) without a
@@ -767,7 +793,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
             const isLong = cycleNum % CYCLES_BEFORE_LONG_BREAK === 0;
             setPrompt({ isLongBreak: isLong });
             setPhase("prompt");
-            playChime();
+            fireChime("start");
           }
         } else if (threshold === null && currentCycleElapsed >= WORK_DURATION_MS) {
           // Normal pomodoro completed
@@ -784,7 +810,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
             const isLong = newCount % CYCLES_BEFORE_LONG_BREAK === 0;
             setPrompt({ isLongBreak: isLong });
             setPhase("prompt");
-            playChime();
+            fireChime("start");
           }
         }
       } else if (phase === "break") {
@@ -800,7 +826,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           workCycleStartRef.current = workElapsedMs(raw, totalBreakTimeRef.current, breakCarryRef.current);
           setPhase("work");
           setBreakRemaining(0);
-          playBreakEndChime(); // distinct ascending chime: break OVER (vs descending start)
+          fireChime("end"); // distinct ascending chime: break OVER (vs descending start)
         }
       }
     }, 1000);

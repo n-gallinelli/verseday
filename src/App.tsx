@@ -100,6 +100,9 @@ function MainApp() {
       // nothing blocks on it, and (during the 3a–c additive stage) no consumer
       // reads it yet; 3d flips consumers to the store selectors.
       void useAppStore.getState().loadProjects();
+      // Hydrate the strikethrough-completed display preference (default true).
+      // Fire-and-forget: components default to struck-through until it resolves.
+      void useAppStore.getState().loadStrikethroughCompleted();
       // Defensive: close any stray focus-pip window that survived
       // a previous app session (force-quit, crash, etc). Must run
       // BEFORE reconcileFocusOnBoot() — restoring a session

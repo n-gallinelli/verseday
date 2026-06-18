@@ -370,6 +370,7 @@ export default function TaskDetailOverlay({
   // immediately. M2.2 — `updateFocusTask` is now a thin primeTasks
   // wrapper; signature unchanged for callers.
   const { session, focusView, updateFocusTask, setFocusPriorElapsedMs, setTaskRecurrenceAction, openProject, togglePauseFocus } = useAppStore();
+  const strikethroughCompleted = useAppStore((s) => s.strikethroughCompleted);
   const isFocusedTask = (session?.taskId ?? focusView?.taskId) === task.id;
   // The ACTIVE running session for THIS task (null if this task isn't the live
   // session). Drives the header control: when this task is being focused the
@@ -799,7 +800,9 @@ export default function TaskDetailOverlay({
             placeholder="Untitled task"
             className={`flex-1 min-w-0 text-[24px] font-medium bg-transparent border-none outline-none leading-tight placeholder:text-fg-disabled resize-none overflow-hidden transition-colors duration-150 ease-out ${
               localStatus === "done"
-                ? "text-fg-faded line-through"
+                ? strikethroughCompleted
+                  ? "text-fg-faded line-through"
+                  : "text-fg-faded"
                 : "text-fg"
             }`}
           />

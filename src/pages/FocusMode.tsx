@@ -2,16 +2,19 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { WebviewWindow, getAllWebviewWindows, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
+import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import {
   PIP_STATE_EVENT,
   PIP_CMD_EVENT,
   PIP_READY_EVENT,
   PIP_CHIME_EVENT,
+  PIP_MOVED_EVENT,
   pipSizeFor,
   PIP_COMPLETE_FLOURISH_MS,
   type PipState,
   type PipChimeKind,
   type PipCompleteBehavior,
+  type PipMovedPayload,
 } from "../utils/pipEvents";
 import { useAppStore, selectFocusedTask, selectViewedTask, consumeFocusResume, clearFocusResume, type SessionState, type FocusView } from "../stores/appStore";
 import { clampWorkedDelta } from "../utils/workedTime";
@@ -41,6 +44,8 @@ import {
   PIP_COMPLETE_BEHAVIOR_CHANGED_EVENT,
   getPipHighVisibility,
   PIP_HIGH_VIS_CHANGED_EVENT,
+  getPipPosition,
+  savePipPosition,
   type BreakContinuity,
 } from "../utils/focusSettings";
 import { getEmptyDayMessage } from "../utils/format";
@@ -502,9 +507,12 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     // quit zombies that survived between app sessions, and (c) silent
     // close failures via .catch(() => {}). All three could end up
     // with multiple pip windows. Sweeping every "focus-pip"-labeled
-    // window before creating guarantees exactly one — at the cost of
-    // losing the user's last drag position (acceptable; a separate
-    // settings key for window position can come later if missed).
+    // window before creating guarantees exactly one.
+    //
+    // Same-day position restore: getPipPosition() returns the last dragged
+    // physical point IF it was saved on the current logical day (else null →
+    // default spawn). When restoring, the window is created hidden, positioned,
+    // then shown so it never flashes at the default spot first.
     let cancelled = false;
     (async () => {
       try {
@@ -514,6 +522,8 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
             .filter((w) => w.label === "focus-pip")
             .map((w) => w.close().catch(() => {}))
         );
+        if (cancelled) return;
+        const savedPos = await getPipPosition();
         if (cancelled) return;
         const pip = new WebviewWindow("focus-pip", {
           url: "/#focus-pip",
@@ -556,8 +566,12 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           // and the button doesn't respond until a second click. With
           // it, hover-and-click lands in one motion.
           acceptFirstMouse: true,
+          // Default spawn spot. When restoring a same-day position we create
+          // hidden and reposition before showing (below) so this default never
+          // flashes; otherwise the pip just spawns here.
           x: 20,
           y: 20,
+          visible: savedPos == null,
         });
         // Per Verse F1: assign first, then re-check cancelled. The
         // window between `if (cancelled)` and the assignment is small
@@ -580,7 +594,21 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
         // listens and ORs the result with its CSS :hover state to
         // drive the icon fan-out. No-op on non-macOS.
         await pip.once("tauri://created", () => {
-          void invoke("start_pip_hover_monitor", { label: "focus-pip" });
+          void (async () => {
+            // R2: the native window exists now — safe to reposition. Restore the
+            // same-day spot while still hidden, then show, so there's no flash
+            // at the default spawn. FocusPip's mount clamp reconciles this point
+            // against the real monitor (rescues an off-screen restore).
+            if (savedPos) {
+              try {
+                await pip.setPosition(new PhysicalPosition(savedPos.x, savedPos.y));
+              } catch {
+                // best-effort — if positioning fails we still show the pip
+              }
+              void pip.show().catch(() => {});
+            }
+            void invoke("start_pip_hover_monitor", { label: "focus-pip" });
+          })();
         });
       } catch {
         // PiP creation failed — not critical
@@ -960,6 +988,23 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     };
     window.addEventListener(PIP_HIGH_VIS_CHANGED_EVENT, onChange);
     return () => window.removeEventListener(PIP_HIGH_VIS_CHANGED_EVENT, onChange);
+  }, []);
+
+  // PiP position persistence (R4): the pip reports its settled, clamped physical
+  // position; we persist it stamped with the current logical day so it restores
+  // on the same day and resets on the next. Mount-scoped (NOT in the
+  // create/destroy effect, which re-runs on every focus enter/exit/hide and
+  // would stack listeners → duplicate writes). The settings upsert is
+  // idempotent, so emit-on-every-settle needs no extra dedupe.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      unlisten = await listen<PipMovedPayload>(PIP_MOVED_EVENT, (e) => {
+        if (!e.payload) return;
+        void savePipPosition(e.payload.x, e.payload.y);
+      });
+    })();
+    return () => unlisten?.();
   }, []);
 
   // Heartbeat — re-emit the current state every 1s while a session exists. While

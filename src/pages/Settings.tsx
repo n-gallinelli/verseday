@@ -20,6 +20,7 @@ import {
   type BreakContinuity,
 } from "../utils/focusSettings";
 import type { PipCompleteBehavior } from "../utils/pipEvents";
+import { useAppStore } from "../stores/appStore";
 
 const FOCUS_DEFAULTS = {
   focus_work_min: 25,
@@ -67,6 +68,10 @@ export default function Settings() {
   const [pipCompleteBehavior, setPipCompleteBehavior] =
     useState<PipCompleteBehavior>("advance");
   const [pipHighVis, setPipHighVis] = useState(false);
+  // Strikethrough preference lives in the store (read by TaskCard +
+  // TaskDetailOverlay), so drive it straight from there — no local mirror.
+  const strikethroughCompleted = useAppStore((s) => s.strikethroughCompleted);
+  const setStrikethroughCompleted = useAppStore((s) => s.setStrikethroughCompleted);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const taskDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Manual DB export (P4) — null = idle, otherwise the last result message.
@@ -405,6 +410,37 @@ export default function Settings() {
                   >
                     +
                   </button>
+                </div>
+              </div>
+
+              {/* Cross out completed tasks — strikethrough only (the green check
+                  + faded text always stay). Default On. */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[13px] text-fg">Cross out completed tasks</div>
+                  <div className="text-[11px] text-fg-faded">
+                    {strikethroughCompleted
+                      ? "Draw a line through finished tasks"
+                      : "Leave finished tasks un-struck (still checked + faded)"}
+                  </div>
+                </div>
+                <div
+                  className="flex items-center bg-elevated rounded-lg overflow-hidden flex-shrink-0 w-[168px]"
+                  style={{ border: "1px solid var(--border-medium)" }}
+                >
+                  {([false, true] as boolean[]).map((on) => (
+                    <button
+                      key={String(on)}
+                      onClick={() => setStrikethroughCompleted(on)}
+                      className={`flex-1 h-8 flex items-center justify-center text-[12px] cursor-pointer transition-colors ${
+                        strikethroughCompleted === on
+                          ? "bg-accent-blue-soft text-accent-blue-soft-fg font-medium"
+                          : "text-fg-muted hover:text-fg"
+                      }`}
+                    >
+                      {on ? "On" : "Off"}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>

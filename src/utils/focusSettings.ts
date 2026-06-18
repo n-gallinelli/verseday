@@ -1,4 +1,5 @@
 import { getSetting, setSetting } from "../db/queries";
+import { logicalDayIso } from "./dates";
 import type { PipCompleteBehavior } from "./pipEvents";
 
 // Focus / Pomodoro preferences (key-value settings, mirrors calendar/settings).
@@ -77,4 +78,32 @@ export async function getPipHighVisibility(): Promise<boolean> {
 
 export async function setPipHighVisibility(v: boolean): Promise<void> {
   await setSetting(KEY_PIP_HIGH_VIS, v ? "1" : "0");
+}
+
+// ── PiP window position (same-day persistence) ──────────────────────────────
+const KEY_PIP_POSITION = "pip.position";
+
+/** The pip remembers where it was last dragged WITHIN a logical day (3am
+ *  boundary — matches the app's rollover and the focus screen's today-only
+ *  policy). A new logical day returns null so the pip spawns at its default
+ *  spot. Stored as PHYSICAL screen px so it round-trips through
+ *  PhysicalPosition with no logical/physical drift. */
+export async function getPipPosition(): Promise<{ x: number; y: number } | null> {
+  const raw = await getSetting(KEY_PIP_POSITION);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { x?: unknown; y?: unknown; day?: unknown };
+    if (parsed.day !== logicalDayIso()) return null; // previous day → default spot
+    if (typeof parsed.x !== "number" || typeof parsed.y !== "number") return null;
+    return { x: parsed.x, y: parsed.y };
+  } catch {
+    return null; // corrupt value → default spot
+  }
+}
+
+export async function savePipPosition(x: number, y: number): Promise<void> {
+  await setSetting(
+    KEY_PIP_POSITION,
+    JSON.stringify({ x, y, day: logicalDayIso() }),
+  );
 }

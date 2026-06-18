@@ -82,6 +82,7 @@ function TaskCardImpl({
   // short-circuit means non-changing rows skip re-renders without
   // help from the memo comparator below.
   const task = useAppStore((s) => selectTaskById(s, taskId));
+  const strikethroughCompleted = useAppStore((s) => s.strikethroughCompleted);
   const {
     attributes,
     listeners,
@@ -324,7 +325,11 @@ function TaskCardImpl({
             on hover. */}
         <span
           className={`flex-1 min-w-0 line-clamp-2 break-words text-fg [font-size:var(--font-size-body)] [font-weight:var(--font-weight-body)] ${
-            task.status === "done" ? "line-through !text-fg-faded" : ""
+            task.status === "done"
+              ? strikethroughCompleted
+                ? "line-through !text-fg-faded"
+                : "!text-fg-faded"
+              : ""
           }`}
         >
           {task.external_source === "calendar" && <CalendarChip className="mr-1.5 align-[-1px]" />}

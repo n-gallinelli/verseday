@@ -7,7 +7,7 @@ import VerseDayLogo from "./VerseDayLogo";
 import { playBreakChime as playCalm, playBreakEndChime } from "../utils/sounds";
 import { breakEndClock } from "../utils/breakClock";
 import { clampToFrame } from "../utils/pipClamp";
-import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_CHIME_EVENT, PIP_SIZE, PIP_HIGH_VIS_SCALE, pipSizeFor, PIP_COMPLETE_FLOURISH_MS, type PipState, type PipChimeKind } from "../utils/pipEvents";
+import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_CHIME_EVENT, PIP_MOVED_EVENT, PIP_SIZE, PIP_HIGH_VIS_SCALE, pipSizeFor, PIP_COMPLETE_FLOURISH_MS, type PipState, type PipChimeKind, type PipMovedPayload } from "../utils/pipEvents";
 
 // ONE fixed pip size for every phase — the pip window never resizes (a constant
 // size means declining a break can't shrink it, and there's no setSize docking
@@ -312,6 +312,11 @@ export default function FocusPip() {
         if (Math.abs(target.x - pos.x) > 1 || Math.abs(target.y - pos.y) > 1) {
           await win.setPosition(new PhysicalPosition(target.x, target.y));
         }
+        // Report the FINAL clamped position so the main window can persist it
+        // (same-day pip placement). `target` is the on-screen point whether or
+        // not a clamp was needed, so emit unconditionally — a drag that lands
+        // in-frame (no setPosition) must still persist.
+        emit(PIP_MOVED_EVENT, { x: target.x, y: target.y } satisfies PipMovedPayload);
       } catch {
         // best-effort — a clamp miss just leaves the pip where it is
       }
@@ -331,6 +336,12 @@ export default function FocusPip() {
       // bottom/right edge. Both settle, then clamp once.
       unlisten = await win.onMoved(scheduleClamp);
       unlistenResized = await win.onResized(scheduleClamp);
+      // One-shot clamp on mount: onMoved/onResized don't fire on creation, so a
+      // restored same-day position (or the default spawn) is reconciled against
+      // the REAL currentMonitor() here. Rescues a pip restored fully off-screen
+      // — e.g. saved on a now-disconnected display — and also nudges the default
+      // spawn clear of the menu-bar inset.
+      void clampNow();
     })();
 
     return () => {

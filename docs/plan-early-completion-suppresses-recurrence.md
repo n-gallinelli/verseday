@@ -79,17 +79,12 @@ cycle), never a suppressed-but-incomplete task.
 - Centralizing in `updateTaskStatus` covers every completion path (daily card,
   detail overlay, focus mode) since they all funnel through it.
 
-## Known limitation to decide with Verse
+## Reopen reversal — RESOLVED (was a v1 limitation)
 
-**Reopen does not auto-restore the suppressed cycle.** Because completion snaps
-the row to Wednesday, the original Thursday date isn't retained on the row, so
-un-checking the task (done→todo) can't know which skip to delete; Thursday stays
-suppressed until next week. Options:
-- (A) Accept for v1 — reopening a recurring instance is rare. Document it.
-- (B) Make it reversible — would require retaining the original date (a column =
-  DDL, or a parallel record), so generation/reopen can pair them up.
-
-Terse leans (A) for this pass; flagging for Verse's call before code.
+Originally shipped (PR #42) with reopen NOT restoring the suppressed cycle. That
+limitation is now removed: a follow-up adds a dedicated `suppressed_cycle_date`
+column (migration v27) so reopen restores the due date and deletes the skip. See
+`docs/plan-early-completion-reopen-reversal.md`.
 
 ## Verification (self-validate)
 

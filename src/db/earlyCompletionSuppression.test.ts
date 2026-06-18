@@ -57,7 +57,8 @@ function makeDb(): DatabaseSync {
       completed_at TEXT,
       date_scheduled TEXT,
       recurrence TEXT,
-      recurrence_source_id INTEGER
+      recurrence_source_id INTEGER,
+      suppressed_cycle_date TEXT
     );
     CREATE TABLE recurring_instance_skips (
       recurrence_source_id INTEGER NOT NULL,
@@ -87,7 +88,26 @@ function completeEarly(db: DatabaseSync, id: number, today: string) {
       db.exec(
         `INSERT INTO recurring_instance_skips (recurrence_source_id, date_scheduled) VALUES (${before.recurrence_source_id}, '${before.date_scheduled}') ON CONFLICT DO NOTHING`
       );
+      db.exec(`UPDATE tasks SET suppressed_cycle_date = '${before.date_scheduled}' WHERE id = ${id}`);
     }
+  }
+}
+
+/** Mirror updateTaskStatus' reopen (non-done) branch: if the row carries a
+ *  suppressed_cycle_date, restore date + clear marker, then drop the skip. */
+function reopen(db: DatabaseSync, id: number) {
+  const before = db
+    .prepare("SELECT recurrence_source_id, suppressed_cycle_date FROM tasks WHERE id = ?")
+    .get(id) as { recurrence_source_id: number | null; suppressed_cycle_date: string | null };
+  if (before.suppressed_cycle_date != null && before.recurrence_source_id != null) {
+    db.exec(
+      `UPDATE tasks SET status='todo', completed_at=NULL, date_scheduled='${before.suppressed_cycle_date}', suppressed_cycle_date=NULL WHERE id = ${id}`
+    );
+    db.exec(
+      `DELETE FROM recurring_instance_skips WHERE recurrence_source_id = ${before.recurrence_source_id} AND date_scheduled = '${before.suppressed_cycle_date}'`
+    );
+  } else {
+    db.exec(`UPDATE tasks SET status='todo', completed_at=NULL WHERE id = ${id}`);
   }
 }
 
@@ -100,19 +120,21 @@ function skipCount(db: DatabaseSync, sourceId: number, date: string): number {
 }
 
 describe("early-completion SQL effect", () => {
-  it("snaps the instance to today AND records a skip for its original date", () => {
+  it("snaps the instance to today, records a skip, AND stamps suppressed_cycle_date", () => {
     const db = makeDb();
     db.exec(`INSERT INTO tasks (id, title, recurrence) VALUES (1, 'GWBR', '${WEEKLY_THU}')`);
     db.exec("INSERT INTO tasks (id, title, date_scheduled, recurrence_source_id) VALUES (2, 'GWBR', '2026-06-18', 1)");
 
     completeEarly(db, 2, "2026-06-17"); // done Wednesday for a Thursday instance
 
-    const inst = db.prepare("SELECT status, date_scheduled FROM tasks WHERE id = 2").get() as {
+    const inst = db.prepare("SELECT status, date_scheduled, suppressed_cycle_date FROM tasks WHERE id = 2").get() as {
       status: string;
       date_scheduled: string;
+      suppressed_cycle_date: string | null;
     };
     expect(inst.status).toBe("done");
     expect(inst.date_scheduled).toBe("2026-06-17"); // snapped to the day it was done
+    expect(inst.suppressed_cycle_date).toBe("2026-06-18"); // original due day remembered
     expect(skipCount(db, 1, "2026-06-18")).toBe(1); // Thursday's cycle suppressed
     db.close();
   });
@@ -128,18 +150,40 @@ describe("early-completion SQL effect", () => {
     db.close();
   });
 
-  it("reopening a suppressed completion leaves the cycle suppressed (v1 limitation)", () => {
+  it("reopening fully reverses: restores the due date, clears the marker, drops the skip", () => {
     const db = makeDb();
     db.exec(`INSERT INTO tasks (id, title, recurrence) VALUES (1, 'GWBR', '${WEEKLY_THU}')`);
     db.exec("INSERT INTO tasks (id, title, date_scheduled, recurrence_source_id) VALUES (2, 'GWBR', '2026-06-18', 1)");
     completeEarly(db, 2, "2026-06-17");
     expect(skipCount(db, 1, "2026-06-18")).toBe(1);
 
-    // Reopen: the non-done branch clears status/completed_at only; it does not
-    // touch skips (and the snap already dropped the original Thursday date from
-    // the row), so the suppressed cycle stays suppressed until next week.
-    db.exec("UPDATE tasks SET status='todo', completed_at=NULL WHERE id=2");
-    expect(skipCount(db, 1, "2026-06-18")).toBe(1);
+    reopen(db, 2);
+
+    const inst = db.prepare("SELECT status, date_scheduled, suppressed_cycle_date FROM tasks WHERE id = 2").get() as {
+      status: string;
+      date_scheduled: string;
+      suppressed_cycle_date: string | null;
+    };
+    expect(inst.status).toBe("todo");
+    expect(inst.date_scheduled).toBe("2026-06-18"); // back to its real Thursday
+    expect(inst.suppressed_cycle_date).toBeNull(); // marker cleared
+    expect(skipCount(db, 1, "2026-06-18")).toBe(0); // cycle un-suppressed → regenerates
+    db.close();
+  });
+
+  it("reopening a normal (non-suppressed) done task touches nothing extra", () => {
+    const db = makeDb();
+    // A plain non-recurring task completed today, then reopened.
+    db.exec("INSERT INTO tasks (id, title, status, date_scheduled) VALUES (5, 'Email', 'done', '2026-06-17')");
+    reopen(db, 5);
+    const t = db.prepare("SELECT status, date_scheduled, suppressed_cycle_date FROM tasks WHERE id = 5").get() as {
+      status: string;
+      date_scheduled: string;
+      suppressed_cycle_date: string | null;
+    };
+    expect(t.status).toBe("todo");
+    expect(t.date_scheduled).toBe("2026-06-17"); // unchanged — no marker, no move
+    expect(t.suppressed_cycle_date).toBeNull();
     db.close();
   });
 });

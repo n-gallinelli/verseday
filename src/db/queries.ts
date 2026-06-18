@@ -690,11 +690,12 @@ export async function updateTaskStatus(
     // (~:1201) and deleteTask (~:763); the completion-snap above is the one
     // move-like op that bypassed that path. daily/weekdays are excluded — the
     // next day has its own instance, so suppression is meaningless there.
-    // Runs AFTER the UPDATE (no transaction API in this file): a mid-failure
+    // We also stamp suppressed_cycle_date with the pre-snap date (a dedicated
+    // v27 column, NULL on every other row) so reopen can find this exact skip
+    // and reverse the whole thing — see the non-done branch below.
+    // Runs AFTER the snap UPDATE (no transaction API in this file): a mid-failure
     // degrades to today's regenerating-cycle behavior, never a
-    // suppressed-but-incomplete task. NOTE: reopening this task does NOT restore
-    // the suppressed cycle (the snap dropped the original date from the row);
-    // accepted as v1, same as the move path which also isn't auto-reversed.
+    // suppressed-but-incomplete task.
     if (sourceId != null && wasScheduled != null && wasScheduled > today) {
       const tmpl: { recurrence: string | null }[] = await db.select(
         "SELECT recurrence FROM tasks WHERE id = $1",
@@ -712,13 +713,52 @@ export async function updateTaskStatus(
           "INSERT INTO recurring_instance_skips (recurrence_source_id, date_scheduled) VALUES ($1, $2) ON CONFLICT DO NOTHING",
           [sourceId, wasScheduled]
         );
+        await db.execute(
+          "UPDATE tasks SET suppressed_cycle_date = $1 WHERE id = $2",
+          [wasScheduled, id]
+        );
       }
     }
   } else {
-    await db.execute(
-      "UPDATE tasks SET status = $1, completed_at = NULL WHERE id = $2",
-      [status, id]
+    // Reopen (done → not-done). If this is an early-completed weekly instance
+    // (suppressed_cycle_date set — only the suppression block above ever sets
+    // it, and never on a non-recurring row), fully reverse the early completion:
+    // move it back to its real due day and un-suppress that cycle. The exact
+    // (recurrence_source_id, suppressed_cycle_date) pair targets precisely the
+    // skip we inserted, so the DELETE can't touch a delete/move-origin skip.
+    // This is the ONLY DELETE from recurring_instance_skips — every other path
+    // (deleteTask ~:763, updateTaskDateScheduled ~:1201, the suppression block
+    // above) only INSERTs.
+    const before: {
+      recurrence_source_id: number | null;
+      suppressed_cycle_date: string | null;
+    }[] = await db.select(
+      "SELECT recurrence_source_id, suppressed_cycle_date FROM tasks WHERE id = $1",
+      [id]
     );
+    const suppressedDate = before[0]?.suppressed_cycle_date ?? null;
+    const sourceId = before[0]?.recurrence_source_id ?? null;
+
+    if (suppressedDate != null && sourceId != null) {
+      // Restore date + clear the marker in one UPDATE, then drop the skip.
+      // UPDATE-then-DELETE so a mid-failure leaves a restored row plus an inert
+      // ORPHAN skip: still no double-show (the restored instance now occupies
+      // (source, date), and generation's ON CONFLICT blocks a regen anyway), and
+      // the orphan self-heals — a later delete/move re-INSERTs the same key.
+      await db.execute(
+        "UPDATE tasks SET status = $1, completed_at = NULL, date_scheduled = $2, suppressed_cycle_date = NULL WHERE id = $3",
+        [status, suppressedDate, id]
+      );
+      await db.execute(
+        "DELETE FROM recurring_instance_skips WHERE recurrence_source_id = $1 AND date_scheduled = $2",
+        [sourceId, suppressedDate]
+      );
+    } else {
+      await db.execute(
+        "UPDATE tasks SET status = $1, completed_at = NULL WHERE id = $2",
+        [status, id]
+      );
+    }
   }
 }
 

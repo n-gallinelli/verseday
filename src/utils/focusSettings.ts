@@ -81,13 +81,20 @@ export async function setPipHighVisibility(v: boolean): Promise<void> {
 }
 
 // ── PiP window position (same-day persistence) ──────────────────────────────
-const KEY_PIP_POSITION = "pip.position";
+// v2: switched from physical to LOGICAL px (see comment below). The bump
+// discards any stale v1 physical value so it can't be misread as logical for
+// one bad restore.
+const KEY_PIP_POSITION = "pip.position.v2";
 
 /** The pip remembers where it was last dragged WITHIN a logical day (3am
  *  boundary — matches the app's rollover and the focus screen's today-only
  *  policy). A new logical day returns null so the pip spawns at its default
- *  spot. Stored as PHYSICAL screen px so it round-trips through
- *  PhysicalPosition with no logical/physical drift. */
+ *  spot. Stored as LOGICAL screen px (macOS Cocoa global points, which are
+ *  monitor-independent) and restored via LogicalPosition, so the point
+ *  round-trips correctly even across displays of differing scale. Physical px
+ *  did NOT round-trip: setPosition(Physical) is interpreted against the SPAWN
+ *  monitor's scale, not the saved monitor's, flinging a cross-monitor restore
+ *  onto the wrong screen. */
 export async function getPipPosition(): Promise<{ x: number; y: number } | null> {
   const raw = await getSetting(KEY_PIP_POSITION);
   if (!raw) return null;

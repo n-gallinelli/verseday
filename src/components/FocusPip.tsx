@@ -279,8 +279,10 @@ export default function FocusPip() {
   // Keep the pip on-screen: clamp its position once a move SETTLES, so it can
   // never be dragged fully off an edge and lost (it died at y=-68 once). We do
   // NOT setPosition per onMoved frame — that fights the startDragging loop — so
-  // the drag runs free and we rubber-band back only after it stops. All math in
-  // physical px. setPosition only when the clamped target differs by >1px, so
+  // the drag runs free and we rubber-band back only after it stops. Clamp math
+  // is in physical px (monitor bounds are physical); the persisted point is
+  // converted to LOGICAL px before emit (see below). setPosition only when the
+  // clamped target differs by >1px, so
   // the resulting onMoved can't loop. If currentMonitor() is null we no-op
   // rather than clamp to a guessed frame (could fling the pip off the screen
   // it's actually on). Boundary NOT covered: a pip orphaned by a MONITOR
@@ -291,7 +293,13 @@ export default function FocusPip() {
     let unlisten: (() => void) | undefined;
     let settleTimer: ReturnType<typeof setTimeout> | null = null;
 
-    async function clampNow() {
+    // emitWhenUnmoved: drag/resize-driven clamps pass `true` so an in-frame
+    // drag that needed no clamping still persists. The one-shot MOUNT clamp
+    // passes `false`: it persists only when it actually moved the window (a
+    // rescue or the default-spawn menu-bar nudge), so it can't race the
+    // restore setPosition and overwrite a just-restored point with a stale
+    // read of the default spawn spot.
+    async function clampNow(emitWhenUnmoved: boolean) {
       try {
         const monitor = await currentMonitor();
         if (!monitor) return; // fail-safe: never clamp to a guessed frame
@@ -309,14 +317,22 @@ export default function FocusPip() {
           },
           { top: Math.round(MENU_BAR_LOGICAL * scale), right: 0, bottom: 0, left: 0 },
         );
-        if (Math.abs(target.x - pos.x) > 1 || Math.abs(target.y - pos.y) > 1) {
+        const moved =
+          Math.abs(target.x - pos.x) > 1 || Math.abs(target.y - pos.y) > 1;
+        if (moved) {
           await win.setPosition(new PhysicalPosition(target.x, target.y));
         }
-        // Report the FINAL clamped position so the main window can persist it
-        // (same-day pip placement). `target` is the on-screen point whether or
-        // not a clamp was needed, so emit unconditionally — a drag that lands
-        // in-frame (no setPosition) must still persist.
-        emit(PIP_MOVED_EVENT, { x: target.x, y: target.y } satisfies PipMovedPayload);
+        // Persist the FINAL on-screen point as LOGICAL px (physical / this
+        // monitor's scale → Cocoa global points, monitor-independent) so a
+        // restore via LogicalPosition round-trips across displays of differing
+        // scale. `scale` is currentMonitor()'s — the saved monitor's, not the
+        // spawn monitor's.
+        if (moved || emitWhenUnmoved) {
+          emit(PIP_MOVED_EVENT, {
+            x: target.x / scale,
+            y: target.y / scale,
+          } satisfies PipMovedPayload);
+        }
       } catch {
         // best-effort — a clamp miss just leaves the pip where it is
       }
@@ -325,7 +341,7 @@ export default function FocusPip() {
     function scheduleClamp() {
       if (settleTimer) clearTimeout(settleTimer);
       settleTimer = setTimeout(() => {
-        void clampNow();
+        void clampNow(true);
       }, PIP_CLAMP_SETTLE_MS);
     }
 
@@ -340,8 +356,9 @@ export default function FocusPip() {
       // restored same-day position (or the default spawn) is reconciled against
       // the REAL currentMonitor() here. Rescues a pip restored fully off-screen
       // — e.g. saved on a now-disconnected display — and also nudges the default
-      // spawn clear of the menu-bar inset.
-      void clampNow();
+      // spawn clear of the menu-bar inset. Persists only if it actually moved
+      // the window (emitWhenUnmoved=false) so it can't clobber a fresh restore.
+      void clampNow(false);
     })();
 
     return () => {

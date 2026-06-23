@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { WebviewWindow, getAllWebviewWindows, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { PhysicalPosition } from "@tauri-apps/api/dpi";
+import { LogicalPosition } from "@tauri-apps/api/dpi";
 import {
   PIP_STATE_EVENT,
   PIP_CMD_EVENT,
@@ -510,9 +510,12 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     // window before creating guarantees exactly one.
     //
     // Same-day position restore: getPipPosition() returns the last dragged
-    // physical point IF it was saved on the current logical day (else null →
-    // default spawn). When restoring, the window is created hidden, positioned,
-    // then shown so it never flashes at the default spot first.
+    // LOGICAL point IF it was saved on the current logical day (else null →
+    // default spawn). Logical (Cocoa global points) so it restores onto the
+    // saved monitor regardless of which display the window spawns on — physical
+    // px got reinterpreted against the spawn monitor's scale and landed wrong.
+    // When restoring, the window is created hidden, positioned, then shown so
+    // it never flashes at the default spot first.
     let cancelled = false;
     (async () => {
       try {
@@ -601,7 +604,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
             // against the real monitor (rescues an off-screen restore).
             if (savedPos) {
               try {
-                await pip.setPosition(new PhysicalPosition(savedPos.x, savedPos.y));
+                await pip.setPosition(new LogicalPosition(savedPos.x, savedPos.y));
               } catch {
                 // best-effort — if positioning fails we still show the pip
               }

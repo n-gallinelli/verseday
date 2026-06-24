@@ -11,7 +11,7 @@ describe("formatNoteTimestamp", () => {
     expect(formatNoteTimestamp(ms, now)).toBe("2:04 PM · Jun 24");
   });
 
-  it("two stamps in the same minute format identically (so they collapse)", () => {
+  it("two stamps in the same minute format identically (minute granularity)", () => {
     const a = new Date(2026, 5, 24, 14, 4, 10).getTime();
     const b = new Date(2026, 5, 24, 14, 4, 55).getTime();
     expect(formatNoteTimestamp(a, now)).toBe(formatNoteTimestamp(b, now));

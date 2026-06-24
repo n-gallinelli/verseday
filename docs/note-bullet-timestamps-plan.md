@@ -1,182 +1,126 @@
-# Plan — Unobtrusive per-bullet note timestamps
+# Plan — Explicit note timestamp pills (`@now` / `@today` / `@tomorrow`)
 
 **Branch:** `feat/note-bullet-timestamps`
-**Author:** Terse · **Date:** 2026-06-24
-**Status:** PLAN (rev 2, post-Verse) — Verse-approved in principle; revised for
-the 3 blocking/required corrections below. Awaiting clear-to-build (no code yet).
+**Author:** Terse · **Revised:** 2026-06-24
+**Status:** BUILT — awaiting **fresh** Verse review.
+
+> ## ⚠ THIS RETIRES THE GUTTER APPROACH (prior Verse approval VOID)
+> An earlier revision of this branch auto-stamped **every** bullet on creation and
+> displayed the time in a faint **right-hand gutter** via ProseMirror widget
+> decorations. Verse approved that design *in principle* (rev 2). **That design is
+> RETIRED and its approval is to be treated as VOID.** It is gone from the code —
+> no `blockTimestamp.ts`, no `timestampDecorations.ts`, no `showTimestamps` prop,
+> no `data-created` attribute, no back-stamp load guard. This document describes
+> the design that actually shipped on this branch and supersedes every prior
+> revision of this file. Review this from scratch.
+>
+> **Why the pivot (Nick's call):** the gutter design's entire correctness burden
+> came from *auto-stamping* — it had to descend into nested `listItem`s, reserve
+> gutter space, collapse same-minute repeats, and (the real hazard) guard against
+> `setContent` back-stamping legacy notes with a fake "now" on load. The explicit
+> pill design **deletes that whole risk class**: nothing is ever stamped
+> automatically, so there is no load-time corruption path to defend.
 
 ## Goal
 
-When Nick adds a note bullet (Focus screen + Task Detail), stamp it with its
-creation time. Show that time **unobtrusively in a faint right-hand gutter**
-aligned to the bullet; it **brightens on hover**. A burst of bullets written in
-one sitting shows the time **once** (repeats collapse); a bullet written hours
-or days later shows its own distinct time. Same-day → `2:04 PM`; earlier →
-`Jun 23`.
+Let Nick drop a timestamp into a note **on purpose**, inline with the text, by
+typing a trigger — never automatically. Three triggers:
 
-## Key finding (shapes everything)
+| Type        | Inserts a pill labelled        | Example          |
+|-------------|--------------------------------|------------------|
+| `@now`      | current time **·** date        | `4:58 PM · Jun 24` |
+| `@today`    | today's date                   | `Jun 24`         |
+| `@tomorrow` | tomorrow's date                | `Jun 25`         |
+
+`#` is accepted as an equivalent trigger prefix (`#now` etc.) for muscle-memory.
+Nothing appears unless the user types one of these. The value is captured **once
+at insertion and frozen** — a pill is a point-in-time stamp, not a live clock.
+
+## Key finding (shapes the design)
 
 Notes are a **single HTML blob** (Tiptap → one `notes TEXT` column on `tasks`).
-There are no per-bullet rows. Therefore we store each bullet's creation time as
-an **HTML attribute on that bullet's block node** — `data-created="<epoch ms>"`
-— living inside the same blob.
-
-**Consequence: NO database migration, NO schema change.** The existing save path
-(`updateTaskNotes`, debounced) is untouched. This stays out of the migration
-discipline / DDL gate entirely. (Flagging for Verse: confirm you're comfortable
-that per-bullet metadata rides in the HTML attribute rather than a normalized
-table — chosen deliberately to avoid a migration for a cosmetic feature.)
+A pill is therefore **part of the note content** — a Tiptap inline atom node
+serialized into that same blob. **No DB migration, no schema change, no DDL** —
+this stays entirely outside the migration-discipline gate. The existing debounced
+`updateTaskNotes` save path is untouched.
 
 ## Design
 
-### 1. Stamping — Tiptap extension `BlockTimestamp`
-- Adds a **global attribute** `createdAt` to block nodes (`paragraph`,
-  `listItem`, `heading`), parsed from / rendered to `data-created`.
-- `parseHTML` **coerces to a safe integer** (non-numeric / out-of-range →
-  null). A pasted or hand-edited `data-created` can never inject markup; we only
-  ever read a number and render formatted text. (Security note for Verse.)
-- An `appendTransaction` hook stamps **newly created** blocks that lack
-  `createdAt` with the current time (`Date.now()`), so pressing Enter for a new
-  bullet stamps it. The appended stamping transaction sets
-  **`addToHistory:false`** (stamps are not undo steps).
+### 1. The pill — Tiptap inline atom `TimePill` (`src/components/editor/timePill.ts`)
+- `inline: true`, `group: "inline"`, `atom: true`, `selectable: true`. As an atom
+  it's a single unit: backspace removes the whole pill; it can't be edited into a
+  malformed state. Selected → blue `ProseMirror-selectednode` outline.
+- **Attributes** (all coerced on parse — see Security):
+  - `label` — the frozen display string (`data-label`). This is what renders.
+  - `ts` — the captured instant, epoch ms (`data-ts`), integer-coerced.
+  - `kind` — `"now" | "today" | "tomorrow"` (`data-kind`), coerced to `"now"`.
+- **Insertion — InputRule** `/[@#](now|today|tomorrow)$/`: on match, capture
+  `Date.now()`, build the label, replace the typed trigger text with the pill
+  node, then insert a trailing space. No menu, no async.
+- **Labels** use the shared, logical-day-aware helpers (no bespoke date math):
+  - `now` → `formatNoteTimestamp(ms)` → `"2:04 PM · Jun 24"`.
+  - `today` / `tomorrow` → `dateLabel(ms, 0|+1)` off `logicalDayIso` → `"Jun 25"`.
 
-#### Back-stamp guard (Verse blocking #1 — corruption path, fully specified)
-The naive build **silently corrupts data**: `setContent`
-(`RichTextEditor.tsx:119`) is itself a transaction, so `appendTransaction`
-fires on load; every loaded block looks "new" and gets stamped `now`. Worse, the
-appended stamp transaction is a **separate dispatch that DOES fire `onChange`**
-even though `setContent` used `emitUpdate:false` — so fake "now" stamps would be
-**persisted onto legacy bullets permanently**.
+### 2. Formatting — `formatNoteTimestamp` (`src/utils/noteTimestamp.ts`)
+- Logical day (3am cutoff via `logicalDayIso`) — matches every other surface.
+- Same calendar year → `time · Mon DD`; prior year appends it (`Jun 23, 2025`).
+- Minute granularity (no seconds): two `@now` pills typed in the same minute carry
+  identical labels (asserted in tests).
 
-Required mechanism:
-- The extension is configured with an **`isProgrammaticLoad` ref** (shared with
-  `RichTextEditor`).
-- `RichTextEditor` sets `isProgrammaticLoad.current = true` **immediately before**
-  every `setContent` (initial mount content + the external-sync effect at
-  `:119`) and resets it in a **`finally`**.
-- `appendTransaction` **early-returns** while the flag is set → no stamping on
-  load.
-- Loaded blocks with no `data-created` render **no timestamp** (honest — we
-  don't know when they were written). Editing an existing bullet does **not**
-  restamp it (only creation stamps).
+### 3. Styling — `.note-time-pill` (`src/index.css`)
+- Inline rounded chip: `--overlay-pressed` bg, `--text-secondary` text, `0.82em`,
+  `tabular-nums`, `user-select:none`, `cursor:default`. It reads as a small inline
+  chip sitting in the text flow — **not** an overlay or gutter element.
 
-**Required proof test:** load a legacy blob (no `data-created`), assert
-`editor.getHTML()` still contains **zero** `data-created` AND `onChange` did
-**not** fire. That assertion is the gate that #1 is fixed.
+### 4. Surface scope
+- `TimePill` is registered globally in the shared `RichTextEditor`. No opt-in prop
+  is needed (unlike the retired gutter design): the pill is **inert until the user
+  types a trigger**, so enabling it everywhere costs nothing on surfaces where
+  nobody types `@now`. Every note surface (Focus, Task Detail, etc.) gets it.
 
-### 2. Display — ProseMirror widget decorations
-- The plugin **descends into `listItem`** — bullets are **nested** inside
-  `bulletList`/`orderedList`, NOT top-level (Verse required-correction #2).
-  Collapse + gutter positioning happen **per `listItem`** (and per top-level
-  `paragraph`/`heading` for non-list notes). A naive top-level-only walk would
-  build the wrong thing.
-- For each stamped block whose **displayed** time (rounded to the minute)
-  differs from the previous stamped block in document order, it appends a
-  **widget decoration** — a child element of that block, absolutely positioned
-  into a reserved **right gutter** (editor gets `padding-right` for the gutter).
-- Because the widget is a child of the block, **hover brightening is pure CSS**:
-  faint by default (`opacity ~0.35`), `block:hover → ~0.85`. No JS hover
-  plumbing, survives reflow.
-- Collapse logic gives the "same 5 min = one stamp" behavior for free: minute
-  granularity + suppress-if-same-as-previous.
+## Security (Tauri XSS-to-IPC surface — per the untrusted-HTML discipline)
+- The label renders as a **TEXT child** of the span (`renderHTML` returns the
+  string as a node child), **never `innerHTML`**. A hand-edited or pasted
+  `data-label` cannot inject markup; on re-parse the atom ignores its inner DOM
+  anyway.
+- `ts` is integer-coerced (`coerceTs`: finite integer, `0 < n < ~year 2100`, else
+  null). `kind` is whitelist-coerced. A crafted blob can at most produce a
+  harmless mislabeled chip — no script, no IPC reach.
+- No sanitizer is introduced. (If one is ever added to the notes path, its
+  `ALLOWED_ATTR`/`ALLOWED_TAGS` must permit `span[data-time-pill]` +
+  `data-label/ts/kind`, or pills silently vanish — see Invariants.)
 
-### 3. Formatting — `formatNoteTimestamp(epochMs)` (Verse required-correction #3)
-- "Same day" uses the app's **logical day**, not raw midnight:
-  `logicalDayIso(new Date(epochMs), 3) === logicalDayIso(new Date(), 3)`
-  (3am cutoff, `src/utils/dates.ts:31`) — matches every other surface.
-- Same logical day → time (`2:04 PM`). Earlier → **`formatMonthDay`**
-  (`dates.ts:70`) on the stamp's `logicalDayIso` → `Jun 23`. Prior year →
-  append the year. No bespoke date math; reuse the shared helpers.
+## Files on this branch
+- `src/components/editor/timePill.ts` — the node, input rules, coercion, labels.
+- `src/utils/noteTimestamp.ts` (+ `.test.ts`, 5 tests) — the `@now` formatter.
+- `src/index.css` — `.note-time-pill` rules.
+- `src/components/RichTextEditor.tsx` — registers `TimePill` (3 lines).
+- `docs/note-bullet-timestamps-plan.md` — this doc.
 
-### 4. Surface scope — opt-in prop
-- `RichTextEditor` is shared (FocusMode, TaskDetailOverlay, TaskCard,
-  DailyPlanner, ProjectDetail). Add a `showTimestamps?: boolean` prop, **default
-  off**. Enable only on **FocusMode** and **TaskDetailOverlay** (the real note
-  surfaces). TaskCard quick-edit and planner/project notes stay unchanged.
+## ⚠ Flagged for Verse — bundled unrelated change
+- `src/pages/FocusMode.tsx` carries a **single unrelated hunk**: a `-mt-[10px]`
+  optical-centering nudge on the Start/Pause button, with a comment explaining it
+  aligns the button to the ACTUAL/PLANNED numerals. It rode along in the pivot
+  commit and has **nothing to do with timestamps**. Flagging it explicitly rather
+  than hiding it — Verse to decide: keep it in this PR, or split it out.
 
-## Modules (small, per Terse)
-1. `src/components/editor/blockTimestamp.ts` — stamping extension.
-2. `src/components/editor/timestampDecorations.ts` — gutter widget plugin.
-3. `src/lib/formatNoteTimestamp.ts` — formatter (or reuse existing util).
-4. `RichTextEditor.tsx` — wire `showTimestamps`, gutter CSS.
-5. FocusMode + TaskDetailOverlay — pass `showTimestamps`.
-
-## Milestones (single Verse gate at the end — small feature)
-- **M1** Stamping extension + `isProgrammaticLoad` guard; `data-created`
-  round-trips through save/load. **Gate:** the Verse proof test — load a legacy
-  blob, assert `getHTML()` has zero `data-created` AND `onChange` did not fire.
-- **M2** Gutter decorations + formatting + collapse + hover CSS.
-- **M3** Wire FocusMode + TaskDetailOverlay; `tsc` + build clean.
-
-## Validation (self-validate, per standing pref)
-- `tsc`/build clean; grep for the new attr round-trip.
-- Manual sanity: add bullets in a burst (one stamp), wait/simulate a later
-  bullet (new stamp), reload (stamps persist), open same task in Task Detail
-  (stamps match). Confirm legacy notes show no false "now".
-
-## Non-blocking, documented (Verse-flagged, intentional)
-- **Paste carries original time:** pasting a bullet that already has
-  `data-created` keeps that earlier time (the guard only suppresses stamping
-  *during programmatic load*, not user paste). **Intentional** — pasted content
-  retains its provenance; a fresh bullet you then type gets `now`.
-- **Empty trailing block:** a new empty bullet is stamped on creation; its
-  widget shows once it differs from the block above. An empty trailing block may
-  briefly carry a stamp — harmless, and it collapses against its neighbor.
-- **Storage-is-display-only ceiling (Verse-noted):** `data-created` is a
-  cosmetic display attribute in the HTML blob, not queryable note metadata. If a
-  future feature needs to *query/sort/report* on per-note times, that's a real
-  normalized-table migration — out of scope here, acknowledged ceiling.
+## Validation (self-validated, per standing pref)
+- `tsc --noEmit` clean.
+- `vitest run src/utils/noteTimestamp.test.ts` — 5/5 green.
+- Eyes-on owed (DOM-bound, not unit-testable): type `@now` / `@today` /
+  `@tomorrow` (and `#` variants) in a Focus note → correct frozen pill; backspace
+  removes the whole pill; reload → pill persists with the same label; copy/paste a
+  pill → label survives.
 
 ## Invariants (keep true going forward)
-- **Notes HTML must never be sanitized in a way that strips `data-created`.** If
-  DOMPurify (or any sanitizer) is ever added to the notes render/save path, its
-  `ALLOWED_ATTR` **must include `data-created`** — DOMPurify strips `data-*` by
-  default, which would silently erase every bullet's stamp.
-- The M1 "load-bearing" test (guarded `[]` vs unguarded would-stamp-2) is the
-  permanent regression sentinel for the back-stamp guard — **keep it**; it's what
-  stops a future cross-surface-sync rewrite from silently re-corrupting on load.
+- Notes HTML must never be sanitized in a way that strips `span[data-time-pill]`
+  or its `data-label/ts/kind` attributes — that would erase every pill.
+- The pill label is and must stay **TEXT-only** in `renderHTML`. Never switch it
+  to `innerHTML`.
 
-## Risks / edge cases
-- Back-stamping legacy notes (guarded above) — the main correctness risk.
-- Splitting a bullet (Enter mid-line) → new node gets a fresh stamp, original
-  keeps its own. Acceptable.
-- `Date.now()` is the app runtime (not a sandbox) — fine here.
-- No migration → zero rollback surface; revert = delete the extension + prop.
+## Risks / rollback
+- No migration → zero rollback surface. Revert = remove the `TimePill` import +
+  registration and the file; existing notes (plain HTML) are unaffected.
 
 ## Cost
-$0 — no services, no migration, no new deps (Tiptap/ProseMirror already
-present).
-
----
-
-## Build outcome (M1–M3 complete — for final Verse gate)
-
-Files:
-- `src/components/editor/blockTimestamp.ts` — stamping extension + pure
-  `blocksToStamp` / `stampDecision` / `coerceTimestamp`.
-- `src/components/editor/blockTimestamp.test.ts` — **M1 gate** (7 tests, green).
-- `src/components/editor/timestampDecorations.ts` — gutter widget plugin.
-- `src/utils/noteTimestamp.ts` + `.test.ts` — formatter (5 tests, green).
-- `src/index.css` — `.note-ts` gutter rules (opt-in via `.note-ts-on`).
-- `src/components/RichTextEditor.tsx` — `showTimestamps` prop, load guard.
-- `FocusMode.tsx` + `TaskDetailOverlay.tsx` — `showTimestamps` enabled.
-
-Validation: `tsc` (app + test) clean · full vitest suite **152 passed** (12
-new) · `npm run build` clean.
-
-Build-time decisions worth flagging for review:
-1. **Stamping is a ProseMirror plugin's `appendTransaction`** (via
-   `addProseMirrorPlugins`), not an Extension-config hook — Tiptap has no
-   top-level `appendTransaction`. Logic is identical to the plan; it mirrors the
-   official `@tiptap/extension-unique-id` pattern (`combineTransactionSteps` +
-   `getChangedRanges` + `findChildrenInRange`).
-2. **Editing a never-stamped legacy block adopts the current time** (it's in the
-   changed range and has no prior stamp). This is the one refinement of "editing
-   existing doesn't restamp": it applies ONLY to legacy null blocks the user
-   actively edits; untouched siblings are never touched, and a block that
-   already has a real stamp is never restamped. Chosen over fragile
-   new-vs-edited detection. Behaviour is asserted in the M1 test.
-3. M1 proof is asserted at the **model level** (no DOM in the node test env):
-   `stampDecision(..., isProgrammaticLoad=true) === []` ⇒ no appended tx ⇒
-   onChange cannot fire ⇒ loaded doc keeps zero `data-created`. The DOM-bound
-   gutter rendering/hover is eyes-on, not unit-tested.
+$0 — no services, no migration, no new deps (Tiptap/ProseMirror already present).

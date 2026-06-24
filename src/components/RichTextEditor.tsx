@@ -5,19 +5,13 @@ import Link from "@tiptap/extension-link";
 import Typography from "@tiptap/extension-typography";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useRef, useEffect, useState } from "react";
-import { BlockTimestamp } from "./editor/blockTimestamp";
-import { NoteTimestampDisplay } from "./editor/timestampDecorations";
+import { TimePill } from "./editor/timePill";
 
 interface RichTextEditorProps {
   value: string;
   onChange: (html: string) => void;
   placeholder?: string;
   className?: string;
-  /**
-   * Show an unobtrusive per-bullet creation timestamp in a right gutter.
-   * Opt-in (default off) — enabled on the Focus screen and Task Detail only.
-   */
-  showTimestamps?: boolean;
 }
 
 function escapeHtml(s: string): string {
@@ -59,15 +53,10 @@ export default function RichTextEditor({
   onChange,
   placeholder = "",
   className = "",
-  showTimestamps = false,
 }: RichTextEditorProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isEmpty, setIsEmpty] = useState(() => !value || value.trim() === "");
   const [isFocused, setIsFocused] = useState(false);
-  // Set true around every programmatic setContent so BlockTimestamp's
-  // appendTransaction suppresses stamping during loads — a load must never
-  // back-stamp legacy blocks nor append a stamp tx that would fire onChange.
-  const isProgrammaticLoad = useRef(false);
   // Tracks the last HTML this editor itself emitted via onChange, so we can
   // tell external value updates (cross-surface sync, task switch) apart from
   // our own echoes — only externals trigger setContent.
@@ -89,16 +78,13 @@ export default function RichTextEditor({
           target: "_blank",
         },
       }),
-      // Per-bullet timestamps — stamping + gutter display. Opt-in only; off
-      // surfaces never load the createdAt attribute or the decoration plugin.
-      ...(showTimestamps
-        ? [BlockTimestamp.configure({ isProgrammaticLoad }), NoteTimestampDisplay]
-        : []),
+      // Explicit @now / @today timestamp pills (user-typed; nothing auto-shows).
+      TimePill,
     ],
     content: normalizeContent(value),
     editorProps: {
       attributes: {
-        class: showTimestamps ? "tiptap note-ts-on" : "tiptap",
+        class: "tiptap",
       },
     },
     onCreate: ({ editor: e }) => {
@@ -133,15 +119,7 @@ export default function RichTextEditor({
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
-    // Guard the load: BlockTimestamp.appendTransaction must not stamp the
-    // freshly-loaded blocks (they'd all look "new") nor append a stamp tx that
-    // fires onChange. Reset in finally so a thrown setContent can't latch it.
-    isProgrammaticLoad.current = true;
-    try {
-      editor.commands.setContent(normalizeContent(value), { emitUpdate: false });
-    } finally {
-      isProgrammaticLoad.current = false;
-    }
+    editor.commands.setContent(normalizeContent(value), { emitUpdate: false });
     lastEmittedRef.current = value;
     setIsEmpty(editor.isEmpty);
   }, [value, editor]);

@@ -1,26 +1,25 @@
 import { logicalDayIso, formatMonthDay } from "./dates";
 
 /**
- * Format a note bullet's creation time for the unobtrusive right gutter.
+ * Format a note bullet's creation time for the unobtrusive right gutter —
+ * time first, then the date (e.g. "2:04 PM · Jun 24").
  *
- * "Same day" is the app's LOGICAL day (3am cutoff via logicalDayIso) — matching
- * every other surface — NOT raw midnight. Same logical day shows the clock time
- * ("2:04 PM"); an earlier day shows a short date ("Jun 23") via the shared
- * formatMonthDay; a prior calendar year appends the year ("Jun 23, 2025").
- *
- * Minute granularity (no seconds) is deliberate: a burst of bullets typed in the
- * same minute renders the identical string, which the decoration layer then
- * collapses to a single visible stamp.
+ * The date part uses the app's LOGICAL day (3am cutoff via logicalDayIso) —
+ * matching every other surface — and the shared formatMonthDay helper; a prior
+ * calendar year appends the year ("9:30 AM · Jun 23, 2025"). The time is minute
+ * granularity (no seconds) on purpose: a burst of bullets typed in the same
+ * minute renders the identical string, which the decoration layer collapses to
+ * a single visible stamp.
  */
 export function formatNoteTimestamp(ms: number, now: Date = new Date()): string {
   const d = new Date(ms);
   const day = logicalDayIso(d);
-  const today = logicalDayIso(now);
 
-  if (day === today) {
-    return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  }
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const datePart =
+    d.getFullYear() === now.getFullYear()
+      ? formatMonthDay(day)
+      : `${formatMonthDay(day)}, ${d.getFullYear()}`;
 
-  const label = formatMonthDay(day);
-  return d.getFullYear() === now.getFullYear() ? label : `${label}, ${d.getFullYear()}`;
+  return `${time} · ${datePart}`;
 }

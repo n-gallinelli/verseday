@@ -1921,7 +1921,10 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                   variant here.) */}
               <button
                   onClick={browsingOther ? handleStartBrowsed : isQueued ? handleStartSession : handleTogglePause}
-                  className={`inline-flex items-center justify-center gap-2 px-5 min-w-[120px] h-11 rounded-full text-[13px] font-medium uppercase tracking-[0.1em] cursor-pointer transition-colors ${
+                  // -mt-[10px] optically centers the pill on the metric numerals
+                  // (which sit at the top of their number+label columns), so the
+                  // ACTUAL/PLANNED values and the button share one horizontal axis.
+                  className={`inline-flex items-center justify-center gap-2 px-5 min-w-[120px] h-11 -mt-[10px] rounded-full text-[13px] font-medium uppercase tracking-[0.1em] cursor-pointer transition-colors ${
                     isQueued || browsingOther || paused
                       ? "bg-accent-green-bright text-white hover:opacity-90"
                       : "bg-overlay-hover text-fg-secondary hover:bg-overlay-pressed"
@@ -1961,7 +1964,6 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
               saveNotes(html);
             }}
             placeholder="Add notes…"
-            showTimestamps
             className="w-full mt-3 min-h-[240px] pl-10 pr-4 py-3.5 bg-transparent text-left text-[14px] text-fg leading-relaxed"
           />
         </div>

@@ -598,45 +598,27 @@ select {
   height: 0;
 }
 
-/* Per-bullet note timestamps — unobtrusive right-gutter stamp aligned to each
-   line, faint by default and brightening when you hover that line. Only active
-   when the editor opts in via .note-ts-on (Focus screen + Task Detail); other
-   note surfaces are unaffected. See src/components/editor/timestampDecorations.ts
-   (the widget is a child of the block, so the hover rules below are pure CSS). */
-.tiptap.note-ts-on {
-  padding-right: 5.5rem;
-}
-
-.tiptap.note-ts-on p,
-.tiptap.note-ts-on h1,
-.tiptap.note-ts-on h2,
-.tiptap.note-ts-on h3,
-.tiptap.note-ts-on li {
-  position: relative;
-}
-
-.note-ts {
-  position: absolute;
-  top: 0;
-  left: 100%;
-  margin-left: 0.6rem;
-  white-space: nowrap;
-  font-size: 11px;
-  line-height: inherit;
-  color: var(--text-faded);
-  opacity: 0.4;
-  pointer-events: none;
-  user-select: none;
+/* Inline timestamp pill — inserted only when the user types @now / @today
+   (see src/components/editor/timePill.ts). It's part of the note content, not an
+   overlay; reads as a small chip sitting inline with the text. */
+.note-time-pill {
+  display: inline-block;
+  padding: 0.05em 0.5em;
+  margin: 0 0.1em;
+  border-radius: 999px;
+  background: var(--overlay-pressed);
+  color: var(--text-secondary);
+  font-size: 0.82em;
+  line-height: 1.45;
   font-variant-numeric: tabular-nums;
-  transition: opacity 140ms ease;
+  white-space: nowrap;
+  user-select: none;
+  cursor: default;
 }
 
-.tiptap.note-ts-on p:hover > .note-ts,
-.tiptap.note-ts-on h1:hover > .note-ts,
-.tiptap.note-ts-on h2:hover > .note-ts,
-.tiptap.note-ts-on h3:hover > .note-ts,
-.tiptap.note-ts-on li:hover .note-ts {
-  opacity: 0.85;
+.note-time-pill.ProseMirror-selectednode {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
 }
 
 /* Focus tunnel-in — plays once when FocusMode mounts after the user

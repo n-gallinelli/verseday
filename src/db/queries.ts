@@ -648,8 +648,8 @@ export async function updateTaskStatus(
   // the box (independent of date_scheduled).
   if (status === "done") {
     const today = todayString();
-    // Capture the instance's pre-snap scheduling BEFORE the UPDATE below snaps a
-    // future date to today — otherwise the cycle's original date is lost and the
+    // Capture the instance's pre-snap scheduling BEFORE the snap UPDATE below snaps
+    // a future date to today — otherwise the cycle's original date is lost and the
     // early-completion suppression below can't record it.
     const before: {
       date_scheduled: string | null;
@@ -661,41 +661,25 @@ export async function updateTaskStatus(
     const wasScheduled = before[0]?.date_scheduled ?? null;
     const sourceId = before[0]?.recurrence_source_id ?? null;
 
-    // Future-scheduled tasks marked done get snapped to today —
-    // completing it today should make it appear under today's column,
-    // not stay floating in the future. Past/today dates are left alone
-    // (those reflect the planned/actual day correctly already). The
-    // local-date helper imported at the top of this file uses the
-    // user's TZ, matching how date_scheduled is written everywhere
-    // else in the codebase.
-    await db.execute(
-      `UPDATE tasks
-       SET status = $1,
-           completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-           date_scheduled = CASE
-             WHEN date_scheduled IS NOT NULL AND date_scheduled > $3
-               THEN $3
-             ELSE date_scheduled
-           END
-       WHERE id = $2`,
-      [status, id, today]
-    );
-
-    // Early-completion suppression. Completing a WEEKLY recurring instance BEFORE
-    // its scheduled day satisfies that cycle, so record a skip for its original
-    // date — otherwise the next generateRecurringInstances recreates the instance
-    // on the day it was "due" and the task double-shows (the bug Nick hit: a
-    // Thursday task done Wednesday correctly snapped to Wednesday, but Thursday
-    // regenerated). Mirrors the skip-on-move insert in updateTaskDateScheduled
-    // (~:1201) and deleteTask (~:763); the completion-snap above is the one
-    // move-like op that bypassed that path. daily/weekdays are excluded — the
-    // next day has its own instance, so suppression is meaningless there.
-    // We also stamp suppressed_cycle_date with the pre-snap date (a dedicated
-    // v27 column, NULL on every other row) so reopen can find this exact skip
-    // and reverse the whole thing — see the non-done branch below.
-    // Runs AFTER the snap UPDATE (no transaction API in this file): a mid-failure
-    // degrades to today's regenerating-cycle behavior, never a
-    // suppressed-but-incomplete task.
+    // Early-completion suppression — DECIDED AND RECORDED BEFORE THE SNAP, mirroring
+    // the skip-before-mutate ordering in deleteTask (~:764) and
+    // updateTaskDateScheduled (~:1208). Completing a WEEKLY recurring instance
+    // before its scheduled day satisfies that cycle, so we record a skip for its
+    // original date — otherwise the next generateRecurringInstances recreates the
+    // instance on the day it was "due" and the task double-shows (the bug Nick hit:
+    // a Thursday task done Wednesday correctly snapped to Wednesday, but Thursday
+    // regenerated). daily/weekdays are excluded — the next day has its own instance,
+    // so suppression is meaningless there.
+    //
+    // ORDER MATTERS (Verse #1): the skip-INSERT runs BEFORE the snap, not after.
+    // A generateRecurringInstances pass interleaving from another webview after the
+    // INSERT sees the skip → no regen; the live instance is still at its original
+    // date until the snap, so there is no vacated-and-unskipped gap. A crash between
+    // the INSERT and the snap leaves a skip whose date is still occupied by the live
+    // (still-open) instance — benign and self-healing — never a reintroduced
+    // double-show. The pre-snap-after-snap inversion the first revision used reopened
+    // exactly this race.
+    let suppressedCycleDate: string | null = null;
     if (sourceId != null && wasScheduled != null && wasScheduled > today) {
       const tmpl: { recurrence: string | null }[] = await db.select(
         "SELECT recurrence FROM tasks WHERE id = $1",
@@ -713,12 +697,32 @@ export async function updateTaskStatus(
           "INSERT INTO recurring_instance_skips (recurrence_source_id, date_scheduled) VALUES ($1, $2) ON CONFLICT DO NOTHING",
           [sourceId, wasScheduled]
         );
-        await db.execute(
-          "UPDATE tasks SET suppressed_cycle_date = $1 WHERE id = $2",
-          [wasScheduled, id]
-        );
+        suppressedCycleDate = wasScheduled;
       }
     }
+
+    // Snap + stamp in a SINGLE UPDATE, after the skip is in place. Future-scheduled
+    // tasks marked done get snapped to today — completing it today should make it
+    // appear under today's column, not stay floating in the future. Past/today dates
+    // are left alone (those reflect the planned/actual day correctly already); the
+    // local-date helper uses the user's TZ, matching how date_scheduled is written
+    // everywhere else. We fold suppressed_cycle_date (a dedicated v27 column, NULL on
+    // every other row) into this same UPDATE so the stamp is atomic with the move;
+    // reopen reads it to find this exact skip and reverse the whole thing — see the
+    // non-done branch below. It is NULL whenever we didn't suppress.
+    await db.execute(
+      `UPDATE tasks
+       SET status = $1,
+           completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+           date_scheduled = CASE
+             WHEN date_scheduled IS NOT NULL AND date_scheduled > $3
+               THEN $3
+             ELSE date_scheduled
+           END,
+           suppressed_cycle_date = $4
+       WHERE id = $2`,
+      [status, id, today, suppressedCycleDate]
+    );
   } else {
     // Reopen (done → not-done). If this is an early-completed weekly instance
     // (suppressed_cycle_date set — only the suppression block above ever sets

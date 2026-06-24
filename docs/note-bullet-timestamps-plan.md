@@ -127,6 +127,15 @@ Required mechanism:
   future feature needs to *query/sort/report* on per-note times, that's a real
   normalized-table migration — out of scope here, acknowledged ceiling.
 
+## Invariants (keep true going forward)
+- **Notes HTML must never be sanitized in a way that strips `data-created`.** If
+  DOMPurify (or any sanitizer) is ever added to the notes render/save path, its
+  `ALLOWED_ATTR` **must include `data-created`** — DOMPurify strips `data-*` by
+  default, which would silently erase every bullet's stamp.
+- The M1 "load-bearing" test (guarded `[]` vs unguarded would-stamp-2) is the
+  permanent regression sentinel for the back-stamp guard — **keep it**; it's what
+  stops a future cross-surface-sync rewrite from silently re-corrupting on load.
+
 ## Risks / edge cases
 - Back-stamping legacy notes (guarded above) — the main correctness risk.
 - Splitting a bullet (Enter mid-line) → new node gets a fresh stamp, original

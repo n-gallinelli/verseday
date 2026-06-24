@@ -844,17 +844,18 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            // Reopen handler (per Verse review #3, mandatory companion to
-            // the hide-on-close behavior above): when the user clicks the
-            // dock icon while no windows are visible, re-show the main
-            // window. Without this, hide-on-close traps users — they'd
-            // have no way to get back to the app short of Cmd+Q+relaunch.
-            if let RunEvent::Reopen { has_visible_windows, .. } = event {
-                if !has_visible_windows {
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+            // Reopen handler (companion to the hide-on-close behavior
+            // above): a dock-icon reopen ALWAYS means "bring VerseDay's
+            // main window forward." The pip and quick-add are auxiliary
+            // always-on-top/overlay windows; their visibility must NOT mask
+            // the main window. Always re-show and focus main. (Supersedes
+            // the review-#3 !has_visible_windows guard — its intent, "never
+            // trap the user behind hide-on-close," is preserved and
+            // strengthened: main is reachable even when an overlay is up.)
+            if let RunEvent::Reopen { .. } = event {
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
                 }
             }
         });

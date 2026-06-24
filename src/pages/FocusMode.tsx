@@ -1961,6 +1961,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
               saveNotes(html);
             }}
             placeholder="Add notes…"
+            showTimestamps
             className="w-full mt-3 min-h-[240px] pl-10 pr-4 py-3.5 bg-transparent text-left text-[14px] text-fg leading-relaxed"
           />
         </div>

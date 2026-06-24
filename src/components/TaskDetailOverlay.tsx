@@ -887,6 +887,7 @@ export default function TaskDetailOverlay({
                 );
               }}
               placeholder="..."
+              showTimestamps
               className="w-full bg-elevated text-[13px] text-fg-secondary leading-relaxed min-h-[380px]"
             />
           </div>

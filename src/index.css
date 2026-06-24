@@ -598,6 +598,47 @@ select {
   height: 0;
 }
 
+/* Per-bullet note timestamps — unobtrusive right-gutter stamp aligned to each
+   line, faint by default and brightening when you hover that line. Only active
+   when the editor opts in via .note-ts-on (Focus screen + Task Detail); other
+   note surfaces are unaffected. See src/components/editor/timestampDecorations.ts
+   (the widget is a child of the block, so the hover rules below are pure CSS). */
+.tiptap.note-ts-on {
+  padding-right: 5.5rem;
+}
+
+.tiptap.note-ts-on p,
+.tiptap.note-ts-on h1,
+.tiptap.note-ts-on h2,
+.tiptap.note-ts-on h3,
+.tiptap.note-ts-on li {
+  position: relative;
+}
+
+.note-ts {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin-left: 0.6rem;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: inherit;
+  color: var(--text-faded);
+  opacity: 0.4;
+  pointer-events: none;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+  transition: opacity 140ms ease;
+}
+
+.tiptap.note-ts-on p:hover > .note-ts,
+.tiptap.note-ts-on h1:hover > .note-ts,
+.tiptap.note-ts-on h2:hover > .note-ts,
+.tiptap.note-ts-on h3:hover > .note-ts,
+.tiptap.note-ts-on li:hover .note-ts {
+  opacity: 0.85;
+}
+
 /* Focus tunnel-in — plays once when FocusMode mounts after the user
    arrives at the focus screen. World rushes outward + content scales up from
    center. Vignette is a separate overlay layer (see .focus-vignette

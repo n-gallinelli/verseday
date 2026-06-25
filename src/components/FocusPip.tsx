@@ -719,7 +719,7 @@ export default function FocusPip() {
                 ends {breakEndClock(Date.now(), state.breakRemaining)}
               </span>
             </div>
-            <div className="text-[20px] font-semibold tabular-nums text-accent-green-deep leading-none font-display" style={{ letterSpacing: "-0.55px" }}>
+            <div className="text-[20px] font-semibold tabular-nums text-accent-green-deep leading-none font-display" style={{ letterSpacing: "0.03em" }}>
               {formatCountdown(state.breakRemaining)}
             </div>
           </div>

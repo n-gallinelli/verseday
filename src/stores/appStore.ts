@@ -400,6 +400,11 @@ interface AppState {
   selectedProjectId: number | null;
   /** The canonical running session (a real open time_entry), or null. */
   session: SessionState | null;
+  /** Whether the running session is currently on a break — published by
+   *  FocusMode (its `phase === "break"`) so out-of-FocusMode surfaces (the
+   *  DailyPlanner status pill) can read break state. False whenever no session
+   *  is running. Never persisted. */
+  onBreak: boolean;
   /** Focus-screen preview staging (task staged, not running), or null.
    *  Mutually exclusive with `session`; never persisted. */
   focusView: FocusView | null;
@@ -745,6 +750,9 @@ interface AppState {
   /** Toggle pause on the running session (session.paused). No-op if there is
    *  no session. */
   togglePauseFocus: () => void;
+  /** Publish break state (FocusMode → store) so the DailyPlanner status pill
+   *  can read it. */
+  setOnBreak: (onBreak: boolean) => void;
   /** Override the running session's workedMs directly (the *displayed* elapsed
    *  excluding priorElapsedMs). No-op if there is no session. */
   adjustFocusElapsed: (desiredElapsedMs: number) => void;
@@ -1029,6 +1037,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedWeek: mondayOfWeek(),
   selectedProjectId: null,
   session: null,
+  onBreak: false,
   focusView: null,
   browsedTaskId: null,
   pendingDetailTask: null,
@@ -1112,6 +1121,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ browsedTaskId: task.id === runningId ? null : task.id });
   },
   clearBrowse: () => set({ browsedTaskId: null }),
+  setOnBreak: (onBreak) => set({ onBreak }),
   activateFocus: (timeEntryId) => {
     const v = get().focusView;
     if (!v) return;

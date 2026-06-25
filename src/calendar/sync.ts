@@ -203,11 +203,17 @@ export async function syncCalendarEventsForDate(
  *  force:false → the per-date TTL dedupes against the Daily Plan's own
  *  useCalendarAutoSync, so opening the app in the morning doesn't double-fetch
  *  today. See docs/2026-06-15-calendar-morning-autosync.md. */
-export async function syncTodayIfReady(): Promise<SyncResult> {
+export async function syncTodayIfReady(
+  opts: { force?: boolean } = {},
+): Promise<SyncResult> {
   try {
     if (!(await getEnabled())) return { created: 0, skipped: 0 };
     if ((await checkPermission()) !== "granted") return { created: 0, skipped: 0 };
-    return await syncCalendarEventsForDate(todayString(), { force: false });
+    // force:true (the periodic refresh) bypasses the per-date TTL so an event
+    // added/changed AFTER the morning sync — e.g. a meeting that already ended —
+    // still gets pulled in. upsertCalendarTask dedupes on external_id, so a
+    // forced re-fetch never duplicates rows.
+    return await syncCalendarEventsForDate(todayString(), { force: opts.force ?? false });
   } catch (err) {
     console.error("calendar morning sync: syncTodayIfReady failed:", err);
     return { created: 0, skipped: 0 };

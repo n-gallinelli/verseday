@@ -4,16 +4,23 @@ import { logicalDayIso } from "../../utils/dates";
 
 /**
  * Explicit, user-typed timestamp pills. Triggered by `@` or `#` followed by:
- *   now      → current time + date  ("4:58 PM · Jun 24")
- *   today    → today's date         ("Jun 24")
- *   tomorrow → tomorrow's date      ("Jun 25")
+ *   now       → current time + date  ("4:58 PM · Thu, Jun 25")
+ *   today     → today's date         ("Thu, Jun 25")
+ *   tomorrow  → tomorrow's date      ("Fri, Jun 26")
+ *   yesterday → yesterday's date     ("Wed, Jun 24")
  * The pill is an inline atom — it's part of the note content (persisted in the
  * notes HTML), captured at insertion time, and frozen thereafter. Nothing
  * appears unless the user types a trigger.
  */
 
 const MAX_TS = 4102444800000; // ~year 2100 — reject absurd/garbage data-ts
-type PillKind = "now" | "today" | "tomorrow";
+type PillKind = "now" | "today" | "tomorrow" | "yesterday";
+
+const DAY_OFFSET: Record<Exclude<PillKind, "now">, number> = {
+  yesterday: -1,
+  today: 0,
+  tomorrow: 1,
+};
 
 function coerceTs(raw: string | null): number | null {
   if (raw == null) return null;
@@ -22,19 +29,19 @@ function coerceTs(raw: string | null): number | null {
 }
 
 function coerceKind(raw: string | null): PillKind {
-  return raw === "today" || raw === "tomorrow" ? raw : "now";
+  return raw === "today" || raw === "tomorrow" || raw === "yesterday" ? raw : "now";
 }
 
-/** Short "Jun 25" label for the logical day of `ms`, shifted by `offsetDays`. */
+/** "Thu, Jun 25" label for the logical day of `ms`, shifted by `offsetDays`. */
 function dateLabel(ms: number, offsetDays: number): string {
   const d = new Date(logicalDayIso(new Date(ms)) + "T00:00:00");
   d.setDate(d.getDate() + offsetDays);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
 
 function labelFor(kind: PillKind, ms: number): string {
   if (kind === "now") return formatNoteTimestamp(ms);
-  return dateLabel(ms, kind === "tomorrow" ? 1 : 0);
+  return dateLabel(ms, DAY_OFFSET[kind]);
 }
 
 export const TimePill = Node.create({
@@ -89,7 +96,7 @@ export const TimePill = Node.create({
     const type = this.type;
     return [
       new InputRule({
-        find: /[@#](now|today|tomorrow)$/,
+        find: /[@#](now|today|tomorrow|yesterday)$/,
         handler: ({ state, range, match }) => {
           const kind = match[1] as PillKind;
           const ms = Date.now();

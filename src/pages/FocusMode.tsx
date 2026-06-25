@@ -332,7 +332,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // the meeting becomes the new RUNNING session immediately (Nick's decision).
   const handleSwitchToMeeting = useCallback(async (taskId: number) => {
     const st = useAppStore.getState();
-    const meeting = st.tasksById.get(taskId);
+    // tasksById is the live cache; the meeting taskId came from a DB lookup in
+    // App.tsx (getTaskByExternalId), so the row provably exists even if it hasn't
+    // been loaded into the cache yet. Fall back to a DB read rather than silently
+    // no-op'ing the prompt's headline action.
+    const meeting = st.tasksById.get(taskId) ?? (await getTaskById(taskId));
     if (!meeting) return;
     const prev: Page =
       st.session?.previousPage ??

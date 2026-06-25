@@ -654,6 +654,7 @@ export default function FocusPip() {
       >
         <div className="text-[11px] leading-none text-fg-secondary truncate max-w-full px-1">
           <span className="font-medium text-fg">{state.meetingPrompt.title}</span> starting
+          {state.meetingPrompt.startLabel ? ` ${state.meetingPrompt.startLabel}` : ""}
         </div>
         <div className="flex items-center justify-center gap-2.5">
           <button

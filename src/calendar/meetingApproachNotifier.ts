@@ -37,12 +37,26 @@
 
 import { isPermissionGranted } from "@tauri-apps/plugin-notification";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { upcomingEvents, localStartToMs } from "./upcomingEvents";
 import {
   getEnabled,
   getApproachNotifyEnabled,
   getApproachLeadMinutes,
 } from "./settings";
+
+// Main-window-internal event: a synced meeting is STARTING NOW (T-0). This
+// notifier is a PURE DETECTOR for it — it emits and nothing more. The single
+// always-mounted delivery owner (App.tsx) decides pip-switch-prompt vs OS
+// notification by reading the live session + pip visibility. Keeping the
+// decision out of this background poller (which can't see pip state) is the
+// §B requirement from the Verse rev-2 approval.
+export const MEETING_STARTING_EVENT = "verseday:meeting-starting";
+export interface MeetingStartingPayload {
+  externalId: string;
+  title: string;
+  startMs: number;
+}
 
 const STORAGE_KEY = "meetingApproachNotifier.notifiedIds";
 const TICK_MS = 30 * 1000;
@@ -112,49 +126,74 @@ export function startMeetingApproachNotifier(): () => void {
       if (!(await getEnabled())) return;
 
       const leadMin = await getApproachLeadMinutes();
-      const events = await upcomingEvents(leadMin, NOTIFY_GRACE_MS);
-      if (events.length === 0) return;
+      const now = Date.now();
+      let changed = false;
 
+      // ── T-15 LEAD REMINDER (existing): a native OS notification when a
+      // meeting enters the user's lead window. Gated behind its own dedup +
+      // permission probe; on a failed send it stays un-notified to retry. ──
+      const events = await upcomingEvents(leadMin, NOTIFY_GRACE_MS);
       // Filter dedup BEFORE the permission probe so we don't probe on
       // every tick once everything's already notified.
-      const fresh = events.filter((ev) => !notifiedSet.has(ev.externalId));
-      if (fresh.length === 0) return;
-
-      const granted = await isPermissionGranted();
-      if (!granted) return;
-
-      let changed = false;
-      const now = Date.now();
-      for (const ev of fresh) {
-        const minutesAway = Math.max(
-          1,
-          Math.ceil((ev.startMs - now) / 60000),
-        );
-        // #12 — mark "notified" ONLY after a confirmed send. Previously the
-        // dedup set was updated unconditionally right after a fire-and-forget
-        // call, so a failed send still suppressed every future retry for that
-        // event. Await it and, on failure, leave it un-notified to retry next
-        // tick. (await on a void return is harmless.)
-        try {
-          // Native send (notify.rs) instead of the plugin: the plugin discards
-          // click results, so we own delivery to make the body click jump to
-          // this event's task (externalId rides the notification identifier).
-          await invoke("send_meeting_notification", {
-            title: `Meeting in ${minutesAway} min`,
-            body: ev.title,
-            externalId: ev.externalId,
-          });
-        } catch (sendErr) {
-          console.error(
-            "meetingApproachNotifier: sendNotification failed, will retry",
-            sendErr,
+      const freshLead = events.filter((ev) => !notifiedSet.has(ev.externalId));
+      if (freshLead.length > 0 && (await isPermissionGranted())) {
+        for (const ev of freshLead) {
+          const minutesAway = Math.max(
+            1,
+            Math.ceil((ev.startMs - now) / 60000),
           );
-          continue;
+          // #12 — mark "notified" ONLY after a confirmed send. Previously the
+          // dedup set was updated unconditionally right after a fire-and-forget
+          // call, so a failed send still suppressed every future retry for that
+          // event. Await it and, on failure, leave it un-notified to retry next
+          // tick. (await on a void return is harmless.)
+          try {
+            // Native send (notify.rs) instead of the plugin: the plugin discards
+            // click results, so we own delivery to make the body click jump to
+            // this event's task (externalId rides the notification identifier).
+            await invoke("send_meeting_notification", {
+              title: `Meeting in ${minutesAway} min`,
+              body: ev.title,
+              externalId: ev.externalId,
+            });
+          } catch (sendErr) {
+            console.error(
+              "meetingApproachNotifier: sendNotification failed, will retry",
+              sendErr,
+            );
+            continue;
+          }
+          notifiedSet.add(ev.externalId);
+          notified.push({ eventId: ev.externalId, start: ev.startLocal });
+          changed = true;
         }
-        notifiedSet.add(ev.externalId);
-        notified.push({ eventId: ev.externalId, start: ev.startLocal });
+      }
+
+      // ── T-0 STARTING-NOW DETECTOR (new): PURE — emit verseday:meeting-starting
+      // and let App.tsx route delivery (pip switch-prompt vs OS notif). No send
+      // and NO permission probe here: the pip path needs no permission, and the
+      // OS-notif fallback owns its own probe in App.tsx. Window = [start−60s,
+      // start+90s] via upcomingEvents(1, NOTIFY_GRACE_MS) — inherits the existing
+      // sleep-through-window drop (a meeting woken into >90s late never fires).
+      //
+      // DEDUP MARKED AT EMIT TIME on `${externalId}:start` — single-shot, NO
+      // retry. This deliberately diverges from the lead reminder's confirmed-send
+      // dedup (#12): the start prompt is a UX nudge, not a guaranteed-delivery
+      // alert. One missed tick = no prompt, accepted. (See plan §B.)
+      const starting = await upcomingEvents(1, NOTIFY_GRACE_MS);
+      for (const ev of starting) {
+        const startKey = `${ev.externalId}:start`;
+        if (notifiedSet.has(startKey)) continue;
+        void emit(MEETING_STARTING_EVENT, {
+          externalId: ev.externalId,
+          title: ev.title,
+          startMs: ev.startMs,
+        } satisfies MeetingStartingPayload);
+        notifiedSet.add(startKey);
+        notified.push({ eventId: startKey, start: ev.startLocal });
         changed = true;
       }
+
       if (changed) saveNotified(notified);
     } catch (err) {
       // Background notifier failures must never throw to the React

@@ -630,6 +630,52 @@ export default function FocusPip() {
   // #6fa088 in dark that fails WCAG 1.4.3 behind white text. Both links are
   // text-fg-secondary at 12px (was an 11px faded/secondary split that read as
   // invisible). FocusMode owns the 30s auto-dismiss; the user is never trapped.
+  // ── MEETING-START PROMPT — "switch focus to the meeting that's starting?" ──
+  // Outranks the break offer (FocusMode sets phase="meetingPrompt" over any
+  // work/break/prompt). Two rows to fit 220×66: a truncated title line, then a
+  // blue primary "Switch focus" beside a quiet "Not now". Blue is the
+  // interactive/active accent (same family as the pip ring + play button); the
+  // fill is PINNED #4070B5 (the AA-tightened light accent-blue, ≥4.5:1 behind
+  // white in both themes — same pin-not-token discipline as the break CTA). The
+  // title is external calendar data, rendered as a plain text node. FocusMode
+  // owns the 45s auto-dismiss; the user is never trapped.
+  if (state.phase === "meetingPrompt" && state.meetingPrompt) {
+    return pipShell(
+      <div
+        data-tauri-drag-region
+        className="select-none flex flex-col items-center justify-center gap-1.5 w-full h-full px-2.5 py-1.5"
+        style={{
+          background: PIP_BG,
+          borderRadius: 18,
+          border: "0.5px solid var(--focus-pip-border)",
+          boxShadow: "var(--shadow-card)",
+        }}
+        onMouseDown={handlePipMouseDown}
+      >
+        <div className="text-[11px] leading-none text-fg-secondary truncate max-w-full px-1">
+          <span className="font-medium text-fg">{state.meetingPrompt.title}</span> starting
+        </div>
+        <div className="flex items-center justify-center gap-2.5">
+          <button
+            onClick={() => sendCommand("switchToMeeting")}
+            className="px-3 py-1.5 rounded-full text-[12px] font-medium text-white bg-[#4070B5] hover:bg-[#3661A0] cursor-pointer transition-colors"
+            title="Switch your focus timer to this meeting"
+          >
+            Switch focus
+          </button>
+          <button
+            onClick={() => sendCommand("dismissMeetingPrompt")}
+            className="text-[12px] text-fg-secondary hover:text-fg cursor-pointer transition-colors leading-none"
+            title="Keep my current focus"
+          >
+            Not now
+          </button>
+        </div>
+      </div>,
+      true,
+    );
+  }
+
   if (state.phase === "prompt") {
     return pipShell(
       <div

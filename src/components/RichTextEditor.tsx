@@ -5,6 +5,7 @@ import Link from "@tiptap/extension-link";
 import Typography from "@tiptap/extension-typography";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useRef, useEffect, useState } from "react";
+import { TimePill } from "./editor/timePill";
 
 interface RichTextEditorProps {
   value: string;
@@ -77,6 +78,8 @@ export default function RichTextEditor({
           target: "_blank",
         },
       }),
+      // Explicit @now / @today timestamp pills (user-typed; nothing auto-shows).
+      TimePill,
     ],
     content: normalizeContent(value),
     editorProps: {

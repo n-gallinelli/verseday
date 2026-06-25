@@ -598,6 +598,29 @@ select {
   height: 0;
 }
 
+/* Inline timestamp pill — inserted only when the user types @now / @today
+   (see src/components/editor/timePill.ts). It's part of the note content, not an
+   overlay; reads as a small chip sitting inline with the text. */
+.note-time-pill {
+  display: inline-block;
+  padding: 0.05em 0.5em;
+  margin: 0 0.1em;
+  border-radius: 999px;
+  background: var(--overlay-pressed);
+  color: var(--text-secondary);
+  font-size: 0.82em;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  user-select: none;
+  cursor: default;
+}
+
+.note-time-pill.ProseMirror-selectednode {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+}
+
 /* Focus tunnel-in — plays once when FocusMode mounts after the user
    arrives at the focus screen. World rushes outward + content scales up from
    center. Vignette is a separate overlay layer (see .focus-vignette

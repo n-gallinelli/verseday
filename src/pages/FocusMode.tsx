@@ -1449,6 +1449,21 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     }
   }
 
+  // Browse mode: complete the VIEWED (browsed) task — NOT the running session,
+  // which is timing a DIFFERENT task. Canonical UI completion (status write →
+  // verseday:task-status-changed broadcast → reconcile-from-DB → estimate
+  // backfill), identical to marking it done from the daily plan; the open
+  // time_entry on the running task is never touched. The status-changed
+  // listener only re-fires handleDone for the FOCUSED task, so browsed ≠ focused
+  // means no recursion. The browsed task is now done, so drop the browse pointer
+  // — the view falls back to the running task (never lingers on a done task).
+  async function handleDoneBrowsed() {
+    const bId = useAppStore.getState().browsedTaskId;
+    if (bId == null) return;
+    await useAppStore.getState().setTaskStatus(bId, "done");
+    useAppStore.getState().clearBrowse();
+  }
+
   async function handleStop() {
     if (!focus) return;
     if (focus.mode === "active") {
@@ -1736,14 +1751,9 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                 the title's first line even when the title wraps. */}
             <div className="flex-1 min-w-0 max-w-[540px] flex items-start gap-3">
               <button
-                onClick={handleDone}
-                disabled={browsingOther}
-                className={`mt-[5px] w-7 h-7 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors group border-fg-faded ${
-                  browsingOther
-                    ? "opacity-40 cursor-not-allowed"
-                    : "cursor-pointer hover:border-accent-green-deep hover:bg-accent-green-deep"
-                }`}
-                title={browsingOther ? "Return to the running task to complete it" : "Mark done"}
+                onClick={browsingOther ? handleDoneBrowsed : handleDone}
+                className="mt-[5px] w-7 h-7 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors group border-fg-faded cursor-pointer hover:border-accent-green-deep hover:bg-accent-green-deep"
+                title="Mark done"
               >
                 <svg
                   width="14" height="14" viewBox="0 0 16 16"
@@ -1820,7 +1830,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                   } transition-opacity`}
                   style={{
                     letterSpacing: "-1px",
-                    color: isQueued || paused ? "var(--text-faded)" : "var(--focus-glow-base)",
+                    color: isQueued || paused || browsingOther ? "var(--text-faded)" : "var(--focus-glow-base)",
                   }}
                   title={canEditActual ? "Click to adjust" : undefined}
                 >
@@ -1835,7 +1845,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                     while the session is actively counting — a running cue
                     beyond the numerals ticking. Remove this block + the
                     index.css experiment block (and the pip block) to revert. */}
-                {!isQueued && focus?.mode === "active" && !paused && (
+                {!isQueued && !browsingOther && focus?.mode === "active" && !paused && (
                   <div className="run-sweep-track mt-2 w-16 h-[2px]">
                     <div className="run-sweep-bar" style={{ background: "#A8CFE5" }} />
                   </div>

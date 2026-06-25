@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWindow";
+import { cursorPosition, monitorFromPoint, currentMonitor, primaryMonitor } from "@tauri-apps/api/window";
+import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -32,6 +34,42 @@ import {
 } from "./db/queries";
 import { startMeetingApproachNotifier } from "./calendar/meetingApproachNotifier";
 import type { Page, Task } from "./types";
+
+// Place the quick-add bar centered on the monitor under the cursor, so it opens
+// on whatever screen the user is working on (standard launcher behavior) rather
+// than always the primary display. All math is in Tauri's physical/top-left
+// coordinate space — no NSEvent Y-flip — so this stays pure JS.
+//
+// Mixed-DPI is handled explicitly: outerSize() reports physical px at the
+// window's CURRENT monitor scale, but on arrival the window is rescaled to the
+// TARGET monitor's scale (macOS keeps logical size constant). So convert the
+// measured size to logical, then back to the target's physical, before
+// centering — otherwise a 2x→1x move lands the bar ~half a width off-center and
+// can clip a narrow external. Any failure (null monitor / API error) falls back
+// to center() so the bar always appears.
+async function positionOnCursorMonitor(win: WebviewWindow): Promise<void> {
+  try {
+    const cursor = await cursorPosition();
+    const target =
+      (await monitorFromPoint(cursor.x, cursor.y)) ??
+      (await currentMonitor()) ??
+      (await primaryMonitor());
+    if (!target) {
+      await win.center();
+      return;
+    }
+    const cur = await currentMonitor();
+    const curScale = cur?.scaleFactor ?? target.scaleFactor;
+    const logical = (await win.outerSize()).toLogical(curScale);
+    const w = logical.width * target.scaleFactor;
+    const h = logical.height * target.scaleFactor;
+    const x = Math.round(target.position.x + (target.size.width - w) / 2);
+    const y = Math.round(target.position.y + (target.size.height - h) / 2);
+    await win.setPosition(new PhysicalPosition(x, y));
+  } catch {
+    await win.center().catch(() => {});
+  }
+}
 
 const PAGE_SHORTCUTS: Record<string, Page> = {
   "0": "focus",
@@ -145,7 +183,7 @@ function MainApp() {
               await invoke("dismiss_quick_add");
             } else {
               await invoke("capture_previous_app");
-              await win.center();
+              await positionOnCursorMonitor(win);
               await win.show();
               await win.setFocus();
             }

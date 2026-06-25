@@ -55,11 +55,23 @@ export function pipSizeFor(highVisibility: boolean): { width: number; height: nu
   return highVisibility ? PIP_SIZE_LARGE : PIP_SIZE;
 }
 
+/** Payload for the "switch focus to a starting meeting" prompt. Title is
+ *  external calendar data — the pip renders it as a plain React text node
+ *  (never innerHTML). `startLabel` is a pre-formatted clock string (e.g.
+ *  "2:00 PM") built on the main side so the pip bundle stays date-lib-free. */
+export interface PipMeetingPrompt {
+  title: string;
+  startLabel: string;
+  externalId: string;
+}
+
 export interface PipState {
   elapsed: number;
   paused: boolean;
-  phase: "work" | "break" | "prompt";
+  phase: "work" | "break" | "prompt" | "meetingPrompt";
   breakRemaining: number;
+  /** Set only while `phase === "meetingPrompt"`; null otherwise. */
+  meetingPrompt: PipMeetingPrompt | null;
   taskTitle: string;
   estimatedMinutes: number | null;
   // The session is queued (preview, not yet started). The pip stays alive across

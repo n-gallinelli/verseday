@@ -1065,15 +1065,13 @@ select {
 }
 /* ════════════════════ END RUNNING-INDICATOR EXPERIMENT ════════════════════ */
 
-/* "Still timing" live dot — the green dot breathes (swells + brightens, faded →
-   bold) and emits a soft expanding halo ping, so the running state reads as
-   actively counting at a glance. More obvious than the flat opacity blink of
-   Tailwind's animate-pulse. The ping is a ::after that scales beyond the dot via
-   transform (no layout reflow); pointer-events:none so it never blocks the
-   pill's restore button. */
+/* "Still timing" live dot — a SOLID, static green dot that emits a soft
+   expanding "sound wave" ping, so the running state reads as actively counting
+   without the dot itself pulsing in size. The ping is a ::after that scales
+   beyond the dot via transform (no layout reflow); pointer-events:none so it
+   never blocks the pill's restore button. */
 .still-timing-dot {
   position: relative;
-  animation: still-timing-core 1.8s ease-in-out infinite;
 }
 .still-timing-dot::after {
   content: "";
@@ -1084,17 +1082,12 @@ select {
   pointer-events: none;
   animation: still-timing-ping 1.8s ease-out infinite;
 }
-@keyframes still-timing-core {
-  0%, 100% { transform: scale(0.8); opacity: 0.5; }
-  50%      { transform: scale(1.15); opacity: 1; }
-}
 @keyframes still-timing-ping {
   0%        { transform: scale(1); opacity: 0.5; }
   70%, 100% { transform: scale(2.8); opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  /* Hold a solid dot, drop the motion. */
-  .still-timing-dot { animation: none; opacity: 1; }
+  /* Drop the wave; the solid dot already carries the state. */
   .still-timing-dot::after { animation: none; opacity: 0; }
 }
 

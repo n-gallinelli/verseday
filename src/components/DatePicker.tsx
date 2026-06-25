@@ -100,6 +100,17 @@ export default function DatePicker({
       className="fixed z-[100] bg-elevated border border-line-medium rounded-[10px] shadow-lg p-3 w-[252px] animate-scale-in"
       style={{ top: pos.top, left: pos.left }}
     >
+      {/* Today shortcut */}
+      <button
+        onClick={() => {
+          onSelect(todayStr);
+          onClose();
+        }}
+        className="w-full mb-2 text-[11px] text-accent-blue-soft-fg cursor-pointer hover:underline text-center py-1"
+      >
+        Go to today
+      </button>
+
       {/* Month nav */}
       <div className="flex items-center justify-between mb-2">
         <button
@@ -161,17 +172,6 @@ export default function DatePicker({
           );
         })}
       </div>
-
-      {/* Today shortcut */}
-      <button
-        onClick={() => {
-          onSelect(todayStr);
-          onClose();
-        }}
-        className="w-full mt-2 text-[11px] text-accent-blue-soft-fg cursor-pointer hover:underline text-center py-1"
-      >
-        Go to today
-      </button>
     </div>,
     document.body
   );

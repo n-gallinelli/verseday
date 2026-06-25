@@ -39,6 +39,10 @@
 
   /* — Borders & dividers — */
   --border-hairline: rgba(0, 0, 0, 0.06);
+  /* Warm-tinted hairline — a brown-tinted neutral for zone separators inside
+     warm surfaces (e.g. the date-picker header/body split) so the rule reads
+     as part of the cream palette, not a cool gray line. */
+  --border-hairline-warm: rgba(120, 82, 42, 0.14);
   --border-soft: rgba(0, 0, 0, 0.08);
   --border-medium: rgba(0, 0, 0, 0.12);
   --border-strong: rgba(0, 0, 0, 0.20);
@@ -227,6 +231,8 @@
 
     /* — Borders & dividers — */
     --border-hairline: rgba(255, 255, 255, 0.07);
+    /* Warm-tinted hairline — warm amber tint on dark surfaces (see light note). */
+    --border-hairline-warm: rgba(232, 200, 160, 0.11);
     --border-soft: rgba(255, 255, 255, 0.09);
     --border-medium: rgba(255, 255, 255, 0.14);
     --border-strong: rgba(255, 255, 255, 0.24);
@@ -362,6 +368,7 @@
 
   /* Borders & dividers */
   --color-line-hairline: var(--border-hairline);
+  --color-line-hairline-warm: var(--border-hairline-warm);
   --color-line-soft: var(--border-soft);
   --color-line-medium: var(--border-medium);
   --color-line-strong: var(--border-strong);

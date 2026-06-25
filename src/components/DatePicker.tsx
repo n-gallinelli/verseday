@@ -100,13 +100,13 @@ export default function DatePicker({
       className="fixed z-[100] bg-elevated border border-line-medium rounded-[10px] shadow-lg p-3 w-[252px] animate-scale-in"
       style={{ top: pos.top, left: pos.left }}
     >
-      {/* Today shortcut */}
+      {/* Header zone — Today shortcut, split from the calendar body by a warm hairline */}
       <button
         onClick={() => {
           onSelect(todayStr);
           onClose();
         }}
-        className="w-full mb-2 text-[11px] text-accent-blue-soft-fg cursor-pointer hover:underline text-center py-1"
+        className="w-full pb-2 mb-1.5 border-b border-line-hairline-warm text-[11px] text-accent-orange-soft-fg cursor-pointer hover:underline text-center"
       >
         Go to today
       </button>

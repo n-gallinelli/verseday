@@ -483,6 +483,26 @@ function MainApp() {
     return stop;
   }, []);
 
+  // Periodic calendar refresh — every 30 min, force-pull today's calendar so
+  // events added or changed after the morning sync (e.g. a meeting that already
+  // ended, which you want to mark complete) appear without waiting for the next
+  // day-rollover. force:true bypasses the per-date TTL; upsert dedupes on
+  // external_id so it never duplicates. Self-gating (enabled + permission) and
+  // never rejects; we own the reconcile here on created > 0.
+  useEffect(() => {
+    const CALENDAR_REFRESH_MS = 30 * 60 * 1000;
+    const tick = () => {
+      void (async () => {
+        const res = await syncTodayIfReady({ force: true });
+        if (res.created > 0) {
+          void useAppStore.getState().loadTasksForDate(todayString());
+        }
+      })();
+    };
+    const handle = setInterval(tick, CALENDAR_REFRESH_MS);
+    return () => clearInterval(handle);
+  }, []);
+
   // Meeting-notification click → jump to that event's task on the focus
   // screen (preview). The native delegate (notify.rs) emits
   // verseday:notification-clicked with the externalId; we resolve the task,

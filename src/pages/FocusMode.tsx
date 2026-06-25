@@ -152,6 +152,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const browseTask = useAppStore((s) => s.browseTask);
   const clearBrowse = useAppStore((s) => s.clearBrowse);
   const endActiveFocusSession = useAppStore((s) => s.endActiveFocusSession);
+  const setOnBreak = useAppStore((s) => s.setOnBreak);
   const loadWorkedMinutes = useAppStore((s) => s.loadWorkedMinutes);
   // Browsing a different task than the one the timer runs on.
   const browsingOther = session != null && browsedTaskId != null;
@@ -648,6 +649,12 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 
   // Pomodoro state
   const [phase, setPhase] = useState<FocusPhase>("work");
+  // Publish break state to the store so the DailyPlanner status pill can flip
+  // "Focusing…" → "On break". Reset on unmount (session ended → no break).
+  useEffect(() => {
+    setOnBreak(phase === "break");
+  }, [phase, setOnBreak]);
+  useEffect(() => () => setOnBreak(false), [setOnBreak]);
   const [completedPomodoros, setCompletedPomodoros] = useState(0);
   const [completionBurst, setCompletionBurst] = useState(false);
   const prevPhaseRef = useRef<FocusPhase>("work");

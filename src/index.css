@@ -1065,3 +1065,29 @@ select {
 }
 /* ════════════════════ END RUNNING-INDICATOR EXPERIMENT ════════════════════ */
 
+/* "Still timing" live dot — a SOLID, static green dot that emits a soft
+   expanding "sound wave" ping, so the running state reads as actively counting
+   without the dot itself pulsing in size. The ping is a ::after that scales
+   beyond the dot via transform (no layout reflow); pointer-events:none so it
+   never blocks the pill's restore button. */
+.still-timing-dot {
+  position: relative;
+}
+.still-timing-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--accent-green-bright);
+  pointer-events: none;
+  animation: still-timing-ping 1.8s ease-out infinite;
+}
+@keyframes still-timing-ping {
+  0%        { transform: scale(1); opacity: 0.5; }
+  70%, 100% { transform: scale(2.8); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Drop the wave; the solid dot already carries the state. */
+  .still-timing-dot::after { animation: none; opacity: 0; }
+}
+

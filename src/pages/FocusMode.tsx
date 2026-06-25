@@ -1649,7 +1649,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 max-w-[90vw] px-4 py-2 rounded-full bg-elevated border border-line-soft text-[12px] text-fg-secondary cursor-pointer hover:text-fg transition-colors"
           style={{ boxShadow: "var(--shadow-card)" }}
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-accent-green-bright flex-shrink-0 animate-pulse" />
+          <span className="still-timing-dot w-2 h-2 rounded-full bg-accent-green-bright flex-shrink-0" />
           <span className="truncate">
             Still timing<span className="font-medium text-fg ml-2.5">{focusedTask.title}</span>
           </span>

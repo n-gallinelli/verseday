@@ -328,6 +328,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // Bumped on Done → next-task transitions to replay the tunnel-in
   // zoom animation by remounting the wrapper that owns the keyframe.
   const [zoomKey, setZoomKey] = useState(0);
+  // Brief green-check confirmation beat after completing a BROWSED task (the
+  // focused task gets the zoom-to-next animation; a browsed completion has no
+  // next-task transition, so this holds the filled checkmark for a moment so the
+  // completion registers before the view returns to the running task).
+  const [browsedDoneBeat, setBrowsedDoneBeat] = useState(false);
 
   useEffect(() => {
     if (viewedTask) setNotes(viewedTask.notes ?? "");
@@ -1460,8 +1465,20 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   async function handleDoneBrowsed() {
     const bId = useAppStore.getState().browsedTaskId;
     if (bId == null) return;
-    await useAppStore.getState().setTaskStatus(bId, "done");
-    useAppStore.getState().clearBrowse();
+    setBrowsedDoneBeat(true); // instant filled-check confirmation
+    try {
+      await useAppStore.getState().setTaskStatus(bId, "done");
+    } catch {
+      setBrowsedDoneBeat(false); // write failed → revert the check, keep browsing
+      return;
+    }
+    // Hold the checkmark a beat so the completion registers, then return to the
+    // running task. (clearBrowse only AFTER a confirmed write, per the original
+    // "don't drop the browse pointer if it didn't complete" discipline.)
+    window.setTimeout(() => {
+      useAppStore.getState().clearBrowse();
+      setBrowsedDoneBeat(false);
+    }, 650);
   }
 
   async function handleStop() {
@@ -1752,13 +1769,17 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
             <div className="flex-1 min-w-0 max-w-[540px] flex items-start gap-3">
               <button
                 onClick={browsingOther ? handleDoneBrowsed : handleDone}
-                className="mt-[5px] w-7 h-7 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors group border-fg-faded cursor-pointer hover:border-accent-green-deep hover:bg-accent-green-deep"
+                className={`mt-[5px] w-7 h-7 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-all group cursor-pointer ${
+                  browsedDoneBeat
+                    ? "border-accent-green-deep bg-accent-green-deep scale-110"
+                    : "border-fg-faded hover:border-accent-green-deep hover:bg-accent-green-deep"
+                }`}
                 title="Mark done"
               >
                 <svg
                   width="14" height="14" viewBox="0 0 16 16"
                   fill="none"
-                  className="stroke-fg-secondary group-hover:stroke-white transition-colors"
+                  className={`transition-colors ${browsedDoneBeat ? "stroke-white" : "stroke-fg-secondary group-hover:stroke-white"}`}
                   strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round"
                 >
                   <path d="M3 8.5l3.5 3.5 6.5-7" />

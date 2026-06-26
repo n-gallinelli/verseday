@@ -65,6 +65,9 @@ export default function DailyPlanner() {
   // Canonical "are we focusing?" read. selectRunningSession is the single
   // source for "running"; focusView (above) carries the preview staging.
   const runningSession = useAppStore(selectRunningSession);
+  // Published by FocusMode while the session is on a break — flips the status
+  // pill from "Focusing…" to "On break".
+  const onBreak = useAppStore((s) => s.onBreak);
   const selectedTaskDetailId = useAppStore((s) => s.selectedTaskDetailId);
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
   const primeTasks = useAppStore((s) => s.primeTasks);
@@ -1013,13 +1016,19 @@ export default function DailyPlanner() {
             const nextTask = tasks.find((t) => t.status !== "done");
 
             if (isFocusing) {
+              // On break reads as its own state (green, the app's break color),
+              // distinct from the blue running pill and the gray paused pill.
+              // Paused takes precedence if somehow both are true.
+              const showBreak = onBreak && !isPaused;
               return (
                 <button
                   onClick={() => setPage("focus")}
                   className={
                     isPaused
                       ? "rounded-lg bg-overlay-hover text-fg-faded border border-line-soft hover:border-line-strong hover:bg-overlay-pressed cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors"
-                      : // Status pill, not primary CTA: softer accent-blue
+                      : showBreak
+                        ? "rounded-lg bg-accent-green-soft text-accent-green-deep border border-accent-green-deep/30 hover:border-accent-green-deep hover:bg-accent-green-soft cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors"
+                        : // Status pill, not primary CTA: softer accent-blue
                         // tint with an outlined edge so it reads as
                         // "currently running" instead of "click to start
                         // something." A slow opacity pulse on the dot
@@ -1028,19 +1037,23 @@ export default function DailyPlanner() {
                         // breathing.
                         "rounded-lg bg-accent-blue-soft text-accent-blue-soft-fg border border-accent-blue/40 hover:border-accent-blue hover:bg-accent-blue/15 cursor-pointer flex items-center gap-2 px-4 py-1.5 transition-colors"
                   }
-                  title={isPaused ? "Open focus screen (paused)" : "Open focus screen"}
+                  title={isPaused ? "Open focus screen (paused)" : showBreak ? "Open focus screen (on break)" : "Open focus screen"}
                 >
                   <span
                     className={
                       isPaused
                         ? "w-2 h-2 rounded-full bg-fg-disabled"
-                        : "w-2 h-2 rounded-full bg-accent-blue animate-focus-dot"
+                        : showBreak
+                          ? "w-2 h-2 rounded-full bg-accent-green-bright animate-focus-dot"
+                          : "w-2 h-2 rounded-full bg-accent-blue animate-focus-dot"
                     }
                     aria-hidden
                   />
                   <span className="text-[13px] font-medium">
                     {isPaused ? (
                       "Paused"
+                    ) : showBreak ? (
+                      "On break"
                     ) : (
                       <>
                         Focusing<span aria-hidden>

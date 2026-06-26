@@ -392,6 +392,17 @@ export interface FocusView {
   priorElapsedMs: number;
 }
 
+/** A "this meeting is starting — switch focus?" request, raised by the
+ *  always-mounted delivery handler in App.tsx and reflected into the pip by
+ *  FocusMode. Only ever set while a session is active and the pip is shown;
+ *  never persisted. See docs/2026-06-25-meeting-start-focus-switch-plan.md §B. */
+export interface MeetingPromptRequest {
+  externalId: string;
+  taskId: number;
+  title: string;
+  startMs: number;
+}
+
 interface AppState {
   currentPage: Page;
   pageHistory: Page[];
@@ -400,6 +411,11 @@ interface AppState {
   selectedProjectId: number | null;
   /** The canonical running session (a real open time_entry), or null. */
   session: SessionState | null;
+  /** Whether the running session is currently on a break — published by
+   *  FocusMode (its `phase === "break"`) so out-of-FocusMode surfaces (the
+   *  DailyPlanner status pill) can read break state. False whenever no session
+   *  is running. Never persisted. */
+  onBreak: boolean;
   /** Focus-screen preview staging (task staged, not running), or null.
    *  Mutually exclusive with `session`; never persisted. */
   focusView: FocusView | null;
@@ -410,6 +426,15 @@ interface AppState {
    *  shows the running/preview task (no browsing). Always null when session is
    *  null. Never persisted. */
   browsedTaskId: number | null;
+  /** A pending "meeting starting — switch focus?" prompt, or null. Set by the
+   *  App.tsx delivery handler (active session + pip shown); reflected into the
+   *  pip's `meetingPrompt` phase by FocusMode. Never persisted. */
+  meetingPromptRequest: MeetingPromptRequest | null;
+  /** Whether the focus pip window is currently shown — published by FocusMode
+   *  (mirror of its `pipShownRef = hasBeenActive && !pipHidden`) so the
+   *  always-mounted App.tsx handler can read pip visibility synchronously
+   *  without reaching into FocusMode. False whenever no session is running. */
+  pipShown: boolean;
   pendingDetailTask: Task | null;
   /** ID of the task whose detail overlay is currently open. `null` = closed.
    *  Read by the singleton TaskDetailOverlayHost mounted at the App shell.
@@ -711,6 +736,12 @@ interface AppState {
   browseTask: (task: Task) => void;
   /** Drop the browse pointer — return the view to the running/preview task. */
   clearBrowse: () => void;
+  /** Raise a meeting-start switch prompt (App.tsx delivery handler). */
+  setMeetingPrompt: (req: MeetingPromptRequest) => void;
+  /** Clear the meeting-start switch prompt (switch / dismiss / auto-dismiss). */
+  clearMeetingPrompt: () => void;
+  /** Publish pip visibility (FocusMode → store) for App.tsx's delivery routing. */
+  setPipShown: (shown: boolean) => void;
   /** Promote a preview session to active. Caller has already created the
    *  time entry — pass the resulting id. */
   activateFocus: (timeEntryId: number) => void;
@@ -745,6 +776,9 @@ interface AppState {
   /** Toggle pause on the running session (session.paused). No-op if there is
    *  no session. */
   togglePauseFocus: () => void;
+  /** Publish break state (FocusMode → store) so the DailyPlanner status pill
+   *  can read it. */
+  setOnBreak: (onBreak: boolean) => void;
   /** Override the running session's workedMs directly (the *displayed* elapsed
    *  excluding priorElapsedMs). No-op if there is no session. */
   adjustFocusElapsed: (desiredElapsedMs: number) => void;
@@ -1029,8 +1063,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedWeek: mondayOfWeek(),
   selectedProjectId: null,
   session: null,
+  onBreak: false,
   focusView: null,
   browsedTaskId: null,
+  meetingPromptRequest: null,
+  pipShown: false,
   pendingDetailTask: null,
   selectedTaskDetailId: null,
   taskDetailAutoFocusTitle: false,
@@ -1112,6 +1149,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ browsedTaskId: task.id === runningId ? null : task.id });
   },
   clearBrowse: () => set({ browsedTaskId: null }),
+  setOnBreak: (onBreak) => set({ onBreak }),
+  setMeetingPrompt: (req) => set({ meetingPromptRequest: req }),
+  clearMeetingPrompt: () => set({ meetingPromptRequest: null }),
+  setPipShown: (shown) => set({ pipShown: shown }),
   activateFocus: (timeEntryId) => {
     const v = get().focusView;
     if (!v) return;

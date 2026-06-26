@@ -32,7 +32,12 @@ import {
   getWorkedMinutesForTask,
   getTaskByExternalId,
 } from "./db/queries";
-import { startMeetingApproachNotifier } from "./calendar/meetingApproachNotifier";
+import {
+  startMeetingApproachNotifier,
+  MEETING_STARTING_EVENT,
+  type MeetingStartingPayload,
+} from "./calendar/meetingApproachNotifier";
+import { isPermissionGranted } from "@tauri-apps/plugin-notification";
 import type { Page, Task } from "./types";
 
 // Place the quick-add bar centered on the monitor under the cursor, so it opens
@@ -481,6 +486,68 @@ function MainApp() {
   useEffect(() => {
     const stop = startMeetingApproachNotifier();
     return stop;
+  }, []);
+
+  // Meeting-START delivery — the SINGLE owner of routing for the notifier's
+  // pure verseday:meeting-starting detector (plan §B). App.tsx is the only
+  // always-mounted main-window surface; FocusMode is NOT (App.tsx mounts it
+  // only on the focus page / during a session / preview), so the no-session
+  // path could not live there. One listener here = no double-fire.
+  //
+  // Decision, read synchronously from the store snapshot {session, pipShown}:
+  //  - already focused on this meeting        → no-op
+  //  - active session AND the pip is shown     → raise the pip switch-prompt
+  //  - otherwise (no session, or pip not shown)→ OS notification fallback
+  //    (its click commits any running session and jumps to focus). Needs
+  //    notification permission; if absent, the single-shot nudge is dropped.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<MeetingStartingPayload>(MEETING_STARTING_EVENT, async (e) => {
+      try {
+        const { externalId, title, startMs } = e.payload;
+        if (!externalId) return;
+        const task = await getTaskByExternalId(externalId);
+        if (!task) return;
+        const s = useAppStore.getState();
+        if (s.session?.taskId === task.id) return; // already on this meeting
+        if (s.session && s.pipShown) {
+          s.setMeetingPrompt({ externalId, taskId: task.id, title, startMs });
+        } else if (await isPermissionGranted()) {
+          await invoke("send_meeting_notification", {
+            title: "Meeting starting",
+            body: title,
+            externalId,
+          });
+        }
+      } catch (err) {
+        console.error("meeting-starting handler failed:", err);
+      }
+    })
+      .then((un) => {
+        unlisten = un;
+      })
+      .catch((err) => console.error("meeting-starting listen failed:", err));
+    return () => unlisten?.();
+  }, []);
+
+  // Periodic calendar refresh — every 30 min, force-pull today's calendar so
+  // events added or changed after the morning sync (e.g. a meeting that already
+  // ended, which you want to mark complete) appear without waiting for the next
+  // day-rollover. force:true bypasses the per-date TTL; upsert dedupes on
+  // external_id so it never duplicates. Self-gating (enabled + permission) and
+  // never rejects; we own the reconcile here on created > 0.
+  useEffect(() => {
+    const CALENDAR_REFRESH_MS = 30 * 60 * 1000;
+    const tick = () => {
+      void (async () => {
+        const res = await syncTodayIfReady({ force: true });
+        if (res.created > 0) {
+          void useAppStore.getState().loadTasksForDate(todayString());
+        }
+      })();
+    };
+    const handle = setInterval(tick, CALENDAR_REFRESH_MS);
+    return () => clearInterval(handle);
   }, []);
 
   // Meeting-notification click → jump to that event's task on the focus

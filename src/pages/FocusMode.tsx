@@ -57,6 +57,20 @@ import type { Page } from "../types";
 // treat it as "No" — close the prompt, continue working. Stops the
 // pip + main-window prompt from nagging indefinitely.
 const PROMPT_AUTO_DISMISS_MS = 30_000;
+const MEETING_PROMPT_AUTO_DISMISS_MS = 45_000;
+
+/** Local clock label for the meeting-start pip prompt (e.g. "2:00 PM"). Built
+ *  on the main side so the pip bundle stays free of date formatting. */
+function formatMeetingStartLabel(startMs: number): string {
+  try {
+    return new Date(startMs).toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
 
 // Stage 2 of the focus single-source refactor: the DB open-row worked_seconds
 // checkpoint is the bounded-loss record. Tightened 30s → 15s; an immediate
@@ -152,6 +166,14 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const browseTask = useAppStore((s) => s.browseTask);
   const clearBrowse = useAppStore((s) => s.clearBrowse);
   const endActiveFocusSession = useAppStore((s) => s.endActiveFocusSession);
+  const setOnBreak = useAppStore((s) => s.setOnBreak);
+  const setPipShown = useAppStore((s) => s.setPipShown);
+  const clearMeetingPrompt = useAppStore((s) => s.clearMeetingPrompt);
+  // Pending "meeting starting — switch focus?" request raised by App.tsx. While
+  // set, the pip renders the meetingPrompt phase. Only ever populated when a
+  // session is active and the pip is shown, so the meeting is never the running
+  // task here (App.tsx guards that).
+  const meetingPromptRequest = useAppStore((s) => s.meetingPromptRequest);
   const loadWorkedMinutes = useAppStore((s) => s.loadWorkedMinutes);
   // Browsing a different task than the one the timer runs on.
   const browsingOther = session != null && browsedTaskId != null;
@@ -305,6 +327,28 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     await handleStartSession();           // create entry → activate → session = browsed
   }, [endActiveFocusSession, previewFocus, handleStartSession]);
 
+  // Switch the running focus onto a starting meeting (the pip's "Switch focus"
+  // button). Same audited commit→preview→start path as handleStartBrowsed, but
+  // targets a specific task id (the meeting) rather than the browse pointer —
+  // the meeting becomes the new RUNNING session immediately (Nick's decision).
+  const handleSwitchToMeeting = useCallback(async (taskId: number) => {
+    const st = useAppStore.getState();
+    // tasksById is the live cache; the meeting taskId came from a DB lookup in
+    // App.tsx (getTaskByExternalId), so the row provably exists even if it hasn't
+    // been loaded into the cache yet. Fall back to a DB read rather than silently
+    // no-op'ing the prompt's headline action.
+    const meeting = st.tasksById.get(taskId) ?? (await getTaskById(taskId));
+    if (!meeting) return;
+    const prev: Page =
+      st.session?.previousPage ??
+      (st.pageHistory.slice(-1)[0] as Page) ??
+      "daily";
+    const priorMs = (st.workedByTaskId.get(taskId) ?? 0) * 60 * 1000;
+    await endActiveFocusSession();        // commit running, clears session + browse
+    previewFocus(meeting, prev, priorMs); // stage the meeting as preview
+    await handleStartSession();           // create entry → activate → session = meeting
+  }, [endActiveFocusSession, previewFocus, handleStartSession]);
+
   // Notes state + debounced auto-save (the editor flushes pending saves on
   // its own unmount, so navigating away from focus mode is also covered).
   // Synced from selectFocusedTask whenever the task identity changes, so
@@ -328,6 +372,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // Bumped on Done → next-task transitions to replay the tunnel-in
   // zoom animation by remounting the wrapper that owns the keyframe.
   const [zoomKey, setZoomKey] = useState(0);
+  // Brief green-check confirmation beat after completing a BROWSED task (the
+  // focused task gets the zoom-to-next animation; a browsed completion has no
+  // next-task transition, so this holds the filled checkmark for a moment so the
+  // completion registers before the view returns to the running task).
+  const [browsedDoneBeat, setBrowsedDoneBeat] = useState(false);
 
   useEffect(() => {
     if (viewedTask) setNotes(viewedTask.notes ?? "");
@@ -482,7 +531,20 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const pipShownRef = useRef(false);
   useEffect(() => {
     pipShownRef.current = hasBeenActive && !pipHidden;
-  }, [hasBeenActive, pipHidden]);
+    // Publish the same truth to the store so App.tsx's meeting-start delivery
+    // handler can read pip visibility synchronously (plan §B). The visibility
+    // is COMPUTED here (where the pip lives); App.tsx only reads it.
+    setPipShown(pipShownRef.current);
+  }, [hasBeenActive, pipHidden, setPipShown]);
+  // On unmount (session stopped → FocusMode leaves the tree), the pip is gone:
+  // reset the published flag and drop any in-flight meeting prompt so a later
+  // session can't reflect a stale request.
+  useEffect(() => {
+    return () => {
+      setPipShown(false);
+      clearMeetingPrompt();
+    };
+  }, [setPipShown, clearMeetingPrompt]);
   function fireChime(kind: PipChimeKind) {
     const flag = localStorage.getItem("__chimeFirer");
     const forceEngine = flag === "engine";
@@ -643,6 +705,12 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 
   // Pomodoro state
   const [phase, setPhase] = useState<FocusPhase>("work");
+  // Publish break state to the store so the DailyPlanner status pill can flip
+  // "Focusing…" → "On break". Reset on unmount (session ended → no break).
+  useEffect(() => {
+    setOnBreak(phase === "break");
+  }, [phase, setOnBreak]);
+  useEffect(() => () => setOnBreak(false), [setOnBreak]);
   const [completedPomodoros, setCompletedPomodoros] = useState(0);
   const [completionBurst, setCompletionBurst] = useState(false);
   const prevPhaseRef = useRef<FocusPhase>("work");
@@ -958,11 +1026,22 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       return;
     }
     const queued = focus.mode === "preview";
+    // A pending meeting-start request overrides the work/break/prompt phase —
+    // a meeting starting outranks a break offer. The title is external calendar
+    // data, carried as a plain string and rendered by the pip as a text node.
+    const showMeeting = meetingPromptRequest != null;
     const state: PipState = {
       elapsed: elapsed + priorMs,
       paused: focus.mode === "active" ? focus.paused : false,
-      phase,
+      phase: showMeeting ? "meetingPrompt" : phase,
       breakRemaining,
+      meetingPrompt: showMeeting
+        ? {
+            title: meetingPromptRequest.title,
+            startLabel: formatMeetingStartLabel(meetingPromptRequest.startMs),
+            externalId: meetingPromptRequest.externalId,
+          }
+        : null,
       taskTitle: focusedTask.title,
       estimatedMinutes: focusedTask.estimated_minutes ?? null,
       queued,
@@ -971,7 +1050,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     };
     pipStateRef.current = state;
     void emit(PIP_STATE_EVENT, state);
-  }, [focus, focusedTask, elapsed, phase, breakRemaining, priorMs]);
+  }, [focus, focusedTask, elapsed, phase, breakRemaining, priorMs, meetingPromptRequest]);
 
   // PiP high-visibility: load once on mount, then track Settings toggles live
   // (same-window CustomEvent). On toggle, patch the cached state and push it
@@ -1053,6 +1132,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const handleSnoozeRef = useRef<() => void>(() => {});
   const handleNoBreakRef = useRef<() => void>(() => {});
   const handleSkipBreakRef = useRef<() => void>(() => {});
+  const handleSwitchToMeetingRef = useRef<(taskId: number) => void>(() => {});
 
   // 30-second auto-dismiss for the break prompt. If the user neither
   // accepts nor snoozes, fall back to "No" — close the prompt and
@@ -1066,6 +1146,18 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     }, PROMPT_AUTO_DISMISS_MS);
     return () => clearTimeout(t);
   }, [phase]);
+
+  // 45-second auto-dismiss for the meeting-start switch prompt (longer than the
+  // break prompt's 30s — a missed switch matters more). If untouched, drop the
+  // request so the pip reverts to its running display. A new request resets the
+  // timer (effect re-runs on identity change).
+  useEffect(() => {
+    if (!meetingPromptRequest) return;
+    const t = setTimeout(() => {
+      clearMeetingPrompt();
+    }, MEETING_PROMPT_AUTO_DISMISS_MS);
+    return () => clearTimeout(t);
+  }, [meetingPromptRequest, clearMeetingPrompt]);
 
   // Listen for PiP commands (Stage 4 — Tauri event, was the verseday_pip_cmd
   // localStorage poll). All handlers go through *Ref.current so the listener is
@@ -1082,6 +1174,17 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       else if (cmd === "snooze5") handleSnoozeRef.current();
       else if (cmd === "noBreak") handleNoBreakRef.current();
       else if (cmd === "skipBreak") handleSkipBreakRef.current();
+      else if (cmd === "switchToMeeting") {
+        // "Switch focus" on the meeting-start prompt → start the meeting as the
+        // running session, then clear the request. taskId comes from the live
+        // store snapshot so we never trust a stale closure.
+        const req = useAppStore.getState().meetingPromptRequest;
+        useAppStore.getState().clearMeetingPrompt();
+        if (req) handleSwitchToMeetingRef.current(req.taskId);
+      }
+      else if (cmd === "dismissMeetingPrompt") {
+        useAppStore.getState().clearMeetingPrompt();
+      }
       else if (cmd === "hidePip") {
         // P-fix3: mark hidden — the creation effect (keyed on pipHidden) re-runs,
         // its cleanup closes the pip + stops the hover monitor, and the body
@@ -1449,6 +1552,33 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     }
   }
 
+  // Browse mode: complete the VIEWED (browsed) task — NOT the running session,
+  // which is timing a DIFFERENT task. Canonical UI completion (status write →
+  // verseday:task-status-changed broadcast → reconcile-from-DB → estimate
+  // backfill), identical to marking it done from the daily plan; the open
+  // time_entry on the running task is never touched. The status-changed
+  // listener only re-fires handleDone for the FOCUSED task, so browsed ≠ focused
+  // means no recursion. The browsed task is now done, so drop the browse pointer
+  // — the view falls back to the running task (never lingers on a done task).
+  async function handleDoneBrowsed() {
+    const bId = useAppStore.getState().browsedTaskId;
+    if (bId == null) return;
+    setBrowsedDoneBeat(true); // instant filled-check confirmation
+    try {
+      await useAppStore.getState().setTaskStatus(bId, "done");
+    } catch {
+      setBrowsedDoneBeat(false); // write failed → revert the check, keep browsing
+      return;
+    }
+    // Hold the checkmark a beat so the completion registers, then return to the
+    // running task. (clearBrowse only AFTER a confirmed write, per the original
+    // "don't drop the browse pointer if it didn't complete" discipline.)
+    window.setTimeout(() => {
+      useAppStore.getState().clearBrowse();
+      setBrowsedDoneBeat(false);
+    }, 650);
+  }
+
   async function handleStop() {
     if (!focus) return;
     if (focus.mode === "active") {
@@ -1477,6 +1607,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   handleSnoozeRef.current = handleSnooze;
   handleNoBreakRef.current = handleNoBreak;
   handleSkipBreakRef.current = handleSkipBreak;
+  handleSwitchToMeetingRef.current = handleSwitchToMeeting;
 
   // Commit the in-flight title edit. Trims, only writes if changed,
   // updates DB + store + local notes-channel listeners (none for
@@ -1634,7 +1765,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 max-w-[90vw] px-4 py-2 rounded-full bg-elevated border border-line-soft text-[12px] text-fg-secondary cursor-pointer hover:text-fg transition-colors"
           style={{ boxShadow: "var(--shadow-card)" }}
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-accent-green-bright flex-shrink-0 animate-pulse" />
+          <span className="still-timing-dot w-2 h-2 rounded-full bg-accent-green-bright flex-shrink-0" />
           <span className="truncate">
             Still timing<span className="font-medium text-fg ml-2.5">{focusedTask.title}</span>
           </span>
@@ -1670,7 +1801,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           vertical position regardless of how many lines the title
           wraps to — long titles extend the composition downward
           instead of pushing the logo up. */}
-      <div key={zoomKey} className="relative z-[1] w-full h-full flex flex-col items-center pt-[24vh] animate-focus-tunnel-in">
+      <div key={zoomKey} className="relative z-[1] w-full h-full overflow-y-auto overscroll-contain flex flex-col items-center pt-[24vh] pb-24 animate-focus-tunnel-in">
 
       {/* Pomodoro-complete celebration takes over the entire content
           area when the prompt fires — no modal-over-screen, just the
@@ -1736,19 +1867,18 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                 the title's first line even when the title wraps. */}
             <div className="flex-1 min-w-0 max-w-[540px] flex items-start gap-3">
               <button
-                onClick={handleDone}
-                disabled={browsingOther}
-                className={`mt-[5px] w-7 h-7 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-colors group border-fg-faded ${
-                  browsingOther
-                    ? "opacity-40 cursor-not-allowed"
-                    : "cursor-pointer hover:border-accent-green-deep hover:bg-accent-green-deep"
+                onClick={browsingOther ? handleDoneBrowsed : handleDone}
+                className={`mt-[5px] w-7 h-7 flex-shrink-0 rounded-full border-2 flex items-center justify-center transition-all group cursor-pointer ${
+                  browsedDoneBeat
+                    ? "border-accent-green-deep bg-accent-green-deep scale-110"
+                    : "border-fg-faded hover:border-accent-green-deep hover:bg-accent-green-deep"
                 }`}
-                title={browsingOther ? "Return to the running task to complete it" : "Mark done"}
+                title="Mark done"
               >
                 <svg
                   width="14" height="14" viewBox="0 0 16 16"
                   fill="none"
-                  className="stroke-fg-secondary group-hover:stroke-white transition-colors"
+                  className={`transition-colors ${browsedDoneBeat ? "stroke-white" : "stroke-fg-secondary group-hover:stroke-white"}`}
                   strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round"
                 >
                   <path d="M3 8.5l3.5 3.5 6.5-7" />
@@ -1820,7 +1950,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                   } transition-opacity`}
                   style={{
                     letterSpacing: "-1px",
-                    color: isQueued || paused ? "var(--text-faded)" : "var(--focus-glow-base)",
+                    color: isQueued || paused || browsingOther ? "var(--text-faded)" : "var(--focus-glow-base)",
                   }}
                   title={canEditActual ? "Click to adjust" : undefined}
                 >
@@ -1835,7 +1965,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                     while the session is actively counting — a running cue
                     beyond the numerals ticking. Remove this block + the
                     index.css experiment block (and the pip block) to revert. */}
-                {!isQueued && focus?.mode === "active" && !paused && (
+                {!isQueued && !browsingOther && focus?.mode === "active" && !paused && (
                   <div className="run-sweep-track mt-2 w-16 h-[2px]">
                     <div className="run-sweep-bar" style={{ background: "#A8CFE5" }} />
                   </div>

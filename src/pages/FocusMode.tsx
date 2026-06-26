@@ -1801,7 +1801,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           vertical position regardless of how many lines the title
           wraps to — long titles extend the composition downward
           instead of pushing the logo up. */}
-      <div key={zoomKey} className="relative z-[1] w-full h-full flex flex-col items-center pt-[24vh] animate-focus-tunnel-in">
+      <div key={zoomKey} className="relative z-[1] w-full h-full overflow-y-auto overscroll-contain flex flex-col items-center pt-[24vh] pb-24 animate-focus-tunnel-in">
 
       {/* Pomodoro-complete celebration takes over the entire content
           area when the prompt fires — no modal-over-screen, just the

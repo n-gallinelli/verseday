@@ -45,6 +45,16 @@ function formatCountdown(ms: number): string {
   return `${pad(minutes)}:${pad(seconds)}`;
 }
 
+// Magnitude of a negative (overtime) break remaining, as MM:SS — counts up past
+// the allocation. Mirrors FocusMode.formatOvertime.
+function formatOvertime(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(Math.abs(ms) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${pad(minutes)}:${pad(seconds)}`;
+}
+
 function sendCommand(cmd: string) {
   void emit(PIP_CMD_EVENT, cmd);
 }
@@ -735,11 +745,23 @@ export default function FocusPip() {
 
   // ── BREAK COUNTDOWN ────────────────────────────────────────────────
   if (state.phase === "break") {
+    // Overtime: the allocation elapsed but the break wasn't ended. The pip shows
+    // the time OVER counting up and asks the user to choose. `alerting` is the
+    // pre-acknowledgement emphasis (warm ring) that calms after Continue.
+    const overtime = state.breakRemaining < 0;
+    const alerting = overtime && !state.breakAck;
+    const overColor = "var(--focus-break-over, #B4763A)";
     return pipShell(
       <div
         data-tauri-drag-region
         className="px-3.5 w-full h-full flex items-center select-none overflow-hidden"
-        style={{ background: PIP_BG, borderRadius: 18, boxShadow: "var(--shadow-card)" }}
+        style={{
+          background: PIP_BG,
+          borderRadius: 18,
+          boxShadow: alerting
+            ? `var(--shadow-card), 0 0 0 2px ${overColor}`
+            : "var(--shadow-card)",
+        }}
         onMouseDown={handlePipMouseDown}
         onMouseEnter={() => setCssHovered(true)}
         // Clear cssHovered only — the Rust monitor owns externallyHovered
@@ -748,31 +770,58 @@ export default function FocusPip() {
       >
         <div className="flex items-center gap-2.5 w-full">
           <div className="flex-1 min-w-0">
-            {/* "BREAK" crossfades to the end time on hover. Two stacked spans
-                in a relative box: "Break" stays in flow (defines height, no
-                layout shift) and "ends H:MM" overlays it absolutely. */}
-            <div className="relative mb-0.5 leading-none">
-              <span
-                className="block uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] transition-opacity duration-[180ms]"
-                style={{ color: "var(--focus-break-label)", opacity: expanded ? 0 : 1 }}
+            {overtime ? (
+              // Static "OVER" label — no end-time crossfade in overtime.
+              <div
+                className="mb-0.5 leading-none uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]"
+                style={{ color: overColor }}
               >
-                Break
-              </span>
-              <span
-                aria-hidden={!expanded}
-                className="absolute inset-0 uppercase whitespace-nowrap [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] transition-opacity duration-[180ms]"
-                style={{ color: "var(--focus-break-label)", opacity: expanded ? 1 : 0 }}
-              >
-                ends {breakEndClock(Date.now(), state.breakRemaining)}
-              </span>
-            </div>
-            <div className="text-[20px] font-semibold tabular-nums text-accent-green-deep leading-none font-display" style={{ letterSpacing: "0.03em" }}>
-              {formatCountdown(state.breakRemaining)}
+                Over
+              </div>
+            ) : (
+              /* "BREAK" crossfades to the end time on hover. Two stacked spans
+                 in a relative box: "Break" stays in flow (defines height, no
+                 layout shift) and "ends H:MM" overlays it absolutely. */
+              <div className="relative mb-0.5 leading-none">
+                <span
+                  className="block uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] transition-opacity duration-[180ms]"
+                  style={{ color: "var(--focus-break-label)", opacity: expanded ? 0 : 1 }}
+                >
+                  Break
+                </span>
+                <span
+                  aria-hidden={!expanded}
+                  className="absolute inset-0 uppercase whitespace-nowrap [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] transition-opacity duration-[180ms]"
+                  style={{ color: "var(--focus-break-label)", opacity: expanded ? 1 : 0 }}
+                >
+                  ends {breakEndClock(Date.now(), state.breakRemaining)}
+                </span>
+              </div>
+            )}
+            <div
+              className="text-[20px] font-semibold tabular-nums leading-none font-display"
+              style={{ letterSpacing: "0.03em", color: overtime ? overColor : "var(--accent-green-deep)" }}
+            >
+              {overtime ? formatOvertime(state.breakRemaining) : formatCountdown(state.breakRemaining)}
             </div>
           </div>
-          <button onClick={() => sendCommand("skipBreak")} className={BTN_SECONDARY}>
-            End early
-          </button>
+          {overtime ? (
+            <div className="flex flex-col gap-1 flex-shrink-0">
+              <button
+                onClick={() => sendCommand("skipBreak")}
+                className="px-2.5 py-1 rounded-[6px] text-[11px] bg-accent-green-bright text-white cursor-pointer hover:opacity-90 transition-opacity"
+              >
+                End break
+              </button>
+              <button onClick={() => sendCommand("continueBreak")} className={BTN_SECONDARY}>
+                Continue
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => sendCommand("skipBreak")} className={BTN_SECONDARY}>
+              End early
+            </button>
+          )}
         </div>
       </div>,
       true,

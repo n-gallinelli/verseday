@@ -103,6 +103,9 @@ const DEFAULT_WORK_MIN = 25;
 const DEFAULT_SHORT_BREAK_MIN = 5;
 const DEFAULT_LONG_BREAK_MIN = 15;
 const DEFAULT_CYCLES = 4;
+// Break-extend increments (the +5 / +10 buttons on the break surface).
+const EXTEND_SMALL_MS = 5 * 60 * 1000;
+const EXTEND_LARGE_MS = 10 * 60 * 1000;
 
 type FocusPhase = "work" | "break" | "prompt";
 
@@ -122,6 +125,16 @@ function formatTime(ms: number): string {
 
 function formatCountdown(ms: number): string {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${pad(minutes)}:${pad(seconds)}`;
+}
+
+// Magnitude of a negative (overtime) break remaining, as MM:SS. Counts UP as the
+// user runs past the allocation. Uses floor so it reads 00:00→00:01 cleanly.
+function formatOvertime(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(Math.abs(ms) / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   const pad = (n: number) => n.toString().padStart(2, "0");
@@ -726,11 +739,20 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 
   const [breakRemaining, setBreakRemaining] = useState(0);
   const [breakDuration, setBreakDuration] = useState(0);
+  // breakAck — true once the user has pressed "Continue break" after the break
+  // ran into overtime. Pure acknowledgement: it calms the "break's over" alert
+  // on both surfaces; overtime keeps counting and End break stays available. No
+  // time is added (that's +5/+10's job). Reset on a new break and on extend.
+  const [breakAck, setBreakAck] = useState(false);
   const [prompt, setPrompt] = useState<BreakPrompt | null>(null);
 
   // Track when the current work cycle started (in terms of work-only time)
   const workCycleStartRef = useRef(0); // workElapsed value when cycle started
   const breakStartRef = useRef(0); // Date.now() when break started
+  // One-shot guard so the break-up chime fires exactly once when the break
+  // first crosses its allocation into overtime. Reset on take/extend so a fresh
+  // run-out re-alerts.
+  const breakLimitChimedRef = useRef(false);
 
   // Snooze: the workElapsed threshold at which to re-prompt
   const snoozeThresholdRef = useRef<number | null>(null);
@@ -915,16 +937,16 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       } else if (phase === "break") {
         const breakElapsed = now - breakStartRef.current;
         const remaining = breakDuration - breakElapsed;
+        // remaining is allowed to go NEGATIVE — that's overtime. The break no
+        // longer auto-resumes work; the user must explicitly End break (which
+        // routes through handleSkipBreak and does ALL the accounting from the
+        // real elapsed, overtime included). Putting any accounting / phase
+        // transition here would double-count the break against End break.
         setBreakRemaining(remaining);
 
-        if (remaining <= 0) {
-          // Break is over — return to work. workCycleStart resets to
-          // current work elapsed (post-break-time deduction) so the
-          // next pomodoro cycle starts counting from here.
-          totalBreakTimeRef.current += breakDuration;
-          workCycleStartRef.current = workElapsedMs(raw, totalBreakTimeRef.current, breakCarryRef.current);
-          setPhase("work");
-          setBreakRemaining(0);
+        if (remaining <= 0 && !breakLimitChimedRef.current) {
+          // Allocation just ran out — alert ONCE, then keep counting up.
+          breakLimitChimedRef.current = true;
           fireChime("end"); // distinct ascending chime: break OVER (vs descending start)
         }
       }
@@ -1035,6 +1057,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       paused: focus.mode === "active" ? focus.paused : false,
       phase: showMeeting ? "meetingPrompt" : phase,
       breakRemaining,
+      breakAck,
       meetingPrompt: showMeeting
         ? {
             title: meetingPromptRequest.title,
@@ -1050,7 +1073,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     };
     pipStateRef.current = state;
     void emit(PIP_STATE_EVENT, state);
-  }, [focus, focusedTask, elapsed, phase, breakRemaining, priorMs, meetingPromptRequest]);
+  }, [focus, focusedTask, elapsed, phase, breakRemaining, breakAck, priorMs, meetingPromptRequest]);
 
   // PiP high-visibility: load once on mount, then track Settings toggles live
   // (same-window CustomEvent). On toggle, patch the cached state and push it
@@ -1132,6 +1155,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const handleSnoozeRef = useRef<() => void>(() => {});
   const handleNoBreakRef = useRef<() => void>(() => {});
   const handleSkipBreakRef = useRef<() => void>(() => {});
+  const handleContinueBreakRef = useRef<() => void>(() => {});
   const handleSwitchToMeetingRef = useRef<(taskId: number) => void>(() => {});
 
   // 30-second auto-dismiss for the break prompt. If the user neither
@@ -1174,6 +1198,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       else if (cmd === "snooze5") handleSnoozeRef.current();
       else if (cmd === "noBreak") handleNoBreakRef.current();
       else if (cmd === "skipBreak") handleSkipBreakRef.current();
+      else if (cmd === "continueBreak") handleContinueBreakRef.current();
       else if (cmd === "switchToMeeting") {
         // "Switch focus" on the meeting-start prompt → start the meeting as the
         // running session, then clear the request. taskId comes from the live
@@ -1404,7 +1429,29 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     setBreakDuration(durationMs);
     breakStartRef.current = Date.now();
     setBreakRemaining(durationMs);
+    // Fresh break — re-arm the run-out alert and clear any prior ack.
+    breakLimitChimedRef.current = false;
+    setBreakAck(false);
     setPhase("break");
+  }
+
+  // Extend the in-progress break by addMs. Only breakDuration grows; breakStartRef
+  // stays put, so the next tick recomputes remaining against the larger target.
+  // Cumulative by construction (each tap adds to the current duration). Pushing
+  // the limit back out re-arms the run-out alert and clears any overtime ack.
+  function handleExtendBreak(addMs: number) {
+    if (phase !== "break") return;
+    setBreakDuration((d) => d + addMs);
+    setBreakRemaining((r) => r + addMs); // instant UI bump; the tick reconciles
+    breakLimitChimedRef.current = false;
+    setBreakAck(false);
+  }
+
+  // "Continue break" — pure acknowledgement after the break ran into overtime.
+  // Calms the alert on both surfaces; overtime keeps counting and End break stays
+  // available. Adds no time (that's +5/+10's job).
+  function handleContinueBreak() {
+    setBreakAck(true);
   }
 
   function handleNoBreak() {
@@ -1607,6 +1654,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   handleSnoozeRef.current = handleSnooze;
   handleNoBreakRef.current = handleNoBreak;
   handleSkipBreakRef.current = handleSkipBreak;
+  handleContinueBreakRef.current = handleContinueBreak;
   handleSwitchToMeetingRef.current = handleSwitchToMeeting;
 
   // Commit the in-flight title edit. Trims, only writes if changed,
@@ -1830,6 +1878,9 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           <BreakScreen
             taskTitle={task.title}
             remainingMs={breakRemaining}
+            acknowledged={breakAck}
+            onExtend={handleExtendBreak}
+            onContinue={handleContinueBreak}
             onSkip={handleSkipBreak}
           />
         </div>
@@ -2112,36 +2163,55 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 function BreakScreen({
   taskTitle,
   remainingMs,
+  acknowledged,
+  onExtend,
+  onContinue,
   onSkip,
 }: {
   taskTitle: string;
   remainingMs: number;
+  // True once the user pressed "Continue break" in overtime — calms the alert.
+  acknowledged: boolean;
+  onExtend: (addMs: number) => void;
+  onContinue: () => void;
   onSkip: () => void;
 }) {
+  // Overtime = the allocation has elapsed but the break hasn't been ended. The
+  // timer flips to counting UP and the surface asks the user to choose rather
+  // than silently resuming work.
+  const isOvertime = remainingMs < 0;
   // now is read at render; the parent re-renders every second as the countdown
   // ticks, so the "ends" label stays correct. breakEndClock is pure + tested.
   const endsAt = breakEndClock(Date.now(), remainingMs);
+
+  // Quiet ghost pill used for +5 / +10 (and the secondary overtime action).
+  const ghostPill =
+    "inline-flex items-center justify-center px-4 h-10 rounded-full border border-line-soft text-fg-secondary text-[13px] font-medium cursor-pointer hover:bg-overlay-hover transition-colors";
+
   return (
     <div className="relative flex flex-col items-center text-center max-w-[560px] px-8 animate-scale-in">
-      <div className="mb-8 break-logo-pulse">
+      <div className={`mb-8${isOvertime && !acknowledged ? "" : " break-logo-pulse"}`}>
         <VerseDayLogo size={72} />
       </div>
-      {/* Quiet "BREAK" whisper above the timer — same small-caps muted
-          treatment as the pip's break label (shared --focus-break-label). */}
+      {/* Quiet "BREAK" whisper above the timer — flips to a warm "BREAK OVER"
+          in overtime (emphasized until the user acknowledges via Continue). */}
       <div
         className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] mb-2"
-        style={{ color: "var(--focus-break-label)" }}
+        style={{ color: isOvertime ? "var(--focus-break-over, #B4763A)" : "var(--focus-break-label)" }}
       >
-        Break
+        {isOvertime ? "Break over" : "Break"}
       </div>
       <div
         className="text-[72px] font-semibold leading-none tabular-nums tracking-tight font-display"
-        style={{ letterSpacing: "-2px", color: "var(--accent-green-deep)" }}
+        style={{
+          letterSpacing: "-2px",
+          color: isOvertime ? "var(--focus-break-over, #B4763A)" : "var(--accent-green-deep)",
+        }}
       >
-        {formatCountdown(remainingMs)}
+        {isOvertime ? formatOvertime(remainingMs) : formatCountdown(remainingMs)}
       </div>
       <p className="text-[15px] text-fg-secondary mt-4">
-        On a break · ends {endsAt}
+        {isOvertime ? "Over your break" : <>On a break · ends {endsAt}</>}
       </p>
       <p
         className="text-[14px] text-fg-secondary mt-10 max-w-[420px] line-clamp-2"
@@ -2149,12 +2219,51 @@ function BreakScreen({
       >
         {taskTitle}
       </p>
-      <button
-        onClick={onSkip}
-        className="mt-8 inline-flex items-center justify-center px-5 min-w-[120px] h-11 rounded-full bg-overlay-hover text-fg-secondary text-[13px] font-medium cursor-pointer hover:bg-overlay-pressed transition-colors"
-      >
-        End early
-      </button>
+
+      {isOvertime ? (
+        // Overtime: explicit choice. End break (resume work) vs Continue break
+        // (keep resting). +5/+10 stay available — extending snaps back to a
+        // normal countdown.
+        <>
+          <div className="flex items-center gap-3 mt-8">
+            <button
+              onClick={onSkip}
+              className="inline-flex items-center justify-center px-5 min-w-[120px] h-11 rounded-full bg-accent-green-bright text-white text-[13px] font-medium cursor-pointer hover:opacity-90 transition-opacity"
+            >
+              End break
+            </button>
+            <button onClick={onContinue} className={`${ghostPill} h-11 min-w-[120px]`}>
+              Continue break
+            </button>
+          </div>
+          <div className="flex items-center gap-3 mt-4">
+            <button onClick={() => onExtend(EXTEND_SMALL_MS)} className={ghostPill}>
+              +5 min
+            </button>
+            <button onClick={() => onExtend(EXTEND_LARGE_MS)} className={ghostPill}>
+              +10 min
+            </button>
+          </div>
+        </>
+      ) : (
+        // Within allocation: extend pills above the quiet "End early".
+        <>
+          <div className="flex items-center gap-3 mt-8">
+            <button onClick={() => onExtend(EXTEND_SMALL_MS)} className={ghostPill}>
+              +5 min
+            </button>
+            <button onClick={() => onExtend(EXTEND_LARGE_MS)} className={ghostPill}>
+              +10 min
+            </button>
+          </div>
+          <button
+            onClick={onSkip}
+            className="mt-4 inline-flex items-center justify-center px-5 min-w-[120px] h-11 rounded-full bg-overlay-hover text-fg-secondary text-[13px] font-medium cursor-pointer hover:bg-overlay-pressed transition-colors"
+          >
+            End early
+          </button>
+        </>
+      )}
     </div>
   );
 }

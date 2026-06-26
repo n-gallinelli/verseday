@@ -165,6 +165,10 @@
      --text-faded. Redundant signal (green countdown + "ends" carry it), so
      legibility-soft is intentional. */
   --focus-break-label: rgba(74, 55, 38, 0.42);
+  /* Break-overtime accent — warm amber for the "Break over" label, the
+     count-up timer, and the pip's alert ring. Distinct from the calm green
+     so a run-out reads at a glance. */
+  --focus-break-over: #B4763A;
   /* Full-screen focus surface (FocusMode + FocusBoot). Pure white in
      light mode for a clean canvas; near-black in dark mode. */
   --focus-bg: #ffffff;
@@ -326,6 +330,9 @@
     --focus-pip-border: rgba(255, 255, 255, 0.10);
     /* Dark counterpart of the warm-muted BREAK label — warm off-white. */
     --focus-break-label: rgba(232, 224, 210, 0.45);
+    /* Break-overtime accent — brighter warm amber so it carries on the dark
+       focus surface. */
+    --focus-break-over: #D9954E;
     /* Dark counterpart for the full-screen focus surface — matches
        the app's base dark canvas so focus mode reads as a calm
        night view, not a bright light source. */

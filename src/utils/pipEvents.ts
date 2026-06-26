@@ -69,7 +69,12 @@ export interface PipState {
   elapsed: number;
   paused: boolean;
   phase: "work" | "break" | "prompt" | "meetingPrompt";
+  // ms left in the break. Goes NEGATIVE in overtime (allocation elapsed but the
+  // user hasn't ended the break yet) — the pip renders the magnitude as "over".
   breakRemaining: number;
+  // True once the user pressed "Continue break" in overtime: calms the pip's
+  // "break's over" emphasis while overtime keeps counting.
+  breakAck: boolean;
   /** Set only while `phase === "meetingPrompt"`; null otherwise. */
   meetingPrompt: PipMeetingPrompt | null;
   taskTitle: string;

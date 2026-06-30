@@ -6,6 +6,7 @@ import Typography from "@tiptap/extension-typography";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useRef, useEffect, useState } from "react";
 import { TimePill } from "./editor/timePill";
+import { LinkPill } from "./editor/linkPill";
 
 interface RichTextEditorProps {
   value: string;
@@ -71,8 +72,12 @@ export default function RichTextEditor({
         // links did nothing. We open via the Tauri opener in the click handler
         // below instead (see the editor.view.dom listener).
         openOnClick: false,
-        autolink: true,
-        linkOnPaste: true,
+        // Bare URLs are owned by LinkPill (it shortens them); turn off Tiptap's
+        // own autolink/linkOnPaste so a pasted/typed URL isn't double-wrapped as
+        // a full-text <a>. The Link mark still serves [text](url) and pasted
+        // rich anchors — hyperlinked text keeps its custom label.
+        autolink: false,
+        linkOnPaste: false,
         HTMLAttributes: {
           rel: "noopener noreferrer nofollow",
           target: "_blank",
@@ -80,6 +85,8 @@ export default function RichTextEditor({
       }),
       // Explicit @now / @today timestamp pills (user-typed; nothing auto-shows).
       TimePill,
+      // Bare pasted/typed URLs → shortened, clickable link pills.
+      LinkPill,
     ],
     content: normalizeContent(value),
     editorProps: {
@@ -157,8 +164,14 @@ export default function RichTextEditor({
     if (!editor) return;
     const dom = editor.view.dom;
     const onClick = (e: MouseEvent) => {
-      const anchor = (e.target as HTMLElement | null)?.closest?.("a");
-      const href = anchor?.getAttribute("href");
+      // Both real anchors (Link mark) and link pills (data-href) open on click.
+      const target = (e.target as HTMLElement | null)?.closest?.(
+        "a, [data-link-pill]"
+      );
+      const href =
+        target?.getAttribute("href") || target?.getAttribute("data-href");
+      // Guard at the open site: the handler reads from the live DOM, so never
+      // trust the resolved href — only http(s) reaches the Tauri opener.
       if (href && /^https?:\/\//i.test(href)) {
         e.preventDefault();
         e.stopPropagation();

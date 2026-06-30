@@ -1,15 +1,27 @@
 // Markdown link regex — [text](url)
 const MD_LINK_RE = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
 
-/** Shorten a URL for display: domain + first path segment */
-function shortenUrl(url: string): string {
+/** How many characters of the slug (path + query + hash) to keep before the
+ *  ellipsis. "A few characters" — enough to disambiguate, short enough to read. */
+const SLUG_CHARS = 6;
+
+/**
+ * Shorten a bare URL for display: full host + a few characters of the slug,
+ * ending in an ellipsis. Keeps the whole host so the destination stays
+ * recognizable (and the per-brand link icons still match on host). The full
+ * URL is always preserved separately as the link target — this only changes
+ * the label. Shared by the editor's link pill and the note preview so both
+ * surfaces render identically.
+ *   https://apolloio.slack.com/archives/D090…/p178…  →  apolloio.slack.com/archi…
+ */
+export function shortLinkLabel(url: string): string {
   try {
     const u = new URL(url);
     const host = u.hostname.replace(/^www\./, "");
-    const pathParts = u.pathname.split("/").filter(Boolean);
-    if (pathParts.length === 0) return host;
-    if (pathParts.length === 1) return `${host}/${pathParts[0]}`;
-    return `${host}/${pathParts[0]}/...`;
+    const slug = u.pathname + u.search + u.hash; // includes the leading "/"
+    if (slug === "" || slug === "/") return host; // domain-only
+    if (slug.length <= SLUG_CHARS + 1) return host + slug; // already short
+    return host + slug.slice(0, SLUG_CHARS) + "…";
   } catch {
     return url;
   }
@@ -99,10 +111,11 @@ export function htmlToSegments(html: string, opts: HtmlToSegmentsOptions = {}): 
       truncated = true;
       return;
     }
-    // Long bare URLs as labels (Tiptap autolinks them) get shortened so the
-    // preview pill doesn't blow out horizontally.
+    // Legacy bare URLs as labels (notes saved before link pills, when Tiptap
+    // autolinked them to full-text <a>) get shortened so the preview stays
+    // compact. New notes arrive pre-shortened via the link pill below.
     const display =
-      label === url && label.length > 40 ? shortenUrl(url) : label;
+      label === url && label.length > SLUG_CHARS + 1 ? shortLinkLabel(url) : label;
     if (display.length > remaining) {
       segments.push({ type: "link", label: display.slice(0, remaining) + "…", url });
       charsEmitted = maxChars;
@@ -128,6 +141,20 @@ export function htmlToSegments(html: string, opts: HtmlToSegmentsOptions = {}): 
     // with a javascript: or data: URL.
     if (tag === "A") {
       const href = el.getAttribute("href") || "";
+      if (/^https?:\/\//i.test(href)) {
+        pushLink(el.textContent || "", href);
+        return;
+      }
+    }
+
+    // Link pills (editor's atomic bare-URL node) carry the full target in
+    // data-href and an already-shortened label as their text. SECURITY: the
+    // parser is the only gate — renderSegments opens seg.url with no further
+    // check — so validate data-href is http(s) here, exactly like the <a>
+    // branch. A javascript:/file: data-href falls through to plain text and
+    // never reaches the Tauri opener.
+    if (tag === "SPAN" && el.hasAttribute("data-link-pill")) {
+      const href = el.getAttribute("data-href") || "";
       if (/^https?:\/\//i.test(href)) {
         pushLink(el.textContent || "", href);
         return;

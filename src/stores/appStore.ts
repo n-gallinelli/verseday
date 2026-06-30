@@ -1035,6 +1035,11 @@ export function selectOrphanAndOverdueTasks(
   for (const t of tasksById.values()) {
     if (t.status === "done") continue;
     if (t.external_dismissal_reason !== null) continue;
+    // Repeated tasks never belong here: a recurrence TEMPLATE
+    // (recurrence set) or a generated INSTANCE (recurrence_source_id
+    // set) regenerates on its own cadence, so stale/uncompleted ones
+    // (esp. daily) would flood this list as fake "overdue"/orphans.
+    if (t.recurrence !== null || t.recurrence_source_id !== null) continue;
     if (t.date_scheduled === null && t.project_id === null) {
       orphans.push(t);
     } else if (

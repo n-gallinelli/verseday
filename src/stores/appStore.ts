@@ -1593,16 +1593,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       await dbUpdateTask(patch);
 
       // #10 — when the edited row is a recurring TEMPLATE, propagate its
-      // title/estimate to existing FUTURE-dated instances (option (a),
-      // future-only). Past/today instances stay as a historical record. Cadence
-      // edits are handled separately by setTaskRecurrenceAction (future
-      // generation only). Reconcile each touched instance from DB truth so the
-      // canonical map/indices reflect the new title/estimate.
+      // title/estimate/notes to existing not-done instances dated today or
+      // later. Past/done instances stay as a historical record. Notes only
+      // overwrite instances that never diverged from the template's PRE-EDIT
+      // note (guard inside the query), so per-occurrence notes are preserved —
+      // hence we pass current.notes (still the pre-edit value here, before
+      // dbUpdateTask has run) as the previous-notes guard. Cadence edits are
+      // handled separately by setTaskRecurrenceAction (future generation only).
+      // Reconcile each touched instance from DB truth so the canonical
+      // map/indices reflect the new values.
       if (current && isTemplate(current)) {
         const affected = await propagateTemplateFieldsToFutureInstances(
           patch.id,
           patch.title,
           patch.estimatedMinutes,
+          patch.notes,
+          current.notes,
         );
         for (const instId of affected) {
           const freshInst = await getTaskById(instId);

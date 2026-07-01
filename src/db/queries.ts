@@ -607,32 +607,45 @@ export async function updateTask(input: UpdateTaskInput): Promise<void> {
   );
 }
 
-/** #10 — propagate a recurring TEMPLATE's title/estimate edit to its existing
- *  FUTURE-dated instances (option (a), future-only). Past and today's instances
- *  are left untouched as a historical record; done instances are never
- *  rewritten. Returns the affected instance ids so the store can reconcile the
- *  canonical map. No-op (returns []) for non-template ids. */
+/** #10 — propagate a recurring TEMPLATE's title/estimate/notes edit to its
+ *  existing NOT-done instances dated today or later. Past and done instances are
+ *  left untouched as a historical record.
+ *
+ *  Notes are the one field users customize per-occurrence, so we must NOT clobber
+ *  an occurrence-specific note (Verse). The `notes IS $notesPrev` guard restricts
+ *  the rewrite to instances whose note still matches the template's PRE-EDIT note
+ *  — i.e. instances that never diverged. `IS` (not `=`) is NULL-safe, so it also
+ *  covers the first-time NULL→notes seeding case. The guard lives in BOTH the
+ *  SELECT and the UPDATE so the returned ids match exactly what was written and
+ *  the store reconciles the right rows.
+ *
+ *  Returns the affected instance ids so the store can reconcile the canonical
+ *  map. No-op (returns []) for non-template ids. */
 export async function propagateTemplateFieldsToFutureInstances(
   templateId: number,
   title: string,
-  estimatedMinutes: number | null
+  estimatedMinutes: number | null,
+  notesNew: string | null,
+  notesPrev: string | null
 ): Promise<number[]> {
   const db = await getDb();
   const today = todayString(); // local tz, matches date_scheduled everywhere
   const rows: { id: number }[] = await db.select(
     `SELECT id FROM tasks
        WHERE recurrence_source_id = $1
-         AND date_scheduled > $2
-         AND status != 'done'`,
-    [templateId, today]
+         AND date_scheduled >= $2
+         AND status != 'done'
+         AND notes IS $3`,
+    [templateId, today, notesPrev]
   );
   if (rows.length === 0) return [];
   await db.execute(
-    `UPDATE tasks SET title = $1, estimated_minutes = $2
-       WHERE recurrence_source_id = $3
-         AND date_scheduled > $4
-         AND status != 'done'`,
-    [title, estimatedMinutes, templateId, today]
+    `UPDATE tasks SET title = $1, estimated_minutes = $2, notes = $3
+       WHERE recurrence_source_id = $4
+         AND date_scheduled >= $5
+         AND status != 'done'
+         AND notes IS $6`,
+    [title, estimatedMinutes, notesNew, templateId, today, notesPrev]
   );
   return rows.map((r) => r.id);
 }

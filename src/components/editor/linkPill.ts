@@ -1,5 +1,5 @@
 import { Node, mergeAttributes, InputRule } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { shortLinkLabel } from "../../utils/linkify";
 
 /**
@@ -21,6 +21,10 @@ import { shortLinkLabel } from "../../utils/linkify";
  */
 
 const URL_RE = /^https?:\/\/\S+$/i;
+
+// "Title (https://…)" — the plain-text shape Notion's "Copy link" produces.
+// Group 1 = label, group 2 = URL (http(s) only; token stops at whitespace / ")").
+const TITLE_LINK_RE = /^(.+?)\s*\((https?:\/\/[^\s)]+)\)$/;
 
 export const LinkPill = Node.create({
   name: "linkPill",
@@ -86,16 +90,49 @@ export const LinkPill = Node.create({
       new Plugin({
         key: new PluginKey("linkPillPaste"),
         props: {
-          // Pasting a lone bare URL → pill. Anything else (rich HTML, text with
-          // surrounding content) falls through to the default paste handling so
-          // hyperlinked text keeps its label.
+          // Smart paste for links:
+          //  1. "Title (https://…)" (Notion's Copy-link shape) → hyperlinked
+          //     text: the label linked to the URL, full label kept.
+          //  2. A lone bare URL → shortened link pill.
+          // Anything else (rich HTML, text with surrounding content) falls
+          // through to the default paste handling.
           handlePaste: (view, event) => {
             const text = event.clipboardData?.getData("text/plain")?.trim();
-            if (!text || !URL_RE.test(text)) return false;
-            const node = type.create({ href: text, label: shortLinkLabel(text) });
-            const tr = view.state.tr.replaceSelectionWith(node).insertText(" ");
-            view.dispatch(tr.scrollIntoView());
-            return true;
+            if (!text) return false;
+            const { state } = view;
+            const linkType = state.schema.marks.link;
+
+            // 1. Title (URL) → Link mark on the label. Checked first; a lone URL
+            // can't match this (it has no " (…)" tail).
+            const titleMatch = linkType ? text.match(TITLE_LINK_RE) : null;
+            if (titleMatch) {
+              const label = titleMatch[1].trim();
+              const url = titleMatch[2];
+              if (label) {
+                const linked = state.schema.text(label, [linkType.create({ href: url })]);
+                const tr = state.tr;
+                if (!tr.selection.empty) tr.deleteSelection();
+                const at = tr.selection.from;
+                tr.insert(at, linked);
+                // Trailing space as an EXPLICIT unmarked text node — not
+                // insertText, which would inherit the (inclusive) link mark and
+                // pull the space inside the <a>.
+                tr.insert(at + label.length, state.schema.text(" "));
+                tr.setSelection(TextSelection.create(tr.doc, at + label.length + 1));
+                view.dispatch(tr.scrollIntoView());
+                return true;
+              }
+            }
+
+            // 2. Lone bare URL → pill.
+            if (URL_RE.test(text)) {
+              const node = type.create({ href: text, label: shortLinkLabel(text) });
+              const tr = view.state.tr.replaceSelectionWith(node).insertText(" ");
+              view.dispatch(tr.scrollIntoView());
+              return true;
+            }
+
+            return false;
           },
         },
       }),

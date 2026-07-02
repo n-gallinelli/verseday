@@ -825,10 +825,13 @@ export default function TaskDetailOverlay({
             // the overlay (a pause toggle isn't a "leave" action).
             <button
               onClick={() => togglePauseFocus()}
-              className={`ml-3 rounded-full cursor-pointer flex items-center justify-center gap-2 px-4 py-1.5 min-w-[104px] transition-colors flex-shrink-0 ${
+              // border on BOTH states (transparent when running) so the two
+              // read at the exact same box size — otherwise the paused/Resume
+              // border made that state ~2px taller than running/Pause.
+              className={`ml-3 rounded-full cursor-pointer flex items-center justify-center gap-2 px-4 py-1.5 min-w-[104px] border transition-colors flex-shrink-0 ${
                 liveSession.paused
-                  ? "border border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft"
-                  : "bg-accent-blue-soft text-accent-blue-soft-fg hover:opacity-90"
+                  ? "border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft"
+                  : "border-transparent bg-accent-blue-soft text-accent-blue-soft-fg hover:opacity-90"
               }`}
               title={liveSession.paused ? "Resume focus" : "Pause focus"}
             >
@@ -841,10 +844,13 @@ export default function TaskDetailOverlay({
                 </>
               ) : (
                 <>
-                  <svg width="10" height="11" viewBox="0 0 10 11" fill="currentColor">
-                    <rect x="1" y="0.5" width="2.6" height="10" rx="0.8" />
-                    <rect x="6.4" y="0.5" width="2.6" height="10" rx="0.8" />
-                  </svg>
+                  {/* Running cue: a dot that fades in/out (gets darker),
+                      mirroring the daily-screen "Focusing…" pill via the shared
+                      animate-focus-dot (opacity .45↔1, reduced-motion safe). */}
+                  <span
+                    aria-hidden
+                    className="w-2 h-2 rounded-full bg-accent-blue animate-focus-dot"
+                  />
                   <span className="text-[13px] font-medium">Pause</span>
                 </>
               )}

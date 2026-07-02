@@ -1894,7 +1894,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                   />
                 ) : (
                   <h1
-                    onClick={() => !isQueued && setTitleDraft(task.title)}
+                    onClick={() => setTitleDraft(task.title)}
                     className="text-[32px] font-medium text-fg leading-tight cursor-text hover:text-fg-secondary transition-colors"
                     title="Click to edit"
                   >

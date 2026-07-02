@@ -266,6 +266,11 @@ function TimeFieldPill({
             ))}
           </div>
           <input
+            // Focus the field the instant the popover opens so the user can
+            // start typing immediately (or click a preset / the field) without
+            // a second click. The input remounts on every open (conditional
+            // render), so autoFocus re-fires each time the popover appears.
+            autoFocus
             type="text"
             value={rawInput}
             onChange={(e) => {

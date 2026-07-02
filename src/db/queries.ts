@@ -607,34 +607,76 @@ export async function updateTask(input: UpdateTaskInput): Promise<void> {
   );
 }
 
-/** #10 — propagate a recurring TEMPLATE's title/estimate edit to its existing
- *  FUTURE-dated instances (option (a), future-only). Past and today's instances
- *  are left untouched as a historical record; done instances are never
- *  rewritten. Returns the affected instance ids so the store can reconcile the
- *  canonical map. No-op (returns []) for non-template ids. */
+/** #10 — propagate a recurring TEMPLATE's edits to its existing NOT-done
+ *  instances. TWO INDEPENDENT reaches with intentionally different scope/guards
+ *  (Verse) — do NOT re-merge them into one WHERE:
+ *
+ *  A) title/estimate — blanket overwrite of every FUTURE-dated (> today)
+ *     instance. Today's instance stays a historical record (shipped behavior).
+ *     No notes guard: a per-occurrence note must never block a title/estimate
+ *     edit from reaching that occurrence.
+ *
+ *  B) notes — instances dated today or later (>= today), but ONLY those whose
+ *     note never diverged from the template's PRE-EDIT note (`notes IS $notesPrev`,
+ *     using IS not = for NULL-safety, which also covers the first-time
+ *     NULL→notes seeding case). Notes are the one field users customize
+ *     per-occurrence, so an occurrence-specific note is precious and must not be
+ *     clobbered.
+ *
+ *  Returns the UNION of touched instance ids so the store reconciles every row
+ *  that changed. No-op (returns []) for non-template ids. */
 export async function propagateTemplateFieldsToFutureInstances(
   templateId: number,
   title: string,
-  estimatedMinutes: number | null
+  estimatedMinutes: number | null,
+  notesNew: string | null,
+  notesPrev: string | null
 ): Promise<number[]> {
   const db = await getDb();
   const today = todayString(); // local tz, matches date_scheduled everywhere
-  const rows: { id: number }[] = await db.select(
+  const affected = new Set<number>();
+
+  // A — title/estimate, future-only (> today), no notes guard.
+  const titleRows: { id: number }[] = await db.select(
     `SELECT id FROM tasks
        WHERE recurrence_source_id = $1
          AND date_scheduled > $2
          AND status != 'done'`,
     [templateId, today]
   );
-  if (rows.length === 0) return [];
-  await db.execute(
-    `UPDATE tasks SET title = $1, estimated_minutes = $2
-       WHERE recurrence_source_id = $3
-         AND date_scheduled > $4
-         AND status != 'done'`,
-    [title, estimatedMinutes, templateId, today]
+  if (titleRows.length > 0) {
+    await db.execute(
+      `UPDATE tasks SET title = $1, estimated_minutes = $2
+         WHERE recurrence_source_id = $3
+           AND date_scheduled > $4
+           AND status != 'done'`,
+      [title, estimatedMinutes, templateId, today]
+    );
+    for (const r of titleRows) affected.add(r.id);
+  }
+
+  // B — notes, today-or-later (>= today), only non-diverged instances.
+  const noteRows: { id: number }[] = await db.select(
+    `SELECT id FROM tasks
+       WHERE recurrence_source_id = $1
+         AND date_scheduled >= $2
+         AND status != 'done'
+         AND notes IS $3`,
+    [templateId, today, notesPrev]
   );
-  return rows.map((r) => r.id);
+  if (noteRows.length > 0) {
+    await db.execute(
+      `UPDATE tasks SET notes = $1
+         WHERE recurrence_source_id = $2
+           AND date_scheduled >= $3
+           AND status != 'done'
+           AND notes IS $4`,
+      [notesNew, templateId, today, notesPrev]
+    );
+    for (const r of noteRows) affected.add(r.id);
+  }
+
+  return [...affected];
 }
 
 export async function updateTaskStatus(

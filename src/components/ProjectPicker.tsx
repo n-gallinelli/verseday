@@ -73,7 +73,7 @@ export default function ProjectPicker({ value, projects, onChange }: ProjectPick
         ref={triggerRef}
         type="button"
         onClick={toggle}
-        className="w-full flex items-start gap-2 bg-elevated hover:bg-overlay-hover rounded-lg px-3 py-2 text-left cursor-pointer transition-colors"
+        className="w-full flex items-start gap-2 bg-elevated hover:bg-overlay-hover rounded-lg px-3.5 py-2.5 text-left cursor-pointer transition-colors"
         style={{ border: "0.5px solid var(--border-medium)" }}
       >
         {selected ? (

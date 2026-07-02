@@ -120,6 +120,15 @@ function formatTime(ms: number): string {
   return `${pad(minutes)}:${pad(seconds)}`;
 }
 
+// Seed value for the time-editor popovers: whole minutes rendered as H:MM
+// (e.g. 65 → "1:05", 6 → "0:06"). Matches how parsePlannedInput/parseActualInput
+// read a colon (hours:minutes), so opening + committing an unedited value
+// round-trips cleanly. Used by both the Planned and Actual editors.
+function formatMinutesAsHM(min: number): string {
+  const m = Math.max(0, Math.round(min));
+  return `${Math.floor(m / 60)}:${(m % 60).toString().padStart(2, "0")}`;
+}
+
 function formatCountdown(ms: number): string {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
   const minutes = Math.floor(totalSeconds / 60);
@@ -1674,12 +1683,13 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 
   // Parsing for the popover inputs.
   function parseActualInput(raw: string): number | null {
-    const parts = raw.trim().split(":").map((p) => parseInt(p, 10));
-    if (parts.length === 0 || parts.some((n) => isNaN(n) || n < 0)) return null;
-    if (parts.length === 1) return parts[0] * 60 * 1000; // bare number = minutes
-    if (parts.length === 2) return (parts[0] * 60 + parts[1]) * 1000; // M:SS
-    if (parts.length === 3) return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
-    return null;
+    // Minute-granular, mirroring Planned: a bare number = minutes ("65" → 65m)
+    // and a colon = hours:minutes ("1:05" → 65m). The live numeral still ticks
+    // in seconds, but a manual edit commits whole minutes — which is how the
+    // user thinks about logged time. Reuses parsePlannedInput (minutes) and
+    // scales to the ms that applyActualMs expects.
+    const min = parsePlannedInput(raw);
+    return min === null ? null : min * 60 * 1000;
   }
 
   function parsePlannedInput(raw: string): number | null {
@@ -1974,7 +1984,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                 {actualOpen && canEditActual && (
                   <TimePopover
                     title="Actual"
-                    initialInput={formatTime(totalWorkedMs)}
+                    initialInput={formatMinutesAsHM(totalWorkedMs / 60000)}
                     currentMinutes={Math.round(totalWorkedMs / 60000)}
                     // Active floors at earlier sessions' logged time (can't
                     // reduce below prior via this popover). Preview's
@@ -2030,7 +2040,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
                     title="Planned"
                     initialInput={
                       task.estimated_minutes
-                        ? `${Math.floor(task.estimated_minutes / 60)}:${(task.estimated_minutes % 60).toString().padStart(2, "0")}`
+                        ? formatMinutesAsHM(task.estimated_minutes)
                         : "0:00"
                     }
                     currentMinutes={task.estimated_minutes ?? null}
@@ -2348,6 +2358,9 @@ function TimePopover({
         <div className="text-[12px] text-fg-faded mb-1">{title}:</div>
         <input
           autoFocus
+          // Highlight the seeded value so typing replaces it (matches the
+          // TaskDetailOverlay time pill). Click to place the caret + append.
+          onFocus={(e) => e.currentTarget.select()}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {

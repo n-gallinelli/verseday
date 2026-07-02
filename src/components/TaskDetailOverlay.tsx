@@ -271,6 +271,12 @@ function TimeFieldPill({
             // a second click. The input remounts on every open (conditional
             // render), so autoFocus re-fires each time the popover appears.
             autoFocus
+            // Select the seeded value on focus so typing REPLACES the existing
+            // time instead of appending (autoFocus lands the caret at the end,
+            // so "28m" + typing "5" gave "28m5"). By focus time the seed effect
+            // has committed rawInput to the DOM, so this highlights the real
+            // value. User can still click to place the caret and append.
+            onFocus={(e) => e.currentTarget.select()}
             type="text"
             value={rawInput}
             onChange={(e) => {

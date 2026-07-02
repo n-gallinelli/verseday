@@ -945,7 +945,10 @@ export default function TaskDetailOverlay({
               }
             />
           ) : (
-          <div className="w-[320px] flex-shrink-0 border-l border-line-hairline bg-rail px-6 py-7 overflow-y-auto space-y-6">
+          <div
+            className="w-[320px] flex-shrink-0 border-l border-line-hairline px-6 py-7 overflow-y-auto space-y-6"
+            style={{ background: "var(--bg-detail-rail)" }}
+          >
             {objectiveRow}
 
             <div>

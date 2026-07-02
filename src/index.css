@@ -15,6 +15,11 @@
   --bg-sidebar: #efede8;
   --bg-elevated: #ffffff;
   --bg-rail: #FAFAF7;
+  /* Task-detail right column only — a touch warmer than --bg-rail so the
+     inset panel reads as the same cream surface family as the white body
+     instead of a cool gray-lavender. Scoped token (not --bg-rail) to avoid
+     shifting the app's other rail surfaces. */
+  --bg-detail-rail: #FBF9F3;
   --bg-sunken: #f0eeea;
   --bg-input: rgba(0, 0, 0, 0.03);
   --bg-input-hover: rgba(0, 0, 0, 0.06);
@@ -209,6 +214,8 @@
     --bg-sidebar: #1a1a1f;
     --bg-elevated: #1f1f24;
     --bg-rail: #1b1b20;
+    /* Dark: neutral-warm inset, dropping the slight blue cast of --bg-rail. */
+    --bg-detail-rail: #1c1b19;
     --bg-sunken: #121215;
     --bg-input: rgba(255, 255, 255, 0.04);
     --bg-input-hover: rgba(255, 255, 255, 0.07);

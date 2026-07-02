@@ -576,8 +576,24 @@ function MainApp() {
           return;
         }
         const prev: Page = s.currentPage === "focus" ? "daily" : s.currentPage;
-        if (s.session) await s.endActiveFocusSession();
+        // INVARIANT (per Verse; mirrors handleStartBrowsed / handleSwitchToMeeting,
+        // FocusMode.tsx:312-313): the priorMs fetch MUST stay ABOVE
+        // endActiveFocusSession. Ending the session nulls `focus`, which fires
+        // FocusMode's boot effect to stage today's first remaining task. Only a
+        // SYNCHRONOUS previewFocus immediately after the end-session await — with
+        // NO intervening await — wins that boot cancel race and lands the
+        // reminder's task. If this fetch is "tidied" back below endActiveFocusSession,
+        // its await yields and the boot loader interposes, showing the wrong
+        // (previously-worked) task. Do not move it.
+        // Residual (documented, not chased): this pre-fetch await runs while the
+        // OLD session is still active. If that session were on a NON-today task,
+        // the boot effect's validation branch (FocusMode.tsx:233-247) could clear
+        // it mid-await and interpose — but the today-only policy already clears
+        // stale non-today sessions on prior renders, so it's effectively
+        // unreachable. If it ever surfaces, read priorMs synchronously from
+        // workedByTaskId (like the siblings) instead of the DB.
         const priorMs = (await getWorkedMinutesForTask(task.id)) * 60 * 1000;
+        if (s.session) await s.endActiveFocusSession();
         s.previewFocus(task, prev, priorMs);
         s.setPage("focus");
       } catch (err) {

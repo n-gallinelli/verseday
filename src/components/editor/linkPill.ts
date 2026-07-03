@@ -92,8 +92,28 @@ export const LinkPill = Node.create({
           handlePaste: (view, event) => {
             const text = event.clipboardData?.getData("text/plain")?.trim();
             if (!text || !URL_RE.test(text)) return false;
+            const { state } = view;
+            const { selection } = state;
+            // Pasting a URL ONTO a text selection = hyperlink those words: keep
+            // them as the label and apply the Link mark (the service icon comes
+            // from the href via CSS). Only a paste with NO selection becomes a
+            // shortened pill — otherwise we'd delete the user's words and drop
+            // in a truncated URL (the reported bug).
+            if (!selection.empty) {
+              const linkMark = state.schema.marks.link;
+              // No Link mark in the schema — let default paste handle it rather
+              // than silently clobbering the selection with a pill.
+              if (!linkMark) return false;
+              const tr = state.tr.addMark(
+                selection.from,
+                selection.to,
+                linkMark.create({ href: text })
+              );
+              view.dispatch(tr.scrollIntoView());
+              return true;
+            }
             const node = type.create({ href: text, label: shortLinkLabel(text) });
-            const tr = view.state.tr.replaceSelectionWith(node).insertText(" ");
+            const tr = state.tr.replaceSelectionWith(node).insertText(" ");
             view.dispatch(tr.scrollIntoView());
             return true;
           },

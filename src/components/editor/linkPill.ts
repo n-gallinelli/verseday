@@ -72,6 +72,27 @@ export const LinkPill = Node.create({
       new InputRule({
         find: /(https?:\/\/\S+)\s$/i,
         handler: ({ state, range, match }) => {
+          // GUARD against the atom-toText mismatch. `renderText` (below) maps to
+          // the pill's `spec.toText`, which Tiptap folds into the input-rule
+          // match text via getTextContentFromNodes — so this URL rule can match
+          // the pill's OWN href when the cursor sits after a pill. But the match
+          // is measured in STRING length (href ~40 chars) while the pill is a
+          // single doc position, so range.from is wrong:
+          //   • pill near line start → range.from underflows NEGATIVE → the
+          //     original replaceWith threw "Position out of range", and since
+          //     this runs in the inputRules handleKeyDown that throw aborted
+          //     ProseMirror's Enter handling (Enter/space looked dead);
+          //   • enough text before the pill → range.from lands IN-BOUNDS but
+          //     mid-sentence → replaceWith would silently delete ~href-length
+          //     chars of the user's real text and drop in a duplicate pill.
+          // Verify the matched span is the genuinely-typed URL: textBetween
+          // renders any atom leaf as U+FFFC, so a contaminated match won't equal
+          // match[1] and we bail — covering both cases. A real typed URL spans
+          // only its own text, so it passes untouched. On bail the rule makes no
+          // change and the keypress falls through to normal handling.
+          if (range.from < 0 || range.to > state.doc.content.size) return;
+          const typed = state.doc.textBetween(range.from, range.to, undefined, "\uFFFC");
+          if (typed !== match[1]) return;
           const url = match[1];
           const node = type.create({ href: url, label: shortLinkLabel(url) });
           state.tr.replaceWith(range.from, range.to, node).insertText(" ");

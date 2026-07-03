@@ -415,6 +415,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     // needed (workedMs already starts at 0 on a new active session
     // via startFocus/activateFocus).
     //
+    // Capture the OUTGOING cycle's start and phase BEFORE the resets below wipe
+    // them — "continue" mode needs both to carry the right amount forward.
+    const priorCycleStart = workCycleStartRef.current;
+    const priorPhase = phaseRef.current;
+
     // Session-local timing always resets on a new task (a stale break prompt
     // must never carry to the next task).
     totalBreakTimeRef.current = 0;
@@ -431,8 +436,18 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     // mode via ref so toggling the setting doesn't itself reset the cycle.
     const gapMs = Date.now() - lastActiveTickAtRef.current;
     if (shouldContinueBreakCycle(breakContinuityRef.current, gapMs)) {
-      breakCarryRef.current = lastWorkElapsedRef.current; // resume the cycle
+      // Carry only progress WITHIN the current cycle (not the absolute
+      // work-elapsed), and only if the prior phase was work. This preserves
+      // handleNoBreak/handleSkipBreak's re-anchor across the switch: after a
+      // skip, workCycleStart ≈ lastWorkElapsed so carry ≈ 0. Switching at a
+      // prompt or during a break carries 0 — those phases sit on a COMPLETED
+      // cycle (~WORK_DURATION above the start), which would re-fire the prompt
+      // instantly (and double-count, since completedPomodoros already bumped).
       // keep completedPomodoros so the long-break cadence stays coherent
+      breakCarryRef.current =
+        priorPhase === "work"
+          ? Math.max(0, lastWorkElapsedRef.current - priorCycleStart)
+          : 0;
     } else {
       breakCarryRef.current = 0;
       setCompletedPomodoros(0);
@@ -753,6 +768,13 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const [breakContinuity, setBreakContinuity] = useState<BreakContinuity>("reset");
   const breakContinuityRef = useRef(breakContinuity);
   breakContinuityRef.current = breakContinuity;
+  // Mirror `phase` into a ref so the [focus?.taskId] reset effect can read the
+  // OUTGOING phase without the closed-over stale value (effect deps don't
+  // include phase). Used to gate break-cycle carry: only work-phase progress is
+  // safe to carry; a prompt/break-phase carry would be a completed cycle (~25m)
+  // and re-fire the prompt on the next task.
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
   // PiP "on complete" behavior. Held in a ref (read in handleDone + the PipState
   // builder, both non-React-state paths). Loaded on mount and refreshed live on
   // the Settings toggle event, since FocusMode is a single persistent mount and

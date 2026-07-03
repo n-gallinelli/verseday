@@ -297,6 +297,7 @@ export default function WeeklyShutdown() {
   const { selectedWeek, setSelectedWeek, setPage } = useAppStore();
   const strike = useStrikethroughClass();
   const openSunsetOverlay = useAppStore((s) => s.openSunsetOverlay);
+  const setSunsetPendingAfterPlan = useAppStore((s) => s.setSunsetPendingAfterPlan);
   const primeTasks = useAppStore((s) => s.primeTasks);
   const tasksById = useAppStore((s) => s.tasksById);
   // M3.2.b.3 — completedThisWeek is hybrid: query is completed_at-based
@@ -471,15 +472,27 @@ export default function WeeklyShutdown() {
   }
 
   function finalizeShutdown() {
-    localStorage.setItem(WEEKLY_SHUTDOWN_PREFIX + selectedWeek, "true");
+    markShutdownComplete();
     openSunsetOverlay();
+  }
+
+  // Persist the shutdown-complete flag WITHOUT opening the sunset/quote
+  // overlay — used by the plan path, which defers the quote until after the
+  // planner (see handlePlanNextWeek).
+  function markShutdownComplete() {
+    localStorage.setItem(WEEKLY_SHUTDOWN_PREFIX + selectedWeek, "true");
   }
 
   function handlePlanNextWeek() {
     setShowPlanPrompt(false);
     // Mark this week's shutdown as complete first so the user doesn't
     // see the prompt again when they return.
-    finalizeShutdown();
+    markShutdownComplete();
+    // Take the user to the planner FIRST, and defer the sunset/quote
+    // overlay until they leave the planner (finished planning). Opening it
+    // here would render it z-50 over the planner — the reported bug where the
+    // quote appeared before the planner. WeeklyPlanner fires it on unmount.
+    setSunsetPendingAfterPlan(true);
     // Advance to next week and switch to the weekly plan screen.
     setSelectedWeek(getNextMondayIso(selectedWeek));
     setPage("weekly");

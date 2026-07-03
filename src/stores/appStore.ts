@@ -698,6 +698,11 @@ interface AppState {
   openSunsetOverlay: () => void;
   /** Close the singleton SunsetOverlay. */
   closeSunsetOverlay: () => void;
+  /** Set when the user chose "Plan next week" from the weekly shutdown: the
+   *  sunset/quote overlay is deferred until they LEAVE the planner (finished
+   *  planning) so the planner shows first, not the quote. Not persisted. */
+  sunsetPendingAfterPlan: boolean;
+  setSunsetPendingAfterPlan: (pending: boolean) => void;
   /** Whether completed tasks are drawn with a line through the title. Persisted
    *  to the settings table (ui.strikethrough_completed); default true. Held in
    *  the store so TaskCard + TaskDetailOverlay re-render reactively when toggled
@@ -1084,6 +1089,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   taskIdsByWeek: new Map(),
   summaryOverlay: null,
   sunsetOverlayOpen: false,
+  sunsetPendingAfterPlan: false,
   strikethroughCompleted: true,
   sidebarCollapsed: loadPersistedSidebarCollapsed(),
   sidebarFocusExpanded: false,
@@ -1381,6 +1387,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   closeSummaryOverlay: () => set({ summaryOverlay: null }),
   openSunsetOverlay: () => set({ sunsetOverlayOpen: true }),
   closeSunsetOverlay: () => set({ sunsetOverlayOpen: false }),
+  setSunsetPendingAfterPlan: (pending) => set({ sunsetPendingAfterPlan: pending }),
   primeTasks: (tasks) => {
     if (tasks.length === 0) return;
     set((s) => {

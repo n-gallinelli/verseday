@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import ScheduleTab from "./weekly-plan/ScheduleTab";
 import PlanTab from "./weekly-plan/PlanTab";
 import PlanFridayBanner from "./weekly-plan/PlanFridayBanner";
@@ -21,22 +20,6 @@ export default function WeeklyPlanner() {
   const plannedHoursLabel = (Math.round(schedulePlannedMinutes / 6) / 10)
     .toFixed(1)
     .replace(/\.0$/, "");
-
-  // When the user reached this planner via "Plan next week" from the weekly
-  // shutdown, the sunset/quote overlay was deferred (so the planner shows
-  // first). Fire it once, on unmount — i.e. when they leave the planner having
-  // finished planning. Read + clear the flag imperatively at cleanup time so a
-  // stale closure can't misjudge it, and so it only fires for the shutdown path
-  // (a normal visit to the planner leaves the flag false → no-op).
-  useEffect(() => {
-    return () => {
-      const st = useAppStore.getState();
-      if (st.sunsetPendingAfterPlan) {
-        st.setSunsetPendingAfterPlan(false);
-        st.openSunsetOverlay();
-      }
-    };
-  }, []);
 
   function changeWeek(offset: number) {
     const d = new Date(selectedWeek + "T00:00:00");

@@ -129,8 +129,22 @@ function MainApp() {
   // Trigger fade-in on page change
   useEffect(() => {
     if (prevPageRef.current !== currentPage) {
+      const leaving = prevPageRef.current;
       prevPageRef.current = currentPage;
       setPageKey((k) => k + 1);
+      // Weekly-shutdown "Plan next week" defers the sunset/quote overlay so the
+      // planner shows first (see WeeklyShutdown.handlePlanNextWeek). Fire it the
+      // moment the user leaves the planner (finished planning). Anchoring to the
+      // real page transition — ref-guarded, idempotent flag-clear — keeps this
+      // immune to StrictMode remounts, unlike firing a visible side-effect from
+      // an unmount cleanup.
+      if (leaving === "weekly" && currentPage !== "weekly") {
+        const st = useAppStore.getState();
+        if (st.sunsetPendingAfterPlan) {
+          st.setSunsetPendingAfterPlan(false);
+          st.openSunsetOverlay();
+        }
+      }
     }
   }, [currentPage]);
 

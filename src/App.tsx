@@ -125,6 +125,14 @@ function MainApp() {
   const startupDone = useRef(false);
   const [pageKey, setPageKey] = useState(0);
   const prevPageRef = useRef(currentPage);
+  // Tracks the on-screen background page across transitions for the deferred
+  // sunset-overlay gate (below). Seeded the same way `bg`/`backgroundPage` is
+  // derived so project_detail resolves to the page behind the modal.
+  const prevPlannerBgRef = useRef(
+    currentPage === "project_detail"
+      ? pageHistory[pageHistory.length - 1] ?? "projects"
+      : currentPage
+  );
 
   // Trigger fade-in on page change
   useEffect(() => {
@@ -133,6 +141,29 @@ function MainApp() {
       setPageKey((k) => k + 1);
     }
   }, [currentPage]);
+
+  // Weekly-shutdown "Plan next week" defers the sunset/quote overlay so the
+  // planner shows first (see WeeklyShutdown.handlePlanNextWeek); fire it once
+  // the planner actually leaves the screen. Key on the BACKGROUND page, not
+  // currentPage: project_detail is a sibling overlay that keeps the planner
+  // mounted behind it (same derivation as `backgroundPage` below), so gating on
+  // currentPage!=="weekly" would fire the quote over the project modal while the
+  // planner is still visible. Ref-guarded transition + idempotent flag-clear →
+  // StrictMode-immune (no visible side-effect from an unmount cleanup).
+  useEffect(() => {
+    const bg =
+      currentPage === "project_detail"
+        ? pageHistory[pageHistory.length - 1] ?? "projects"
+        : currentPage;
+    if (prevPlannerBgRef.current === "weekly" && bg !== "weekly") {
+      const st = useAppStore.getState();
+      if (st.sunsetPendingAfterPlan) {
+        st.setSunsetPendingAfterPlan(false);
+        st.openSunsetOverlay();
+      }
+    }
+    prevPlannerBgRef.current = bg;
+  }, [currentPage, pageHistory]);
 
   useEffect(() => {
     if (startupDone.current) return;

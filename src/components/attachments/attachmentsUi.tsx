@@ -215,6 +215,19 @@ export function AttachmentList({ controller }: { controller: AttachmentsControll
     }
   }
 
+  async function download(att: Attachment) {
+    try {
+      const rec = await getAttachmentData(att.id);
+      if (!rec) return;
+      const comma = rec.data.indexOf(",");
+      const base64 = comma >= 0 ? rec.data.slice(comma + 1) : rec.data;
+      // Saves to ~/Downloads (deduped) and reveals in Finder.
+      await invoke("download_attachment", { filename: rec.filename, base64 });
+    } catch (err) {
+      console.error("[attachments] download failed", err);
+    }
+  }
+
   return (
     <div
       tabIndex={0}
@@ -249,6 +262,17 @@ export function AttachmentList({ controller }: { controller: AttachmentsControll
                 <span className="shrink-0 text-[11px] text-fg-faded tabular-nums">
                   {formatAttachmentSize(att.size_bytes)}
                 </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => download(att)}
+                className="shrink-0 text-fg-faded opacity-0 group-hover:opacity-100 hover:text-fg-primary transition-opacity cursor-pointer px-1"
+                title="Download to your Downloads folder"
+                aria-label={`Download ${att.filename}`}
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M8 2v8M5 7l3 3 3-3M3 13h10" />
+                </svg>
               </button>
               <button
                 type="button"
@@ -301,7 +325,8 @@ export function AttachmentList({ controller }: { controller: AttachmentsControll
           <img
             src={lightbox.dataUri}
             alt={lightbox.filename}
-            className="max-h-full max-w-full rounded-md shadow-2xl object-contain"
+            draggable={false}
+            className="max-h-full max-w-full rounded-md shadow-2xl object-contain select-none"
             onClick={(e) => e.stopPropagation()}
           />
         </div>

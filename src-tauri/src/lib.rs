@@ -801,6 +801,7 @@ pub fn run() {
             commands::stop_pip_hover_monitor,
             commands::get_last_backup_at,
             commands::open_attachment,
+            commands::download_attachment,
             #[cfg(target_os = "macos")]
             calendar::calendar_check_permission,
             #[cfg(target_os = "macos")]

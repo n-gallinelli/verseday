@@ -173,6 +173,57 @@ pub fn open_attachment(id: i64, filename: String, base64: String) -> Result<(), 
     platform::open_or_reveal(&path, /* reveal_only = */ !openable)
 }
 
+/// Pick a non-colliding path in `dir` for `name` — appends " (n)" before the
+/// extension if the file already exists (Finder-style), so a download never
+/// silently overwrites an earlier one.
+fn unique_path(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let candidate = dir.join(name);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let p = std::path::Path::new(name);
+    let stem = p
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| name.to_string());
+    let ext = p
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
+    for i in 1..10_000 {
+        let c = dir.join(format!("{stem} ({i}){ext}"));
+        if !c.exists() {
+            return c;
+        }
+    }
+    candidate
+}
+
+/// Save an attachment to the user's Downloads folder (persistent, unlike the
+/// temp dir used by open_attachment) and reveal it in Finder. Same filename
+/// sanitization as the open path (no traversal), but keeps the ORIGINAL name
+/// (no id prefix) since this is a user-facing file. Never launches anything —
+/// it only writes + reveals.
+#[tauri::command]
+pub fn download_attachment(filename: String, base64: String) -> Result<String, String> {
+    use base64::Engine;
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64.trim())
+        .map_err(|e| format!("Could not decode attachment: {e}"))?;
+
+    let home = std::env::var("HOME").map_err(|_| "Could not locate your home folder.".to_string())?;
+    let downloads = std::path::Path::new(&home).join("Downloads");
+    std::fs::create_dir_all(&downloads).map_err(|e| format!("Could not access Downloads: {e}"))?;
+
+    let dest = unique_path(&downloads, &sanitize_filename(&filename));
+    std::fs::write(&dest, &bytes).map_err(|e| format!("Could not save the file: {e}"))?;
+
+    // Reveal (never open) — surfaces the saved file without launching it.
+    platform::open_or_reveal(&dest, /* reveal_only = */ true)?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
 // ── Platform-specific implementations ──────────────────────────────────
 
 #[cfg(target_os = "macos")]

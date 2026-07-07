@@ -35,6 +35,7 @@ import {
 import RichTextEditor from "../components/RichTextEditor";
 import VerseDayLogo from "../components/VerseDayLogo";
 import { breakEndClock } from "../utils/breakClock";
+import { BREAK_PROMPT } from "../utils/breakPromptLabels";
 import { todayString } from "../utils/dates";
 import {
   getBreakContinuity,
@@ -2267,25 +2268,32 @@ function BreakCelebration({
       {/* Action row. "Rest now" leads with intent (not duration —
           that's in the copy above). "In 5 min" snoozes the prompt;
           "Skip it" declines the break entirely. */}
+      {/* Primary uses the WARM sunset accent, not green — green is reserved
+          for completed states; starting a break is an action. The fill is
+          PINNED to the light accent-orange hex (#A85E1E / hover #94511A) in
+          BOTH themes, NOT the --accent-orange token — the token lightens to
+          #d68647 in dark, where white text fails WCAG 1.4.3 (~2.6:1). Pinned,
+          white text clears AA in both themes (#A85E1E ≈ 4.8:1). Same
+          pin-not-token discipline as the green/blue CTAs. */}
       <div className="flex gap-3 items-center justify-center">
         <button
           onClick={isLongBreak ? onTakeLong : onTakeShort}
-          className="px-5 py-2.5 rounded-full text-[14px] font-medium text-white bg-accent-green-deep hover:opacity-90 cursor-pointer transition-opacity inline-flex items-center gap-2"
+          className="px-5 py-2.5 rounded-full text-[14px] font-medium text-white bg-[#A85E1E] hover:bg-[#94511A] cursor-pointer transition-colors inline-flex items-center gap-2"
         >
           <CoffeeCupIcon />
-          Rest now
+          {BREAK_PROMPT.restNow}
         </button>
         <button
           onClick={onSnooze}
           className="px-4 py-2.5 rounded-full text-[14px] text-fg-secondary border border-line-soft hover:border-line-strong hover:bg-overlay-hover cursor-pointer transition-colors"
         >
-          In 5 min
+          {BREAK_PROMPT.inFiveMin}
         </button>
         <button
           onClick={onNo}
           className="px-4 py-2.5 rounded-full text-[14px] text-fg-faded border border-line-hairline hover:text-fg-secondary hover:border-line-soft hover:bg-overlay-hover cursor-pointer transition-colors"
         >
-          Skip it
+          {BREAK_PROMPT.skipIt}
         </button>
       </div>
     </div>

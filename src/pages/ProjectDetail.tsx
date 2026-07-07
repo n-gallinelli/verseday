@@ -1157,21 +1157,23 @@ export default function ProjectDetail() {
 
         {/* Header strip — hero title row */}
         <div className="px-8 pt-7 pb-5 border-b border-divider flex-shrink-0">
-          <div className="flex items-center gap-3">
-            {/* Color picker — click-to-toggle so the popover survives
-                the cursor's trip across the gap from the dot. Closes
-                on outside click or color selection. */}
-            <ColorPicker
-              value={editColor}
-              takenColors={takenColors}
-              onChange={(c) => updateField("color", c)}
-            />
-
-            {/* Objective icon — emoji or custom uploaded image (#25) */}
-            <ProjectIconPicker
-              project={project}
-              onPick={(icon, customIconId) => handleSetIcon(icon, customIconId)}
-            />
+          {/* Row 1 — identity + title on their own line, full width, so a
+              long two-line title never fights the action controls. */}
+          <div className="flex items-start gap-3">
+            <div className="flex items-center gap-3 shrink-0 pt-0.5">
+              {/* Color picker — click-to-toggle so the popover survives
+                  the cursor's trip across the gap from the dot. */}
+              <ColorPicker
+                value={editColor}
+                takenColors={takenColors}
+                onChange={(c) => updateField("color", c)}
+              />
+              {/* Objective icon — emoji or custom uploaded image (#25) */}
+              <ProjectIconPicker
+                project={project}
+                onPick={(icon, customIconId) => handleSetIcon(icon, customIconId)}
+              />
+            </div>
 
             {/* Editable name — 22px hero; shrinks for longer titles */}
             <textarea
@@ -1195,7 +1197,13 @@ export default function ProjectDetail() {
                 el.style.height = el.scrollHeight + "px";
               }}
             />
+          </div>
 
+          {/* Row 2 — actions. Primary (priority, Mark Complete) on the left;
+              destructive (archive, delete) pushed to the far right behind a
+              spacer + hairline divider so a Mark-Complete misfire can't land
+              on a destructive control. */}
+          <div className="flex items-center gap-2 mt-4">
             <button
               onClick={handlePriorityToggle}
               title={project.priority ? "Remove priority" : "Mark high priority (sorts to top of Objectives)"}
@@ -1219,6 +1227,11 @@ export default function ProjectDetail() {
             >
               {project.completed ? "✓ Completed" : "Mark Complete"}
             </button>
+
+            {/* Spacer + divider isolate the destructive cluster from the primary actions. */}
+            <div className="flex-1" />
+            <div className="w-px h-5 bg-divider mr-1" />
+
             <button
               onClick={handleArchive}
               title="Archive objective"

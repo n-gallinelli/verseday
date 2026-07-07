@@ -69,7 +69,16 @@ export interface PipState {
   elapsed: number;
   paused: boolean;
   phase: "work" | "break" | "prompt" | "meetingPrompt";
+  /** Frozen remaining-break scalar. Authoritative ONLY when `breakEndsAt` is
+   *  null (paused / off-break) — the pip renders it verbatim then. While a
+   *  break RUNS, the pip ignores this and self-ticks off `breakEndsAt`. */
   breakRemaining: number;
+  /** Absolute wall-clock instant the running break ends (epoch ms), or null
+   *  when paused / not on break. This is the ANCHOR: shipping it (not just the
+   *  pre-computed scalar) lets the pip run its own 1 Hz clock and agree with
+   *  the full Focus screen to the same instant — no snapshot lag / freeze /
+   *  minute-boundary label disagreement. */
+  breakEndsAt: number | null;
   /** Set only while `phase === "meetingPrompt"`; null otherwise. */
   meetingPrompt: PipMeetingPrompt | null;
   taskTitle: string;

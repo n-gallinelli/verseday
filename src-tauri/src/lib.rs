@@ -726,6 +726,12 @@ pub fn run() {
             sql: "ALTER TABLE weekly_plan_commitments ADD COLUMN task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL;",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 27,
+            description: "early-completion reversal: remember an early-completed weekly instance's original due date so reopen can restore it + un-suppress the cycle",
+            sql: "ALTER TABLE tasks ADD COLUMN suppressed_cycle_date TEXT;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

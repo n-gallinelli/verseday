@@ -85,12 +85,16 @@ function ColorPicker({
   value,
   onChange,
   takenColors = [],
+  variant = "dot",
 }: {
   value: string;
   onChange: (color: string) => void;
   // Colors claimed by other active projects — shown but disabled, so the
   // user can't pick a color the DB guard would reject on save.
   takenColors?: string[];
+  // "dot" = the legacy swatch trigger; "bar" = a full-width color strip
+  // (used as the objective modal's top edge) that opens the same palette.
+  variant?: "dot" | "bar";
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -112,17 +116,40 @@ function ColorPicker({
   }, [open]);
 
   return (
-    <div ref={wrapRef} className="relative flex-shrink-0">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title="Change color"
-        className="w-[14px] h-[14px] rounded-full cursor-pointer ring-2 ring-transparent hover:ring-overlay-pressed transition-all"
-        style={{ backgroundColor: value }}
-      />
+    <div
+      ref={wrapRef}
+      className={variant === "bar" ? "relative w-full" : "relative flex-shrink-0"}
+      // Bar variant opens on hover. The palette is a DOM child with NO margin
+      // gap below the bar, so moving the cursor down onto it never leaves the
+      // wrapper (no flicker-close); mouseleave of the whole zone closes it.
+      {...(variant === "bar"
+        ? {
+            onMouseEnter: () => setOpen(true),
+            onMouseLeave: () => setOpen(false),
+          }
+        : {})}
+    >
+      {variant === "bar" ? (
+        <button
+          type="button"
+          title="Change objective color"
+          className="block w-full h-[6px] cursor-pointer rounded-t-[14px] hover:brightness-95 transition-all"
+          style={{ backgroundColor: value }}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          title="Change color"
+          className="w-[14px] h-[14px] rounded-full cursor-pointer ring-2 ring-transparent hover:ring-overlay-pressed transition-all"
+          style={{ backgroundColor: value }}
+        />
+      )}
       {open && (
         <div
-          className="absolute top-full left-0 mt-1 z-20 bg-elevated border border-line-soft rounded-lg p-2.5 grid grid-cols-4 gap-2.5 w-max"
+          className={`absolute top-full z-20 bg-elevated border border-line-soft rounded-lg p-2.5 grid grid-cols-4 gap-2.5 w-max ${
+            variant === "bar" ? "left-6" : "left-0 mt-1"
+          }`}
           style={{ boxShadow: "var(--shadow-card)" }}
         >
           {PROJECT_PALETTE.map((c) => {
@@ -1126,6 +1153,15 @@ export default function ProjectDetail() {
       className="relative flex flex-1 overflow-hidden flex-col h-full max-w-[1400px] mx-auto w-full"
       {...attDrop}
     >
+        {/* Top color edge — the objective's color as a thin full-width strip at
+            the modal's top; click to change color. Replaces the header dot so
+            the color reads as an ambient property, not a control taking space. */}
+        <ColorPicker
+          variant="bar"
+          value={editColor}
+          takenColors={takenColors}
+          onChange={(c) => updateField("color", c)}
+        />
         <AttachmentDropOverlay visible={attDragging} />
         <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
@@ -1155,23 +1191,19 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        {/* Header strip — hero title row */}
-        <div className="px-8 pt-7 pb-5 border-b border-divider flex-shrink-0">
-          <div className="flex items-center gap-3">
-            {/* Color picker — click-to-toggle so the popover survives
-                the cursor's trip across the gap from the dot. Closes
-                on outside click or color selection. */}
-            <ColorPicker
-              value={editColor}
-              takenColors={takenColors}
-              onChange={(c) => updateField("color", c)}
-            />
-
+        {/* Header — icon + hero title + primary actions on one row. Color moved
+            to the top edge bar; archive/delete moved to the footer (bottom-
+            right, mirroring the task overlay) to keep destructive controls off
+            the title row. */}
+        <div className="px-8 pt-6 pb-5 border-b border-divider flex-shrink-0">
+          <div className="flex items-start gap-3">
             {/* Objective icon — emoji or custom uploaded image (#25) */}
-            <ProjectIconPicker
-              project={project}
-              onPick={(icon, customIconId) => handleSetIcon(icon, customIconId)}
-            />
+            <div className="shrink-0 pt-0.5">
+              <ProjectIconPicker
+                project={project}
+                onPick={(icon, customIconId) => handleSetIcon(icon, customIconId)}
+              />
+            </div>
 
             {/* Editable name — 22px hero; shrinks for longer titles */}
             <textarea
@@ -1196,49 +1228,32 @@ export default function ProjectDetail() {
               }}
             />
 
-            <button
-              onClick={handlePriorityToggle}
-              title={project.priority ? "Remove priority" : "Mark high priority (sorts to top of Objectives)"}
-              className={`flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md cursor-pointer transition-colors ${
-                project.priority
-                  ? "text-accent-orange hover:bg-overlay-hover"
-                  : "text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover"
-              }`}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill={project.priority ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round">
-                <path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 18.9 6.1 21.5l1.2-6.5L2.5 9.4l6.6-.9z" />
-              </svg>
-            </button>
-            <button
-              onClick={handleCompleteToggle}
-              className={`text-[12px] font-medium cursor-pointer px-2.5 py-1 rounded-md border flex-shrink-0 transition-colors ${
-                project.completed
-                  ? "border-accent-green/50 text-accent-green-deep hover:border-accent-green hover:bg-accent-green-soft"
-                  : "border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft"
-              }`}
-            >
-              {project.completed ? "✓ Completed" : "Mark Complete"}
-            </button>
-            <button
-              onClick={handleArchive}
-              title="Archive objective"
-              className="text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md transition-colors"
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="3" width="12" height="3" rx="0.5" />
-                <path d="M3 6v7a1 1 0 001 1h8a1 1 0 001-1V6" />
-                <path d="M6.5 9h3" />
-              </svg>
-            </button>
-            <button
-              onClick={() => setConfirmDeleteProject(true)}
-              title="Delete objective"
-              className="text-fg-faded hover:text-accent-destructive hover:bg-accent-destructive/[0.08] cursor-pointer flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md transition-colors"
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />
-              </svg>
-            </button>
+            {/* Primary actions — priority + complete, pinned top-right. */}
+            <div className="flex items-center gap-2 shrink-0 pt-0.5">
+              <button
+                onClick={handlePriorityToggle}
+                title={project.priority ? "Remove priority" : "Mark high priority (sorts to top of Objectives)"}
+                className={`flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md cursor-pointer transition-colors ${
+                  project.priority
+                    ? "text-accent-orange hover:bg-overlay-hover"
+                    : "text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover"
+                }`}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill={project.priority ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round">
+                  <path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 18.9 6.1 21.5l1.2-6.5L2.5 9.4l6.6-.9z" />
+                </svg>
+              </button>
+              <button
+                onClick={handleCompleteToggle}
+                className={`text-[12px] font-medium cursor-pointer px-2.5 py-1 rounded-md border flex-shrink-0 transition-colors ${
+                  project.completed
+                    ? "border-accent-green/50 text-accent-green-deep hover:border-accent-green hover:bg-accent-green-soft"
+                    : "border-accent-blue/50 text-accent-blue-soft-fg hover:border-accent-blue hover:bg-accent-blue-soft"
+                }`}
+              >
+                {project.completed ? "✓ Completed" : "Mark Complete"}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1469,14 +1484,13 @@ export default function ProjectDetail() {
         </DragOverlay>
         </DndContext>
 
-        {/* Footer */}
-        <div className="flex items-center gap-2 px-8 py-3.5 border-t border-line-hairline flex-shrink-0">
-          <span className="text-[10px] text-fg-disabled flex-1">
-            Auto-saved
-          </span>
-          {confirmDeleteProject && (
-            <div className="flex items-center gap-2">
-              <span className="text-[12px] text-accent-destructive">
+        {/* Footer — status left; archive + delete pinned bottom-right (mirrors
+            the task overlay), off the title row. Delete swaps the row for an
+            inline confirm. */}
+        <div className="flex items-center gap-2 px-8 py-3 border-t border-line-hairline flex-shrink-0">
+          {confirmDeleteProject ? (
+            <>
+              <span className="flex-1 text-[12px] text-accent-destructive">
                 Delete objective &amp; all tasks?
               </span>
               <button
@@ -1491,7 +1505,31 @@ export default function ProjectDetail() {
               >
                 Cancel
               </button>
-            </div>
+            </>
+          ) : (
+            <>
+              <span className="text-[10px] text-fg-disabled flex-1">Auto-saved</span>
+              <button
+                onClick={handleArchive}
+                title="Archive objective"
+                className="text-fg-faded hover:text-fg-secondary hover:bg-overlay-hover cursor-pointer p-2 rounded-md transition-colors"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="3" width="12" height="3" rx="0.5" />
+                  <path d="M3 6v7a1 1 0 001 1h8a1 1 0 001-1V6" />
+                  <path d="M6.5 9h3" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setConfirmDeleteProject(true)}
+                title="Delete objective"
+                className="text-accent-destructive/60 hover:text-accent-destructive cursor-pointer p-2 rounded-md hover:bg-accent-destructive/10 transition-colors"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 011.34-1.34h2.66a1.33 1.33 0 011.34 1.34V4M13 4v9.33a1.33 1.33 0 01-1.33 1.34H4.33A1.33 1.33 0 013 13.33V4" />
+                </svg>
+              </button>
+            </>
           )}
         </div>
 

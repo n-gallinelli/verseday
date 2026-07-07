@@ -85,22 +85,42 @@ pub fn get_last_backup_at(app_handle: tauri::AppHandle) -> Option<i64> {
 // fetches the single attachment's base64 (the ONLY blob-read path — Verse C1)
 // and passes it here alongside the display filename.
 //
-// SECURITY (Verse C4/C5/C6):
+// SECURITY (Verse C4/C5/C6, B1):
 //  - The on-disk name is ALWAYS derived as "<id>-<sanitized>" — path separators
 //    and ".." are stripped, leading dots/spaces trimmed, length clamped. The
 //    raw stored filename is never written verbatim, so no traversal.
 //  - Bytes land only under $TMPDIR/verseday-attachments/ (created 0700-ish by
 //    the OS default), never an arbitrary path.
-//  - Executable/script extensions are NEVER launched — they fall back to
-//    reveal-in-Finder. The decision is by file EXTENSION, not the caller-
-//    supplied mime (attacker-settable metadata must not drive an exec choice).
+//  - We hand the file to `open` ONLY when its extension is on a known-safe
+//    ALLOWLIST (documents/media that render, never execute). EVERYTHING else —
+//    executables, scripts, installers (.pkg/.dmg), location files
+//    (.webloc/.inetloc/.url, a documented `open`-follows-target RCE vector),
+//    archives, unknown types — falls back to reveal-in-Finder, so a click can
+//    never launch code. An allowlist is chosen over a denylist deliberately: it
+//    doesn't rot each time Apple ships a new launchable type. The decision is
+//    by file EXTENSION, not the caller-supplied mime (attacker-settable
+//    metadata must not drive the open-vs-reveal choice).
 
-/// Lowercased set of extensions we refuse to `open` (which would launch/run
-/// them). Anything here reveals-in-Finder instead.
-const EXEC_EXTENSIONS: &[&str] = &[
-    "app", "command", "sh", "zsh", "bash", "scpt", "dylib", "so", "tool",
-    "workflow", "action", "terminal", "py", "rb", "pl", "js", "jar", "exe",
-    "bat", "cmd", "com", "ps1", "vbs", "applescript",
+/// Lowercased extensions we consider safe to hand to `open` — inert documents
+/// and media that a default app renders/plays but never executes. Anything not
+/// in this set reveals-in-Finder instead. Images normally never reach here
+/// (they preview in the in-app lightbox); a few are listed only as a safety net.
+/// Notably absent: .svg (opens in a browser where its script CAN run),
+/// archives, and every executable/installer/location type.
+const OPENABLE_EXTENSIONS: &[&str] = &[
+    // Documents
+    "pdf", "txt", "text", "rtf", "md", "markdown", "log", "csv", "tsv",
+    "json", "xml",
+    // Office
+    "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp",
+    // iWork
+    "pages", "numbers", "key",
+    // Images (safety net — normally routed to the lightbox, not here)
+    "png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "tiff", "tif",
+    // Audio
+    "mp3", "m4a", "wav", "aac", "aiff", "flac", "ogg",
+    // Video
+    "mp4", "mov", "m4v", "avi", "mkv", "webm",
 ];
 
 /// Keep alnum / dash / underscore / dot / space; everything else (incl. path
@@ -144,11 +164,13 @@ pub fn open_attachment(id: i64, filename: String, base64: String) -> Result<(), 
     let path = dir.join(&safe_name);
     std::fs::write(&path, &bytes).map_err(|e| format!("Could not write attachment: {e}"))?;
 
-    let is_exec = extension_of(&safe_name)
-        .map(|ext| EXEC_EXTENSIONS.contains(&ext.as_str()))
+    // Allowlist: open ONLY known-safe types; reveal-in-Finder for everything
+    // else (incl. no extension). Never launch code (Verse C6/B1).
+    let openable = extension_of(&safe_name)
+        .map(|ext| OPENABLE_EXTENSIONS.contains(&ext.as_str()))
         .unwrap_or(false);
 
-    platform::open_or_reveal(&path, is_exec)
+    platform::open_or_reveal(&path, /* reveal_only = */ !openable)
 }
 
 // ── Platform-specific implementations ──────────────────────────────────
@@ -187,14 +209,14 @@ mod platform {
         }
     }
 
-    /// Hand an attachment file to the OS. Safe files open in their default app
-    /// (`open`); executable/script files are only ever REVEALED in Finder
-    /// (`open -R`) so a click can never launch code (Verse C6). `open` takes
-    /// the path as a discrete argv (no shell), so the app-generated path can't
-    /// be interpreted as flags or injected.
-    pub fn open_or_reveal(path: &std::path::Path, is_exec: bool) -> Result<(), String> {
+    /// Hand an attachment file to the OS. Allowlisted safe types open in their
+    /// default app (`open`); anything else (`reveal_only`) is only ever REVEALED
+    /// in Finder (`open -R`) so a click can never launch code (Verse C6/B1).
+    /// `open` takes the path as a discrete argv (no shell), so the
+    /// app-generated path can't be interpreted as flags or injected.
+    pub fn open_or_reveal(path: &std::path::Path, reveal_only: bool) -> Result<(), String> {
         let mut cmd = std::process::Command::new("/usr/bin/open");
-        if is_exec {
+        if reveal_only {
             cmd.arg("-R");
         }
         // `path` is always absolute (built from std::env::temp_dir()), so it
@@ -219,7 +241,7 @@ mod platform {
         String::new()
     }
     pub fn activate_app_by_bundle_id(_: &str) {}
-    pub fn open_or_reveal(_: &std::path::Path, _: bool) -> Result<(), String> {
+    pub fn open_or_reveal(_: &std::path::Path, _reveal_only: bool) -> Result<(), String> {
         Err("Opening attachments is only supported on macOS.".to_string())
     }
 }

@@ -30,7 +30,7 @@ An attachment binds to a **concrete, persistent row** via `task_id` XOR `project
 Non-image files are materialized to `$TMPDIR/verseday-attachments/` and handed to the OS by the `open_attachment` Rust command. No new Tauri plugin/capability — `open`/`open -R` via `std::process::Command` (macOS), path passed as discrete argv (no shell). Safeguards:
 - **C4** filename sanitized to `"<id>-<sanitized>"`; separators/`..` stripped, leading dots/spaces trimmed, length-clamped. Raw stored name never written verbatim.
 - **C5** bytes only ever land under the app-private temp subdir.
-- **C6** executable/script extensions (`.app/.command/.sh/.scpt/.dylib/.js/.jar/…`) are **revealed in Finder**, never launched. Decision is by **extension**, not the caller-supplied mime.
+- **C6 / B1** the open-vs-reveal decision is an **allowlist**, not a denylist (Verse B1): only known-inert document/media extensions (pdf, txt/rtf/md/csv/json/xml, office, iWork, images, audio, video) are handed to `open`. **Everything else** — executables, scripts, installers (`.pkg/.mpkg/.dmg`), location files (`.webloc/.inetloc/.fileloc/.url`, an `open`-follows-target RCE vector), archives, unknown/extensionless — is **revealed in Finder**, never launched. An allowlist is durable: it doesn't rot when Apple adds a new launchable type. Decision is by **extension**, not the caller-supplied mime. `.svg` is deliberately excluded (would open in a browser where its script can run).
 
 Images never touch disk — they preview in an in-app lightbox that fetches the single blob on demand and discards it on close.
 
@@ -39,6 +39,10 @@ Attachments are create/delete only. No `updated_at`, no edit path — confirmed 
 
 ## Migration gate (Verse)
 Bytes freeze on first apply, including any dev DB. **v27 has NOT been applied** — the app has not been launched against a DB since the migration was written (validated via `tsc` + `cargo check` + `vite build`, none of which run migrations). Before first launch: confirm PR #42 (which also wants v27) has not merged; if it has, renumber to **v28** first.
+
+## Follow-up tickets (Verse non-blocking notes)
+- **Temp-file lifetime (privacy):** decoded attachments linger in `$TMPDIR/verseday-attachments/` after open/reveal. Can't unlink immediately after `open` (it returns once the file is *launched*, before the target app reads it — a race). Right fix is a **sweep on app launch** (mirroring `prune_backups`), not an inline unlink. Ticketed, not done.
+- **Aggregate-size guardrail:** only a per-file 10 MB cap exists. Fine for single-user; revisit if the DB/backup growth becomes real (see D1).
 
 ## Changelog
 - `src-tauri/src/lib.rs` — migration v27 (`attachments` table + indices); register `open_attachment`.

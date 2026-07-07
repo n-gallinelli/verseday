@@ -1,7 +1,7 @@
 # Attachments — decision record & changelog
 
 **Feature:** Files/screenshots on Task details and Objective (Project) details.
-**Branch:** `feat/attachments` @e37c999 · **Migration:** currently **v28** (see merge-order gate below) · **Status:** Code Verse-APPROVED; data-layer runtime-verified; HELD pending PR #42 → rebase → app-launch verify. Migration NOT applied to any DB (bytes not frozen).
+**Branch:** `feat/attachments` (merged origin/main incl. #42) · **Migration:** **v28**, contiguous after #42's v27 · **Status:** Code Verse-APPROVED; #42 merged 2026-07-07 → merged into branch → **v28 applied cleanly (success=1), attachments table live**; data + migration runtime-verified. Remaining: human UI click-tests + open PR.
 
 ## Decisions (post Verse plan-approval)
 
@@ -38,6 +38,8 @@ Images never touch disk — they preview in an in-app lightbox that fetches the 
 Attachments are create/delete only. No `updated_at`, no edit path — confirmed with Verse.
 
 ## Migration merge-order gate (Verse ruling 2026-07-07)
+**✅ RESOLVED 2026-07-07 via path A:** #42 merged to main first (v27) → `git merge origin/main` into feat/attachments → resolved the `lib.rs` migration-vec conflict to contiguous `26, 27(#42), 28(attachments)` → v28 applied cleanly to the real DB (`success=1`). No hole, no out-of-order risk. History below kept for the record.
+
 **The migration number follows MERGE ORDER into main — not the current state of origin/main, and not a local dev-run.** A dev-run that applied PR #42's v27 to one machine contaminates *that machine*; it does **not** freeze v27 on main. Byte-freeze is per-migration-content on whatever DB it touched; the *version integer we ship* is set by which PR merges first.
 
 **Current state:** branch @e37c999 defines migrations `[1..26, 28]` — a **hole at 27**. That is safe **only** under path (A) below. Byte-freeze is clean: sqlx's `VersionMissing(27)` aborted the run before writing `_sqlx_migrations`, so nothing applied and the v28 bytes are not frozen — the integer is still free to change.

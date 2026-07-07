@@ -726,7 +726,7 @@ pub fn run() {
             sql: "ALTER TABLE weekly_plan_commitments ADD COLUMN task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL;",
             kind: MigrationKind::Up,
         },
-        // Attachments (#27): files/screenshots on a Task OR an Objective (Project),
+        // Attachments (#28): files/screenshots on a Task OR an Objective (Project),
         // stored as base64 data-URIs in a DEDICATED table so the blob TEXT never
         // drags a task/project hydration query (Verse C1). Exactly one owner per
         // row (XOR CHECK). REFERENCES clauses document intent, but orphan cleanup
@@ -734,8 +734,14 @@ pub fn run() {
         // because tauri-plugin-sql pools connections with foreign_keys OFF by
         // default so ON DELETE CASCADE is unreliable (Verse C2/C3). Rows are
         // immutable: create/delete only, no edit path (Verse-confirmed).
+        //
+        // Numbered v28, NOT v27: the shared dev DB already has PR #42's v27
+        // (suppressed_cycle_date) applied, so v27 is taken here. Per Verse's
+        // "whoever's second bumps" gate, attachments takes v28. (On origin/main
+        // #42 is still an open PR, but its migration was dev-run against this DB,
+        // which is what freezes the number.)
         Migration {
-            version: 27,
+            version: 28,
             description: "attachments: files/screenshots on a task or objective, base64 data-URI in a dedicated table",
             sql: "
                 CREATE TABLE IF NOT EXISTS attachments (

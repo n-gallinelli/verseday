@@ -53,6 +53,11 @@ export interface Task {
   recurrence_source_id: number | null;
   original_date: string | null;
   rollover_count: number;
+  // v27: for a weekly recurring instance completed BEFORE its due day, the
+  // original due date — set when the early completion suppresses that cycle,
+  // read + cleared on reopen to restore the instance and un-suppress. NULL for
+  // every other row.
+  suppressed_cycle_date: string | null;
   is_highlight: number;
   completed_at: string | null;
   due_date: string | null;

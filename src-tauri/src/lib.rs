@@ -726,6 +726,13 @@ pub fn run() {
             sql: "ALTER TABLE weekly_plan_commitments ADD COLUMN task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL;",
             kind: MigrationKind::Up,
         },
+        // #42 (merged first) — early-completion reversal.
+        Migration {
+            version: 27,
+            description: "early-completion reversal: remember an early-completed weekly instance's original due date so reopen can restore it + un-suppress the cycle",
+            sql: "ALTER TABLE tasks ADD COLUMN suppressed_cycle_date TEXT;",
+            kind: MigrationKind::Up,
+        },
         // Attachments (#28): files/screenshots on a Task OR an Objective (Project),
         // stored as base64 data-URIs in a DEDICATED table so the blob TEXT never
         // drags a task/project hydration query (Verse C1). Exactly one owner per
@@ -735,11 +742,8 @@ pub fn run() {
         // default so ON DELETE CASCADE is unreliable (Verse C2/C3). Rows are
         // immutable: create/delete only, no edit path (Verse-confirmed).
         //
-        // Numbered v28, NOT v27: the shared dev DB already has PR #42's v27
-        // (suppressed_cycle_date) applied, so v27 is taken here. Per Verse's
-        // "whoever's second bumps" gate, attachments takes v28. (On origin/main
-        // #42 is still an open PR, but its migration was dev-run against this DB,
-        // which is what freezes the number.)
+        // v28 because #42's v27 (suppressed_cycle_date) merged first — the list
+        // is contiguous 26 → 27 → 28.
         Migration {
             version: 28,
             description: "attachments: files/screenshots on a task or objective, base64 data-URI in a dedicated table",

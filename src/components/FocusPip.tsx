@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useReducer } from "react";
 import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { currentMonitor } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -430,6 +430,22 @@ export default function FocusPip() {
     };
   }, []);
 
+  // Self-tick the break countdown off the pushed ANCHOR (breakEndsAt), so the
+  // pip agrees with the full Focus screen to the same instant instead of
+  // lagging/freezing on a stale scalar snapshot. This effect only forces a
+  // re-render each second; the remaining time is (re)computed at render from
+  // the live `state.breakEndsAt` — so there's no closure to go stale on
+  // resume/extend (Verse), and no 0-flash from a not-yet-populated interval
+  // value. Keyed on a STABLE boolean (not state identity), so the 1 Hz
+  // heartbeat re-pushes don't tear down and recreate the interval every second.
+  const [, forceTick] = useReducer((x: number) => x + 1, 0);
+  const breakTicking = state?.phase === "break" && state?.breakEndsAt != null;
+  useEffect(() => {
+    if (!breakTicking) return;
+    const id = setInterval(forceTick, 1000);
+    return () => clearInterval(id);
+  }, [breakTicking]);
+
   // Play a chime when FocusMode (the single decider) elects the pip as speaker.
   // playCalm = descending break-offer, playBreakEndChime = ascending break-over;
   // both call ctx.resume() defensively. FocusMode guarantees exactly one play, so
@@ -735,6 +751,18 @@ export default function FocusPip() {
 
   // ── BREAK COUNTDOWN ────────────────────────────────────────────────
   if (state.phase === "break") {
+    // Running break → derive remaining from the anchor at render (fresh every
+    // forceTick second); paused/anchor-null → render the frozen pushed scalar.
+    // Break-END stays FocusMode's authority — this clamps at 0 and waits for the
+    // phase-change event to leave break; it never drives the transition (Verse).
+    const breakRemainingMs =
+      state.breakEndsAt != null
+        ? Math.max(0, state.breakEndsAt - Date.now())
+        : state.breakRemaining;
+    const breakEndsLabel =
+      state.breakEndsAt != null
+        ? breakEndClock(state.breakEndsAt, 0)
+        : breakEndClock(Date.now(), state.breakRemaining);
     return pipShell(
       <div
         data-tauri-drag-region
@@ -763,11 +791,11 @@ export default function FocusPip() {
                 className="absolute inset-0 uppercase whitespace-nowrap [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] transition-opacity duration-[180ms]"
                 style={{ color: "var(--focus-break-label)", opacity: expanded ? 1 : 0 }}
               >
-                ends {breakEndClock(Date.now(), state.breakRemaining)}
+                ends {breakEndsLabel}
               </span>
             </div>
             <div className="text-[20px] font-semibold tabular-nums text-accent-green-deep leading-none font-display" style={{ letterSpacing: "0.03em" }}>
-              {formatCountdown(state.breakRemaining)}
+              {formatCountdown(breakRemainingMs)}
             </div>
           </div>
           <button onClick={() => sendCommand("skipBreak")} className={BTN_SECONDARY}>

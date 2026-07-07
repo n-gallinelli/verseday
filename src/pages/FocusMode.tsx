@@ -755,6 +755,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // Track when the current work cycle started (in terms of work-only time)
   const workCycleStartRef = useRef(0); // workElapsed value when cycle started
   const breakStartRef = useRef(0); // Date.now() when break started
+  // Records Date.now() at pause-start; on resume the break-phase effect slides
+  // breakStartRef forward by the pause span. Declared HERE (not next to that
+  // effect) so the breakEndsAt derivation below can read it to suppress a
+  // stale, pre-slide anchor on the resume frame (Verse resume-ordering fix).
+  const pauseStartRef = useRef<number | null>(null);
 
   // Snooze: the workElapsed threshold at which to re-prompt
   const snoozeThresholdRef = useRef<number | null>(null);
@@ -814,6 +819,20 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   const focusTaskId = focus?.taskId ?? null;
   const focusMode = focus?.mode ?? null;
   const isPaused = focus?.mode === "active" ? focus.paused : true;
+
+  // Absolute end instant of a RUNNING break (epoch ms) — the single anchor both
+  // the full Focus screen and the PiP derive their countdown/"ends" label from,
+  // so the two surfaces can't drift (the PiP had no clock and rendered a stale
+  // pushed scalar). Null while paused OR on the resume frame: `pauseStartRef`
+  // is still set until the resume-slide effect runs, and that effect is declared
+  // AFTER the pip-state builder — so without this guard the builder would emit a
+  // pre-slide (too-short) anchor and the PiP would flash a low number for ~1s
+  // (Verse resume-ordering condition). Null → consumers fall back to the frozen
+  // breakRemaining, which is exactly the paused value.
+  const breakEndsAt =
+    phase === "break" && !isPaused && pauseStartRef.current === null
+      ? breakStartRef.current + breakDuration
+      : null;
   const lastTickRef = useRef<number>(0);
   // Monotonic companion to lastTickRef. performance.now() freezes during machine
   // sleep and ignores wall-clock jumps, so comparing its delta against
@@ -1066,6 +1085,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
       paused: focus.mode === "active" ? focus.paused : false,
       phase: showMeeting ? "meetingPrompt" : phase,
       breakRemaining,
+      breakEndsAt,
       meetingPrompt: showMeeting
         ? {
             title: meetingPromptRequest.title,
@@ -1081,7 +1101,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     };
     pipStateRef.current = state;
     void emit(PIP_STATE_EVENT, state);
-  }, [focus, focusedTask, elapsed, phase, breakRemaining, priorMs, meetingPromptRequest]);
+  }, [focus, focusedTask, elapsed, phase, breakRemaining, breakEndsAt, priorMs, meetingPromptRequest]);
 
   // PiP high-visibility: load once on mount, then track Settings toggles live
   // (same-window CustomEvent). On toggle, patch the cached state and push it
@@ -1397,10 +1417,9 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     togglePauseFocus();
   }
 
-  // Pause-start tracking for the Pomodoro break-phase adjustment. Local ref
-  // records when the user paused; on resume during break phase, advance
-  // breakStartRef so the break countdown effectively pauses too.
-  const pauseStartRef = useRef<number | null>(null);
+  // Pause-start tracking for the Pomodoro break-phase adjustment (pauseStartRef
+  // declared up top so breakEndsAt can read it): on resume during break phase,
+  // advance breakStartRef so the break countdown effectively pauses too.
   useEffect(() => {
     if (focus?.mode !== "active") {
       pauseStartRef.current = null;
@@ -1862,6 +1881,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           <BreakScreen
             taskTitle={task.title}
             remainingMs={breakRemaining}
+            breakEndsAt={breakEndsAt}
             onSkip={handleSkipBreak}
           />
         </div>
@@ -2144,15 +2164,23 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
 function BreakScreen({
   taskTitle,
   remainingMs,
+  breakEndsAt,
   onSkip,
 }: {
   taskTitle: string;
   remainingMs: number;
+  breakEndsAt: number | null;
   onSkip: () => void;
 }) {
-  // now is read at render; the parent re-renders every second as the countdown
-  // ticks, so the "ends" label stays correct. breakEndClock is pure + tested.
-  const endsAt = breakEndClock(Date.now(), remainingMs);
+  // "ends H:MM" derives from the SAME absolute anchor the pip uses, so the two
+  // labels can't disagree across a minute boundary (Verse: collapse the two
+  // independent breakEndClock(Date.now(), remaining) calls onto one instant).
+  // Falls back to now+remaining only while paused (anchor null). The countdown
+  // itself still renders remainingMs — deferring the full countdown-math swap.
+  const endsAt =
+    breakEndsAt != null
+      ? breakEndClock(breakEndsAt, 0)
+      : breakEndClock(Date.now(), remainingMs);
   return (
     <div className="relative flex flex-col items-center text-center max-w-[560px] px-8 animate-scale-in">
       <div className="mb-8 break-logo-pulse">

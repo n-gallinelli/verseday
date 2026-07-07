@@ -9,7 +9,12 @@ import DateRangeField from "./DateRangeField";
 import CalendarMetaRail from "./CalendarMetaRail";
 import ProjectPicker from "./ProjectPicker";
 import RichTextEditor from "./RichTextEditor";
-import { AttachmentsSection } from "./AttachmentsSection";
+import {
+  useAttachmentsController,
+  useAttachmentDrop,
+  AttachmentDropOverlay,
+  NotesAttachmentsTabs,
+} from "./attachments/attachmentsUi";
 import SimpleSelect from "./SimpleSelect";
 import type { Task, Project } from "../types";
 
@@ -446,6 +451,14 @@ export default function TaskDetailOverlay({
   const [worked, setWorked] = useState(workedMinutes > 0 ? workedMinutes.toString() : "");
   const [dayBreakdown, setDayBreakdown] = useState<{ date: string; minutes: number }[]>([]);
   const [openPopover, setOpenPopover] = useState<"estimate" | "worked" | null>(null);
+
+  // Attachments v2 — Notes/Attachments tab + full-panel drop.
+  const [detailTab, setDetailTab] = useState<"notes" | "attachments">("notes");
+  const attachments = useAttachmentsController("task", task.id);
+  const { isDragging: attDragging, dropHandlers: attDrop } = useAttachmentDrop(
+    attachments.ingest,
+    () => setDetailTab("attachments")
+  );
   // Inline delete confirm — keeps the user inside the overlay so they can
   // see what they're deleting until the moment of confirmation.
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -725,7 +738,9 @@ export default function TaskDetailOverlay({
             if (openPopover) { setOpenPopover(null); } else { handleClose(); }
           }
         }}
+        {...attDrop}
       >
+        <AttachmentDropOverlay visible={attDragging} />
         {completionGlow && (
           <div
             className="absolute top-0 left-0 right-0 h-[220px] pointer-events-none animate-completion-glow z-10"
@@ -885,31 +900,32 @@ export default function TaskDetailOverlay({
 
         {/* Body — split panel */}
         <div className="flex-1 flex min-h-0">
-          {/* Left: Notes — work surface */}
+          {/* Left: Notes / Attachments — work surface */}
           <div className="flex-1 min-w-0 px-8 py-7 overflow-y-auto">
-            <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-4">
-              Notes
-            </div>
-            <RichTextEditor
-              value={notes}
-              onChange={(html) => {
-                setNotes(html);
-                debouncedSave({ notes: html });
-                // Broadcast so FocusMode (or any other surface
-                // showing this task's notes) picks up the new value
-                // without a remount / refetch.
-                window.dispatchEvent(
-                  new CustomEvent("verseday:task-notes-changed", {
-                    detail: { taskId: task.id, html },
-                  })
-                );
-              }}
-              placeholder="..."
-              className="w-full bg-elevated text-[13px] text-fg-secondary leading-relaxed min-h-[380px]"
+            <NotesAttachmentsTabs
+              active={detailTab}
+              onChange={setDetailTab}
+              controller={attachments}
+              notes={
+                <RichTextEditor
+                  value={notes}
+                  onChange={(html) => {
+                    setNotes(html);
+                    debouncedSave({ notes: html });
+                    // Broadcast so FocusMode (or any other surface
+                    // showing this task's notes) picks up the new value
+                    // without a remount / refetch.
+                    window.dispatchEvent(
+                      new CustomEvent("verseday:task-notes-changed", {
+                        detail: { taskId: task.id, html },
+                      })
+                    );
+                  }}
+                  placeholder="..."
+                  className="w-full bg-elevated text-[13px] text-fg-secondary leading-relaxed min-h-[380px]"
+                />
+              }
             />
-            <div className="mt-6">
-              <AttachmentsSection ownerType="task" ownerId={task.id} />
-            </div>
           </div>
 
           {/* Right: Properties rail. Calendar-imported tasks get a

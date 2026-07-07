@@ -1,6 +1,6 @@
 # Attachments v2 — tabbed panel, full-panel drop, box removal, dates shrink
 
-**Author:** Terse (from Nick's brief) · **Date:** 2026-07-07 · **Status:** Verse PLAN-APPROVED 2026-07-07 (presentational only, no bytes/schema). Rulings folded in below. QUEUED — NO code until v1 attachments lands (post-#42 rebase, see `attachments-decisions.md`).
+**Author:** Terse (from Nick's brief) · **Date:** 2026-07-07 · **Status:** Verse PLAN-APPROVED → **BUILT 2026-07-07** (all 5 items) after Nick saw v1 in preview and wanted the redesign. Shared module `src/components/attachments/attachmentsUi.tsx`; wired into `TaskDetailOverlay.tsx` + `ProjectDetail.tsx`; `DateRangeField` empty-state de-boxed; old `AttachmentsSection.tsx` removed. tsc green. Awaiting Nick eyes-on + Verse code review.
 **Depends on:** v1 `src/components/AttachmentsSection.tsx`, `TaskDetailOverlay.tsx`, `pages/ProjectDetail.tsx`.
 **Palette rule (global to this work):** warm sunset accent only — active tab indicator, drag wash, drag border. **Never `--accent-blue`.** Confirm the exact warm token in `src/index.css` (sunset/amber/`--focus-break-label` family) before building; do not hardcode a hex.
 

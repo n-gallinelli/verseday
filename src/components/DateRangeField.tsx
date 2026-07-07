@@ -186,17 +186,16 @@ export default function DateRangeField({
   );
 
   const trigger = isEmpty ? (
+    // Compact inline row — no dashed box, no large padding. Reads like a plain
+    // tappable date row (matches the set-state pill's calendar+text rhythm),
+    // reclaiming the vertical height the old dashed container wasted.
     <button
       ref={triggerRef}
       type="button"
       onClick={openPicker}
-      className="flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] text-fg-muted hover:text-fg-secondary cursor-pointer transition-colors"
-      style={{ border: "1px dashed var(--border-medium)" }}
+      className="inline-flex items-center gap-2 py-1 text-[13px] text-fg-muted hover:text-fg-secondary cursor-pointer transition-colors"
     >
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0">
-        <rect x="2" y="3" width="10" height="9" rx="1.5" />
-        <path d="M2 5.5h10M4.5 1.5v2M9.5 1.5v2M7 7.5v3M5.5 9h3" />
-      </svg>
+      {calIcon}
       {emptyLabel}
     </button>
   ) : (

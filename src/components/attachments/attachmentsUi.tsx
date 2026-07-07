@@ -358,18 +358,23 @@ export function NotesAttachmentsTabs({
         {tab("notes", "Notes")}
         {tab("attachments", "Attachments", controller.count)}
       </div>
-      <div role="tabpanel" className="relative">
+      {/* Both panes share one grid cell so the container is ALWAYS the taller
+          pane's height — the panel never changes height when you switch tabs
+          (both stay in layout; only opacity toggles). */}
+      <div role="tabpanel" className="grid">
         <div
+          style={{ gridArea: "1 / 1" }}
           className={`transition-opacity duration-150 ${
-            active === "notes" ? "opacity-100" : "opacity-0 pointer-events-none absolute inset-0"
+            active === "notes" ? "opacity-100" : "opacity-0 pointer-events-none"
           }`}
           aria-hidden={active !== "notes"}
         >
           {notes}
         </div>
         <div
+          style={{ gridArea: "1 / 1" }}
           className={`transition-opacity duration-150 ${
-            active === "attachments" ? "opacity-100" : "opacity-0 pointer-events-none absolute inset-0"
+            active === "attachments" ? "opacity-100" : "opacity-0 pointer-events-none"
           }`}
           aria-hidden={active !== "attachments"}
         >

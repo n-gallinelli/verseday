@@ -1429,11 +1429,14 @@ export default function ProjectDetail() {
                 the section grow into the rail's remaining vertical
                 space; the grid inherits and the day cells stretch
                 vertically (grid items default to align-items: stretch). */}
-            <div className="pt-5 border-t border-line-hairline flex-1 min-h-0 flex flex-col">
+            <div className="pt-5 border-t border-line-hairline flex flex-col">
               <h3 className="text-[15px] font-medium text-fg mb-3 font-display">
                 This week
               </h3>
-              <div className="grid grid-cols-5 gap-2 flex-1 min-h-0">
+              {/* Natural height so a busy day grows its cell instead of
+                  spilling past it — the rail (overflow-y-auto) scrolls when the
+                  week outgrows the panel. */}
+              <div className="grid grid-cols-5 gap-2">
                 {weekDates.map((date, i) => (
                   <PdDayCell
                     key={date}

@@ -180,18 +180,6 @@ export function AttachmentDropOverlay({ visible }: { visible: boolean }) {
   );
 }
 
-function iconFor(mime: string, filename: string): string {
-  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
-  if (mime.startsWith("image/")) return "🖼️";
-  if (mime.startsWith("audio/")) return "🎵";
-  if (mime.startsWith("video/")) return "🎬";
-  if (mime === "application/pdf" || ext === "pdf") return "📄";
-  if (["doc", "docx", "pages", "txt", "rtf", "md"].includes(ext)) return "📝";
-  if (["xls", "xlsx", "numbers", "csv", "tsv"].includes(ext)) return "📊";
-  if (["zip", "dmg", "gz", "tar", "rar", "7z"].includes(ext)) return "🗜️";
-  return "📎";
-}
-
 // ── The list itself: no dashed box, no per-item card (Verse §2). Clean rows,
 //    generous spacing, quiet empty prompt, inline "+ Add file". ──
 export function AttachmentList({ controller }: { controller: AttachmentsController }) {
@@ -253,13 +241,26 @@ export function AttachmentList({ controller }: { controller: AttachmentsControll
                 className="flex-1 min-w-0 flex items-center gap-3 text-left cursor-pointer"
                 title={`Open ${att.filename}`}
               >
-                <span className="shrink-0 text-[15px] leading-none" aria-hidden>
-                  {iconFor(att.mime, att.filename)}
+                {/* Flat corner-fold document glyph — generic (never assumes
+                    "photo"), same stroke language as the other pane icons,
+                    warm-neutral (tokenized via color-mix so it tracks theme). */}
+                <span
+                  className="shrink-0"
+                  aria-hidden
+                  style={{ color: "color-mix(in srgb, var(--accent-orange) 38%, var(--text-muted))" }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 1.75H4.25A1.25 1.25 0 0 0 3 3v10a1.25 1.25 0 0 0 1.25 1.25h7.5A1.25 1.25 0 0 0 13 13V5.75z" />
+                    <path d="M9 1.75V5.75h4" />
+                  </svg>
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[13px] text-fg-secondary">
                   {att.filename}
                 </span>
-                <span className="shrink-0 text-[11px] text-fg-faded tabular-nums">
+                <span
+                  className="shrink-0 text-[11px] tabular-nums"
+                  style={{ color: "color-mix(in srgb, var(--accent-orange) 26%, var(--text-faded))" }}
+                >
                   {formatAttachmentSize(att.size_bytes)}
                 </span>
               </button>
@@ -287,30 +288,44 @@ export function AttachmentList({ controller }: { controller: AttachmentsControll
           ))}
         </ul>
       ) : (
-        <p className="text-[13px] text-fg-faded py-1">Drop a screenshot or file here.</p>
+        // Empty state: prompt + inline add on ONE line.
+        <div className="flex items-center gap-3 py-1">
+          <span className="text-[13px] text-fg-faded">Drop a screenshot or file here.</span>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => fileInputRef.current?.click()}
+            className="text-[12px] text-accent-orange-soft-fg hover:text-accent-orange cursor-pointer disabled:opacity-50 transition-colors whitespace-nowrap"
+          >
+            {busy ? "Adding…" : "+ Add file"}
+          </button>
+        </div>
       )}
 
-      <div className="mt-2.5">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => fileInputRef.current?.click()}
-          className="text-[12px] text-accent-orange-soft-fg hover:text-accent-orange cursor-pointer disabled:opacity-50 transition-colors"
-        >
-          {busy ? "Adding…" : "+ Add file"}
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            const files = Array.from(e.target.files ?? []);
-            e.target.value = "";
-            void ingest(files);
-          }}
-        />
-      </div>
+      {list.length > 0 && (
+        <div className="mt-2.5">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => fileInputRef.current?.click()}
+            className="text-[12px] text-accent-orange-soft-fg hover:text-accent-orange cursor-pointer disabled:opacity-50 transition-colors"
+          >
+            {busy ? "Adding…" : "+ Add file"}
+          </button>
+        </div>
+      )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          e.target.value = "";
+          void ingest(files);
+        }}
+      />
 
       {error && <div className="mt-2 text-[12px] text-danger">{error}</div>}
 

@@ -116,11 +116,22 @@ function ColorPicker({
   }, [open]);
 
   return (
-    <div ref={wrapRef} className={variant === "bar" ? "relative w-full" : "relative flex-shrink-0"}>
+    <div
+      ref={wrapRef}
+      className={variant === "bar" ? "relative w-full" : "relative flex-shrink-0"}
+      // Bar variant opens on hover. The palette is a DOM child with NO margin
+      // gap below the bar, so moving the cursor down onto it never leaves the
+      // wrapper (no flicker-close); mouseleave of the whole zone closes it.
+      {...(variant === "bar"
+        ? {
+            onMouseEnter: () => setOpen(true),
+            onMouseLeave: () => setOpen(false),
+          }
+        : {})}
+    >
       {variant === "bar" ? (
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
           title="Change objective color"
           className="block w-full h-[6px] cursor-pointer rounded-t-[14px] hover:brightness-95 transition-all"
           style={{ backgroundColor: value }}
@@ -136,8 +147,8 @@ function ColorPicker({
       )}
       {open && (
         <div
-          className={`absolute top-full z-20 bg-elevated border border-line-soft rounded-lg p-2.5 grid grid-cols-4 gap-2.5 w-max mt-1 ${
-            variant === "bar" ? "left-6" : "left-0"
+          className={`absolute top-full z-20 bg-elevated border border-line-soft rounded-lg p-2.5 grid grid-cols-4 gap-2.5 w-max ${
+            variant === "bar" ? "left-6" : "left-0 mt-1"
           }`}
           style={{ boxShadow: "var(--shadow-card)" }}
         >

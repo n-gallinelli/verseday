@@ -79,6 +79,151 @@ pub fn get_last_backup_at(app_handle: tauri::AppHandle) -> Option<i64> {
     Some(millis)
 }
 
+// ── Attachments (#27): open a stored file ──────────────────────────────
+// Attachments live as base64 in SQLite (never on disk), so to hand one to the
+// OS we materialize it into an app-private temp dir and open it. The frontend
+// fetches the single attachment's base64 (the ONLY blob-read path — Verse C1)
+// and passes it here alongside the display filename.
+//
+// SECURITY (Verse C4/C5/C6, B1):
+//  - The on-disk name is ALWAYS derived as "<id>-<sanitized>" — path separators
+//    and ".." are stripped, leading dots/spaces trimmed, length clamped. The
+//    raw stored filename is never written verbatim, so no traversal.
+//  - Bytes land only under $TMPDIR/verseday-attachments/ (created 0700-ish by
+//    the OS default), never an arbitrary path.
+//  - We hand the file to `open` ONLY when its extension is on a known-safe
+//    ALLOWLIST (documents/media that render, never execute). EVERYTHING else —
+//    executables, scripts, installers (.pkg/.dmg), location files
+//    (.webloc/.inetloc/.url, a documented `open`-follows-target RCE vector),
+//    archives, unknown types — falls back to reveal-in-Finder, so a click can
+//    never launch code. An allowlist is chosen over a denylist deliberately: it
+//    doesn't rot each time Apple ships a new launchable type. The decision is
+//    by file EXTENSION, not the caller-supplied mime (attacker-settable
+//    metadata must not drive the open-vs-reveal choice).
+
+/// Lowercased extensions we consider safe to hand to `open` — inert documents
+/// and media that a default app renders/plays but never executes. Anything not
+/// in this set reveals-in-Finder instead. Images normally never reach here
+/// (they preview in the in-app lightbox); a few are listed only as a safety net.
+/// Notably absent: .svg (opens in a browser where its script CAN run),
+/// archives, and every executable/installer/location type.
+const OPENABLE_EXTENSIONS: &[&str] = &[
+    // Documents
+    "pdf", "txt", "text", "rtf", "md", "markdown", "log", "csv", "tsv",
+    "json", "xml",
+    // Office
+    "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp",
+    // iWork
+    "pages", "numbers", "key",
+    // Images (safety net — normally routed to the lightbox, not here)
+    "png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "tiff", "tif",
+    // Audio
+    "mp3", "m4a", "wav", "aac", "aiff", "flac", "ogg",
+    // Video
+    "mp4", "mov", "m4v", "avi", "mkv", "webm",
+];
+
+/// Keep alnum / dash / underscore / dot / space; everything else (incl. path
+/// separators) becomes '_'. Trim leading-or-trailing dots+spaces (blocks "..",
+/// hidden-file and trailing-dot tricks), then clamp length.
+fn sanitize_filename(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | ' ' => c,
+            _ => '_',
+        })
+        .collect();
+    let trimmed = cleaned.trim_matches(|c| c == '.' || c == ' ');
+    let clamped: String = trimmed.chars().take(120).collect();
+    if clamped.is_empty() {
+        "file".to_string()
+    } else {
+        clamped
+    }
+}
+
+/// Lowercased final extension of a sanitized name, if any.
+fn extension_of(name: &str) -> Option<String> {
+    std::path::Path::new(name)
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+}
+
+#[tauri::command]
+pub fn open_attachment(id: i64, filename: String, base64: String) -> Result<(), String> {
+    use base64::Engine;
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64.trim())
+        .map_err(|e| format!("Could not decode attachment: {e}"))?;
+
+    let safe_name = format!("{}-{}", id, sanitize_filename(&filename));
+    let dir = std::env::temp_dir().join("verseday-attachments");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create temp dir: {e}"))?;
+    let path = dir.join(&safe_name);
+    std::fs::write(&path, &bytes).map_err(|e| format!("Could not write attachment: {e}"))?;
+
+    // Allowlist: open ONLY known-safe types; reveal-in-Finder for everything
+    // else (incl. no extension). Never launch code (Verse C6/B1).
+    let openable = extension_of(&safe_name)
+        .map(|ext| OPENABLE_EXTENSIONS.contains(&ext.as_str()))
+        .unwrap_or(false);
+
+    platform::open_or_reveal(&path, /* reveal_only = */ !openable)
+}
+
+/// Pick a non-colliding path in `dir` for `name` — appends " (n)" before the
+/// extension if the file already exists (Finder-style), so a download never
+/// silently overwrites an earlier one.
+fn unique_path(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let candidate = dir.join(name);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let p = std::path::Path::new(name);
+    let stem = p
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| name.to_string());
+    let ext = p
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
+    for i in 1..10_000 {
+        let c = dir.join(format!("{stem} ({i}){ext}"));
+        if !c.exists() {
+            return c;
+        }
+    }
+    candidate
+}
+
+/// Save an attachment to the user's Downloads folder (persistent, unlike the
+/// temp dir used by open_attachment) and reveal it in Finder. Same filename
+/// sanitization as the open path (no traversal), but keeps the ORIGINAL name
+/// (no id prefix) since this is a user-facing file. Never launches anything —
+/// it only writes + reveals.
+#[tauri::command]
+pub fn download_attachment(filename: String, base64: String) -> Result<String, String> {
+    use base64::Engine;
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64.trim())
+        .map_err(|e| format!("Could not decode attachment: {e}"))?;
+
+    let home = std::env::var("HOME").map_err(|_| "Could not locate your home folder.".to_string())?;
+    let downloads = std::path::Path::new(&home).join("Downloads");
+    std::fs::create_dir_all(&downloads).map_err(|e| format!("Could not access Downloads: {e}"))?;
+
+    let dest = unique_path(&downloads, &sanitize_filename(&filename));
+    std::fs::write(&dest, &bytes).map_err(|e| format!("Could not save the file: {e}"))?;
+
+    // Reveal (never open) — surfaces the saved file without launching it.
+    platform::open_or_reveal(&dest, /* reveal_only = */ true)?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
 // ── Platform-specific implementations ──────────────────────────────────
 
 #[cfg(target_os = "macos")]
@@ -114,6 +259,31 @@ mod platform {
             }
         }
     }
+
+    /// Hand an attachment file to the OS. Allowlisted safe types open in their
+    /// default app (`open`); anything else (`reveal_only`) is only ever REVEALED
+    /// in Finder (`open -R`) so a click can never launch code (Verse C6/B1).
+    /// `open` takes the path as a discrete argv (no shell), so the
+    /// app-generated path can't be interpreted as flags or injected.
+    pub fn open_or_reveal(path: &std::path::Path, reveal_only: bool) -> Result<(), String> {
+        let mut cmd = std::process::Command::new("/usr/bin/open");
+        if reveal_only {
+            cmd.arg("-R");
+        }
+        // `path` is always absolute (built from std::env::temp_dir()), so it
+        // can never be mis-parsed as an option flag; and Command passes it as a
+        // discrete argv element, so there's no shell to inject into.
+        cmd.arg(path);
+        cmd.status()
+            .map_err(|e| format!("Could not open attachment: {e}"))
+            .and_then(|s| {
+                if s.success() {
+                    Ok(())
+                } else {
+                    Err("The OS could not open that file.".to_string())
+                }
+            })
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -122,6 +292,9 @@ mod platform {
         String::new()
     }
     pub fn activate_app_by_bundle_id(_: &str) {}
+    pub fn open_or_reveal(_: &std::path::Path, _reveal_only: bool) -> Result<(), String> {
+        Err("Opening attachments is only supported on macOS.".to_string())
+    }
 }
 
 // ── PiP hover-without-focus ────────────────────────────────────────────

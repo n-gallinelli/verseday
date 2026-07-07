@@ -39,6 +39,12 @@ import DateRangeField from "../components/DateRangeField";
 import { parseTimeFromTitle } from "../utils/format";
 import { localDateIso } from "../utils/dates";
 import RichTextEditor from "../components/RichTextEditor";
+import {
+  useAttachmentsController,
+  useAttachmentDrop,
+  AttachmentDropOverlay,
+  NotesAttachmentsTabs,
+} from "../components/attachments/attachmentsUi";
 import ProjectIconPicker from "../components/ProjectIconPicker";
 import type { Task } from "../types";
 
@@ -514,6 +520,15 @@ export default function ProjectDetail() {
   const [editStartDate, setEditStartDate] = useState("");
   const [editTargetDate, setEditTargetDate] = useState("");
   const [editNotes, setEditNotes] = useState("");
+
+  // Attachments v2 — Notes/Attachments tab + full-panel drop. Hooks run before
+  // the `!project` early return, so guard the id with a harmless sentinel.
+  const [detailTab, setDetailTab] = useState<"notes" | "attachments">("notes");
+  const attachments = useAttachmentsController("project", project?.id ?? -1);
+  const { isDragging: attDragging, dropHandlers: attDrop } = useAttachmentDrop(
+    attachments.ingest,
+    () => setDetailTab("attachments")
+  );
   const projectSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
 
@@ -1107,7 +1122,11 @@ export default function ProjectDetail() {
   const weekDates = getCurrentWeekdayDates();
 
   return (
-    <div className="relative flex flex-1 overflow-hidden flex-col h-full max-w-[1400px] mx-auto w-full">
+    <div
+      className="relative flex flex-1 overflow-hidden flex-col h-full max-w-[1400px] mx-auto w-full"
+      {...attDrop}
+    >
+        <AttachmentDropOverlay visible={attDragging} />
         <ErrorBanner error={error} onDismiss={() => setError(null)} />
 
         {/* Undo delete banner — absolute overlay so it doesn't push the
@@ -1387,20 +1406,21 @@ export default function ProjectDetail() {
               />
             </div>
 
-            <div>
-              <div className="uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] text-fg-faded mb-2">
-                Notes
-              </div>
-              {/* Borderless work-surface style — matches TaskDetailOverlay's
-                  notes treatment so the eye lands on the writing, not the
-                  chrome. */}
-              <RichTextEditor
-                value={editNotes}
-                onChange={(html) => updateField("notes", html)}
-                placeholder="Add notes..."
-                className="w-full bg-elevated rounded-md px-1 py-1 text-[13px] text-fg-secondary leading-relaxed min-h-[120px]"
-              />
-            </div>
+            <NotesAttachmentsTabs
+              active={detailTab}
+              onChange={setDetailTab}
+              controller={attachments}
+              notes={
+                // Borderless work-surface style — matches TaskDetailOverlay's
+                // notes treatment so the eye lands on the writing, not chrome.
+                <RichTextEditor
+                  value={editNotes}
+                  onChange={(html) => updateField("notes", html)}
+                  placeholder="Add notes..."
+                  className="w-full bg-elevated rounded-md px-1 py-1 text-[13px] text-fg-secondary leading-relaxed min-h-[120px]"
+                />
+              }
+            />
 
             {/* This week — emphasized as the operational heart of the
                 rail. Real heading typography (not a tiny uppercase
@@ -1409,11 +1429,14 @@ export default function ProjectDetail() {
                 the section grow into the rail's remaining vertical
                 space; the grid inherits and the day cells stretch
                 vertically (grid items default to align-items: stretch). */}
-            <div className="pt-5 border-t border-line-hairline flex-1 min-h-0 flex flex-col">
+            <div className="pt-5 border-t border-line-hairline flex flex-col">
               <h3 className="text-[15px] font-medium text-fg mb-3 font-display">
                 This week
               </h3>
-              <div className="grid grid-cols-5 gap-2 flex-1 min-h-0">
+              {/* Natural height so a busy day grows its cell instead of
+                  spilling past it — the rail (overflow-y-auto) scrolls when the
+                  week outgrows the panel. */}
+              <div className="grid grid-cols-5 gap-2">
                 {weekDates.map((date, i) => (
                   <PdDayCell
                     key={date}

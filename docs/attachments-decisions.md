@@ -1,7 +1,7 @@
 # Attachments — decision record & changelog
 
 **Feature:** Files/screenshots on Task details and Objective (Project) details.
-**Branch:** `feat/attachments` · **Migration:** v27 · **Status:** BUILT, awaiting Verse code/diff review. Migration NOT yet applied to any DB (version-freeze gate).
+**Branch:** `feat/attachments` @e37c999 · **Migration:** currently **v28** (see merge-order gate below) · **Status:** Code Verse-APPROVED; data-layer runtime-verified; HELD pending PR #42 → rebase → app-launch verify. Migration NOT applied to any DB (bytes not frozen).
 
 ## Decisions (post Verse plan-approval)
 
@@ -37,8 +37,19 @@ Images never touch disk — they preview in an in-app lightbox that fetches the 
 ### D6 — Immutability
 Attachments are create/delete only. No `updated_at`, no edit path — confirmed with Verse.
 
-## Migration gate (Verse)
-Bytes freeze on first apply, including any dev DB. **v27 has NOT been applied** — the app has not been launched against a DB since the migration was written (validated via `tsc` + `cargo check` + `vite build`, none of which run migrations). Before first launch: confirm PR #42 (which also wants v27) has not merged; if it has, renumber to **v28** first.
+## Migration merge-order gate (Verse ruling 2026-07-07)
+**The migration number follows MERGE ORDER into main — not the current state of origin/main, and not a local dev-run.** A dev-run that applied PR #42's v27 to one machine contaminates *that machine*; it does **not** freeze v27 on main. Byte-freeze is per-migration-content on whatever DB it touched; the *version integer we ship* is set by which PR merges first.
+
+**Current state:** branch @e37c999 defines migrations `[1..26, 28]` — a **hole at 27**. That is safe **only** under path (A) below. Byte-freeze is clean: sqlx's `VersionMissing(27)` aborted the run before writing `_sqlx_migrations`, so nothing applied and the v28 bytes are not frozen — the integer is still free to change.
+
+**Invariant (hard gate at merge):** at merge time, feat/attachments' migration list must be **gap-free relative to main**. Pick one end-state:
+
+- **(A) Merge AFTER #42 — stays v28 [Nick's choice].** Valid **only after rebase** onto a main that carries #42's v27. The rebase closes the hole → contiguous `26, 27(#42), 28(attachments)`, v28 applies cleanly, and the contaminated dev DB heals (its applied v27 matches #42's checksum). **Do NOT merge the v28-hole branch while v27 is undefined on it** — if it merged first, #42 later merging as v27 would be an out-of-order migration below the high-water mark → tauri-plugin-sql/sqlx (no ignore-missing/out-of-order allowance) **hard-errors on existing users' next launch**, and #42's `suppressed_cycle_date` silently never applies. Shipped production break.
+- **(B) Merge BEFORE #42 — revert to v27.** Revert e37c999 → attachments = v27, merge first; #42 then rebases to v28. No wait, no hole.
+
+Either is correct; the **only** danger is a mismatch between the branch's number and the actual merge order.
+
+**Merge checklist:** #42 merges → rebase feat/attachments on main → confirm migration list is contiguous (`26, 27, 28`) → app-launch verify (v28 applies) → human UI clicks → PR (not direct push, per push-authorization rule).
 
 ## Follow-up tickets (Verse non-blocking notes)
 - **Temp-file lifetime (privacy):** decoded attachments linger in `$TMPDIR/verseday-attachments/` after open/reveal. Can't unlink immediately after `open` (it returns once the file is *launched*, before the target app reads it — a race). Right fix is a **sweep on app launch** (mirroring `prune_backups`), not an inline unlink. Ticketed, not done.

@@ -726,6 +726,34 @@ pub fn run() {
             sql: "ALTER TABLE weekly_plan_commitments ADD COLUMN task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL;",
             kind: MigrationKind::Up,
         },
+        // Attachments (#27): files/screenshots on a Task OR an Objective (Project),
+        // stored as base64 data-URIs in a DEDICATED table so the blob TEXT never
+        // drags a task/project hydration query (Verse C1). Exactly one owner per
+        // row (XOR CHECK). REFERENCES clauses document intent, but orphan cleanup
+        // is done app-side (deleteTask / deleteProject / sibling-merge reparent),
+        // because tauri-plugin-sql pools connections with foreign_keys OFF by
+        // default so ON DELETE CASCADE is unreliable (Verse C2/C3). Rows are
+        // immutable: create/delete only, no edit path (Verse-confirmed).
+        Migration {
+            version: 27,
+            description: "attachments: files/screenshots on a task or objective, base64 data-URI in a dedicated table",
+            sql: "
+                CREATE TABLE IF NOT EXISTS attachments (
+                  id          INTEGER PRIMARY KEY,
+                  task_id     INTEGER REFERENCES tasks(id)    ON DELETE CASCADE,
+                  project_id  INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+                  filename    TEXT    NOT NULL,
+                  mime        TEXT    NOT NULL,
+                  size_bytes  INTEGER NOT NULL,
+                  data        TEXT    NOT NULL,
+                  created_at  TEXT    NOT NULL,
+                  CHECK ((task_id IS NOT NULL) <> (project_id IS NOT NULL))
+                );
+                CREATE INDEX IF NOT EXISTS idx_attachments_task    ON attachments(task_id);
+                CREATE INDEX IF NOT EXISTS idx_attachments_project ON attachments(project_id);
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -762,6 +790,7 @@ pub fn run() {
             commands::start_pip_hover_monitor,
             commands::stop_pip_hover_monitor,
             commands::get_last_backup_at,
+            commands::open_attachment,
             #[cfg(target_os = "macos")]
             calendar::calendar_check_permission,
             #[cfg(target_os = "macos")]

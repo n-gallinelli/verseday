@@ -79,6 +79,78 @@ pub fn get_last_backup_at(app_handle: tauri::AppHandle) -> Option<i64> {
     Some(millis)
 }
 
+// ── Attachments (#27): open a stored file ──────────────────────────────
+// Attachments live as base64 in SQLite (never on disk), so to hand one to the
+// OS we materialize it into an app-private temp dir and open it. The frontend
+// fetches the single attachment's base64 (the ONLY blob-read path — Verse C1)
+// and passes it here alongside the display filename.
+//
+// SECURITY (Verse C4/C5/C6):
+//  - The on-disk name is ALWAYS derived as "<id>-<sanitized>" — path separators
+//    and ".." are stripped, leading dots/spaces trimmed, length clamped. The
+//    raw stored filename is never written verbatim, so no traversal.
+//  - Bytes land only under $TMPDIR/verseday-attachments/ (created 0700-ish by
+//    the OS default), never an arbitrary path.
+//  - Executable/script extensions are NEVER launched — they fall back to
+//    reveal-in-Finder. The decision is by file EXTENSION, not the caller-
+//    supplied mime (attacker-settable metadata must not drive an exec choice).
+
+/// Lowercased set of extensions we refuse to `open` (which would launch/run
+/// them). Anything here reveals-in-Finder instead.
+const EXEC_EXTENSIONS: &[&str] = &[
+    "app", "command", "sh", "zsh", "bash", "scpt", "dylib", "so", "tool",
+    "workflow", "action", "terminal", "py", "rb", "pl", "js", "jar", "exe",
+    "bat", "cmd", "com", "ps1", "vbs", "applescript",
+];
+
+/// Keep alnum / dash / underscore / dot / space; everything else (incl. path
+/// separators) becomes '_'. Trim leading-or-trailing dots+spaces (blocks "..",
+/// hidden-file and trailing-dot tricks), then clamp length.
+fn sanitize_filename(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | ' ' => c,
+            _ => '_',
+        })
+        .collect();
+    let trimmed = cleaned.trim_matches(|c| c == '.' || c == ' ');
+    let clamped: String = trimmed.chars().take(120).collect();
+    if clamped.is_empty() {
+        "file".to_string()
+    } else {
+        clamped
+    }
+}
+
+/// Lowercased final extension of a sanitized name, if any.
+fn extension_of(name: &str) -> Option<String> {
+    std::path::Path::new(name)
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase())
+}
+
+#[tauri::command]
+pub fn open_attachment(id: i64, filename: String, base64: String) -> Result<(), String> {
+    use base64::Engine;
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64.trim())
+        .map_err(|e| format!("Could not decode attachment: {e}"))?;
+
+    let safe_name = format!("{}-{}", id, sanitize_filename(&filename));
+    let dir = std::env::temp_dir().join("verseday-attachments");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create temp dir: {e}"))?;
+    let path = dir.join(&safe_name);
+    std::fs::write(&path, &bytes).map_err(|e| format!("Could not write attachment: {e}"))?;
+
+    let is_exec = extension_of(&safe_name)
+        .map(|ext| EXEC_EXTENSIONS.contains(&ext.as_str()))
+        .unwrap_or(false);
+
+    platform::open_or_reveal(&path, is_exec)
+}
+
 // ── Platform-specific implementations ──────────────────────────────────
 
 #[cfg(target_os = "macos")]
@@ -114,6 +186,31 @@ mod platform {
             }
         }
     }
+
+    /// Hand an attachment file to the OS. Safe files open in their default app
+    /// (`open`); executable/script files are only ever REVEALED in Finder
+    /// (`open -R`) so a click can never launch code (Verse C6). `open` takes
+    /// the path as a discrete argv (no shell), so the app-generated path can't
+    /// be interpreted as flags or injected.
+    pub fn open_or_reveal(path: &std::path::Path, is_exec: bool) -> Result<(), String> {
+        let mut cmd = std::process::Command::new("/usr/bin/open");
+        if is_exec {
+            cmd.arg("-R");
+        }
+        // `path` is always absolute (built from std::env::temp_dir()), so it
+        // can never be mis-parsed as an option flag; and Command passes it as a
+        // discrete argv element, so there's no shell to inject into.
+        cmd.arg(path);
+        cmd.status()
+            .map_err(|e| format!("Could not open attachment: {e}"))
+            .and_then(|s| {
+                if s.success() {
+                    Ok(())
+                } else {
+                    Err("The OS could not open that file.".to_string())
+                }
+            })
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -122,6 +219,9 @@ mod platform {
         String::new()
     }
     pub fn activate_app_by_bundle_id(_: &str) {}
+    pub fn open_or_reveal(_: &std::path::Path, _: bool) -> Result<(), String> {
+        Err("Opening attachments is only supported on macOS.".to_string())
+    }
 }
 
 // ── PiP hover-without-focus ────────────────────────────────────────────

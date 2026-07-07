@@ -39,6 +39,7 @@ import DateRangeField from "../components/DateRangeField";
 import { parseTimeFromTitle } from "../utils/format";
 import { localDateIso } from "../utils/dates";
 import RichTextEditor from "../components/RichTextEditor";
+import { AttachmentsSection } from "../components/AttachmentsSection";
 import ProjectIconPicker from "../components/ProjectIconPicker";
 import type { Task } from "../types";
 
@@ -1400,6 +1401,10 @@ export default function ProjectDetail() {
                 placeholder="Add notes..."
                 className="w-full bg-elevated rounded-md px-1 py-1 text-[13px] text-fg-secondary leading-relaxed min-h-[120px]"
               />
+            </div>
+
+            <div>
+              <AttachmentsSection ownerType="project" ownerId={project.id} />
             </div>
 
             {/* This week — emphasized as the operational heart of the

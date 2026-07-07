@@ -9,6 +9,7 @@ import DateRangeField from "./DateRangeField";
 import CalendarMetaRail from "./CalendarMetaRail";
 import ProjectPicker from "./ProjectPicker";
 import RichTextEditor from "./RichTextEditor";
+import { AttachmentsSection } from "./AttachmentsSection";
 import SimpleSelect from "./SimpleSelect";
 import type { Task, Project } from "../types";
 
@@ -906,6 +907,9 @@ export default function TaskDetailOverlay({
               placeholder="..."
               className="w-full bg-elevated text-[13px] text-fg-secondary leading-relaxed min-h-[380px]"
             />
+            <div className="mt-6">
+              <AttachmentsSection ownerType="task" ownerId={task.id} />
+            </div>
           </div>
 
           {/* Right: Properties rail. Calendar-imported tasks get a

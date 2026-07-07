@@ -15,7 +15,7 @@ import { createTaskSortSubquery } from "./createTaskSortSql";
 import { assertReschedulable } from "./rescheduleGuard";
 import { todayString, localDateIso, localDayStartUtc, localDayEndUtc, weekdayDates, addDaysIso } from "../utils/dates";
 import { emitIconsChanged } from "../utils/iconEvents";
-import type { Project, Task, DailyPlan, WeeklyShutdown, Link, CustomIcon } from "../types";
+import type { Project, Task, DailyPlan, WeeklyShutdown, Link, CustomIcon, Attachment, AttachmentOwnerType } from "../types";
 import type { DismissalReason } from "../calendar/types";
 
 /** The colors offered in project color pickers and auto-assigned to new
@@ -203,6 +203,90 @@ export async function getCustomIcons(): Promise<CustomIcon[]> {
   );
 }
 
+// ── Attachments (#27) ─────────────────────────────────────────────────────
+// Files/screenshots on a Task OR an Objective (Project). base64 data-URI lives
+// in the dedicated `attachments` table. HARD RULE (Verse C1): the `data` column
+// is read ONLY by getAttachmentData() — the single-attachment open/preview
+// path. Every list query below selects METADATA ONLY, so hydrating a task or
+// objective never pulls megabytes of blob across IPC. Rows are immutable:
+// create + delete only, no update.
+
+const ATTACHMENT_META_COLS =
+  "id, task_id, project_id, filename, mime, size_bytes, created_at";
+
+export interface CreateAttachmentInput {
+  ownerType: AttachmentOwnerType;
+  ownerId: number;
+  filename: string;
+  mime: string;
+  sizeBytes: number; // RAW pre-base64 size (display metadata only)
+  data: string; // base64 data-URI ("data:<mime>;base64,…")
+}
+
+export async function createAttachment(
+  input: CreateAttachmentInput
+): Promise<number> {
+  const db = await getDb();
+  const taskId = input.ownerType === "task" ? input.ownerId : null;
+  const projectId = input.ownerType === "project" ? input.ownerId : null;
+  const result = await db.execute(
+    `INSERT INTO attachments (task_id, project_id, filename, mime, size_bytes, data, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      taskId,
+      projectId,
+      input.filename,
+      input.mime,
+      input.sizeBytes,
+      input.data,
+      new Date().toISOString(),
+    ]
+  );
+  return result.lastInsertId ?? 0;
+}
+
+export async function getAttachmentsForTask(
+  taskId: number
+): Promise<Attachment[]> {
+  const db = await getDb();
+  return db.select(
+    `SELECT ${ATTACHMENT_META_COLS} FROM attachments WHERE task_id = $1 ORDER BY created_at ASC, id ASC`,
+    [taskId]
+  );
+}
+
+export async function getAttachmentsForProject(
+  projectId: number
+): Promise<Attachment[]> {
+  const db = await getDb();
+  return db.select(
+    `SELECT ${ATTACHMENT_META_COLS} FROM attachments WHERE project_id = $1 ORDER BY created_at ASC, id ASC`,
+    [projectId]
+  );
+}
+
+/** The ONLY reader of the base64 blob. Used by the open/preview path for a
+ *  single attachment (Verse C1). Callers must discard the result after
+ *  write-to-temp/preview — never cache it in the store (Verse C2). */
+export async function getAttachmentData(id: number): Promise<{
+  filename: string;
+  mime: string;
+  data: string;
+} | null> {
+  const db = await getDb();
+  const rows: { filename: string; mime: string; data: string }[] =
+    await db.select(
+      "SELECT filename, mime, data FROM attachments WHERE id = $1",
+      [id]
+    );
+  return rows[0] ?? null;
+}
+
+export async function deleteAttachment(id: number): Promise<void> {
+  const db = await getDb();
+  await db.execute("DELETE FROM attachments WHERE id = $1", [id]);
+}
+
 /** Set a project's icon: an emoji (icon set, customIconId null), a custom image
  *  (customIconId set, icon null), or none (both null). Emits project-changed so
  *  every project-list holder re-renders the glyph. */
@@ -241,6 +325,10 @@ export async function archiveProject(
 
 export async function deleteProject(id: number): Promise<void> {
   const db = await getDb();
+  // Attachments on the objective itself. Tasks that belonged to this project
+  // survive with project_id nulled (their own attachments ride along); only
+  // the objective-owned rows are cleaned here (Verse C2/C3).
+  await db.execute("DELETE FROM attachments WHERE project_id = $1", [id]);
   await db.execute("DELETE FROM projects WHERE id = $1", [id]);
 }
 
@@ -807,6 +895,10 @@ export async function deleteTask(id: number): Promise<void> {
       [t.recurrence_source_id, t.date_scheduled]
     );
   }
+  // Attachments bind to this concrete task row. Delete them explicitly rather
+  // than trusting ON DELETE CASCADE — tauri-plugin-sql pools connections with
+  // foreign_keys OFF, so the cascade may not fire (Verse C2/C3).
+  await db.execute("DELETE FROM attachments WHERE task_id = $1", [id]);
   // time_entries have ON DELETE CASCADE, so they'll be cleaned up automatically
   await db.execute("DELETE FROM tasks WHERE id = $1", [id]);
 }
@@ -1232,6 +1324,15 @@ export async function updateTaskDateScheduled(
         // Real data absorbed → caller may surface a non-blocking toast.
         mergedData =
           (reassigned.rowsAffected ?? 0) > 0 || sibNotes.length > 0 || sibDone;
+
+        // 2b) Re-parent any attachments off the shells onto the keeper —
+        //     same non-lossy move we do for notes/time_entries above. Without
+        //     this, a screenshot on a merged-away recurring sibling would be
+        //     orphaned by the shell DELETE below (Verse C3).
+        await db.execute(
+          `UPDATE attachments SET task_id = $1 WHERE task_id IN (${idList})`,
+          [id]
+        );
 
         // 3) Delete the now-empty shells. Their time_entries already moved
         //    to the keeper in step 1, so the FK cascade deletes nothing.

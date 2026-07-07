@@ -21,6 +21,22 @@ export interface CustomIcon {
   created_at: string;
 }
 
+/** What surface an attachment belongs to. Exactly one owner per row. */
+export type AttachmentOwnerType = "task" | "project";
+
+/** Attachment METADATA only — never carries the base64 `data` blob. The store
+ *  and every list/detail query traffic in this shape (Verse C1/C2); the blob is
+ *  fetched on demand via getAttachmentData(id) only in the open/preview path. */
+export interface Attachment {
+  id: number;
+  task_id: number | null;
+  project_id: number | null;
+  filename: string;
+  mime: string;
+  size_bytes: number; // RAW pre-base64 byte size (display only)
+  created_at: string;
+}
+
 export interface Task {
   id: number;
   project_id: number | null;

@@ -44,8 +44,13 @@ import {
   setProjectPriority as dbSetProjectPriority,
   setProjectIcon as dbSetProjectIcon,
   updateProjectSortOrders as dbUpdateProjectSortOrders,
+  createAttachment as dbCreateAttachment,
+  getAttachmentsForTask,
+  getAttachmentsForProject,
+  deleteAttachment as dbDeleteAttachment,
 } from "../db/queries";
-import type { UpdateProjectInput } from "../db/queries";
+import type { UpdateProjectInput, CreateAttachmentInput } from "../db/queries";
+import type { Attachment, AttachmentOwnerType } from "../types";
 import type { CreateTaskInput, UpdateTaskInput } from "../db/queries";
 
 /** Returns the local-tz Monday-ISO of the week containing `dateIso`.
@@ -537,6 +542,25 @@ interface AppState {
   deleteProjectAction: (id: number) => Promise<void>;
   /** Reorder: non-optimistic SQL-then-map (mirrors setTaskSortOrders). */
   reorderProjectsAction: (orderedIds: number[]) => Promise<void>;
+
+  // ── Attachments (#27) ──────────────────────────────────────────────
+  /** Attachment METADATA keyed by owner ("task:<id>" / "project:<id>").
+   *  NEVER holds the base64 `data` blob (Verse C2) — the blob is fetched
+   *  on demand via getAttachmentData() in the open/preview path only. */
+  attachmentsByOwner: Map<string, Attachment[]>;
+  /** Replace the owner's attachment metadata list from the DB. Idempotent.
+   *  Failure-path: prior state intact + console.error. */
+  loadAttachments: (ownerType: AttachmentOwnerType, ownerId: number) => Promise<void>;
+  /** Persist a new attachment, then reconcile the owner's list to DB truth
+   *  (metadata only). Rethrows so the UI can surface the error. */
+  addAttachment: (input: CreateAttachmentInput) => Promise<void>;
+  /** Delete an attachment (optimistic list splice), then reconcile to DB
+   *  truth. Failure-path: refetch the owner's list. */
+  removeAttachment: (
+    id: number,
+    ownerType: AttachmentOwnerType,
+    ownerId: number
+  ) => Promise<void>;
   /** Open the singleton task detail overlay for `id`. Pass
    *  `{ autoFocusTitle: true }` to focus the title input on open
    *  (used by quick-add flows that create the task in draft state). */
@@ -1084,6 +1108,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   tasksById: new Map(),
   workedByTaskId: new Map(),
   projectsById: new Map(),
+  attachmentsByOwner: new Map(),
   taskIdsByDate: new Map(),
   taskIdsByProject: new Map(),
   taskIdsByWeek: new Map(),
@@ -2061,9 +2086,67 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await dbDeleteProject(id);
       set((s) => reduceProjectDeleted(s, id));
+      // Drop the objective's attachment metadata slice — the DB rows were
+      // cleaned inside dbDeleteProject (Verse C2/C3).
+      set((s) => {
+        const next = new Map(s.attachmentsByOwner);
+        next.delete(`project:${id}`);
+        return { attachmentsByOwner: next };
+      });
     } catch (err) {
       console.error("[appStore] deleteProjectAction failed", { id, err });
       throw err;
+    }
+  },
+
+  // ── Attachments (#27) ──────────────────────────────────────────────
+  loadAttachments: async (ownerType, ownerId) => {
+    const key = `${ownerType}:${ownerId}`;
+    try {
+      const rows =
+        ownerType === "task"
+          ? await getAttachmentsForTask(ownerId)
+          : await getAttachmentsForProject(ownerId);
+      set((s) => {
+        const next = new Map(s.attachmentsByOwner);
+        next.set(key, rows);
+        return { attachmentsByOwner: next };
+      });
+    } catch (err) {
+      console.error("[appStore] loadAttachments failed", { key, err });
+    }
+  },
+  addAttachment: async (input) => {
+    const key = `${input.ownerType}:${input.ownerId}`;
+    try {
+      await dbCreateAttachment(input);
+      // Reconcile to DB truth (id + created_at are DB-assigned); metadata only.
+      await get().loadAttachments(input.ownerType, input.ownerId);
+    } catch (err) {
+      console.error("[appStore] addAttachment failed", { key, err });
+      throw err;
+    }
+  },
+  removeAttachment: async (id, ownerType, ownerId) => {
+    const key = `${ownerType}:${ownerId}`;
+    const before = get().attachmentsByOwner.get(key);
+    // Optimistic splice.
+    if (before) {
+      set((s) => {
+        const next = new Map(s.attachmentsByOwner);
+        next.set(key, before.filter((a) => a.id !== id));
+        return { attachmentsByOwner: next };
+      });
+    }
+    try {
+      await dbDeleteAttachment(id);
+    } catch (err) {
+      console.error("[appStore] removeAttachment failed — refetching truth", {
+        id,
+        key,
+        err,
+      });
+      await get().loadAttachments(ownerType, ownerId);
     }
   },
   reorderProjectsAction: async (orderedIds) => {

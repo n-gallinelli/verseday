@@ -25,11 +25,17 @@ through `createCustomIcon()` (INSERT, no DDL) and render as an `<img>`.
   data-URI). Trusted first-party static asset, so it's stored directly via
   `createCustomIcon()` rather than the untrusted-upload re-encode in
   `fileToIconDataUri` (that pipeline exists to sanitize user images).
-- **`ProjectIconPicker.tsx`** — new **"Built-in"** section with a "VerseDay
-  logo" tile. `pickVerseday()` dedupes by `data` (reuses an existing
-  `custom_icons` row if one already holds the logo) else seeds one, then
-  persists via the normal `onPick(null, id)` → `custom_icon_id` path. Shows a
-  blue selection ring when it's the active icon.
+- **`ProjectIconPicker.tsx`** — the VerseDay logo is the permanent **first
+  tile of the "Your icons" grid** (no separate section). `pickVerseday()`
+  dedupes by `data` (reuses an existing `custom_icons` row if one already
+  holds the logo) else seeds one, then persists via the normal
+  `onPick(null, id)` → `custom_icon_id` path. Shows a blue selection ring when
+  it's the active icon. The grid now always renders (the built-in tile is
+  always present); any seeded logo row is filtered out of the user tiles
+  (`userIcons`) so the logo never appears twice.
+
+  *(Revised from an initial separate "Built-in" section per Nick — the logo
+  should just live in "Your icons".)*
 
 No schema change, no migration, no new deps, no new render "kind" — it rides
 the existing custom-image path. `tsc` + debug build clean; previewed.

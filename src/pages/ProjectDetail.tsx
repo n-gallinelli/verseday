@@ -429,9 +429,9 @@ function SortableTaskRow({
             stands alone, worked+estimated cluster as a pair (they're
             naturally a pair), with a wider gap separating the two
             categories. */}
-        <div className="flex flex-wrap items-center gap-3 gap-y-2 mt-2">
+        <div className="flex flex-wrap items-center gap-2 gap-y-2 mt-2">
           <div
-            className="w-[110px] flex-shrink-0"
+            className="flex-shrink-0"
             onMouseDown={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
           >

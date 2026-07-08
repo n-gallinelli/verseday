@@ -76,6 +76,20 @@ is untouched — it keeps `bg-accent-blue-soft` / `border-accent-blue` as the
 active-editing signal; only the resting fill warms. Reuses the same tokens
 (no new tokens, no logic change). `tsc` clean.
 
+## Refinement — tighten Date ↔ time-pair spacing (objective detail)
+
+The quiet Date sits in a compact glyph+text pill, but its wrapper still held
+the old filled-pill's fixed `w-[110px]`, leaving dead space so the Worked/
+Estimated pair floated far from it. Fixes:
+
+- ProjectDetail metadata row: Date wrapper `w-[110px]` → `flex-shrink-0`
+  (hug content); group gap `gap-3` → `gap-2`.
+- Quiet `CalendarPicker` now sizes to content: root `w-fit`, pill `inline-flex`
+  (was `flex w-full`), trigger drops `flex-1`. Reserved clear-✕ trimmed
+  `w-7` → `w-5` in quiet (also tidies the orphaned-✕ Verse flagged).
+
+Non-quiet (pill) variant untouched — still `w-full` / `flex-1` / `w-7`.
+
 ## Also in this branch (unrelated one-liner)
 
 `DatePicker.tsx` popover header "Go to today" → "Jump to today" to match the

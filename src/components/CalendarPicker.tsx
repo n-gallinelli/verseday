@@ -167,7 +167,7 @@ export default function CalendarPicker({
     : placeholder;
 
   return (
-    <div ref={containerRef} className="relative w-full">
+    <div ref={containerRef} className={quiet ? "relative w-fit" : "relative w-full"}>
       {/* Pill: outer styled container holds the trigger (left) and a
           × clear affordance (right). The × wrapper reserves space
           when onClear is wired so width is constant; the × itself
@@ -178,7 +178,7 @@ export default function CalendarPicker({
       <div
         className={
           quiet
-            ? `group/pill flex items-stretch w-full rounded-md transition-colors ${
+            ? `group/pill inline-flex items-stretch rounded-md transition-colors ${
                 open ? "bg-input" : "hover:bg-input"
               }`
             : `group/pill flex items-stretch w-full rounded-md transition-colors ${
@@ -200,7 +200,7 @@ export default function CalendarPicker({
           aria-label={quiet ? label : undefined}
           className={
             quiet
-              ? "flex-1 min-w-0 cursor-pointer text-left flex items-center gap-1.5 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-blue"
+              ? "min-w-0 cursor-pointer text-left flex items-center gap-1.5 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-blue"
               : `flex-1 min-w-0 cursor-pointer text-left ${
                   label ? "flex flex-col items-start gap-[3px]" : "flex items-center"
                 }`
@@ -260,7 +260,7 @@ export default function CalendarPicker({
               onClear();
               setOpen(false);
             }}
-            className={`w-7 flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary text-[11px] leading-none transition-opacity ${
+            className={`${quiet ? "w-5" : "w-7"} flex items-center justify-center cursor-pointer text-fg-faded hover:text-fg-secondary text-[11px] leading-none transition-opacity ${
               value
                 ? "opacity-0 pointer-events-none group-hover/pill:opacity-100 group-hover/pill:pointer-events-auto focus:opacity-100 focus:pointer-events-auto"
                 : "opacity-0 pointer-events-none"

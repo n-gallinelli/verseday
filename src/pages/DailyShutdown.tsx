@@ -66,6 +66,7 @@ export default function DailyShutdown() {
   const openTaskDetail = useAppStore((s) => s.openTaskDetail);
   const openSummaryOverlay = useAppStore((s) => s.openSummaryOverlay);
   const openSunsetOverlay = useAppStore((s) => s.openSunsetOverlay);
+  const endActiveFocusSession = useAppStore((s) => s.endActiveFocusSession);
   // M3.2.b.3 — task list flows through the canonical store. Includes
   // both done and not-done tasks for the day; render code already
   // partitions by status, no top-level filter needed here.
@@ -309,6 +310,11 @@ export default function DailyShutdown() {
       return;
     }
     localStorage.setItem(SHUTDOWN_KEY_PREFIX + selectedDate, "true");
+    // Shutting down is a definitive "done for the day" signal — end any live
+    // focus session so its open time_entry row is committed (not left dangling
+    // to reconcile on next boot) and, as a consequence, the always-on-top Focus
+    // PiP closes instead of floating over the sunset/quote screen.
+    await endActiveFocusSession();
     openSunsetOverlay();
   }
 

@@ -83,6 +83,10 @@ export default function ProjectIconPicker({
   const hasIcon = !!project.icon || project.custom_icon_id != null;
   const versedaySelected =
     project.custom_icon_id != null && byId.get(project.custom_icon_id) === VERSEDAY_ICON_DATA_URI;
+  // The built-in VerseDay logo leads the "Your icons" grid as a permanent
+  // first tile; drop any seeded custom_icons row that holds the same logo so
+  // it never shows twice.
+  const userIcons = list.filter((ic) => ic.data !== VERSEDAY_ICON_DATA_URI);
 
   return (
     <div ref={wrapRef} className="relative flex-shrink-0">
@@ -140,46 +144,41 @@ export default function ProjectIconPicker({
           </div>
 
           <div>
-            <div className="text-[10px] uppercase tracking-wide text-fg-faded mb-1">Built-in</div>
-            <button
-              type="button"
-              onClick={pickVerseday}
-              className={`flex items-center gap-2 w-full px-1.5 py-1 rounded-md hover:bg-overlay-hover cursor-pointer ${
-                versedaySelected ? "ring-1 ring-accent-blue" : ""
-              }`}
-            >
-              <img
-                src={VERSEDAY_ICON_DATA_URI}
-                alt=""
-                aria-hidden
-                className="w-5 h-5 object-contain rounded-[3px]"
-              />
-              <span className="text-[12px] text-fg-secondary">VerseDay logo</span>
-            </button>
-          </div>
-
-          {list.length > 0 && (
-            <div>
-              <div className="text-[10px] uppercase tracking-wide text-fg-faded mb-1">Your icons</div>
-              <div className="grid grid-cols-6 gap-1.5">
-                {list.map((ic) => (
-                  <button
-                    key={ic.id}
-                    type="button"
-                    onClick={() => {
-                      onPick(null, ic.id);
-                      setOpen(false);
-                    }}
-                    className={`w-7 h-7 rounded-md flex items-center justify-center hover:bg-overlay-hover cursor-pointer ${
-                      project.custom_icon_id === ic.id ? "ring-1 ring-accent-blue" : ""
-                    }`}
-                  >
-                    <img src={ic.data} alt="" className="w-5 h-5 object-contain rounded-[3px]" />
-                  </button>
-                ))}
-              </div>
+            <div className="text-[10px] uppercase tracking-wide text-fg-faded mb-1">Your icons</div>
+            <div className="grid grid-cols-6 gap-1.5">
+              {/* Built-in VerseDay logo — always the first tile. */}
+              <button
+                type="button"
+                onClick={pickVerseday}
+                title="VerseDay logo"
+                className={`w-7 h-7 rounded-md flex items-center justify-center hover:bg-overlay-hover cursor-pointer ${
+                  versedaySelected ? "ring-1 ring-accent-blue" : ""
+                }`}
+              >
+                <img
+                  src={VERSEDAY_ICON_DATA_URI}
+                  alt=""
+                  aria-hidden
+                  className="w-5 h-5 object-contain rounded-[3px]"
+                />
+              </button>
+              {userIcons.map((ic) => (
+                <button
+                  key={ic.id}
+                  type="button"
+                  onClick={() => {
+                    onPick(null, ic.id);
+                    setOpen(false);
+                  }}
+                  className={`w-7 h-7 rounded-md flex items-center justify-center hover:bg-overlay-hover cursor-pointer ${
+                    project.custom_icon_id === ic.id ? "ring-1 ring-accent-blue" : ""
+                  }`}
+                >
+                  <img src={ic.data} alt="" className="w-5 h-5 object-contain rounded-[3px]" />
+                </button>
+              ))}
             </div>
-          )}
+          </div>
 
           <div className="flex items-center justify-between">
             <button

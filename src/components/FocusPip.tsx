@@ -6,6 +6,7 @@ import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import VerseDayLogo from "./VerseDayLogo";
 import { playBreakChime as playCalm, playBreakEndChime } from "../utils/sounds";
 import { breakEndClock } from "../utils/breakClock";
+import { BREAK_PROMPT } from "../utils/breakPromptLabels";
 import { clampToFrame } from "../utils/pipClamp";
 import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_CHIME_EVENT, PIP_MOVED_EVENT, PIP_SIZE, PIP_HIGH_VIS_SCALE, pipSizeFor, PIP_COMPLETE_FLOURISH_MS, type PipState, type PipChimeKind, type PipMovedPayload } from "../utils/pipEvents";
 
@@ -635,17 +636,18 @@ export default function FocusPip() {
     );
   }
 
-  // ── BREAK PROMPT — on-brand green CTA + two readable links, fit to 220×66 ──
-  // Action-over-state hierarchy: the expected action (start the break)
-  // dominates as a filled, icon-labeled primary; snooze and skip demote to
-  // plain text links beneath it. No header — the cup icon + label carry the
-  // meaning. The fill is PINNED deep-green (bg-[#0F6E56]/hover:bg-[#0B5A46],
-  // white text ≈ 6.2:1 in both themes) — the SAME green as the break
-  // countdown, so the prompt and the running break read as one moment.
-  // Pinned rather than the --accent-green token, which swaps to a lighter
-  // #6fa088 in dark that fails WCAG 1.4.3 behind white text. Both links are
-  // text-fg-secondary at 12px (was an 11px faded/secondary split that read as
-  // invisible). FocusMode owns the 30s auto-dismiss; the user is never trapped.
+  // ── BREAK PROMPT — warm sunset CTA + two readable links, fit to 220×66 ──
+  // Action-over-state hierarchy: the expected action (Rest now) dominates as a
+  // filled, cup-labeled primary; "In 5 min" and "Skip it" demote to plain text
+  // links beneath it. Copy + order match the full Focus screen exactly (shared
+  // BREAK_PROMPT labels) so the two surfaces can't drift. The fill is WARM, not
+  // green — green is reserved for completed states; starting a break is an
+  // action. PINNED to the light accent-orange hex (bg-[#A85E1E]/hover #94511A,
+  // white text ≈ 4.8:1) in both themes rather than the --accent-orange token,
+  // which lightens to #d68647 in dark and fails WCAG 1.4.3 behind white text —
+  // same pin-not-token discipline the green CTA used. Both links are
+  // text-fg-secondary at 12px. FocusMode owns the 30s auto-dismiss; the user is
+  // never trapped.
   // ── MEETING-START PROMPT — "switch focus to the meeting that's starting?" ──
   // Outranks the break offer (FocusMode sets phase="meetingPrompt" over any
   // work/break/prompt). Two rows to fit 220×66: a truncated title line, then a
@@ -706,9 +708,14 @@ export default function FocusPip() {
         }}
         onMouseDown={handlePipMouseDown}
       >
+        {/* Primary uses the WARM sunset accent, not green — matches the full
+            Focus screen; green is reserved for completed states. Fill PINNED to
+            the light accent-orange hex in BOTH themes (NOT the --accent-orange
+            token, which lightens to #d68647 in dark and fails white-text AA) —
+            same pin-not-token discipline as the old green CTA. */}
         <button
           onClick={() => sendCommand("takeBreak")}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[13px] font-medium text-white bg-[#0F6E56] hover:bg-[#0B5A46] cursor-pointer transition-colors"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[13px] font-medium text-white bg-[#A85E1E] hover:bg-[#94511A] cursor-pointer transition-colors"
           title="Start a 5 min break"
         >
           <svg
@@ -725,15 +732,16 @@ export default function FocusPip() {
             <path d="M3 6.5h7.5v3.25A2.75 2.75 0 0 1 7.75 12.5h-2A2.75 2.75 0 0 1 3 9.75V6.5Z" />
             <path d="M10.5 7.25H12a1.5 1.5 0 0 1 0 3h-1.5" />
           </svg>
-          Start break
+          {BREAK_PROMPT.restNow}
         </button>
+        {/* Secondary line — same words as the full screen, condensed to fit. */}
         <div className="flex items-center justify-center gap-2 text-[12px] leading-none">
           <button
             onClick={() => flashAck("5 more minutes", "snooze5")}
             className="text-fg-secondary hover:text-fg cursor-pointer transition-colors"
             title="Remind me in 5 min"
           >
-            +5 min
+            {BREAK_PROMPT.inFiveMin}
           </button>
           <span className="text-fg-muted select-none" aria-hidden="true">·</span>
           <button
@@ -741,7 +749,7 @@ export default function FocusPip() {
             className="text-fg-secondary hover:text-fg cursor-pointer transition-colors"
             title="No — keep working"
           >
-            Skip
+            {BREAK_PROMPT.skipIt}
           </button>
         </div>
       </div>,

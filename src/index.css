@@ -40,6 +40,12 @@
   --text-muted: rgba(0, 0, 0, 0.40);
   --text-faded: rgba(0, 0, 0, 0.25);
   --text-disabled: rgba(0, 0, 0, 0.15);
+  /* Warm-neutral foregrounds — a neutral tinted toward the sunset accent, for
+     warm-surface muted text/icons (attachment file icon + size text today).
+     Defined as color-mix of vars that already theme, so these track light/dark
+     automatically — no separate dark override needed. */
+  --fg-warm-muted: color-mix(in srgb, var(--accent-orange) 38%, var(--text-muted));
+  --fg-warm-faded: color-mix(in srgb, var(--accent-orange) 26%, var(--text-faded));
   --text-on-accent: #ffffff;
 
   /* — Borders & dividers — */
@@ -370,6 +376,8 @@
   --color-fg-secondary: var(--text-secondary);
   --color-fg-muted: var(--text-muted);
   --color-fg-faded: var(--text-faded);
+  --color-fg-warm-muted: var(--fg-warm-muted);
+  --color-fg-warm-faded: var(--fg-warm-faded);
   --color-fg-disabled: var(--text-disabled);
   --color-fg-on-accent: var(--text-on-accent);
 

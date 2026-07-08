@@ -243,12 +243,8 @@ export function AttachmentList({ controller }: { controller: AttachmentsControll
               >
                 {/* Flat corner-fold document glyph — generic (never assumes
                     "photo"), same stroke language as the other pane icons,
-                    warm-neutral (tokenized via color-mix so it tracks theme). */}
-                <span
-                  className="shrink-0"
-                  aria-hidden
-                  style={{ color: "color-mix(in srgb, var(--accent-orange) 38%, var(--text-muted))" }}
-                >
+                    warm-neutral (--fg-warm-* tokens, theme-tracking). */}
+                <span className="shrink-0 text-fg-warm-muted" aria-hidden>
                   <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M9 1.75H4.25A1.25 1.25 0 0 0 3 3v10a1.25 1.25 0 0 0 1.25 1.25h7.5A1.25 1.25 0 0 0 13 13V5.75z" />
                     <path d="M9 1.75V5.75h4" />
@@ -257,10 +253,7 @@ export function AttachmentList({ controller }: { controller: AttachmentsControll
                 <span className="min-w-0 flex-1 truncate text-[13px] text-fg-secondary">
                   {att.filename}
                 </span>
-                <span
-                  className="shrink-0 text-[11px] tabular-nums"
-                  style={{ color: "color-mix(in srgb, var(--accent-orange) 26%, var(--text-faded))" }}
-                >
+                <span className="shrink-0 text-[11px] tabular-nums text-fg-warm-faded">
                   {formatAttachmentSize(att.size_bytes)}
                 </span>
               </button>

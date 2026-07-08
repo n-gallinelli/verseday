@@ -3,6 +3,7 @@ import type { Project } from "../types";
 import { createCustomIcon } from "../db/queries";
 import { fileToIconDataUri } from "../utils/iconUpload";
 import { useCustomIcons } from "../hooks/useCustomIcons";
+import { VERSEDAY_ICON_DATA_URI } from "../utils/versedayIcon";
 import ProjectGlyph from "./ProjectGlyph";
 
 /**
@@ -64,7 +65,24 @@ export default function ProjectIconPicker({
     setOpen(false);
   }
 
+  // Built-in VerseDay logo: reuse the existing custom-icon row if one already
+  // holds the logo (dedupe by data), otherwise seed one. Either way the choice
+  // persists via the normal custom_icon_id path — no new schema/render kind.
+  async function pickVerseday() {
+    try {
+      setError(null);
+      const existing = list.find((ic) => ic.data === VERSEDAY_ICON_DATA_URI);
+      const id = existing ? existing.id : await createCustomIcon(VERSEDAY_ICON_DATA_URI);
+      onPick(null, id);
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't set the VerseDay icon");
+    }
+  }
+
   const hasIcon = !!project.icon || project.custom_icon_id != null;
+  const versedaySelected =
+    project.custom_icon_id != null && byId.get(project.custom_icon_id) === VERSEDAY_ICON_DATA_URI;
 
   return (
     <div ref={wrapRef} className="relative flex-shrink-0">
@@ -119,6 +137,25 @@ export default function ProjectIconPicker({
                 Set
               </button>
             </div>
+          </div>
+
+          <div>
+            <div className="text-[10px] uppercase tracking-wide text-fg-faded mb-1">Built-in</div>
+            <button
+              type="button"
+              onClick={pickVerseday}
+              className={`flex items-center gap-2 w-full px-1.5 py-1 rounded-md hover:bg-overlay-hover cursor-pointer ${
+                versedaySelected ? "ring-1 ring-accent-blue" : ""
+              }`}
+            >
+              <img
+                src={VERSEDAY_ICON_DATA_URI}
+                alt=""
+                aria-hidden
+                className="w-5 h-5 object-contain rounded-[3px]"
+              />
+              <span className="text-[12px] text-fg-secondary">VerseDay logo</span>
+            </button>
           </div>
 
           {list.length > 0 && (

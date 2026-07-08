@@ -366,6 +366,10 @@ export function NotesAttachmentsTabs({
 
   const tab = (id: "notes" | "attachments", label: string, count?: number) => {
     const selected = active === id;
+    // Only the Attachments tab passes a count; when it's empty (0) and not the
+    // active tab, recede it toward invisible so it doesn't advertise an empty
+    // surface — it stays hoverable/clickable to add the first file.
+    const isEmpty = count === 0;
     return (
       <button
         role="tab"
@@ -373,7 +377,11 @@ export function NotesAttachmentsTabs({
         tabIndex={selected ? 0 : -1}
         onClick={() => onChange(id)}
         className={`relative uppercase [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)] pb-1.5 cursor-pointer transition-colors ${
-          selected ? "text-accent-orange" : "text-fg-faded hover:text-fg-muted"
+          selected
+            ? "text-accent-orange"
+            : isEmpty
+              ? "text-fg-disabled hover:text-fg-faded"
+              : "text-fg-faded hover:text-fg-muted"
         }`}
       >
         {label}

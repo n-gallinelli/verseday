@@ -12,6 +12,14 @@ interface CalendarPickerProps {
   // visually consistent set. When omitted, falls back to the legacy
   // single-line pill (no label).
   label?: string;
+  // "pill" (default) — the bordered, filled label-inside pill.
+  // "quiet" — no fill/border/caption: a small calendar glyph + a lightened
+  //   value, for reference contexts where the date shouldn't compete with
+  //   nearby tracked-data (e.g. the objective-detail time pills). The visible
+  //   caption is dropped, so the trigger takes its accessible name from
+  //   `label` via aria-label. Orthogonal to `label`: quiet uses `label` only
+  //   for the aria name, never for a visible caption.
+  variant?: "pill" | "quiet";
 }
 
 const DAY_NAMES = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -41,7 +49,9 @@ export default function CalendarPicker({
   onClear,
   placeholder = "No date",
   label,
+  variant = "pill",
 }: CalendarPickerProps) {
+  const quiet = variant === "quiet";
   const [open, setOpen] = useState(false);
   const [popoverPos, setPopoverPos] = useState<{ top: number; left: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -166,12 +176,18 @@ export default function CalendarPicker({
           TimeFieldPill's label-inside style for visual consistency
           across DATES / TIME sections in the task detail overlay. */}
       <div
-        className={`group/pill flex items-stretch w-full rounded-md transition-colors ${
-          open
-            ? "bg-input border-accent-blue"
-            : "bg-input border-line-hairline hover:border-line-medium"
-        }`}
-        style={{ borderWidth: "0.5px", borderStyle: "solid" }}
+        className={
+          quiet
+            ? `group/pill flex items-stretch w-full rounded-md transition-colors ${
+                open ? "bg-input" : "hover:bg-input"
+              }`
+            : `group/pill flex items-stretch w-full rounded-md transition-colors ${
+                open
+                  ? "bg-input border-accent-blue"
+                  : "bg-input border-line-hairline hover:border-line-medium"
+              }`
+        }
+        style={quiet ? undefined : { borderWidth: "0.5px", borderStyle: "solid" }}
       >
         <button
           ref={triggerRef}
@@ -180,25 +196,61 @@ export default function CalendarPicker({
             if (!open) updatePosition();
             setOpen(!open);
           }}
-          className={`flex-1 min-w-0 cursor-pointer text-left ${
-            label ? "flex flex-col items-start gap-[3px]" : "flex items-center"
-          }`}
+          // Quiet drops the visible caption, so name the control for SR users.
+          aria-label={quiet ? label : undefined}
+          className={
+            quiet
+              ? "flex-1 min-w-0 cursor-pointer text-left flex items-center gap-1.5 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-blue"
+              : `flex-1 min-w-0 cursor-pointer text-left ${
+                  label ? "flex flex-col items-start gap-[3px]" : "flex items-center"
+                }`
+          }
           style={{
-            padding: label ? "4px 4px 4px 10px" : "4px 4px 4px 12px",
+            padding: quiet ? "3px 4px 3px 7px" : label ? "4px 4px 4px 10px" : "4px 4px 4px 12px",
           }}
         >
-          {label && (
-            <span className="text-[9px] uppercase tracking-[0.07em] text-fg-faded leading-none">
-              {label}
-            </span>
+          {quiet ? (
+            <>
+              {/* Small calendar glyph stands in for the dropped caption. */}
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={`flex-shrink-0 ${value ? "text-fg-faded" : "text-fg-disabled"}`}
+                aria-hidden="true"
+              >
+                <rect x="2" y="3" width="12" height="11" rx="1.5" />
+                <path d="M2 6.5h12M5 1.5v2.5M11 1.5v2.5" />
+              </svg>
+              <span
+                className={`text-[12px] font-medium leading-[1.2] truncate ${
+                  value ? "text-fg-secondary" : "text-fg-disabled"
+                }`}
+              >
+                {displayLabel}
+              </span>
+            </>
+          ) : (
+            <>
+              {label && (
+                <span className="text-[9px] uppercase tracking-[0.07em] text-fg-faded leading-none">
+                  {label}
+                </span>
+              )}
+              <span
+                className={`text-[12px] font-medium leading-[1.2] truncate ${
+                  value ? "text-fg" : "text-fg-disabled"
+                }`}
+              >
+                {displayLabel}
+              </span>
+            </>
           )}
-          <span
-            className={`text-[12px] font-medium leading-[1.2] truncate ${
-              value ? "text-fg" : "text-fg-disabled"
-            }`}
-          >
-            {displayLabel}
-          </span>
         </button>
         {onClear && (
           <button

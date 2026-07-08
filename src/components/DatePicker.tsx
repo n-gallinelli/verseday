@@ -108,7 +108,7 @@ export default function DatePicker({
         }}
         className="w-full pb-2 mb-1.5 border-b border-line-hairline-warm text-[11px] text-accent-orange-soft-fg cursor-pointer hover:underline text-center"
       >
-        Go to today
+        Jump to today
       </button>
 
       {/* Month nav */}

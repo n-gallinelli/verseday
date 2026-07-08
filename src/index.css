@@ -24,6 +24,15 @@
   --bg-input: rgba(0, 0, 0, 0.03);
   --bg-input-hover: rgba(0, 0, 0, 0.06);
   --bg-tag-soft: rgba(0, 0, 0, 0.04);
+  /* Warm-neutral pill fills for the objective-detail time pair. Two depths of
+     one warm tone, no pure gray: Worked (the number that's true right now)
+     sits a touch deeper/warmer than Estimated (the quieter plan/reference
+     number) so they read as one family from a distance while still
+     differentiating. Derived from --accent-orange via color-mix — like
+     --fg-warm-muted/faded — so both fills track the accent across light/dark
+     automatically; no separate dark override needed. */
+  --bg-tag-warm: color-mix(in srgb, var(--accent-orange) 6%, transparent);
+  --bg-tag-warm-faint: color-mix(in srgb, var(--accent-orange) 3.5%, transparent);
   --bg-banner: #2c2a35;
   --text-banner: #f5f4f0;
   --shutdown-bg-cool: #dde8f0;
@@ -226,6 +235,8 @@
     --bg-input: rgba(255, 255, 255, 0.04);
     --bg-input-hover: rgba(255, 255, 255, 0.07);
     --bg-tag-soft: rgba(255, 255, 255, 0.05);
+    /* --bg-tag-warm/faint auto-track dark --accent-orange via color-mix (defined
+       once in the light block) — no override needed here. */
     --bg-banner: #2a2a30;
     --text-banner: #e8e6e0;
     --shutdown-bg-cool: #181c24;
@@ -369,6 +380,8 @@
   --color-input: var(--bg-input);
   --color-input-hover: var(--bg-input-hover);
   --color-tag-soft: var(--bg-tag-soft);
+  --color-tag-warm: var(--bg-tag-warm);
+  --color-tag-warm-faint: var(--bg-tag-warm-faint);
   --color-banner: var(--bg-banner);
 
   /* Text */

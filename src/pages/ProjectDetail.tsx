@@ -187,9 +187,15 @@ function ColorPicker({
 // ─── Labeled pill — shared chrome with CalendarPicker + TimeFieldPill ──────
 // Wraps a raw input/select so it visually matches the canonical
 // label-inside pill (uppercase label on top, value below). Two tones:
-//   "default" — bg-input, matches CalendarPicker (used for date).
-//   "time"    — bg-tag-soft, slightly lighter so the time pair reads
-//               as a related-but-distinct group from the date pill.
+//   "default"   — bg-input, matches CalendarPicker (used for date).
+//   "worked"    — bg-tag-warm, the deeper of two warm-neutral depths: this
+//                 is the number that's true right now, so it carries a touch
+//                 more visual weight.
+//   "estimated" — bg-tag-warm-faint, the quieter warm depth for the plan/
+//                 reference number. Same hue as "worked", one step lighter,
+//                 so the pair reads as one warm family from a distance.
+// The two warm tones are a single tint at two alphas (see --bg-tag-warm* in
+// index.css) — no pure gray, per the warm-surface rule.
 // Children render on a transparent background so this wrapper supplies
 // all chrome.
 function LabeledInputPill({
@@ -198,10 +204,18 @@ function LabeledInputPill({
   children,
 }: {
   label: string;
-  tone?: "default" | "time";
+  tone?: "default" | "worked" | "estimated";
   children: React.ReactNode;
 }) {
-  const bgClass = tone === "time" ? "bg-tag-soft" : "bg-input";
+  const bgClass =
+    tone === "worked"
+      ? "bg-tag-warm"
+      : tone === "estimated"
+        ? "bg-tag-warm-faint"
+        : "bg-input";
+  // Warm-tinted pills carry a warm-tinted label so the whole chip reads as
+  // one family; the plain (date) pill keeps the neutral faded label.
+  const labelClass = tone === "default" ? "text-fg-faded" : "text-fg-warm-faded";
   return (
     <label
       className={`${bgClass} border-line-hairline hover:border-line-medium focus-within:border-accent-blue rounded-md flex flex-col items-start cursor-text transition-colors w-[100px] flex-shrink-0`}
@@ -212,7 +226,7 @@ function LabeledInputPill({
         gap: "3px",
       }}
     >
-      <span className="text-[9px] uppercase tracking-[0.07em] text-fg-faded leading-none">
+      <span className={`text-[9px] uppercase tracking-[0.07em] ${labelClass} leading-none`}>
         {label}
       </span>
       {children}
@@ -415,14 +429,15 @@ function SortableTaskRow({
             stands alone, worked+estimated cluster as a pair (they're
             naturally a pair), with a wider gap separating the two
             categories. */}
-        <div className="flex flex-wrap items-center gap-3 gap-y-2 mt-2">
+        <div className="flex flex-wrap items-center gap-2 gap-y-2 mt-2">
           <div
-            className="w-[110px] flex-shrink-0"
+            className="flex-shrink-0"
             onMouseDown={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
           >
             <CalendarPicker
               label="Date"
+              variant="quiet"
               value={task.date_scheduled ?? ""}
               onChange={(date) => onSetDate(task.id, date)}
               onClear={() => onSetDate(task.id, "")}
@@ -431,7 +446,7 @@ function SortableTaskRow({
           </div>
 
           <div className="flex items-center gap-1.5">
-            <LabeledInputPill label="Worked" tone="time">
+            <LabeledInputPill label="Worked" tone="worked">
               <input
                 type="text"
                 value={workedInput}
@@ -455,7 +470,7 @@ function SortableTaskRow({
               />
             </LabeledInputPill>
 
-            <LabeledInputPill label="Estimated" tone="time">
+            <LabeledInputPill label="Estimated" tone="estimated">
               <input
                 type="text"
                 value={estimateInput}

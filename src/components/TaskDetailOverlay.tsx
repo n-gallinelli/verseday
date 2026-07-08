@@ -121,6 +121,25 @@ function TimeFieldPill({
   const displayValue = formatDisplayMinutes(value);
   const hasValue = displayValue !== "—";
 
+  // Warm-surface pass (mirrors the objective-detail time pair): the resting
+  // fill shifts off cool gray to two depths of one warm tone — Worked / Time
+  // spent (the true number) sits a touch deeper than Estimated (the plan
+  // number). Keyed off label, like the "Estimated" branch below. The open
+  // state keeps the blue active-editing signal; only the resting fill warms.
+  const warmTone =
+    label === "Estimated"
+      ? "estimated"
+      : label === "Worked" || label === "Time spent"
+        ? "worked"
+        : null;
+  const restFillClass =
+    warmTone === "worked"
+      ? "bg-tag-warm"
+      : warmTone === "estimated"
+        ? "bg-tag-warm-faint"
+        : "bg-input";
+  const captionClass = warmTone ? "text-fg-warm-faded" : "text-fg-faded";
+
   // Parse a raw field string and commit it via onChange. Tries the
   // structured parser first (e.g. "1h 45m" → 105); if that returns 0
   // (no h/m suffix), falls back to a bare minute count so "10" commits
@@ -196,7 +215,7 @@ function TimeFieldPill({
         className={`group/pill flex items-stretch w-full rounded-md transition-colors ${
           isOpen
             ? "bg-accent-blue-soft border-accent-blue"
-            : "bg-input border-line-hairline hover:border-line-medium"
+            : `${restFillClass} border-line-hairline hover:border-line-medium`
         }`}
         style={{ borderWidth: "0.5px", borderStyle: "solid" }}
       >
@@ -210,7 +229,7 @@ function TimeFieldPill({
           style={{ padding: hideLabel ? "10px 4px 10px 12px" : "4px 4px 4px 10px" }}
         >
           {!hideLabel && (
-            <span className="text-[9px] uppercase tracking-[0.07em] text-fg-faded leading-none">
+            <span className={`text-[9px] uppercase tracking-[0.07em] ${captionClass} leading-none`}>
               {label}
             </span>
           )}

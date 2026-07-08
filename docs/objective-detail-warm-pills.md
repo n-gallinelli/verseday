@@ -60,6 +60,22 @@ No DDL, no new deps, no runtime/logic change — purely presentational.
    `label` only for the aria name, never for a visible caption — verified the
    quiet + label combination renders as intended (glyph + value, no caption).
 
+## Follow-on — task-detail TIME pills (same branch)
+
+Nick asked to carry the warm treatment to the Estimated / Time-spent pills on
+the **task detail overlay** too. `TimeFieldPill` (`TaskDetailOverlay.tsx`) now
+derives a warm resting fill from its `label` (same keying the component already
+uses for the `label === "Estimated"` branch):
+
+- `Worked` / `Time spent` → `bg-tag-warm` (deeper)
+- `Estimated` → `bg-tag-warm-faint` (quieter)
+- any other label → `bg-input` (unchanged)
+
+Visible captions on the warm pills use `text-fg-warm-faded`. The **open** state
+is untouched — it keeps `bg-accent-blue-soft` / `border-accent-blue` as the
+active-editing signal; only the resting fill warms. Reuses the same tokens
+(no new tokens, no logic change). `tsc` clean.
+
 ## Also in this branch (unrelated one-liner)
 
 `DatePicker.tsx` popover header "Go to today" → "Jump to today" to match the

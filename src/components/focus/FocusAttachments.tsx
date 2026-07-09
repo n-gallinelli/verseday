@@ -206,8 +206,8 @@ function FocusAttachmentsStrip({
         // transparent catch over the hairline→notes gap reveals the faint drop
         // hint on hover without pushing notes down. Drop still works anywhere.
         <div className="group relative h-0 select-none" aria-hidden>
-          <div className="absolute left-0 -top-1 h-4 w-48" />
-          <span className="absolute left-0 -top-0.5 flex items-center gap-1.5 text-[12px] leading-none text-fg-faded opacity-0 group-hover:opacity-60 transition-opacity pointer-events-none whitespace-nowrap">
+          <div className="absolute left-0 top-0 h-6 w-48" />
+          <span className="absolute left-0 top-2 flex items-center gap-1.5 text-[12px] leading-none text-fg-faded opacity-0 group-hover:opacity-60 transition-opacity pointer-events-none whitespace-nowrap">
             <ClipIcon />
             Drop files here
           </span>

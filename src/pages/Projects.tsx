@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef, Fragment } from "react";
 import { useShallow } from "zustand/react/shallow";
 import ProjectGlyph from "../components/ProjectGlyph";
 import { useCustomIcons } from "../hooks/useCustomIcons";
@@ -29,7 +29,7 @@ import ErrorBanner from "../components/ErrorBanner";
 import { errorMessage } from "../utils/errors";
 import { formatHoursMinutes } from "../utils/format";
 import DisclosureCaret from "../components/DisclosureCaret";
-import type { Task } from "../types";
+import type { Task, Project } from "../types";
 
 type FilterMode = "all" | "active" | "completed";
 
@@ -71,6 +71,22 @@ function formatDate(iso: string): string {
     day: "numeric",
   });
 }
+
+// Objective NAMES get a larger cap than task titles — an objective is often a
+// full descriptive sentence. This is the only length guard on the create path
+// (the DB `name` column is plain TEXT). Matches the name-edit cap on the
+// objective detail page.
+const MAX_OBJECTIVE_NAME_LENGTH = 300;
+
+// "Highlighted" = an active (not completed) high-priority objective. Drives both
+// the top-of-list sort key and the section divider. A completed objective is
+// never highlighted even if still flagged priority.
+const isHighlighted = (p: Project) => !!p.priority && !p.completed;
+
+// Shared uppercase section-label style (same tokens as the existing search
+// results header). Used for the "Highlighted" / "Objectives" section dividers.
+const SECTION_LABEL_CLASS =
+  "uppercase text-fg-faded block [font-size:var(--font-size-label)] [font-weight:var(--font-weight-label)] [letter-spacing:var(--letter-spacing-label)]";
 
 export default function Projects() {
   const { openProject } = useAppStore();
@@ -266,10 +282,13 @@ export default function Projects() {
   const hasCustomOrder = projects.some((p) => p.sort_order != null);
 
   const sortedProjects = [...projects].sort((a, b) => {
-    // High-priority objectives always sort to the top, regardless of manual
-    // order or open-task count.
-    const aPri = a.priority ? 1 : 0;
-    const bPri = b.priority ? 1 : 0;
+    // HIGHLIGHTED (active high-priority) objectives always sort to the top,
+    // regardless of manual order or open-task count. A completed objective is
+    // never highlighted even if flagged priority — so a completed-priority item
+    // sorts with the rest below the "Highlighted" divider (matches the section
+    // predicate + the read-only star, which also hides when completed).
+    const aPri = isHighlighted(a) ? 1 : 0;
+    const bPri = isHighlighted(b) ? 1 : 0;
     if (aPri !== bPri) return bPri - aPri;
     if (hasCustomOrder) {
       return (a.sort_order ?? 9999) - (b.sort_order ?? 9999);
@@ -287,6 +306,18 @@ export default function Projects() {
     }
     return true;
   });
+
+  // Highlighted objectives get their own labeled section at the TOP of both the
+  // list and grid views. The sort above already floats the highlighted (active
+  // high-priority) items to the front contiguously, so we only need the boundary
+  // index — no re-partition, DnD unchanged. Sections are suppressed while
+  // searching (search stays a flat result list) and when nothing is highlighted.
+  const showSections = !searchQuery && filteredProjects.some(isHighlighted);
+  // First non-highlighted index = where the "Objectives" divider goes. -1 when
+  // every visible objective is highlighted (then there's no second section).
+  const firstRestIndex = showSections
+    ? filteredProjects.findIndex((p) => !isHighlighted(p))
+    : -1;
 
   // Filter counts
   const allCount = projects.length;
@@ -449,7 +480,7 @@ export default function Projects() {
                   )}
                   {viewMode === "cards" ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                      {filteredProjects.map((project) => {
+                      {filteredProjects.map((project, idx) => {
                         const stats = statsMap.get(project.id) ?? { total: 0, done: 0, lastDate: null };
                         const isCompleted = !!project.completed;
                         const dueDate = project.target_date;
@@ -466,8 +497,22 @@ export default function Projects() {
                           const now = new Date(); now.setHours(0, 0, 0, 0);
                           return new Date(dueDate + "T00:00:00") < now;
                         })();
+                        const hiHeader = showSections && idx === 0;
+                        const restHeader =
+                          showSections && idx === firstRestIndex && firstRestIndex > 0;
                         return (
-                          <SortableProjectRow key={project.id} id={project.id}>
+                          <Fragment key={project.id}>
+                            {hiHeader && (
+                              <div className="col-span-full mb-1">
+                                <span className={SECTION_LABEL_CLASS}>Highlighted</span>
+                              </div>
+                            )}
+                            {restHeader && (
+                              <div className="col-span-full mt-3 mb-1">
+                                <span className={SECTION_LABEL_CLASS}>Objectives</span>
+                              </div>
+                            )}
+                            <SortableProjectRow id={project.id}>
                             <div
                               onClick={() => openProject(project.id)}
                               className={`bg-elevated rounded-[12px] overflow-hidden cursor-pointer hover:bg-overlay-hover transition-colors flex flex-col h-full ${
@@ -540,12 +585,13 @@ export default function Projects() {
                                 </div>
                               </div>
                             </div>
-                          </SortableProjectRow>
+                            </SortableProjectRow>
+                          </Fragment>
                         );
                       })}
                     </div>
                   ) : (
-                  filteredProjects.map((project) => {
+                  filteredProjects.map((project, idx) => {
                   const stats = statsMap.get(project.id) ?? { total: 0, done: 0, lastDate: null };
                   const isCompleted = !!project.completed;
                   const dueDate = project.target_date;
@@ -565,8 +611,18 @@ export default function Projects() {
                     const now = new Date(); now.setHours(0, 0, 0, 0);
                     return new Date(dueDate + "T00:00:00") < now;
                   })();
+                  const hiHeader = showSections && idx === 0;
+                  const restHeader =
+                    showSections && idx === firstRestIndex && firstRestIndex > 0;
                   return (
-                    <SortableProjectRow key={project.id} id={project.id}>
+                    <Fragment key={project.id}>
+                      {hiHeader && (
+                        <span className={`${SECTION_LABEL_CLASS} mb-1`}>Highlighted</span>
+                      )}
+                      {restHeader && (
+                        <span className={`${SECTION_LABEL_CLASS} mt-3 mb-1`}>Objectives</span>
+                      )}
+                      <SortableProjectRow id={project.id}>
                       <div
                         className={`bg-elevated rounded-[10px] overflow-hidden ${
                           isCompleted ? "opacity-55" : ""
@@ -708,6 +764,7 @@ export default function Projects() {
                         </div>
                       </div>
                     </SortableProjectRow>
+                  </Fragment>
                   );
                 })
                   )}
@@ -800,7 +857,7 @@ export default function Projects() {
                 }
               }}
               placeholder="New objective..."
-              maxLength={100}
+              maxLength={MAX_OBJECTIVE_NAME_LENGTH}
               className="flex-1 text-[13px] text-fg placeholder:text-fg-disabled bg-transparent outline-none"
             />
             {inlineCreateName.trim() && (

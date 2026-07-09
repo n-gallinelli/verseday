@@ -298,6 +298,7 @@ export default function WeeklyShutdown() {
   const strike = useStrikethroughClass();
   const openSunsetOverlay = useAppStore((s) => s.openSunsetOverlay);
   const setSunsetPendingAfterPlan = useAppStore((s) => s.setSunsetPendingAfterPlan);
+  const endActiveFocusSession = useAppStore((s) => s.endActiveFocusSession);
   const primeTasks = useAppStore((s) => s.primeTasks);
   const tasksById = useAppStore((s) => s.tasksById);
   // M3.2.b.3 — completedThisWeek is hybrid: query is completed_at-based
@@ -481,6 +482,13 @@ export default function WeeklyShutdown() {
   // planner (see handlePlanNextWeek).
   function markShutdownComplete() {
     localStorage.setItem(WEEKLY_SHUTDOWN_PREFIX + selectedWeek, "true");
+    // Single choke point for every confirmation path (finalizeShutdown,
+    // handleSkipPlan, and the deferred-sunset handlePlanNextWeek). End any live
+    // focus session here so the always-on-top Focus PiP closes on shutdown
+    // instead of floating over the sunset/quote screen — and its open time_entry
+    // row is committed rather than left to reconcile on next boot. Fire-and-
+    // forget is safe: stopFocusedSessionForTask try/catches and never throws.
+    void endActiveFocusSession();
   }
 
   function handlePlanNextWeek() {

@@ -111,3 +111,50 @@ export function playBreakEndChime() {
     // Silent fallback — see playBreakChime.
   }
 }
+
+/** Meeting chime — a doorbell "ding-dong ding-dong": a descending perfect
+ *  fourth (C6 → G5) knocked out twice. Deliberately NOT the G-major break
+ *  arpeggios — those signal "settle" / "back to work"; this is a two-note
+ *  paired knock that reads as "someone's here / meeting now," so it's
+ *  unmistakable against the break cues. Shorter, brighter decays (knock, not
+ *  ring). Same low-gain anti-stack design + octave overtones. ~1.6s total. */
+export function playMeetingChime() {
+  try {
+    const ctx = new AudioContext();
+    // Defensive: a context can come up suspended (autoplay policy / backgrounded
+    // webview) and then fail SILENTLY. resume() before scheduling. Harmless when
+    // already running.
+    void ctx.resume();
+    const now = ctx.currentTime;
+
+    // Two "ding-dong" knocks: C6 → G5, repeated after a short gap.
+    const notes: { freq: number; offset: number }[] = [
+      { freq: 1046.5, offset: 0.0 },   // C6  — ding
+      { freq: 783.99, offset: 0.22 },  // G5  — dong
+      { freq: 1046.5, offset: 0.6 },   // C6  — ding
+      { freq: 783.99, offset: 0.82 },  // G5  — dong
+    ];
+
+    for (const n of notes) {
+      // Fundamental — low peak gain because FocusPip (the confirmed-alive
+      // speaker) plays it; kept consistent with the break chimes' anti-stack.
+      addTone(ctx, now, {
+        freq: n.freq,
+        startOffset: n.offset,
+        peakGain: 0.08,
+        decaySec: 0.55,
+      });
+      // Octave-up overtone — soft bell knock.
+      addTone(ctx, now, {
+        freq: n.freq * 2,
+        startOffset: n.offset,
+        peakGain: 0.02,
+        decaySec: 0.45,
+      });
+    }
+
+    setTimeout(() => ctx.close(), 2200);
+  } catch {
+    // Silent fallback — see playBreakChime.
+  }
+}

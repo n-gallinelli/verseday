@@ -118,6 +118,15 @@ pub fn send_meeting_notification(app: AppHandle, title: String, body: String, ex
         let notification = NSUserNotification::new();
         notification.setTitle(Some(&NSString::from_str(&title)));
         notification.setInformativeText(Some(&NSString::from_str(&body)));
+        // Play a sound so the meeting alert is audible, not just visible.
+        // "Ping" is a concrete, stable system sound (/System/Library/Sounds/
+        // Ping.aiff) present on every macOS — NSUserNotification resolves a bare
+        // soundName against the system Sounds dirs. We PIN a concrete name rather
+        // than NSUserNotificationDefaultSoundName because a name that doesn't
+        // resolve plays NOTHING, silently, and the default constant isn't reliably
+        // bound. (Runtime-audible on macOS 26 is the acceptance bar — verified on
+        // the installed app, not assumed from "it compiled".)
+        notification.setSoundName(Some(&NSString::from_str("Ping")));
         // Carry the task ref on the identifier (read back in did_activate);
         // avoids building an NSDictionary userInfo just to pass one string.
         notification.setIdentifier(Some(&NSString::from_str(&external_id)));

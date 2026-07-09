@@ -119,53 +119,57 @@ export function startMeetingApproachNotifier(): () => void {
 
   const tick = async () => {
     try {
-      // Cheap guards first — both reads are SQLite GETs (microseconds)
-      // but skipping the calendar query and permission probe matters
-      // when the integration is off.
-      if (!(await getApproachNotifyEnabled())) return;
+      // HARD top gate: calendar integration itself. Nothing calendar-related
+      // runs when it's off. (SQLite GET — microseconds.)
       if (!(await getEnabled())) return;
 
-      const leadMin = await getApproachLeadMinutes();
       const now = Date.now();
       let changed = false;
 
       // ── T-15 LEAD REMINDER (existing): a native OS notification when a
-      // meeting enters the user's lead window. Gated behind its own dedup +
-      // permission probe; on a failed send it stays un-notified to retry. ──
-      const events = await upcomingEvents(leadMin, NOTIFY_GRACE_MS);
-      // Filter dedup BEFORE the permission probe so we don't probe on
-      // every tick once everything's already notified.
-      const freshLead = events.filter((ev) => !notifiedSet.has(ev.externalId));
-      if (freshLead.length > 0 && (await isPermissionGranted())) {
-        for (const ev of freshLead) {
-          const minutesAway = Math.max(
-            1,
-            Math.ceil((ev.startMs - now) / 60000),
-          );
-          // #12 — mark "notified" ONLY after a confirmed send. Previously the
-          // dedup set was updated unconditionally right after a fire-and-forget
-          // call, so a failed send still suppressed every future retry for that
-          // event. Await it and, on failure, leave it un-notified to retry next
-          // tick. (await on a void return is harmless.)
-          try {
-            // Native send (notify.rs) instead of the plugin: the plugin discards
-            // click results, so we own delivery to make the body click jump to
-            // this event's task (externalId rides the notification identifier).
-            await invoke("send_meeting_notification", {
-              title: `Meeting in ${minutesAway} min`,
-              body: ev.title,
-              externalId: ev.externalId,
-            });
-          } catch (sendErr) {
-            console.error(
-              "meetingApproachNotifier: sendNotification failed, will retry",
-              sendErr,
+      // meeting enters the user's lead window. Gated behind its OWN toggle
+      // (getApproachNotifyEnabled) + dedup + permission probe; on a failed send
+      // it stays un-notified to retry. The T-0 prompt below is INDEPENDENT of
+      // this toggle — previously this gate sat at the top of the tick and killed
+      // the T-0 emit too, so turning off approach-notifs silenced the meeting
+      // prompt entirely (its pip path needs no permission and should fire). ──
+      if (await getApproachNotifyEnabled()) {
+        const leadMin = await getApproachLeadMinutes();
+        const events = await upcomingEvents(leadMin, NOTIFY_GRACE_MS);
+        // Filter dedup BEFORE the permission probe so we don't probe on
+        // every tick once everything's already notified.
+        const freshLead = events.filter((ev) => !notifiedSet.has(ev.externalId));
+        if (freshLead.length > 0 && (await isPermissionGranted())) {
+          for (const ev of freshLead) {
+            const minutesAway = Math.max(
+              1,
+              Math.ceil((ev.startMs - now) / 60000),
             );
-            continue;
+            // #12 — mark "notified" ONLY after a confirmed send. Previously the
+            // dedup set was updated unconditionally right after a fire-and-forget
+            // call, so a failed send still suppressed every future retry for that
+            // event. Await it and, on failure, leave it un-notified to retry next
+            // tick. (await on a void return is harmless.)
+            try {
+              // Native send (notify.rs) instead of the plugin: the plugin discards
+              // click results, so we own delivery to make the body click jump to
+              // this event's task (externalId rides the notification identifier).
+              await invoke("send_meeting_notification", {
+                title: `Meeting in ${minutesAway} min`,
+                body: ev.title,
+                externalId: ev.externalId,
+              });
+            } catch (sendErr) {
+              console.error(
+                "meetingApproachNotifier: sendNotification failed, will retry",
+                sendErr,
+              );
+              continue;
+            }
+            notifiedSet.add(ev.externalId);
+            notified.push({ eventId: ev.externalId, start: ev.startLocal });
+            changed = true;
           }
-          notifiedSet.add(ev.externalId);
-          notified.push({ eventId: ev.externalId, start: ev.startLocal });
-          changed = true;
         }
       }
 

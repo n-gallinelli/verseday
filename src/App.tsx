@@ -4,7 +4,8 @@ import { WebviewWindow, getAllWebviewWindows } from "@tauri-apps/api/webviewWind
 import { cursorPosition, monitorFromPoint, currentMonitor, primaryMonitor } from "@tauri-apps/api/window";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
+import { PIP_CHIME_EVENT } from "./utils/pipEvents";
 import ErrorBoundary from "./components/ErrorBoundary";
 import FocusPip from "./components/FocusPip";
 import QuickAdd from "./pages/QuickAdd";
@@ -541,8 +542,23 @@ function MainApp() {
         if (!task) return;
         const s = useAppStore.getState();
         if (s.session?.taskId === task.id) return; // already on this meeting
-        if (s.session && s.pipShown) {
+        // Route to the pip ONLY if the pip window actually exists right now.
+        // s.pipShown is a coarse mirror (hasBeenActive && !pipHidden) that goes
+        // stale-TRUE after the pip self-closes on its liveness timeout while
+        // VerseDay is backgrounded — precisely the pre-meeting state. Trusting it
+        // sent the prompt to a dead window AND skipped the OS fallback, so the
+        // user got nothing. Verify the live window instead; a dead pip now falls
+        // through to the OS notification.
+        const pipAlive =
+          !!s.session &&
+          (await getAllWebviewWindows()).some((w) => w.label === "focus-pip");
+        if (pipAlive) {
           s.setMeetingPrompt({ externalId, taskId: task.id, title, startMs });
+          // Chime the CONFIRMED-alive pip directly — NOT via FocusMode.fireChime,
+          // which elects the speaker off the same stale pipShown mirror and would
+          // emit to a dead window. Here the window is proven alive, so exactly one
+          // speaker (FocusPip) plays it.
+          void emit(PIP_CHIME_EVENT, "meeting");
         } else if (await isPermissionGranted()) {
           await invoke("send_meeting_notification", {
             title: "Meeting starting",

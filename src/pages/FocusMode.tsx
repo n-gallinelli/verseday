@@ -388,9 +388,19 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // completion registers before the view returns to the running task).
   const [browsedDoneBeat, setBrowsedDoneBeat] = useState(false);
 
+  // Reseed the notes editor ONLY when the viewed task changes — never on every
+  // rewrite of the same task's store entry. `saveNotes` → `primeTaskPatch`
+  // rewrites tasksById on each keystroke (debounced), which makes `viewedTask` a
+  // new object reference; depending on the whole object here re-ran this effect
+  // mid-edit and pushed the *lagging persisted* notes back into the editor's
+  // `value`, forcing RichTextEditor's setContent to reset the cursor. That
+  // cursor reset landing between two Enters on an empty bullet is why list-exit
+  // failed only on Focus (splitListItem kept firing instead of liftEmptyBlock).
+  // Keying on `viewedTask?.id` alone mirrors TaskDetail (seed-once); external
+  // edits still sync via the verseday:task-notes-changed listener below.
   useEffect(() => {
     if (viewedTask) setNotes(viewedTask.notes ?? "");
-  }, [viewedTask?.id, viewedTask]);
+  }, [viewedTask?.id]);
 
   // On task advance (Done → next), release the notes editor's
   // contentEditable focus. The ↑/↓ task-switch handler ignores arrows while

@@ -34,6 +34,7 @@ import {
 } from "../db/queries";
 import RichTextEditor from "../components/RichTextEditor";
 import VerseDayLogo from "../components/VerseDayLogo";
+import { useFocusAttachments } from "../components/focus/FocusAttachments";
 import { breakEndClock } from "../utils/breakClock";
 import { BREAK_PROMPT } from "../utils/breakPromptLabels";
 import { todayString } from "../utils/dates";
@@ -164,6 +165,11 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // session. They diverge only while browsing-other.
   const focusedTask = useAppStore(selectFocusedTask);
   const viewedTask = useAppStore(selectViewedTask);
+  // Hover-revealed attachments for the viewed task. Called unconditionally
+  // (owner id -1 until a real task, mirroring ProjectDetail) so hook order is
+  // stable across the early `if (!task) return null` below. Mounting this also
+  // installs the window file-drop guard the Focus screen was missing.
+  const focusAttachments = useFocusAttachments(viewedTask?.id ?? -1);
   // Calendar meetings (external_source === "calendar") never get a break
   // prompt — you can't take a break mid-meeting. Mirrored to a ref so the
   // per-second work-cycle interval reads it without a stale closure.
@@ -1853,7 +1859,10 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
           vertical position regardless of how many lines the title
           wraps to — long titles extend the composition downward
           instead of pushing the logo up. */}
-      <div key={zoomKey} className="relative z-[1] w-full h-full overflow-y-auto overscroll-contain flex flex-col items-center pt-[24vh] pb-24 animate-focus-tunnel-in">
+      <div key={zoomKey} {...focusAttachments.rootDropProps} className="relative z-[1] w-full h-full overflow-y-auto overscroll-contain flex flex-col items-center pt-[24vh] pb-24 animate-focus-tunnel-in">
+      {/* Whole Focus content area is the attachment drop target; the warm
+          "Drop to attach" overlay shows mid-drag only (pointer-events:none). */}
+      {focusAttachments.overlay}
 
       {/* Pomodoro-complete celebration takes over the entire content
           area when the prompt fires — no modal-over-screen, just the
@@ -2140,6 +2149,10 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
             className="border-0 border-t border-line-hairline ml-10 mt-5 self-start"
             style={{ width: "calc(50% - 40px)" }}
           />
+          {/* Hover-revealed attachments — invisible at rest, quiet 📎 N when
+              present, floating thumbnail popover on hover. Sits between the
+              hairline and notes, aligned to the notes' pl-10. */}
+          {focusAttachments.strip}
           <RichTextEditor
             value={notes}
             onChange={(html) => {
@@ -2147,7 +2160,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
               saveNotes(html);
             }}
             placeholder="Add notes…"
-            className="w-full mt-3 min-h-[240px] pl-10 pr-4 py-3.5 bg-transparent text-left text-[14px] text-fg leading-relaxed"
+            className="w-full mt-1 min-h-[240px] pl-10 pr-4 pt-1.5 pb-3.5 bg-transparent text-left text-[14px] text-fg leading-relaxed"
           />
         </div>
       )}

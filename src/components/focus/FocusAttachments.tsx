@@ -191,6 +191,12 @@ function FocusAttachmentsStrip({
   }, [open_, list]);
 
   if (taskId <= 0) return null;
+  // No attachments → render nothing at all. Truly spartan at rest: notes sit
+  // clean under the hairline with no reserved space and no hover hint to collide
+  // with the first notes line. Dropping still works anywhere on Focus (the drop
+  // handlers live on the content wrapper), and the warm "Drop to attach" overlay
+  // is the discoverability cue the moment a file is dragged over.
+  if (list.length === 0) return null;
 
   // Which image ids are allowed a thumbnail (the capped set). Over-cap images and
   // all non-images render glyph-only and are never fetched here.
@@ -200,24 +206,11 @@ function FocusAttachmentsStrip({
 
   return (
     <div className="w-full pl-10 relative">
-      {list.length === 0 ? (
-        // Zero layout height so notes sit as close to the hairline as they did
-        // before attachments existed (no reserved line, no floating gap). A
-        // transparent catch over the hairline→notes gap reveals the faint drop
-        // hint on hover without pushing notes down. Drop still works anywhere.
-        <div className="group relative h-0 select-none" aria-hidden>
-          <div className="absolute left-0 top-0 h-6 w-48" />
-          <span className="absolute left-0 top-2 flex items-center gap-1.5 text-[12px] leading-none text-fg-faded opacity-0 group-hover:opacity-60 transition-opacity pointer-events-none whitespace-nowrap">
-            <ClipIcon />
-            Drop files here
-          </span>
-        </div>
-      ) : (
-        <div
-          className="inline-block relative mt-1.5"
-          onMouseEnter={requestOpen}
-          onMouseLeave={requestClose}
-        >
+      <div
+        className="inline-block relative mt-1.5"
+        onMouseEnter={requestOpen}
+        onMouseLeave={requestClose}
+      >
           <button
             type="button"
             onClick={() => (open_ ? setOpen(false) : setOpen(true))}
@@ -287,8 +280,7 @@ function FocusAttachmentsStrip({
               </div>
             </div>
           )}
-        </div>
-      )}
+      </div>
 
       {lightbox}
     </div>

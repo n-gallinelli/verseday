@@ -180,14 +180,17 @@ export function AttachmentDropOverlay({ visible }: { visible: boolean }) {
   );
 }
 
-// ── The list itself: no dashed box, no per-item card (Verse §2). Clean rows,
-//    generous spacing, quiet empty prompt, inline "+ Add file". ──
-export function AttachmentList({ controller }: { controller: AttachmentsController }) {
-  const { list, ingest, remove, error, busy } = controller;
-  const fileInputRef = useRef<HTMLInputElement>(null);
+// ── Opener: on-demand blob fetch → image lightbox / allowlisted OS open, plus
+//    download-to-Downloads. Extracted verbatim from AttachmentList so every
+//    consumer (this list AND the Focus attachments popover) shares ONE open
+//    path + ONE lightbox, preserving the blob discipline (fetch on open for a
+//    single attachment, discarded after). Behavior is byte-identical to the old
+//    inline versions — the list renders the returned `lightbox` where its inline
+//    block used to be. ──
+export function useAttachmentOpener() {
   const [lightbox, setLightbox] = useState<{ filename: string; dataUri: string } | null>(null);
 
-  async function open(att: Attachment) {
+  const open = useCallback(async (att: Attachment) => {
     try {
       const rec = await getAttachmentData(att.id);
       if (!rec) return;
@@ -201,9 +204,9 @@ export function AttachmentList({ controller }: { controller: AttachmentsControll
     } catch (err) {
       console.error("[attachments] open failed", err);
     }
-  }
+  }, []);
 
-  async function download(att: Attachment) {
+  const download = useCallback(async (att: Attachment) => {
     try {
       const rec = await getAttachmentData(att.id);
       if (!rec) return;
@@ -214,7 +217,35 @@ export function AttachmentList({ controller }: { controller: AttachmentsControll
     } catch (err) {
       console.error("[attachments] download failed", err);
     }
-  }
+  }, []);
+
+  const lightboxEl = lightbox ? (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-8"
+      onClick={() => setLightbox(null)}
+      role="dialog"
+      aria-modal="true"
+      aria-label={lightbox.filename}
+    >
+      <img
+        src={lightbox.dataUri}
+        alt={lightbox.filename}
+        draggable={false}
+        className="max-h-full max-w-full rounded-md shadow-2xl object-contain select-none"
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  ) : null;
+
+  return { open, download, lightbox: lightboxEl };
+}
+
+// ── The list itself: no dashed box, no per-item card (Verse §2). Clean rows,
+//    generous spacing, quiet empty prompt, inline "+ Add file". ──
+export function AttachmentList({ controller }: { controller: AttachmentsController }) {
+  const { list, ingest, remove, error, busy } = controller;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { open, download, lightbox } = useAttachmentOpener();
 
   return (
     <div
@@ -322,23 +353,7 @@ export function AttachmentList({ controller }: { controller: AttachmentsControll
 
       {error && <div className="mt-2 text-[12px] text-danger">{error}</div>}
 
-      {lightbox && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-8"
-          onClick={() => setLightbox(null)}
-          role="dialog"
-          aria-modal="true"
-          aria-label={lightbox.filename}
-        >
-          <img
-            src={lightbox.dataUri}
-            alt={lightbox.filename}
-            draggable={false}
-            className="max-h-full max-w-full rounded-md shadow-2xl object-contain select-none"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      )}
+      {lightbox}
     </div>
   );
 }

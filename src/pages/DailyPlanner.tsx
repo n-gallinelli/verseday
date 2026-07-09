@@ -39,7 +39,7 @@ import TaskCard from "../components/TaskCard";
 import DatePicker from "../components/DatePicker";
 import DurationPicker from "../components/DurationPicker";
 import RichTextEditor from "../components/RichTextEditor";
-import ProjectPicker from "../components/ProjectPicker";
+import ProjectPicker, { type ProjectPickerHandle } from "../components/ProjectPicker";
 import DisclosureCaret from "../components/DisclosureCaret";
 import PillToggleIcon from "../components/PillToggleIcon";
 import { formatHoursMinutes, parseTimeFromTitle, getEmptyDayMessage } from "../utils/format";
@@ -178,6 +178,7 @@ export default function DailyPlanner() {
   const [taskInputExpanded, setTaskInputExpanded] = useState(false);
   const taskInputRef = useRef<HTMLFormElement>(null);
   const newTaskInputRef = useRef<HTMLInputElement>(null);
+  const newTaskProjectPickerRef = useRef<ProjectPickerHandle>(null);
   const datePickerAnchorRef = useRef<HTMLButtonElement>(null);
 
   // Right panel — R.3 (sidebar rebuild). Two collapsible sections:
@@ -1155,6 +1156,13 @@ export default function DailyPlanner() {
                       setNewTaskProjectId("");
                       setNewTaskHighPriority(false);
                       setTaskInputExpanded(false);
+                    } else if (e.key === "Tab" && !e.shiftKey) {
+                      // Plain Tab opens the project picker with keyboard focus on
+                      // its first option (like QuickAdd). Shift+Tab stays native
+                      // (backward tab-out preserved — not a keyboard trap); Esc
+                      // inside the picker is the forward exit.
+                      e.preventDefault();
+                      newTaskProjectPickerRef.current?.openAndFocusFirst();
                     }
                   }}
                   autoFocus
@@ -1172,9 +1180,17 @@ export default function DailyPlanner() {
               <div className="flex items-center gap-2 flex-wrap min-w-0">
                 <div className="w-[220px]">
                   <ProjectPicker
+                    ref={newTaskProjectPickerRef}
                     value={newTaskProjectId}
                     projects={newTaskObjectiveOptions}
                     onChange={setNewTaskProjectId}
+                    onReturnFocus={() => {
+                      const el = newTaskInputRef.current;
+                      if (!el) return;
+                      el.focus();
+                      const end = el.value.length;
+                      el.setSelectionRange(end, end);
+                    }}
                   />
                 </div>
                 <div className="w-px h-3.5 bg-line-soft" />

@@ -394,9 +394,19 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // completion registers before the view returns to the running task).
   const [browsedDoneBeat, setBrowsedDoneBeat] = useState(false);
 
+  // Reseed the notes editor ONLY when the viewed task changes — never on every
+  // rewrite of the same task's store entry. `saveNotes` → `primeTaskPatch`
+  // rewrites tasksById on each keystroke (debounced), which makes `viewedTask` a
+  // new object reference; depending on the whole object here re-ran this effect
+  // mid-edit and pushed the *lagging persisted* notes back into the editor's
+  // `value`, forcing RichTextEditor's setContent to reset the cursor. That
+  // cursor reset landing between two Enters on an empty bullet is why list-exit
+  // failed only on Focus (splitListItem kept firing instead of liftEmptyBlock).
+  // Keying on `viewedTask?.id` alone mirrors TaskDetail (seed-once); external
+  // edits still sync via the verseday:task-notes-changed listener below.
   useEffect(() => {
     if (viewedTask) setNotes(viewedTask.notes ?? "");
-  }, [viewedTask?.id, viewedTask]);
+  }, [viewedTask?.id]);
 
   // On task advance (Done → next), release the notes editor's
   // contentEditable focus. The ↑/↓ task-switch handler ignores arrows while
@@ -489,10 +499,19 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
   // Listen for notes changes coming from other surfaces editing the
   // same task — keeps focus's local notes state in lockstep with
   // TaskDetailOverlay even when both are open at once.
+  //
+  // Gate on viewedTask?.id — the task the editor is actually RENDERING — not
+  // focus?.taskId (the running task). They diverge while browsing (↑/↓) to a
+  // non-focused task. Keying on the running task both (a) dropped live external
+  // edits to the *browsed* task, and (b) worse, injected an external edit of the
+  // *running* task into the editor showing a *different* browsed task — which a
+  // subsequent keystroke would then persist (via saveNotes, keyed to
+  // viewedTask.id) onto the wrong task. The sync gate must match the reseed key:
+  // both are viewedTask.
   useEffect(() => {
     function onNotesChanged(e: Event) {
       const ce = e as CustomEvent<{ taskId: number; html: string }>;
-      const id = focus?.taskId;
+      const id = viewedTask?.id;
       if (!id || ce.detail.taskId !== id) return;
       if (ce.detail.html === notes) return;
       setNotes(ce.detail.html);
@@ -500,7 +519,7 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     window.addEventListener("verseday:task-notes-changed", onNotesChanged);
     return () =>
       window.removeEventListener("verseday:task-notes-changed", onNotesChanged);
-  }, [focus?.taskId, notes]);
+  }, [viewedTask?.id, notes]);
 
   // Timer settings from DB — gated behind settingsLoaded
   const [settingsLoaded, setSettingsLoaded] = useState(false);

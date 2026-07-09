@@ -4,7 +4,7 @@ import { currentMonitor } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import VerseDayLogo from "./VerseDayLogo";
-import { playBreakChime as playCalm, playBreakEndChime } from "../utils/sounds";
+import { playBreakChime as playCalm, playBreakEndChime, playMeetingChime } from "../utils/sounds";
 import { breakEndClock } from "../utils/breakClock";
 import { BREAK_PROMPT } from "../utils/breakPromptLabels";
 import { clampToFrame } from "../utils/pipClamp";
@@ -456,6 +456,7 @@ export default function FocusPip() {
     listen<PipChimeKind>(PIP_CHIME_EVENT, (e) => {
       if (e.payload === "start") playCalm();
       else if (e.payload === "end") playBreakEndChime();
+      else if (e.payload === "meeting") playMeetingChime();
     })
       .then((un) => { unlisten = un; })
       .catch(() => {});
@@ -650,18 +651,20 @@ export default function FocusPip() {
   // never trapped.
   // ── MEETING-START PROMPT — "switch focus to the meeting that's starting?" ──
   // Outranks the break offer (FocusMode sets phase="meetingPrompt" over any
-  // work/break/prompt). Two rows to fit 220×66: a truncated title line, then a
-  // blue primary "Switch focus" beside a quiet "Not now". Blue is the
-  // interactive/active accent (same family as the pip ring + play button); the
-  // fill is PINNED #4070B5 (the AA-tightened light accent-blue, ≥4.5:1 behind
-  // white in both themes — same pin-not-token discipline as the break CTA). The
-  // title is external calendar data, rendered as a plain text node. FocusMode
-  // owns the 45s auto-dismiss; the user is never trapped.
+  // work/break/prompt). Title + time as a title/SUBTITLE stack (the time on its
+  // own line, intentionally separated — not an inline bold→regular seam). The
+  // primary is a WARM pill labelled "Go to meeting" ("focus" is a task-timer
+  // concept, not obviously a meeting one) — fill PINNED #A85E1E (the light
+  // --accent-orange; the token FLIPS to a lighter #d68647 in dark that fails AA
+  // behind white, so we pin the AA-safe value in both themes — same pin-not-token
+  // discipline as the break CTA). Extra gap above the button row for breathing
+  // room under the heavier CTA. Title is external calendar data, plain text node.
+  // FocusMode owns the auto-dismiss; the user is never trapped.
   if (state.phase === "meetingPrompt" && state.meetingPrompt) {
     return pipShell(
       <div
         data-tauri-drag-region
-        className="select-none flex flex-col items-center justify-center gap-1.5 w-full h-full px-2.5 py-1.5"
+        className="select-none flex flex-col items-center justify-center gap-2.5 w-full h-full px-3 py-2"
         style={{
           background: PIP_BG,
           borderRadius: 18,
@@ -670,17 +673,23 @@ export default function FocusPip() {
         }}
         onMouseDown={handlePipMouseDown}
       >
-        <div className="text-[11px] leading-none text-fg-secondary truncate max-w-full px-1">
-          <span className="font-medium text-fg">{state.meetingPrompt.title}</span> starting
-          {state.meetingPrompt.startLabel ? ` ${state.meetingPrompt.startLabel}` : ""}
+        <div className="flex flex-col items-center gap-0.5 max-w-full px-1">
+          <div className="text-[12px] leading-tight font-medium text-fg truncate max-w-full">
+            {state.meetingPrompt.title}
+          </div>
+          {state.meetingPrompt.startLabel && (
+            <div className="text-[10px] leading-none text-fg-secondary">
+              starting {state.meetingPrompt.startLabel}
+            </div>
+          )}
         </div>
-        <div className="flex items-center justify-center gap-2.5">
+        <div className="flex items-center justify-center gap-3">
           <button
             onClick={() => sendCommand("switchToMeeting")}
-            className="px-3 py-1.5 rounded-full text-[12px] font-medium text-white bg-[#4070B5] hover:bg-[#3661A0] cursor-pointer transition-colors"
+            className="px-3.5 py-1.5 rounded-full text-[12px] font-medium text-white bg-[#A85E1E] hover:bg-[#94511A] cursor-pointer transition-colors"
             title="Switch your focus timer to this meeting"
           >
-            Switch focus
+            Go to meeting
           </button>
           <button
             onClick={() => sendCommand("dismissMeetingPrompt")}

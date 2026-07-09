@@ -15,7 +15,7 @@ export interface PipMovedPayload { x: number; y: number; }
 // ascending break-over). FocusMode is the SINGLE decider; it fires this only
 // when it elects the pip as the one speaker, so there's never a dual play.
 export const PIP_CHIME_EVENT = "verseday:pip-chime";
-export type PipChimeKind = "start" | "end";
+export type PipChimeKind = "start" | "end" | "meeting";
 
 // What the pip does after a task is completed from it. "advance" = roll to the
 // next remaining task and keep the pip open (historical default); "close" =

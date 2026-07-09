@@ -51,7 +51,7 @@ import {
   type BreakContinuity,
 } from "../utils/focusSettings";
 import { getEmptyDayMessage } from "../utils/format";
-import { playBreakChime as playChime, playBreakEndChime } from "../utils/sounds";
+import { playBreakChime as playChime, playBreakEndChime, playMeetingChime } from "../utils/sounds";
 import { workElapsedMs } from "../utils/pomodoro";
 import type { Page } from "../types";
 
@@ -602,7 +602,14 @@ export default function FocusMode({ visible = true }: FocusModeProps) {
     if (pipSpeaks) {
       void emit(PIP_CHIME_EVENT, kind); // pip plays exactly once
     } else {
-      (kind === "start" ? playChime : playBreakEndChime)(); // engine-local fallback
+      // Exhaustive engine-local fallback — every kind maps to a real sound so no
+      // path hits a silent default. "meeting" is defensive: the meeting chime is
+      // normally emitted straight from App.tsx's pip-confirmed-alive branch (NOT
+      // through fireChime, whose pipShownRef speaker-election is the stale mirror
+      // that dropped the notification), so this arm shouldn't run in practice.
+      const play =
+        kind === "start" ? playChime : kind === "end" ? playBreakEndChime : playMeetingChime;
+      play();
     }
   }
 

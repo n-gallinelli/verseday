@@ -240,18 +240,26 @@ function FocusAttachmentsStrip({
               role="dialog"
               aria-label="Attachments"
             >
-              <div className="grid grid-cols-4 gap-2 max-w-[268px]">
+              <div className="flex flex-wrap gap-2" style={{ maxWidth: 256 }}>
                 {list.map((att) => {
                   const thumb = thumbImageIds.has(att.id)
                     ? cacheRef.current.get(att.id)
                     : undefined;
                   return (
-                    <div key={att.id} className="group relative">
+                    // Inline width/height + flex-shrink-0 so the tile is a fixed
+                    // 56px square regardless of the image's natural size or any
+                    // grid-track stretching (an image thumbnail was ballooning to
+                    // its intrinsic size as a stretched grid item).
+                    <div
+                      key={att.id}
+                      className="group relative flex-shrink-0"
+                      style={{ width: 56, height: 56 }}
+                    >
                       <button
                         type="button"
                         onClick={() => open(att)}
                         title={att.filename}
-                        className="w-[60px] h-[60px] rounded-lg overflow-hidden flex items-center justify-center bg-input-hover border border-line-hairline hover:border-line-soft transition-colors cursor-pointer"
+                        className="w-full h-full rounded-lg overflow-hidden flex items-center justify-center bg-input-hover border border-line-hairline hover:border-line-soft transition-colors cursor-pointer"
                       >
                         {thumb ? (
                           <img

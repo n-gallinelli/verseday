@@ -158,6 +158,13 @@ function FocusAttachmentsStrip({
     }
   }, [open_]);
 
+  // F1 — when the last attachment is removed the strip swaps to the hint branch,
+  // which has no hover handlers, so a still-`open_` popover would be stranded
+  // (and would auto-reappear on the next add without a hover). Force it shut.
+  useEffect(() => {
+    if (list.length === 0) setOpen(false);
+  }, [list.length]);
+
   useEffect(() => () => clearTimers(), []);
 
   // C1/C2/C3/C4 — on open, fetch ONLY uncached, image-mime, within-cap blobs.

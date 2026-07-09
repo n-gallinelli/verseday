@@ -49,6 +49,11 @@ import ProjectIconPicker from "../components/ProjectIconPicker";
 import type { Task } from "../types";
 
 const MAX_TITLE_LENGTH = 200;
+// Objective (project) NAMES get their own, larger cap than task titles —
+// objectives are often a full descriptive sentence. Applies only to the name
+// field; task-title inputs on this page keep MAX_TITLE_LENGTH. (Same value used
+// by the inline create input on the Objectives screen.)
+const MAX_OBJECTIVE_NAME_LENGTH = 300;
 const MAX_ESTIMATE_MINUTES = 480;
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
@@ -1225,7 +1230,7 @@ export default function ProjectDetail() {
               ref={titleRef}
               value={editName}
               onChange={(e) => updateField("name", e.target.value.replace(/\n/g, ""))}
-              maxLength={MAX_TITLE_LENGTH}
+              maxLength={MAX_OBJECTIVE_NAME_LENGTH}
               rows={1}
               className="flex-1 min-w-0 font-medium text-fg bg-transparent border-none outline-none resize-none leading-tight overflow-hidden focus:bg-elevated focus:border focus:border-accent-blue focus:rounded-md focus:px-2 focus:-mx-2"
               style={{

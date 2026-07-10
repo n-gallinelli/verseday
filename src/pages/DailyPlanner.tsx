@@ -966,7 +966,12 @@ export default function DailyPlanner() {
               <path d="M10 4l-4 4 4 4" />
             </svg>
           </button>
-          <h2 className="text-[16px] font-medium text-fg">
+          {/* Fixed-width, centered label so the day-name length variance
+              ("Wednesday, …" vs "Monday, …") no longer shifts the next/prev
+              arrows and the Jump-to pill. 156px holds the widest header
+              (measured: "Wednesday, May 30" = 145.3px at Figtree 500/16px)
+              with a small buffer, no clipping. */}
+          <h2 className="text-[16px] font-medium text-fg w-[156px] text-center">
             {formatDayHeader(selectedDate)}
           </h2>
           <button
@@ -1582,11 +1587,8 @@ export default function DailyPlanner() {
                             }`}
                           >
                             <button
-                              onClick={() => {
-                                if (isRecent) undoPull(task.id);
-                                else pullTaskToDay(task.id);
-                              }}
-                              title={isRecent ? "Undo (within 10s)" : `Add to ${pullTargetLabel}`}
+                              onClick={() => openTaskDetail(task.id)}
+                              title="Open details"
                               className="flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-left"
                             >
                               <span
@@ -1596,37 +1598,27 @@ export default function DailyPlanner() {
                               >
                                 {task.title}
                               </span>
-                              {!isRecent && (
-                                <span className="text-[10px] text-accent-blue opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 font-medium whitespace-nowrap">
-                                  Add to {pullTargetLabel}
-                                </span>
-                              )}
                             </button>
+                            {/* Add-to-day is the rail's promoted primary action → pinned
+                                (always-visible). Undo is a time-boxed 10s action → also
+                                always-visible; hiding it behind hover would strand an
+                                accidental add. Both are siblings of the title button, so
+                                clicking them never triggers the title's open-details. */}
                             {isRecent ? (
-                              <span className="text-[10px] text-accent-blue-soft-fg font-medium flex-shrink-0">
+                              <button
+                                onClick={() => undoPull(task.id)}
+                                title="Undo (within 10s)"
+                                className="text-[10px] text-accent-blue-soft-fg font-medium flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                              >
                                 Undo
-                              </span>
+                              </button>
                             ) : (
                               <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openTaskDetail(task.id);
-                                }}
-                                title="Open details"
-                                className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-fg-faded hover:text-fg"
+                                onClick={() => pullTaskToDay(task.id)}
+                                title={`Add to ${pullTargetLabel}`}
+                                className="text-[10px] text-accent-blue font-medium whitespace-nowrap flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
                               >
-                                <svg
-                                  width="13"
-                                  height="13"
-                                  viewBox="0 0 14 14"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="1.6"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                >
-                                  <path d="M5.5 3l4 4-4 4" />
-                                </svg>
+                                Add to {pullTargetLabel}
                               </button>
                             )}
                           </div>
@@ -1708,11 +1700,8 @@ export default function DailyPlanner() {
                           }`}
                         >
                           <button
-                            onClick={() => {
-                              if (isRecent) undoPull(task.id);
-                              else pullTaskToDay(task.id);
-                            }}
-                            title={isRecent ? "Undo (within 10s)" : `Add to ${pullTargetLabel}`}
+                            onClick={() => openTaskDetail(task.id)}
+                            title="Open details"
                             className="flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-left"
                           >
                             <span
@@ -1722,37 +1711,25 @@ export default function DailyPlanner() {
                             >
                               {task.title}
                             </span>
-                            {!isRecent && (
-                              <span className="text-[10px] text-accent-blue opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 font-medium whitespace-nowrap">
-                                Add to {pullTargetLabel}
-                              </span>
-                            )}
                           </button>
+                          {/* Add-to-day pinned (primary action); Undo always-visible
+                              (10s time-boxed). Siblings of the title button — see the
+                              top section for the full rationale. */}
                           {isRecent ? (
-                            <span className="text-[10px] text-accent-blue-soft-fg font-medium flex-shrink-0">
+                            <button
+                              onClick={() => undoPull(task.id)}
+                              title="Undo (within 10s)"
+                              className="text-[10px] text-accent-blue-soft-fg font-medium flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                            >
                               Undo
-                            </span>
+                            </button>
                           ) : (
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openTaskDetail(task.id);
-                              }}
-                              title="Open details"
-                              className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-fg-faded hover:text-fg"
+                              onClick={() => pullTaskToDay(task.id)}
+                              title={`Add to ${pullTargetLabel}`}
+                              className="text-[10px] text-accent-blue font-medium whitespace-nowrap flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
                             >
-                              <svg
-                                width="13"
-                                height="13"
-                                viewBox="0 0 14 14"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.6"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              >
-                                <path d="M5.5 3l4 4-4 4" />
-                              </svg>
+                              Add to {pullTargetLabel}
                             </button>
                           )}
                         </div>

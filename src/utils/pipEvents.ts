@@ -30,29 +30,66 @@ export type PipCompleteBehavior = "advance" | "close";
 // drift apart.
 export const PIP_COMPLETE_FLOURISH_MS = 850;
 
-// ONE pip window size for every phase — the pip never resizes (declining a break
-// can't shrink it; no setSize churn). Shared so the window-creation size
-// (FocusMode) and the content's pinned size (FocusPip) can't drift. Height is set
-// by the break prompt — its tallest phase (no header): py-1.5 container (12px) +
-// Start-break button row (~28px) + gap-2 (8px) + "+5 min · Skip" sub-row (~12px)
-// ≈ 60px floor; 66 leaves ~6px slack so the cluster isn't jammed to the borders.
-// The running/paused view is shorter and centers in the remaining space.
+// ── PiP sizing — TWO distinct families, from ONE source of truth ───────────
+// (1) BASE CONTENT BOX (per phase): what the shell renders (FocusPip pipShell),
+//     then magnifies by PIP_HIGH_VIS_SCALE via `zoom`. The shell reads THIS,
+//     never the window dims — reading the window size would double-scale.
+// (2) WINDOW size: equals the box in normal mode; in high-vis it's box×scale
+//     plus a transparent halo so the breathing accent ring (a box-shadow drawn
+//     OUTSIDE the zoomed box) renders un-clipped. Derived from the base box via
+//     windowFor() so window and content can never drift.
+//
+// Resting/focus/break box height (66) is set by the break prompt, the tallest of
+// those phases (no header): py-1.5 (12px) + button row (~28px) + gap-2 (8px) +
+// "+5 min · Skip" sub-row (~12px) ≈ 60px floor; 66 leaves ~6px slack. The
+// running/paused view is shorter and centers in the remaining space.
 export const PIP_SIZE = { width: 220, height: 66 };
 
-// High-visibility mode: the SAME card content scaled uniformly by
-// PIP_HIGH_VIS_SCALE inside a slightly larger window. The crisp accent ring is
-// a box-shadow drawn OUTSIDE the card, so it clips at the window bounds — the
-// window just needs a few px of transparent margin for the ring (+ breathe) to
-// render un-clipped. 220×66 × 1.3 ≈ 286×85.8; +~7.1px halo each side → 300×100
-// (ring spread is 2px × 1.3 ≈ 2.6px, so 7.1px clears it). Both the window-creation
-// size (FocusMode) and the content pin (FocusPip) read these so the two sides can't
-// drift — same discipline as PIP_SIZE.
-export const PIP_HIGH_VIS_SCALE = 1.3;
-export const PIP_SIZE_LARGE = { width: 300, height: 100 };
+// meetingPrompt is TALLER than the resting box: meeting title + "starting …" +
+// a full button row don't fit in 66 (the button clips against the bottom edge).
+// 90 gives the cluster real breathing room (content ≈ 86 with py-3) plus a hair
+// of sub-pixel slack. Meeting-only — break/focus keep 66 (smallest blast radius).
+export const PIP_SIZE_MEETING = { width: 220, height: 90 };
 
-/** The pip window size for a given high-visibility flag. */
+export const PIP_HIGH_VIS_SCALE = 1.3;
+// Transparent margin (per side, logical px) between the zoomed box and the window
+// edge so the ring (spread 2px × 1.3 ≈ 2.6px) clears un-clipped. 7.1 reproduces
+// the original 220×66→300×100 window and holds for ANY base box.
+const PIP_RING_HALO = 7.1;
+
+/** Window size for a base box + high-vis flag. Box in normal mode; box×scale +
+ *  halo in high-vis. The single derivation the window pin reads — and, via the
+ *  base box, what the shell reads — so the two sides can never drift. */
+function windowFor(
+  box: { width: number; height: number },
+  highVisibility: boolean,
+): { width: number; height: number } {
+  if (!highVisibility) return { width: box.width, height: box.height };
+  return {
+    width: Math.round(box.width * PIP_HIGH_VIS_SCALE + 2 * PIP_RING_HALO),
+    height: Math.round(box.height * PIP_HIGH_VIS_SCALE + 2 * PIP_RING_HALO),
+  };
+}
+
+/** The BASE CONTENT BOX for a phase — the shell renders this box, then zooms. */
+export function pipBaseBoxForPhase(phase?: string): { width: number; height: number } {
+  return phase === "meetingPrompt" ? PIP_SIZE_MEETING : PIP_SIZE;
+}
+
+/** High-vis halo window for the resting box (300×100). Derived, not hardcoded. */
+export const PIP_SIZE_LARGE = windowFor(PIP_SIZE, true);
+
+/** The pip WINDOW size for a high-visibility flag (resting box — create-size). */
 export function pipSizeFor(highVisibility: boolean): { width: number; height: number } {
-  return highVisibility ? PIP_SIZE_LARGE : PIP_SIZE;
+  return windowFor(PIP_SIZE, highVisibility);
+}
+
+/** The pip WINDOW size for a phase + high-visibility flag (phase-aware box). */
+export function pipSizeForPhase(
+  phase: string | undefined,
+  highVisibility: boolean,
+): { width: number; height: number } {
+  return windowFor(pipBaseBoxForPhase(phase), highVisibility);
 }
 
 /** Payload for the "switch focus to a starting meeting" prompt. Title is

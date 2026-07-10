@@ -8,7 +8,7 @@ import { playBreakChime as playCalm, playBreakEndChime, playMeetingChime } from 
 import { breakEndClock } from "../utils/breakClock";
 import { BREAK_PROMPT } from "../utils/breakPromptLabels";
 import { clampToFrame } from "../utils/pipClamp";
-import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_CHIME_EVENT, PIP_MOVED_EVENT, PIP_SIZE, PIP_HIGH_VIS_SCALE, pipSizeFor, PIP_COMPLETE_FLOURISH_MS, type PipState, type PipChimeKind, type PipMovedPayload } from "../utils/pipEvents";
+import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_CHIME_EVENT, PIP_MOVED_EVENT, PIP_HIGH_VIS_SCALE, pipBaseBoxForPhase, pipSizeForPhase, PIP_COMPLETE_FLOURISH_MS, type PipState, type PipChimeKind, type PipMovedPayload } from "../utils/pipEvents";
 
 // ONE fixed pip size for every phase — the pip window never resizes (a constant
 // size means declining a break can't shrink it, and there's no setSize docking
@@ -269,13 +269,16 @@ export default function FocusPip() {
   // this is the belt-and-suspenders pin AND the live-toggle path — when the flag
   // flips (Settings toggle re-broadcasts state) this re-pins, and the resize
   // drives the onResized clamp below so a grown window can't spill off-screen.
+  // Phase-aware: the meetingPrompt phase pins a taller window (its card doesn't
+  // fit the resting 66px box); every other phase reverts to the resting size.
+  // `state?.phase` in the deps drives the re-pin on enter AND on clear.
   useEffect(() => {
     if (!hasState) return;
-    const size = pipSizeFor(highVis);
+    const size = pipSizeForPhase(state?.phase, highVis);
     getCurrentWebviewWindow()
       .setSize(new LogicalSize(size.width, size.height))
       .catch(() => {});
-  }, [hasState, highVis]);
+  }, [hasState, highVis, state?.phase]);
 
   // Keep the pip on-screen: clamp its position once a move SETTLES, so it can
   // never be dragged fully off an edge and lost (it died at y=-68 once). We do
@@ -530,13 +533,17 @@ export default function FocusPip() {
   // pass-through. The `card` must size to the box (w-full h-full) and keeps its
   // own drag region, bg, border, and rounding.
   function pipShell(card: React.ReactNode, withRing: boolean) {
+    // Base CONTENT box (never the window dims — `zoom` scales this box). Phase-
+    // aware so meetingPrompt renders in its taller box, matching the phase-aware
+    // window pinned above; both read pipEvents' single source so they can't drift.
+    const box = pipBaseBoxForPhase(state?.phase);
     return (
       <div className="w-full h-screen flex items-center justify-center overflow-hidden">
         <div
           className="relative"
           style={{
-            width: PIP_SIZE.width,
-            height: PIP_SIZE.height,
+            width: box.width,
+            height: box.height,
             zoom: highVis ? PIP_HIGH_VIS_SCALE : undefined,
           }}
         >
@@ -664,7 +671,7 @@ export default function FocusPip() {
     return pipShell(
       <div
         data-tauri-drag-region
-        className="select-none flex flex-col items-center justify-center gap-2.5 w-full h-full px-3 py-2"
+        className="select-none flex flex-col items-center justify-center gap-3 w-full h-full px-3 py-3"
         style={{
           background: PIP_BG,
           borderRadius: 18,

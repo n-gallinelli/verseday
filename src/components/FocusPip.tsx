@@ -8,6 +8,7 @@ import { playBreakChime as playCalm, playBreakEndChime, playMeetingChime } from 
 import { breakEndClock } from "../utils/breakClock";
 import { BREAK_PROMPT } from "../utils/breakPromptLabels";
 import { clampToFrame } from "../utils/pipClamp";
+import { displayElapsed } from "../utils/displayElapsed";
 import { PIP_STATE_EVENT, PIP_CMD_EVENT, PIP_READY_EVENT, PIP_CHIME_EVENT, PIP_MOVED_EVENT, PIP_HIGH_VIS_SCALE, pipBaseBoxForPhase, pipSizeForPhase, PIP_COMPLETE_FLOURISH_MS, type PipState, type PipChimeKind, type PipMovedPayload } from "../utils/pipEvents";
 
 // ONE fixed pip size for every phase — the pip window never resizes (a constant
@@ -132,6 +133,21 @@ export default function FocusPip() {
   // can detect phase transitions without reading a stale `state` closure and
   // without running side effects inside the setState updater.
   const prevPhaseRef = useRef<PipState["phase"] | null>(null);
+
+  // Work-elapsed interpolation baseline (Verse-APPROVED, display-only). The main
+  // window's timers throttle to ~2s while it's occluded, so the pushed `elapsed`
+  // only refreshes every ~2s; the un-throttled pip smooths the gap by adding the
+  // monotonic time since it received the value (see displayElapsed). The stamp is
+  // minted HERE in the pip window (never the main window — independent monotonic
+  // origins). elapsedMs is retained only to detect a real change: a bare
+  // heartbeat/settle/ready-reply re-emits the SAME scalar, and restamping
+  // receivedAt on those would drop the sub-emit interpolation and snap the
+  // readout backward — so we re-sync only when the authoritative value moves
+  // (which is also exactly when we want the drift pull-back). -1 = never stamped.
+  const elapsedSyncRef = useRef<{ elapsedMs: number; receivedAt: number }>({
+    elapsedMs: -1,
+    receivedAt: 0,
+  });
 
   // ── Completion sequence (Option C — strike + hand-off) ──────────────
   // Clicking the checkmark plays a full-pip "officially done" takeover: the
@@ -409,6 +425,15 @@ export default function FocusPip() {
         flashMessage("End of break", 2000);
       }
       prevPhaseRef.current = next.phase;
+      // Re-sync the work-elapsed interpolation baseline — but ONLY when the
+      // authoritative scalar actually moved. This is the single place the stamp
+      // is minted (Verse cond. 1); the guard is what keeps redundant heartbeat/
+      // settle/ready re-emits (same elapsed) from resetting the baseline and
+      // snapping the readout backward. A change in EITHER direction (advance, or
+      // a smaller value on task-advance/new session) re-syncs.
+      if (next.elapsed !== elapsedSyncRef.current.elapsedMs) {
+        elapsedSyncRef.current = { elapsedMs: next.elapsed, receivedAt: performance.now() };
+      }
       setState(next);
     })
       .then((un) => {
@@ -449,6 +474,21 @@ export default function FocusPip() {
     const id = setInterval(forceTick, 1000);
     return () => clearInterval(id);
   }, [breakTicking]);
+
+  // Self-tick the work-elapsed readout so the interpolated seconds advance on
+  // time even while the main window's emits are throttled to ~2s. Only runs
+  // while actually counting (running work, not paused/queued) — the frozen
+  // states render the pushed scalar and need no local clock. 250ms so a second
+  // boundary is crossed within a quarter-second (smooth, and cheap on the
+  // un-throttled pip). The displayed value is recomputed at render from the
+  // live sync baseline + performance.now(); this effect only forces the paint.
+  const elapsedTicking =
+    state?.phase === "work" && !state?.paused && !state?.queued;
+  useEffect(() => {
+    if (!elapsedTicking) return;
+    const id = setInterval(forceTick, 250);
+    return () => clearInterval(id);
+  }, [elapsedTicking]);
 
   // Play a chime when FocusMode (the single decider) elects the pip as speaker.
   // playCalm = descending break-offer, playBreakEndChime = ascending break-over;
@@ -862,7 +902,14 @@ export default function FocusPip() {
           </div>
           <div className="text-[12px] tabular-nums leading-snug flex items-center gap-1.5">
             <span className={state.paused ? "text-fg-faded" : "text-accent-green-deep"}>
-              {formatTime(state.elapsed)}
+              {formatTime(
+                displayElapsed(
+                  elapsedSyncRef.current.elapsedMs,
+                  elapsedSyncRef.current.receivedAt,
+                  performance.now(),
+                  state.paused || state.queued,
+                ),
+              )}
             </span>
             <span className="text-fg-disabled">/</span>
             <span className="text-fg-faded">

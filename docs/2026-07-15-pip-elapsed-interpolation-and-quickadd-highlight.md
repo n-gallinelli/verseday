@@ -63,9 +63,10 @@ hover tooltip ("the little expander") but the option highlight stayed on the
 a highlight only for `projectId === p.id`, with **no `focus:` style**, unlike the
 shared picker.
 
-**Fix.** Added `focus:outline-none focus:ring-2 focus:ring-inset focus:ring-accent-blue`
-to both the No-project and per-objective buttons (`QuickAdd.tsx`) — the same ring
-the shared picker uses, layered over the existing selected-blue fill.
+**Fix.** Added `focus:outline-none focus:bg-accent-blue-soft` to both the
+No-project and per-objective buttons (`QuickAdd.tsx`) so the keyboard-focused row
+fills with the same soft-blue as the selection and the fill follows the cursor.
+(First tried the shared picker's inset ring; Nick preferred the fill.)
 Presentational only.
 
 **Eyes-on owed.** Tab into the picker, arrow through — the focused row shows a blue

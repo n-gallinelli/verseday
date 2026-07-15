@@ -521,7 +521,7 @@ export default function QuickAdd() {
                 onClick={() => { setProjectId(null); setShowProjectPicker(false); hideTip(); focusTitleAtEnd(); }}
                 className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-[12px] text-left cursor-pointer transition-colors focus:outline-none focus:bg-accent-blue-soft ${
                   projectId === null
-                    ? "bg-accent-blue-soft font-medium text-fg-secondary"
+                    ? "font-medium text-fg-secondary hover:bg-overlay-hover"
                     : "text-fg-faded hover:bg-overlay-hover"
                 }`}
               >
@@ -539,7 +539,7 @@ export default function QuickAdd() {
                   onBlur={hideTip}
                   className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-[12px] text-left cursor-pointer transition-colors focus:outline-none focus:bg-accent-blue-soft ${
                     projectId === p.id
-                      ? "bg-accent-blue-soft font-medium text-fg"
+                      ? "font-medium text-fg hover:bg-overlay-hover"
                       : "text-fg hover:bg-overlay-hover"
                   }`}
                 >
